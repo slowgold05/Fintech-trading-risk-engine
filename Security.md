@@ -2,17 +2,17 @@
 
 ## Security Philosophy
 
-This project is built with a **security-first mindset**, reflecting common controls used in financial and trading systems. The design prioritizes confidentiality, integrity, auditability, and least privilege.
+This project is built with a **security-first mindset**, reflecting common controls used in financial and trading systems. The design prioritises confidentiality, integrity, auditability, and least privilege.
 
 ---
 
-## Authentication and Authorization
+## Authentication and Authorisation
 
 ### OAuth2 Password Flow
 
 * Users authenticate via `/auth/login`
 * Access tokens are issued as **JWT Bearer tokens**
-* Tokens must be supplied in the `Authorization` header
+* Tokens must be supplied in the `Authorisation` header
 
 ### Token Security
 
@@ -34,8 +34,8 @@ This project is built with a **security-first mindset**, reflecting common contr
 ## API Protection
 
 * All trading, portfolio, and risk endpoints require authentication
-* Swagger UI supports authenticated testing via the Authorize mechanism
-* Unauthorized access returns HTTP 401
+* Swagger UI supports authenticated testing via the Authorise mechanism
+* Unauthorised access returns HTTP 401
 
 ---
 
@@ -51,7 +51,7 @@ This project is built with a **security-first mindset**, reflecting common contr
 
 * Trades are immutable once created
 * FIFO lots preserve execution order and cost basis
-* Realized P&L is derived deterministically from lot consumption
+* Realised P&L is derived deterministically from lot consumption
 * Risk alerts are linked to individual trades
 
 ---
@@ -61,4 +61,4 @@ This project is built with a **security-first mindset**, reflecting common contr
 * Role-based access control (RBAC)
 * Token expiration and refresh flow
 * Rate limiting and abuse detection
-* Centralized logging and monitoring
+* Centralised logging and monitoring
