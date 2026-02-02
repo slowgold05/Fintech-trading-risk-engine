@@ -4,7 +4,7 @@
 
 This repository contains a secure, backend-focused fintech trading system implemented using **FastAPI**, **SQLAlchemy**, **Alembic**, and **MySQL**. The application supports authenticated trading, FIFO-based accounting, portfolio valuation, and a rule-driven risk engine.
 
-The project is designed to emphasize **security, correctness, and auditability**, aligning with real-world financial system expectations.
+The project is designed to emphasise **security, correctness, and auditability**, aligning with real-world financial system expectations.
 
 ---
 
@@ -12,8 +12,8 @@ The project is designed to emphasize **security, correctness, and auditability**
 
 * Secure user authentication using OAuth2 Password Flow (JWT)
 * Buy and sell trades via a unified trading endpoint
-* FIFO lot accounting for accurate realized P&L
-* Portfolio aggregation with unrealized and realized P&L
+* FIFO lot accounting for accurate realised P&L
+* Portfolio aggregation with unrealised and realised P&L
 * Live price abstraction with caching
 * Rule-based risk assessment and alerting
 * Auto-generated API documentation (Swagger / OpenAPI)
