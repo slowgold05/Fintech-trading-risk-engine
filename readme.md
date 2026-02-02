@@ -45,7 +45,7 @@ fintechapp/
 ---
 
 ## Running the Application
-```bash
+```bash```
 python -m uvicorn app.main:app --reload
 Before starting, ensure that:
 
@@ -74,3 +74,6 @@ v1.4.0 – FIFO lot accounting and realised P&L
 v1.5.0 – Portfolio-level realised and unrealised P&L
 
 Detailed security and architecture information is available in the accompanying documentation files.
+## Additional Documentation
+- [Architecture Overview](Architecture.md)
+- [Security Considerations](Security.md)
