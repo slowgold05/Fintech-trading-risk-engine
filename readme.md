@@ -7,6 +7,8 @@ Every movement of money is explainable, every control is tested, and nothing cha
 This repository contains a FastAPI backend and a React/Vite frontend for a
 mock brokerage and its risk and control evidence.
 
+The [draft access-control policy](grc/policies/access_control.md) and [draft change-management policy](grc/policies/change_management.md) track requirements that still need owner approval.
+
 The [CI workflow](.github/workflows/ci.yml) runs backend and frontend checks plus
 Gitleaks, Bandit, pip-audit, Semgrep, and Trivy on each push. Their check results appear on pull requests.
 Main branch protection requires pull requests and all six jobs. Approving reviews remain optional until a second collaborator is available.
