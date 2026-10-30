@@ -6,6 +6,7 @@
 # Python cache files
 __pycache__/
 *.pyc
+.hypothesis/
 
 # Virtual environments
 .venv/

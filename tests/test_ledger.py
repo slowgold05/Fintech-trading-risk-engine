@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
+from hypothesis import given, settings, strategies as st
 from sqlalchemy import text
 
 from app.models.holding import Holding
@@ -80,3 +81,33 @@ def test_reconciliation_evidence_is_dated_and_hashed(monkeypatch):
         assert path.parent == root / "SM-LD-01"
         assert json.loads(payload)["control_id"] == "SM-LD-01"
         assert sha256(payload).hexdigest() == digest
+
+
+def test_trade_sequences_keep_cash_positions_and_ledger_in_sync(client, auth_headers, db_session):
+    headers = auth_headers()
+    user_id = db_session.query(User.id).one()[0]
+
+    @settings(max_examples=20, deadline=None)
+    @given(st.lists(st.tuples(st.sampled_from(("buy", "sell")), st.integers(1, 20)),
+                    min_size=1, max_size=6))
+    def check_sequence(steps):
+        assert client.post("/portfolio/reset", headers=headers).status_code == 200
+        db_session.expunge_all()
+        position = Decimal(0)
+        for side, tenths in steps:
+            quantity = Decimal(tenths) / 10
+            response = _trade(client, headers, side, float(quantity))
+            if side == "sell" and quantity > position:
+                assert response.status_code == 400
+            else:
+                assert response.status_code == 200, response.text
+                position += quantity if side == "buy" else -quantity
+
+            db_session.expunge_all()
+            user = db_session.get(User, user_id)
+            assert reconcile_account(db_session, user)["ok"]
+            holding = db_session.query(Holding).filter_by(user_id=user.id).one_or_none()
+            assert (holding.quantity if holding else Decimal(0)) == position
+            assert user.cash_balance == Decimal("100000.00") - position * 100
+
+    check_sequence()
