@@ -8,7 +8,7 @@ This repository contains a FastAPI backend and a React/Vite frontend for a
 mock brokerage and its risk and control evidence.
 
 The [CI workflow](.github/workflows/ci.yml) runs backend and frontend checks plus
-Gitleaks, Bandit, pip-audit, Semgrep, and Trivy on pushes and pull requests.
+Gitleaks, Bandit, pip-audit, Semgrep, and Trivy on each push. Their check results appear on pull requests.
 Main branch protection requires pull requests and all six jobs. Approving reviews remain optional until a second collaborator is available.
 
 ## Project Layout
