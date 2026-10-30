@@ -11,6 +11,8 @@ The [CI workflow](.github/workflows/ci.yml) runs backend and frontend checks plu
 Gitleaks, Bandit, pip-audit, Semgrep, and Trivy on each push. Their check results appear on pull requests.
 Main branch protection requires pull requests and all six jobs. Approving reviews remain optional until a second collaborator is available.
 
+For a local staged-secret check, install Gitleaks and run `git config --local core.hooksPath .githooks`. The pre-commit hook blocks commits when Gitleaks is missing or finds a leak. This Windows checkout also supports an ignored `.local-tools/gitleaks.exe` binary.
+
 ## Project Layout
 
 ```text
