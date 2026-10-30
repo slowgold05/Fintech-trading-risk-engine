@@ -9,7 +9,7 @@ mock brokerage and its risk and control evidence.
 
 The [CI workflow](.github/workflows/ci.yml) runs backend and frontend checks plus
 Gitleaks, Bandit, pip-audit, Semgrep, and Trivy on pushes and pull requests.
-Require all six jobs in branch protection after the first hosted run is green.
+Main branch protection requires pull requests and all six jobs. Approving reviews remain optional until a second collaborator is available.
 
 ## Project Layout
 
