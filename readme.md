@@ -35,11 +35,11 @@ Install dependencies from the repository root:
 python -m pip install -r requirements.txt
 ```
 
-Configure `.env` with your existing MySQL database:
+Configure `.env` with PostgreSQL (see [migration steps](docs/postgresql_migration.md) when moving an existing MySQL database):
 
 ```env
-DATABASE_URL=mysql+pymysql://fintech_app:YOUR_APP_PASSWORD@localhost:3306/fintechapp
-MIGRATION_DATABASE_URL=mysql+pymysql://migration_user:YOUR_MIGRATION_PASSWORD@localhost:3306/fintechapp
+DATABASE_URL=postgresql+psycopg://fintech_app:YOUR_APP_PASSWORD@localhost:5433/fintechapp
+MIGRATION_DATABASE_URL=postgresql+psycopg://fintech_migrate:YOUR_MIGRATION_PASSWORD@localhost:5433/fintechapp
 JWT_SECRET=replace_with_a_long_random_secret
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXP_MINUTES=30
@@ -94,20 +94,7 @@ The compliance page also lists every account for the current UTC quarter. Admins
 
 The same compliance view reads `grc/risk_register.yaml` and shows inherent and residual ratings for five initial risks. Residual rating drops one level only when every linked control has passing evidence from the last 36 hours. Failed, missing, stale, or no-sample evidence leaves the inherent rating in place; this provisional scoring method needs policy-owner review before operational use.
 
-The local MySQL grants for the new role tables are:
-
-```sql
-REVOKE INSERT, UPDATE, DELETE ON fintechapp.users FROM 'fintech_app'@'localhost';
-GRANT INSERT (email, password_hash, cash_balance), UPDATE (cash_balance) ON fintechapp.users TO 'fintech_app'@'localhost';
-GRANT SELECT ON fintechapp.role_changes TO 'fintech_app'@'localhost';
-GRANT SELECT, INSERT, UPDATE ON fintechapp.order_requests TO 'fintech_app'@'localhost';
-GRANT SELECT ON fintechapp.role_change_requests TO 'fintech_app'@'localhost';
-GRANT INSERT (target_user_id, old_role, old_change_id, new_role, reason, requested_by_user_id) ON fintechapp.role_change_requests TO 'fintech_app'@'localhost';
-GRANT UPDATE (status, approved_by_user_id, approved_at) ON fintechapp.role_change_requests TO 'fintech_app'@'localhost';
-GRANT SELECT, INSERT ON fintechapp.access_reviews TO 'fintech_app'@'localhost';
-```
-
-Preserve the existing `SELECT` grant on `users`. Apply equivalent least-privilege grants in deployment. The database role holding `MIGRATION_DATABASE_URL` can still bypass the application approval workflow or alter the trigger; protect it as an operator credential and monitor its direct changes.
+Run `python -m app.scripts.configure_postgres_role` with `MIGRATION_DATABASE_URL` and `POSTGRES_APP_PASSWORD` after migrations. It grants the app role the table and column permissions it needs and keeps ledger updates, role changes, and access-review edits out of that role. Re-run it after future schema migrations. Protect the migration login as an operator credential because it can alter the triggers and audit rows.
 
 ## Frontend
 

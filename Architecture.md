@@ -1,15 +1,15 @@
 # Sentinel Markets architecture
 
-This mock brokerage uses a React/Vite frontend, a FastAPI backend, and the existing MySQL database. PostgreSQL is planned but has not replaced MySQL. The [threat model](docs/THREAT_MODEL.md) shows the current trust boundaries.
+This mock brokerage uses a React/Vite frontend, a FastAPI backend, and a local PostgreSQL database migrated from MySQL. Hosted PostgreSQL cutover remains open. The [threat model](docs/THREAT_MODEL.md) shows the current trust boundaries.
 
 ```mermaid
 flowchart LR
     Browser[Trading desk and compliance console] --> API[FastAPI routes]
     API --> Services[Order matching, risk, ledger, market cache]
-    Services --> AppDB[(MySQL app login)]
+    Services --> AppDB[(PostgreSQL app login)]
     MarketJob[Market-data refresh command] --> Providers[External quote providers]
     MarketJob --> AppDB
-    Operator[Privileged role command and migrations] --> AdminDB[(MySQL migration login)]
+    Operator[Privileged role command and migrations] --> AdminDB[(PostgreSQL migration login)]
     Controls[Control runner] --> AppDB
     Controls --> AdminDB
     Controls --> Evidence[Local control evidence]
