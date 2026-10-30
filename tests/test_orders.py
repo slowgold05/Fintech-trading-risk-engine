@@ -55,6 +55,7 @@ def test_price_time_priority_partial_fill_and_ledger(client, auth_headers, db_se
 
 def test_reservations_cancel_and_reset(client, auth_headers, db_session, monkeypatch):
     monkeypatch.setattr(settings, "max_stock_concentration_pct", Decimal("100"))
+    monkeypatch.setattr(settings, "max_stock_position_notional", Decimal("100000"))
     _seed(db_session)
     headers = auth_headers()
     buy = _order(client, headers, "buy", 1000, 90)
@@ -149,6 +150,7 @@ def test_oversized_notional_is_rejected_without_decimal_error(client, auth_heade
 
 def test_split_fill_rounding_cannot_spend_other_order_reservation(client, auth_headers, db_session, monkeypatch):
     monkeypatch.setattr(settings, "max_stock_concentration_pct", Decimal("100"))
+    monkeypatch.setattr(settings, "max_stock_position_notional", Decimal("100000"))
     _seed(db_session)
     db_session.add(MarketSymbol(symbol="MSFT", company_name="Microsoft", exchange="NASDAQ", is_active=True))
     db_session.flush()
@@ -212,6 +214,23 @@ def test_concentration_counts_open_buys_and_existing_holdings(client, auth_heade
     assert _order(client, headers, "buy", 500, 120).status_code == 400
     assert _trade(client, headers, {"symbol": "AAPL", "asset_type": "stock", "side": "buy", "quantity": 500}).status_code == 200
     assert _order(client, headers, "buy", 1, 100).status_code == 400
+
+
+def test_position_size_counts_open_orders_and_holdings(client, auth_headers, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "max_stock_concentration_pct", Decimal("100"))
+    _seed(db_session)
+    order_user = auth_headers("position-order@example.com")
+    first = _order(client, order_user, "buy", 500, 100)
+    assert first.status_code == 200, first.text
+    blocked = _order(client, order_user, "buy", 1, 100)
+    assert blocked.status_code == 400
+    assert "SM-PT-05" in blocked.json()["detail"]
+
+    trade_user = auth_headers("position-trade@example.com")
+    assert _trade(client, trade_user, {"symbol": "AAPL", "asset_type": "stock", "side": "buy", "quantity": 500}).status_code == 200
+    blocked = _trade(client, trade_user, {"symbol": "AAPL", "asset_type": "stock", "side": "buy", "quantity": 1})
+    assert blocked.status_code == 400
+    assert "SM-PT-05" in blocked.json()["detail"]
 
 
 def test_order_idempotency_replays_original_result_and_rejects_key_reuse(client, auth_headers, db_session):

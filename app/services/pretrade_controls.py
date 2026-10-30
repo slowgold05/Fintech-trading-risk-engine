@@ -72,3 +72,5 @@ def require_stock_concentration(db: Session, user: User, asset: Asset, buy_qty: 
     exposure = held_qty * reference_price + pending_exposure + buy_qty * max(order_price, reference_price)
     if equity <= 0 or exposure * 100 > equity * settings.max_stock_concentration_pct:
         raise HTTPException(status_code=400, detail="Stock concentration limit exceeded (SM-PT-03)")
+    if exposure > settings.max_stock_position_notional:
+        raise HTTPException(status_code=400, detail="Stock position-size limit exceeded (SM-PT-05)")

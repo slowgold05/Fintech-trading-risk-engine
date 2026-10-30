@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     trading_halted: bool = False
     max_stock_concentration_pct: Decimal = Field(default=Decimal("50"), gt=0, le=100)
+    max_stock_position_notional: Decimal = Field(default=Decimal("50000"), gt=0)
 
     # External APIs
     alpha_vantage_api_key: str | None = None
