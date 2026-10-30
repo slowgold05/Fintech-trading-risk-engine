@@ -88,3 +88,15 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: fintechapp-api:ci
+          format: cyclonedx
+          output: api-sbom.cdx.json
+          exit-code: '0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-sbom
+          path: api-sbom.cdx.json
+          retention-days: 30
