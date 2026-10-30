@@ -5,9 +5,12 @@ pymysql
 python-dotenv
 pydantic
 pydantic-settings
+email-validator
 passlib[bcrypt]
-python-jose[cryptography]
+PyJWT>=2.14,<3
 requests
 alembic
 bcrypt==3.2.2
 python-multipart
+slowapi
+PyYAML

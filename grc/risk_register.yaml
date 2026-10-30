@@ -1,0 +1,27 @@
+method: An effective linked control reduces the inherent rating by one level only when every linked test passed within 36 hours; otherwise residual equals inherent. No-sample and missing evidence are unverified.
+risks:
+  - id: R-01
+    title: Privileged access without separation of duties
+    owner: Security Operations
+    inherent_rating: high
+    controls: [SM-AC-01, SM-AC-02]
+  - id: R-02
+    title: Paper-account balances or positions are misstated
+    owner: Operations
+    inherent_rating: high
+    controls: [SM-LD-01]
+  - id: R-03
+    title: Stale quotes are used as current reference prices
+    owner: Market Operations
+    inherent_rating: moderate
+    controls: [SM-MD-01]
+  - id: R-04
+    title: Erroneous paper orders pass the price band
+    owner: Trading Operations
+    inherent_rating: high
+    controls: [SM-PT-02]
+  - id: R-05
+    title: Duplicate paper trades after a retried request
+    owner: Trading Operations
+    inherent_rating: high
+    controls: [SM-PT-04]
