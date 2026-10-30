@@ -10,7 +10,7 @@ An untested change could reach `main`. GitHub branch protection now requires a p
 
 ## Test and evidence
 
-The rule was read back from GitHub after configuration and listed all six required checks, strict status checking, administrator enforcement, and a pull-request requirement. The first hosted run passed all six jobs: https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/41096456291. Run the control command after the current commit's push CI completes; its JSON result and SHA-256 digest appear under ignored `grc/evidence/SM-CM-01/`.
+The rule was read back from GitHub after configuration and listed all six required checks, strict status checking, administrator enforcement, and a pull-request requirement. The [2026-10-30 push run](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/41101445894) passed all six jobs for commit `1a228f7`. The control command matched that commit to the run and passed: `grc/evidence/SM-CM-01/871f8fc7fe2c47d689d005ed6d222fc0.json`, SHA-256 `4e35af077141ebea91444a79af8c8043c6eab94d67929da32b48b0a7c195c4aa`.
 
 ## Limits and follow-up
 

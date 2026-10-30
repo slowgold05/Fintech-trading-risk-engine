@@ -10,7 +10,7 @@ A committed credential could be exposed. The CI `secrets` job uses Gitleaks with
 
 ## Test and evidence
 
-The first hosted run passed the secrets job: https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/41096456291. A local redacted Gitleaks history scan and staged scans also found no leaks. Run the control command after the current commit's push CI completes; its JSON result and SHA-256 digest appear under ignored `grc/evidence/SM-SM-01/`.
+The [2026-10-30 push run](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/41101445894) passed the secrets job for commit `1a228f7`. The control command matched that commit to the run and passed: `grc/evidence/SM-SM-01/52c2e449c40648099980d809701facec.json`, SHA-256 `c516683542ca13965daa9721f9fd10431871d6b50da9ca69921b55793c85711e`. A local redacted Gitleaks history scan and staged scans also found no leaks.
 
 ## Limits and follow-up
 

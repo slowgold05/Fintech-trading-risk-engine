@@ -35,6 +35,8 @@ Install dependencies from the repository root:
 python -m pip install -r requirements.txt
 ```
 
+For an isolated non-root API and fresh PostgreSQL database, see [Docker Compose setup](docs/container_setup.md).
+
 Configure `.env` with PostgreSQL (see [migration steps](docs/postgresql_migration.md) when moving an existing MySQL database):
 
 ```env

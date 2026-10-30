@@ -16,4 +16,4 @@ Trade accounting uses `Decimal` and balanced, hash-chained ledger postings. The 
 
 ## Verification limits
 
-CI defines Gitleaks, Bandit, pip-audit, Semgrep, and Trivy gates alongside tests. The first hosted run passed all six jobs, including Trivy; the current branch must pass again after the PostgreSQL changes. The privileged migration login can change triggers and grants, and local evidence files remain writable by the machine operator. These limits are tracked in the [action items](docs/GRC_ACTION_ITEMS.md).
+CI defines Gitleaks, Bandit, pip-audit, Semgrep, and Trivy gates alongside tests. The current branch's hosted run passed all six jobs, including Trivy, and the change-management and secret-scanning control checks recorded local evidence. The privileged migration login can change triggers and grants, and local evidence files remain writable by the machine operator. These limits are tracked in the [action items](docs/GRC_ACTION_ITEMS.md).
