@@ -2,7 +2,7 @@
 
 ## Owner actions
 
-- The owner confirmed the previously exposed Alpha Vantage key was revoked. Its replacement is configured in ignored local `.env`; retain the revocation confirmation with the incident record.
+- The owner confirmed the previously exposed Alpha Vantage key was revoked. Its replacement is configured in ignored local `.env`. The [incident postmortem](../grc/incidents/alpha-vantage-key-exposure.md) records the known facts; provider-side revocation and usage evidence still need to be attached.
 - The `feat/grc-roadmap` branch now contains the remote documentation history and the local roadmap work. Review [draft PR #1](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/1) before merging; local `main` remains untouched.
 
 ## Development dependencies
