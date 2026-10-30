@@ -49,7 +49,7 @@ risks:
     title: Paper order breaches concentration limit
     owner: Trading Operations
     inherent_rating: high
-    controls: []
+    controls: [SM-PT-03, SM-PT-05]
   - id: R-11
     title: Paper order spends more than available buying power
     owner: Trading Operations

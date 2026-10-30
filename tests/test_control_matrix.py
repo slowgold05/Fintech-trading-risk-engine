@@ -13,11 +13,11 @@ def test_control_export_uses_yaml_ids_and_rejects_incomplete_rows():
         root = Path(folder)
         assert root.resolve().parent == Path.cwd().resolve()
         output = root / "matrix.csv"
-        assert export_controls(Path("grc/controls"), output) == 8
+        assert export_controls(Path("grc/controls"), output) == 10
         with output.open(newline="", encoding="utf-8") as csv_file:
             rows = list(csv.DictReader(csv_file))
         assert [row["id"] for row in rows] == ["SM-AC-01", "SM-AC-02", "SM-CM-01", "SM-LD-01",
-                                                 "SM-MD-01", "SM-PT-02", "SM-PT-04", "SM-SM-01"]
+                                                 "SM-MD-01", "SM-PT-02", "SM-PT-03", "SM-PT-04", "SM-PT-05", "SM-SM-01"]
         assert all(row["test"] and row["evidence"] for row in rows)
 
         (root / "SM-BAD-01.yaml").write_text("id: SM-BAD-01\ntitle: Incomplete\n", encoding="utf-8")
