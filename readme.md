@@ -96,7 +96,7 @@ The command requires `MIGRATION_DATABASE_URL`. A database trigger records every 
 
 The compliance page also lists every account for the current UTC quarter. Admins and compliance officers can record a retain or remove decision with a reason, except on their own account. Auditors can inspect reviews but cannot submit them. A changed role becomes unreviewed again. Remove decisions flag remediation; they do not change the role automatically.
 
-The same compliance view reads `grc/risk_register.yaml` and shows inherent and residual ratings for five initial risks. Residual rating drops one level only when every linked control has passing evidence from the last 36 hours. Failed, missing, stale, or no-sample evidence leaves the inherent rating in place; this provisional scoring method needs policy-owner review before operational use.
+The same compliance view reads `grc/risk_register.yaml` and shows inherent and residual ratings for 15 risks. Eight currently have no mapped operating control and stay unverified. Residual rating drops one level only when every linked control has passing evidence from the last 36 hours. Failed, missing, stale, or no-sample evidence leaves the inherent rating in place; this provisional scoring method needs policy-owner review before operational use.
 
 Run `python -m app.scripts.configure_postgres_role` with `MIGRATION_DATABASE_URL` and `POSTGRES_APP_PASSWORD` after migrations. It grants the app role the table and column permissions it needs and keeps ledger updates, role changes, and access-review edits out of that role. Re-run it after future schema migrations. Protect the migration login as an operator credential because it can alter the triggers and audit rows.
 

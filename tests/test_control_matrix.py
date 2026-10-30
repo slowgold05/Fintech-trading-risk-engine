@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
+import yaml
 
 from app.scripts.export_controls import export_controls
 
@@ -22,3 +23,12 @@ def test_control_export_uses_yaml_ids_and_rejects_incomplete_rows():
         (root / "SM-BAD-01.yaml").write_text("id: SM-BAD-01\ntitle: Incomplete\n", encoding="utf-8")
         with pytest.raises(ValueError, match="Incomplete control"):
             export_controls(root, output)
+
+
+def test_risk_register_has_unique_ids_and_known_control_links():
+    risks = yaml.safe_load(Path("grc/risk_register.yaml").read_text(encoding="utf-8"))["risks"]
+    ids = [risk["id"] for risk in risks]
+    controls = {path.stem for path in Path("grc/controls").glob("*.yaml")}
+    assert len(risks) == len(set(ids)) == 15
+    assert all(risk["inherent_rating"] in {"low", "moderate", "high"}
+               and set(risk["controls"]) <= controls for risk in risks)

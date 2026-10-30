@@ -25,3 +25,53 @@ risks:
     owner: Trading Operations
     inherent_rating: high
     controls: [SM-PT-04]
+  - id: R-06
+    title: New provider credential committed without detection
+    owner: Security Operations
+    inherent_rating: high
+    controls: [SM-SM-01]
+  - id: R-07
+    title: Untested change reaches the protected branch
+    owner: Engineering
+    inherent_rating: high
+    controls: [SM-CM-01]
+  - id: R-08
+    title: Privileged migration login alters grants or audit triggers
+    owner: Security Operations
+    inherent_rating: high
+    controls: []
+  - id: R-09
+    title: One user reads another user's account data
+    owner: Engineering
+    inherent_rating: high
+    controls: []
+  - id: R-10
+    title: Paper order breaches concentration limit
+    owner: Trading Operations
+    inherent_rating: high
+    controls: []
+  - id: R-11
+    title: Paper order spends more than available buying power
+    owner: Trading Operations
+    inherent_rating: high
+    controls: []
+  - id: R-12
+    title: Local control evidence is changed or deleted
+    owner: Compliance
+    inherent_rating: high
+    controls: []
+  - id: R-13
+    title: Credential stuffing bypasses login limits
+    owner: Security Operations
+    inherent_rating: high
+    controls: []
+  - id: R-14
+    title: Market-data provider outage prevents timely quotes
+    owner: Market Operations
+    inherent_rating: moderate
+    controls: []
+  - id: R-15
+    title: Quarterly access review is missed or incomplete
+    owner: Compliance
+    inherent_rating: high
+    controls: []
