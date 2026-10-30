@@ -15,8 +15,10 @@ def control_status(control_id: str, result: dict) -> str:
         return "fail" if not result["checked"] or result["missing_count"] or result["stale_count"] else "pass"
     if control_id == "SM-PT-02":
         return "fail" if result["violation_count"] else "pass" if result["checked"] else "no_sample"
+    if control_id == "SM-PT-01":
+        return "fail" if result["violation_count"] else "pass" if result["checked"] else "no_sample"
     if control_id == "SM-AC-01":
-        return "fail" if result["violation_count"] or result["checked"] != 4 else "pass"
+        return "fail" if result["violation_count"] or result["checked"] != 5 else "pass"
     if control_id == "SM-AC-02":
         return "fail" if result["violation_count"] else "pass" if result["checked"] else "no_sample"
     if control_id == "SM-PT-04":

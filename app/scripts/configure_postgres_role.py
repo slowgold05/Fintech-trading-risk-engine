@@ -37,6 +37,8 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("GRANT UPDATE (status, approved_by_user_id, approved_at) "
                            "ON role_change_requests TO fintech_app")
             cursor.execute("GRANT INSERT ON access_reviews TO fintech_app")
+            cursor.execute("GRANT UPDATE (halted, actor_user_id, reason, changed_at) ON trading_halt_state TO fintech_app")
+            cursor.execute("GRANT INSERT ON trading_halt_events TO fintech_app")
 
 
 def main() -> None:

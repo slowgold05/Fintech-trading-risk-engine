@@ -16,7 +16,7 @@ from app.models.market_quote_cache import MarketQuoteCache
 
 
 def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order, list[int]]:
-    require_trading_open()
+    require_trading_open(db)
     symbol = db.execute(select(MarketSymbol).where(MarketSymbol.symbol == payload.symbol, MarketSymbol.is_active.is_(True)).with_for_update()).scalar_one_or_none()
     if symbol is None:
         raise HTTPException(status_code=400, detail="Unknown or inactive stock symbol")

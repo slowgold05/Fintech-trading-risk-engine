@@ -25,6 +25,24 @@ export interface ControlStatusResponse {
   sha256: string | null;
 }
 
+export interface TradingHaltResponse {
+  halted: boolean;
+  operator_halted: boolean;
+  emergency_override: boolean;
+  actor_user_id: number | null;
+  reason: string;
+  changed_at: string;
+}
+
+export interface TradingHaltEventResponse {
+  id: number;
+  previous_halted: boolean;
+  halted: boolean;
+  actor_user_id: number | null;
+  reason: string;
+  changed_at: string;
+}
+
 export interface RoleChangeResponse {
   id: number;
   user_id: number;

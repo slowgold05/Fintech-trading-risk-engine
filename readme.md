@@ -98,7 +98,7 @@ The command requires `MIGRATION_DATABASE_URL`. A database trigger records every 
 
 The compliance page also lists every account for the current UTC quarter. Admins and compliance officers can record a retain or remove decision with a reason, except on their own account. Auditors can inspect reviews but cannot submit them. A changed role becomes unreviewed again. Remove decisions flag remediation; they do not change the role automatically.
 
-The same compliance view reads `grc/risk_register.yaml` and shows inherent and residual ratings for 15 risks. Eight currently have no mapped operating control and stay unverified. Residual rating drops one level only when every linked control has passing evidence from the last 36 hours. Failed, missing, stale, or no-sample evidence leaves the inherent rating in place; this provisional scoring method needs policy-owner review before operational use.
+The same compliance view reads `grc/risk_register.yaml` and shows inherent and residual ratings for 16 risks. Seven currently have no mapped operating control and stay unverified. Residual rating drops one level only when every linked control has passing evidence from the last 36 hours. Failed, missing, stale, or no-sample evidence leaves the inherent rating in place; this provisional scoring method needs policy-owner review before operational use.
 
 Run `python -m app.scripts.configure_postgres_role` with `MIGRATION_DATABASE_URL` and `POSTGRES_APP_PASSWORD` after migrations. It grants the app role the table and column permissions it needs and keeps ledger updates, role changes, and access-review edits out of that role. Re-run it after future schema migrations. Protect the migration login as an operator credential because it can alter the triggers and audit rows.
 
@@ -156,11 +156,11 @@ Example market order:
 {"symbol":"AAPL","side":"sell","order_type":"market","quantity":1}
 ```
 
-Run all six app-role, role-audit, ledger, market-data, price-band, and idempotency controls with `python -m app.scripts.run_controls`. This requires both `DATABASE_URL` and `MIGRATION_DATABASE_URL`; the role-audit probe uses the privileged login and rolls back its test update. Each control writes a timestamped JSON evidence file in `grc/evidence/`; the command exits nonzero when a control fails. Price-band and idempotency controls report `no_sample` when they have no live records to check.
+Run all seven app-role, role-audit, ledger, market-data, trading-halt, price-band, and idempotency controls with `python -m app.scripts.run_controls`. This requires both `DATABASE_URL` and `MIGRATION_DATABASE_URL`; the role-audit probe uses the privileged login and rolls back its test update. Each control writes a timestamped JSON evidence file in `grc/evidence/`; the command exits nonzero when a control fails. Trading-halt, price-band, and idempotency controls report `no_sample` when they have no live records to check.
 
 After a branch push CI run completes, run `python -m app.scripts.check_repository_controls --repo slowgold05/Fintech-trading-risk-engine --branch <branch>` from that branch. It verifies main protection and the latest run for the checked-out commit, then records SM-CM-01 and SM-SM-01 evidence. It requires an authenticated GitHub CLI.
 
-Set `TRADING_HALTED=true` and restart the API to stop new order placement and direct trades. Existing orders can still be canceled. This is a process-level kill switch; an audited operator control is still planned.
+An admin can halt or resume new order placement and direct trades from the compliance page with a reason; PostgreSQL records each transition in append-only audit history. Existing orders can still be canceled. `TRADING_HALTED=true` is an emergency configuration override that also stops new entries and requires an API restart to clear.
 
 Stock orders require a cached reference quote no older than seven calendar days. Limit prices and execution prices must stay within 20% of that quote; otherwise order entry or matching fails with control ID `SM-PT-02`. The control runner checks open orders against the latest quote and writes evidence for this check.
 

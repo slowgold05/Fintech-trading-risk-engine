@@ -8,6 +8,7 @@ PROBES = (
     ("role_changes.reason", "UPDATE role_changes SET reason=reason WHERE 1=0"),
     ("role_change_requests.target_user_id", "UPDATE role_change_requests SET target_user_id=target_user_id WHERE 1=0"),
     ("access_reviews.reason", "UPDATE access_reviews SET reason=reason WHERE 1=0"),
+    ("trading_halt_events.reason", "UPDATE trading_halt_events SET reason=reason WHERE 1=0"),
 )
 
 

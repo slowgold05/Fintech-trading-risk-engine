@@ -1,5 +1,20 @@
 import { apiClient } from "./client";
-import type { AccessReviewAccountResponse, ControlStatusResponse, RegisteredRiskResponse, RoleChangeResponse, RoleRequestResponse } from "../types/schemas";
+import type { AccessReviewAccountResponse, ControlStatusResponse, RegisteredRiskResponse, RoleChangeResponse, RoleRequestResponse, TradingHaltResponse, TradingHaltEventResponse } from "../types/schemas";
+
+export async function fetchTradingHalt(): Promise<TradingHaltResponse> {
+  const response = await apiClient.get<TradingHaltResponse>("/compliance/trading-halt");
+  return response.data;
+}
+
+export async function setTradingHalt(payload: { halted: boolean; reason: string }): Promise<TradingHaltResponse> {
+  const response = await apiClient.put<TradingHaltResponse>("/compliance/trading-halt", payload);
+  return response.data;
+}
+
+export async function fetchTradingHaltEvents(): Promise<{ events: TradingHaltEventResponse[] }> {
+  const response = await apiClient.get<{ events: TradingHaltEventResponse[] }>("/compliance/trading-halt/events");
+  return response.data;
+}
 
 export async function fetchControlStatuses(): Promise<{ controls: ControlStatusResponse[] }> {
   const response = await apiClient.get<{ controls: ControlStatusResponse[] }>("/compliance/controls");

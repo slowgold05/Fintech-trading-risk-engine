@@ -33,6 +33,9 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Session:
     Base.metadata.create_all(bind=engine)
 
     session = TestingSessionLocal()
+    from app.models.trading_halt import TradingHaltState
+    session.add(TradingHaltState(id=1, halted=False, reason="Initial trading state"))
+    session.commit()
 
     def override_get_db():
         try:

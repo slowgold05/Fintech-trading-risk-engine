@@ -11,13 +11,29 @@ from app.models.asset import Asset
 from app.models.order import Order
 from app.models.holding import Holding
 from app.models.user import User
+from app.models.trading_halt import TradingHaltState, TradingHaltEvent
 from app.services.market_cache_service import _freshness
 
 
-def require_trading_open() -> None:
-    # shortcut: process config requires an API restart; add an audited operator switch for real-time halts.
-    if settings.trading_halted:
+def require_trading_open(db: Session) -> None:
+    state = db.execute(select(TradingHaltState).where(TradingHaltState.id == 1)
+                       .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+    if settings.trading_halted or state is None or state.halted:
         raise HTTPException(status_code=503, detail="Trading is halted (SM-PT-01)")
+
+
+def check_trading_halt_audit(db: Session) -> dict:
+    state = db.get(TradingHaltState, 1)
+    events = db.execute(select(TradingHaltEvent).order_by(TradingHaltEvent.id)).scalars().all()
+    prior = False
+    violations = []
+    for event in events:
+        if event.previous_halted != prior or event.halted == prior or event.actor_user_id is None or not event.reason.strip():
+            violations.append(event.id)
+        prior = event.halted
+    if state is None or state.halted != prior:
+        violations.append("state")
+    return {"checked": len(events), "violation_count": len(violations), "violations": violations[:20]}
 
 
 def _price_band_problem(quote: MarketQuoteCache | None, price: Decimal | None) -> str | None:

@@ -17,3 +17,4 @@ from app.models.role_change import RoleChange
 from app.models.order_request import OrderRequest
 from app.models.role_change_request import RoleChangeRequest
 from app.models.access_review import AccessReview
+from app.models.trading_halt import TradingHaltState, TradingHaltEvent

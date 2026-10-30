@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 
-import { approveRoleChange, fetchAccessReview, fetchControlStatuses, fetchRegisteredRisks, fetchRoleChanges, fetchRoleRequests, requestRoleChange, submitAccessReview } from "../api/compliance";
+import { approveRoleChange, fetchAccessReview, fetchControlStatuses, fetchRegisteredRisks, fetchRoleChanges, fetchRoleRequests, fetchTradingHalt, fetchTradingHaltEvents, requestRoleChange, setTradingHalt, submitAccessReview } from "../api/compliance";
 import { fetchMe } from "../api/auth";
 import { PageHeader } from "../components/PageHeader";
 import { DashboardCard, SkeletonBlock } from "../features/dashboard/components";
@@ -22,12 +22,22 @@ export function Compliance() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [reviewReasons, setReviewReasons] = useState<Record<number, string>>({});
+  const [haltReason, setHaltReason] = useState("");
   const me = useQuery({ queryKey: ["me"], queryFn: fetchMe });
   const query = useQuery({ queryKey: ["control-statuses"], queryFn: fetchControlStatuses });
   const roleChanges = useQuery({ queryKey: ["role-changes"], queryFn: fetchRoleChanges });
   const roleRequests = useQuery({ queryKey: ["role-requests"], queryFn: fetchRoleRequests });
   const accessReview = useQuery({ queryKey: ["access-review"], queryFn: fetchAccessReview });
   const registeredRisks = useQuery({ queryKey: ["registered-risks"], queryFn: fetchRegisteredRisks });
+  const tradingHalt = useQuery({ queryKey: ["trading-halt"], queryFn: fetchTradingHalt });
+  const haltEvents = useQuery({ queryKey: ["trading-halt-events"], queryFn: fetchTradingHaltEvents });
+  const haltMutation = useMutation({
+    mutationFn: setTradingHalt,
+    onSuccess: () => { setHaltReason(""); showToast("success", "Trading state updated.");
+      void queryClient.invalidateQueries({ queryKey: ["trading-halt"] });
+      void queryClient.invalidateQueries({ queryKey: ["trading-halt-events"] }); },
+    onError: () => showToast("error", "Trading state could not be updated."),
+  });
   const requestMutation = useMutation({
     mutationFn: requestRoleChange,
     onSuccess: () => { showToast("success", "Role change requested."); void queryClient.invalidateQueries({ queryKey: ["role-requests"] }); },
@@ -69,6 +79,36 @@ export function Compliance() {
             <div className="metric-tile"><p className="text-xs text-slate-400">Passing</p><p className="mt-2 font-mono text-3xl text-emerald-300">{passed}</p></div>
             <div className="metric-tile"><p className="text-xs text-slate-400">Failed evidence</p><p className="mt-2 font-mono text-3xl text-rose-300">{failed}</p></div>
           </div>
+          <DashboardCard title="Trading halt">
+            {tradingHalt.isLoading ? <SkeletonBlock className="h-20" /> : tradingHalt.isError ? (
+              <p className="text-sm text-rose-300">Trading state could not be loaded.</p>
+            ) : tradingHalt.data && (
+              <div className="space-y-3">
+                <p className={tradingHalt.data.halted ? "text-rose-300" : "text-emerald-300"}>
+                  {tradingHalt.data.halted ? "New trading is halted" : "New trading is open"}
+                  {tradingHalt.data.emergency_override ? " (emergency configuration override)" : ""}
+                </p>
+                <p className="text-xs text-slate-400">Last change: {tradingHalt.data.reason} · {formatDateTime(tradingHalt.data.changed_at)}</p>
+                {me.data?.role === "admin" && (
+                  <form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault();
+                    haltMutation.mutate({ halted: !tradingHalt.data.operator_halted, reason: haltReason.trim() }); }}>
+                    <input aria-label="Trading halt reason" required minLength={3} maxLength={255} value={haltReason}
+                      onChange={(event) => setHaltReason(event.target.value)} placeholder="Reason for change"
+                      className="min-w-52 flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+                    <button type="submit" disabled={haltMutation.isPending || haltReason.trim().length < 3}
+                      className="rounded border border-amber-400/60 px-3 py-2 text-sm font-semibold text-amber-200 disabled:opacity-50">
+                      {tradingHalt.data.operator_halted ? "Resume trading" : "Halt trading"}
+                    </button>
+                  </form>
+                )}
+                {haltEvents.data?.events.length ? <div className="space-y-1 text-xs text-slate-400">
+                  {haltEvents.data.events.slice(0, 5).map((event) => (
+                    <p key={event.id}>{formatDateTime(event.changed_at)} · {event.halted ? "Halted" : "Resumed"} · {event.reason}</p>
+                  ))}
+                </div> : null}
+              </div>
+            )}
+          </DashboardCard>
           <DashboardCard title="Control tests">
             {query.isLoading ? <SkeletonBlock className="h-28" /> : controls.length === 0 ? (
               <p className="text-sm text-slate-400">No control definitions found.</p>

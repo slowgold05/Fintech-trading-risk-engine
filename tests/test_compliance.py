@@ -116,7 +116,7 @@ def test_risk_register_uses_recent_pass_and_conservatively_handles_missing_evide
 
 
 def test_access_control_probe_requires_both_database_denials(db_session):
-    assert check_app_role_grants(db_session)["violations"] == ["users.role", "role_changes.reason", "role_change_requests.target_user_id", "access_reviews.reason"]
+    assert check_app_role_grants(db_session)["violations"] == ["users.role", "role_changes.reason", "role_change_requests.target_user_id", "access_reviews.reason", "trading_halt_events.reason"]
 
     class DeniedDb:
         rollbacks = 0
@@ -128,8 +128,8 @@ def test_access_control_probe_requires_both_database_denials(db_session):
             self.rollbacks += 1
 
     denied = DeniedDb()
-    assert check_app_role_grants(denied) == {"checked": 4, "violation_count": 0, "violations": []}
-    assert denied.rollbacks == 4
+    assert check_app_role_grants(denied) == {"checked": 5, "violation_count": 0, "violations": []}
+    assert denied.rollbacks == 5
 
     class MySqlError(Exception):
         sqlstate = "42000"

@@ -15,6 +15,9 @@ vi.mock("../api/compliance", () => ({
   fetchRegisteredRisks: () => Promise.resolve({ method: "test", risks: [] }),
   fetchRoleChanges: () => Promise.resolve({ changes: [] }),
   fetchRoleRequests: () => Promise.resolve({ requests: [] }),
+  fetchTradingHalt: () => Promise.resolve({ halted: false, operator_halted: false, emergency_override: false, actor_user_id: null, reason: null, changed_at: null }),
+  fetchTradingHaltEvents: () => Promise.resolve({ events: [] }),
+  setTradingHalt: vi.fn(),
   fetchAccessReview: () => Promise.resolve({ period: "2026-Q4", accounts: [
     { user_id: 2, email: "trader@example.com", role: "trader", status: "unreviewed" },
   ] }),

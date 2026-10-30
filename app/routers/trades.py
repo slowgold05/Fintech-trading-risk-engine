@@ -67,7 +67,7 @@ def create_trade(
 
 
 def _execute_trade(db: Session, current_user: User, payload: TradeCreate) -> dict:
-    require_trading_open()
+    require_trading_open(db)
     user_id = current_user.id
 
     symbol = payload.symbol

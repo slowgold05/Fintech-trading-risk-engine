@@ -5,6 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { Compliance } from "./Compliance";
 
 vi.mock("../api/compliance", () => ({
+  fetchTradingHalt: () => Promise.resolve({ halted: false, operator_halted: false, emergency_override: false,
+    actor_user_id: null, reason: "Initial trading state", changed_at: "2026-10-30T00:00:00Z" }),
+  fetchTradingHaltEvents: () => Promise.resolve({ events: [] }),
+  setTradingHalt: vi.fn(),
   fetchControlStatuses: () => Promise.resolve({ controls: [
     { id: "SM-PT-02", title: "Price band", owner: "Operations", frequency: "daily",
       status: "no_sample", run_at: "2026-10-28T20:00:00Z", checked: 0, sha256: "hash" },

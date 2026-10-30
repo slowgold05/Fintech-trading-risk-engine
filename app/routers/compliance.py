@@ -11,11 +11,13 @@ from sqlalchemy.orm import Session
 import yaml
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.security import get_current_compliance_user
 from app.models.role_change import RoleChange
 from app.models.role_change_request import RoleChangeRequest
 from app.models.access_review import AccessReview
 from app.models.user import User
+from app.models.trading_halt import TradingHaltState, TradingHaltEvent
 from app.services.control_evidence import EVIDENCE_DIR, control_status
 
 
@@ -34,6 +36,50 @@ class AccessReviewCreate(BaseModel):
     user_id: int = Field(gt=0)
     decision: Literal["retain", "remove"]
     reason: str = Field(min_length=3, max_length=255)
+
+
+class TradingHaltCreate(BaseModel):
+    halted: bool
+    reason: str = Field(min_length=3, max_length=255)
+
+
+@router.get("/trading-halt")
+def get_trading_halt(db: Session = Depends(get_db)):
+    state = db.get(TradingHaltState, 1)
+    if state is None:
+        raise HTTPException(status_code=503, detail="Trading halt state unavailable")
+    return {"halted": state.halted or settings.trading_halted, "operator_halted": state.halted,
+            "emergency_override": settings.trading_halted, "actor_user_id": state.actor_user_id,
+            "reason": state.reason, "changed_at": state.changed_at}
+
+
+@router.put("/trading-halt")
+def set_trading_halt(payload: TradingHaltCreate, db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_compliance_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required to change trading halt")
+    if not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="Trading halt reason is required")
+    state = db.execute(select(TradingHaltState).where(TradingHaltState.id == 1)
+                       .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+    if state is None:
+        raise HTTPException(status_code=503, detail="Trading halt state unavailable")
+    if state.halted == payload.halted:
+        raise HTTPException(status_code=409, detail="Trading halt is already in that state")
+    state.halted = payload.halted
+    state.actor_user_id = current_user.id
+    state.reason = payload.reason.strip()
+    state.changed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    return get_trading_halt(db)
+
+
+@router.get("/trading-halt/events")
+def list_trading_halt_events(limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)):
+    rows = db.execute(select(TradingHaltEvent).order_by(TradingHaltEvent.id.desc()).limit(limit)).scalars()
+    return {"events": [{"id": row.id, "previous_halted": row.previous_halted, "halted": row.halted,
+                        "actor_user_id": row.actor_user_id, "reason": row.reason, "changed_at": row.changed_at}
+                       for row in rows]}
 
 
 def current_review_period() -> str:

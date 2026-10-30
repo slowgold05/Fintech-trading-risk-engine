@@ -9,7 +9,9 @@ from app.models.trade import Trade
 from app.models.user import User
 from app.services.ledger_service import reconcile_account
 from app.core.config import settings
-from app.services.pretrade_controls import check_open_order_price_bands
+from app.services.pretrade_controls import check_open_order_price_bands, check_trading_halt_audit
+from app.models.trading_halt import TradingHaltState, TradingHaltEvent
+from app.scripts.set_user_role import set_role
 
 
 def _order(client, headers, side, quantity, price):
@@ -180,6 +182,50 @@ def test_kill_switch_blocks_new_trading_but_allows_cancellation(client, auth_hea
     assert _trade(client, headers, {"symbol": "AAPL", "asset_type": "stock", "side": "buy", "quantity": 1}).status_code == 503
     assert client.post(f"/orders/{order.json()['id']}/cancel", headers=headers).status_code == 200
     assert db_session.query(Order).count() == 1
+
+
+def test_admin_halt_blocks_new_trades_and_can_resume(client, auth_headers, db_session):
+    _seed(db_session)
+    trader = auth_headers("halt-trader@example.com")
+    admin = auth_headers("halt-admin@example.com")
+    officer = auth_headers("halt-officer@example.com")
+    set_role(db_session, "halt-admin@example.com", "admin", "bootstrap", "First admin")
+    set_role(db_session, "halt-officer@example.com", "compliance_officer", "bootstrap", "First officer")
+    db_session.commit()
+
+    first = _order(client, trader, "buy", 1, 90)
+    assert first.status_code == 200, first.text
+    assert client.get("/compliance/trading-halt", headers=trader).status_code == 403
+    assert client.put("/compliance/trading-halt", headers=officer,
+                      json={"halted": True, "reason": "Market disorder"}).status_code == 403
+    assert client.put("/compliance/trading-halt", headers=admin,
+                      json={"halted": True, "reason": "   "}).status_code == 422
+    halted = client.put("/compliance/trading-halt", headers=admin,
+                        json={"halted": True, "reason": "Market disorder"})
+    assert halted.status_code == 200, halted.text
+    assert halted.json()["halted"] is True
+    assert halted.json()["reason"] == "Market disorder"
+    assert client.put("/compliance/trading-halt", headers=admin,
+                      json={"halted": True, "reason": "Duplicate"}).status_code == 409
+    assert _order(client, trader, "buy", 1, 90).status_code == 503
+    assert _trade(client, trader, {"symbol": "AAPL", "asset_type": "stock", "side": "buy", "quantity": 1}).status_code == 503
+    assert client.post(f"/orders/{first.json()['id']}/cancel", headers=trader).status_code == 200
+    assert client.get("/compliance/trading-halt", headers=officer).json()["halted"] is True
+
+    resumed = client.put("/compliance/trading-halt", headers=admin,
+                         json={"halted": False, "reason": "Market normalized"})
+    assert resumed.status_code == 200, resumed.text
+    assert _order(client, trader, "buy", 1, 90).status_code == 200
+
+
+def test_halt_audit_detects_state_without_matching_event(db_session):
+    assert check_trading_halt_audit(db_session)["checked"] == 0
+    state = db_session.get(TradingHaltState, 1)
+    state.halted = True
+    db_session.add(TradingHaltEvent(previous_halted=False, halted=True, actor_user_id=None,
+                                    reason="Missing actor"))
+    db_session.commit()
+    assert check_trading_halt_audit(db_session)["violation_count"] == 1
 
 
 def test_price_band_rejects_fat_finger_and_unusable_quotes(client, auth_headers, db_session):

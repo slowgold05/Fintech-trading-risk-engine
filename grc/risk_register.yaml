@@ -75,3 +75,8 @@ risks:
     owner: Compliance
     inherent_rating: high
     controls: []
+  - id: R-16
+    title: Paper trading continues during an operational halt
+    owner: Trading Operations
+    inherent_rating: high
+    controls: [SM-PT-01]
