@@ -152,6 +152,8 @@ Example market order:
 
 Run all six app-role, role-audit, ledger, market-data, price-band, and idempotency controls with `python -m app.scripts.run_controls`. This requires both `DATABASE_URL` and `MIGRATION_DATABASE_URL`; the role-audit probe uses the privileged login and rolls back its test update. Each control writes a timestamped JSON evidence file in `grc/evidence/`; the command exits nonzero when a control fails. Price-band and idempotency controls report `no_sample` when they have no live records to check.
 
+After a branch push CI run completes, run `python -m app.scripts.check_repository_controls --repo slowgold05/Fintech-trading-risk-engine --branch <branch>` from that branch. It verifies main protection and the latest run for the checked-out commit, then records SM-CM-01 and SM-SM-01 evidence. It requires an authenticated GitHub CLI.
+
 Set `TRADING_HALTED=true` and restart the API to stop new order placement and direct trades. Existing orders can still be canceled. This is a process-level kill switch; an audited operator control is still planned.
 
 Stock orders require a cached reference quote no older than seven calendar days. Limit prices and execution prices must stay within 20% of that quote; otherwise order entry or matching fails with control ID `SM-PT-02`. The control runner checks open orders against the latest quote and writes evidence for this check.

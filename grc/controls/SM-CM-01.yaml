@@ -1,0 +1,12 @@
+id: SM-CM-01
+title: Protected change and CI gate
+objective: Verify main requires a pull request and six CI jobs, and the checked-out commit passed those jobs.
+type: preventive and detective, automated
+owner: Security Operations (second line)
+frequency: per change
+test: python -m app.scripts.check_repository_controls --repo <owner>/<repo> --branch <branch>
+evidence: grc/evidence/SM-CM-01/<run-id>.json
+threshold: Pull request and all six required jobs enforced for admins; latest push run succeeds on the checked-out commit.
+mappings: {}
+risks:
+  - Uncontrolled or untested change reaches the protected branch

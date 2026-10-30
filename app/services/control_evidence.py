@@ -21,6 +21,8 @@ def control_status(control_id: str, result: dict) -> str:
         return "fail" if result["violation_count"] else "pass" if result["checked"] else "no_sample"
     if control_id == "SM-PT-04":
         return "fail" if result["violation_count"] else "pass" if result["checked"] else "no_sample"
+    if control_id in {"SM-CM-01", "SM-SM-01"}:
+        return "fail" if result["violation_count"] else "pass" if result["checked"] else "no_sample"
     return "unknown"
 
 
