@@ -1,0 +1,12 @@
+id: SM-PT-01
+title: Audited trading halt
+objective: Stop new paper trades and orders when an administrator activates the halt, while keeping a transition history.
+type: preventive and detective, automated
+owner: Trading Operations (first line)
+frequency: per order and daily
+test: python -m app.scripts.run_controls; tests/test_orders.py
+evidence: grc/evidence/SM-PT-01/<run-id>.json
+threshold: Every state change has an ordered event with a named administrator and reason; new entries stop while halted.
+mappings: {}
+risks:
+  - Paper trading continues during an operational halt

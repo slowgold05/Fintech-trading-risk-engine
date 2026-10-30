@@ -1,0 +1,12 @@
+id: SM-AC-02
+title: Database-triggered role-change audit
+objective: Detect a direct privileged update to a user role that fails to create an audit row.
+type: detective, automated
+owner: Security Operations (second line)
+frequency: after migration and daily
+test: python -m app.scripts.run_controls
+evidence: grc/evidence/SM-AC-02/<run-id>.json
+threshold: A rollback-only direct role update creates exactly one matching audit row.
+mappings: {}
+risks:
+  - Privileged database update changes access without leaving proof

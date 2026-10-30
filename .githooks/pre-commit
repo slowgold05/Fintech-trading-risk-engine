@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+if command -v gitleaks >/dev/null 2>&1; then
+  scanner=gitleaks
+elif [ -x .local-tools/gitleaks.exe ]; then
+  scanner=./.local-tools/gitleaks.exe
+else
+  echo 'Gitleaks is required to commit. Install it or place gitleaks.exe in .local-tools/.' >&2
+  exit 1
+fi
+
+"$scanner" git --staged --redact --no-banner .

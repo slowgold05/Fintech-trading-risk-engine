@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
 from app.models.trade import Trade
 
 
-def assess_trade_risk(db: Session, user_id: int, trade_notional: float) -> tuple[int, list[dict]]:
+def assess_trade_risk(db: Session, user_id: int, trade_notional: Decimal) -> tuple[int, list[dict]]:
     alerts = []
     score = 0
 

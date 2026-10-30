@@ -1,0 +1,12 @@
+id: SM-MD-01
+title: Watchlist quote source-date freshness
+objective: Detect missing or stale provider quotes for active hot-tier symbols.
+type: detective, automated
+owner: Market Operations (first line)
+frequency: daily
+test: python -m app.scripts.check_market_data
+evidence: grc/evidence/SM-MD-01/<run-id>.json
+threshold: Quote source date older than seven calendar days, or missing.
+mappings: {}
+risks:
+  - Stale reference prices presented as current market data

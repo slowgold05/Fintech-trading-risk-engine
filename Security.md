@@ -1,64 +1,19 @@
-# Security Architecture and Controls
+# Sentinel Markets security controls
 
-## Security Philosophy
+This is a mock brokerage. The [threat model](docs/THREAT_MODEL.md), [control matrix](grc/control_matrix.csv), and [control workpapers](grc/workpapers) describe the implemented safeguards and their evidence. The [action items](docs/GRC_ACTION_ITEMS.md) track gaps that remain open.
 
-This project is built with a **security-first mindset**, reflecting common controls used in financial and trading systems. The design prioritises confidentiality, integrity, auditability, and least privilege.
+## Authentication and access
 
----
+Passwords are hashed with bcrypt through Passlib. Login has per-IP rate limits and per-account backoff. Access tokens use PyJWT with a configured secret and required expiry; refresh tokens rotate and their hashes are stored in PostgreSQL locally. MFA and full access-token revocation are still open.
 
-## Authentication and Authorisation
+Trader routes require the trader role. Compliance routes require an admin, compliance officer, or auditor role, with mutation rights checked again by each endpoint. Admins request role changes, separate compliance officers approve them, and a privileged command applies them. The application database login cannot update `users.role`; a trigger records direct privileged role updates. SM-AC-01 and SM-AC-02 test these controls on the local database.
 
-### OAuth2 Password Flow
+## Trading and data integrity
 
-* Users authenticate via `/auth/login`
-* Access tokens are issued as **JWT Bearer tokens**
-* Tokens must be supplied in the `Authorisation` header
+Orders and direct trades require idempotency keys. Pre-trade checks enforce buying power, available shares, a 20% reference-price band, and a 50% per-symbol concentration cap. New trades can be halted through a restart-based setting. SM-PT-02 and SM-PT-04 test price bands and committed idempotency records; the last local runs had no live samples for those two operating checks.
 
-### Token Security
+Trade accounting uses `Decimal` and balanced, hash-chained ledger postings. The application database role cannot update or delete ledger rows, and PostgreSQL triggers reject those operations. SM-LD-01 reconciles ledger hashes, cash, and positions. Local nightly reconciliation is scheduled; a hosted scheduler and independent evidence storage remain open.
 
-* JWTs are signed using a secret key (HS256)
-* Token validation is enforced on all protected endpoints
-* `/auth/me` provides identity verification
+## Verification limits
 
----
-
-## Password Handling
-
-* Passwords are **never stored or logged in plaintext**
-* Passwords are hashed using **bcrypt** via `passlib`
-* Length validation prevents bcrypt overflow
-* Verification is performed using constant-time comparison
-
----
-
-## API Protection
-
-* All trading, portfolio, and risk endpoints require authentication
-* Swagger UI supports authenticated testing via the Authorise mechanism
-* Unauthorised access returns HTTP 401
-
----
-
-## Database Security
-
-* SQLAlchemy ORM prevents SQL injection attacks
-* No raw SQL is used with user-supplied input
-* Database schema changes are versioned with Alembic
-
----
-
-## Auditability and Integrity
-
-* Trades are immutable once created
-* FIFO lots preserve execution order and cost basis
-* Realised P&L is derived deterministically from lot consumption
-* Risk alerts are linked to individual trades
-
----
-
-## Future Security Enhancements
-
-* Role-based access control (RBAC)
-* Token expiration and refresh flow
-* Rate limiting and abuse detection
-* Centralised logging and monitoring
+CI defines Gitleaks, Bandit, pip-audit, Semgrep, and Trivy gates alongside tests. The current branch's hosted run passed all six jobs, including Trivy, and the change-management and secret-scanning control checks recorded local evidence. The privileged migration login can change triggers and grants, and local evidence files remain writable by the machine operator. These limits are tracked in the [action items](docs/GRC_ACTION_ITEMS.md).
