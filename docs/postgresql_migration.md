@@ -14,4 +14,6 @@ The local development database was copied on 2026-10-30 from MySQL to a PostgreS
 
 The migration copied 15,163 rows in 19 application tables, including 8 users, 12 trades, 20 ledger postings, and 13,016 market symbols. All per-table data digests matched. PostgreSQL ledger reconciliation checked 8 accounts with zero failures. The app-role grant, role-audit, ledger, and market-data controls passed; price-band and idempotency controls reported `no_sample` because the local database has no orders or request records. A rollback-only app-role write created a user and opening ledger entry, then rolled both back.
 
+The local Windows task `SentinelMarketsLedgerReconciliation` is scheduled daily at 02:00. Its manual verification run returned status 0. It requires the current user to be signed in; hosted reconciliation still needs a deployment scheduler.
+
 Audit evidence is under ignored `grc/evidence/` and should be archived outside this host. The PostgreSQL container and volume are local development infrastructure; hosted environments need their own database provisioning, least-privilege grants, backups, and cutover checks.

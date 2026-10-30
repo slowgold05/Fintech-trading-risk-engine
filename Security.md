@@ -12,7 +12,7 @@ Trader routes require the trader role. Compliance routes require an admin, compl
 
 Orders and direct trades require idempotency keys. Pre-trade checks enforce buying power, available shares, a 20% reference-price band, and a 50% per-symbol concentration cap. New trades can be halted through a restart-based setting. SM-PT-02 and SM-PT-04 test price bands and committed idempotency records; the last local runs had no live samples for those two operating checks.
 
-Trade accounting uses `Decimal` and balanced, hash-chained ledger postings. The application database role cannot update or delete ledger rows, and PostgreSQL triggers reject those operations. SM-LD-01 reconciles ledger hashes, cash, and positions. A scheduled reconciliation and independent evidence storage remain open.
+Trade accounting uses `Decimal` and balanced, hash-chained ledger postings. The application database role cannot update or delete ledger rows, and PostgreSQL triggers reject those operations. SM-LD-01 reconciles ledger hashes, cash, and positions. Local nightly reconciliation is scheduled; a hosted scheduler and independent evidence storage remain open.
 
 ## Verification limits
 

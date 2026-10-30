@@ -17,6 +17,8 @@ Run reconciliation nightly:
 python -m app.scripts.reconcile_ledger
 ```
 
+On the local Windows development machine, `scripts/register_nightly_reconciliation.ps1` registers that command for 02:00 local time and runs a missed task when the signed-in user becomes available. The task was run once manually after registration and returned status 0. Check it with `Get-ScheduledTaskInfo -TaskName SentinelMarketsLedgerReconciliation`. Hosted deployment needs its own reliable scheduler.
+
 The command writes a dated JSON file under `grc/evidence/SM-LD-01/` and prints its SHA-256 digest. Preserve both outside this repository for audit evidence; the local file itself can be deleted. It exits with status 1 for a broken hash chain, an unbalanced event, or cash or positions that differ from the ledger.
 
 Existing accounts start from a labeled snapshot; earlier trades are outside its coverage. The migration blocks updates and deletes on ledger rows with database triggers. The local PostgreSQL API uses a separate `fintech_app` login with only `SELECT` and `INSERT` on the ledger table. `MIGRATION_DATABASE_URL` retains the schema-change login for Alembic. Re-run `python -m app.scripts.configure_postgres_role` after future migrations; do not give the app role database-wide `UPDATE`, `DELETE`, `ALTER`, or `TRIGGER` privileges.

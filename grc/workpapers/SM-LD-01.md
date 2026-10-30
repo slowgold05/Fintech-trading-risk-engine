@@ -18,4 +18,4 @@ Population: all 6 accounts in the local development database on 2026-10-28. Each
 
 ## Limits and follow-up
 
-The 12 trades already in the database predate the opening snapshots and are outside hash-chain coverage. The local application now uses a separate role that cannot update ledger entries; deployment role setup remains. Schedule the nightly test and retain evidence in storage that the application cannot alter. This workpaper does not claim a production control is operating yet.
+The 12 trades already in the database predate the opening snapshots and are outside hash-chain coverage. The local application now uses a separate role that cannot update ledger entries; deployment role setup remains. A local Windows task runs the nightly test at 02:00 while the user is signed in; hosted scheduling and evidence storage that the application cannot alter remain open. This workpaper does not claim a production control is operating yet.
