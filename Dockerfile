@@ -9,6 +9,8 @@ COPY alembic alembic
 COPY alembic.ini .
 COPY grc/controls grc/controls
 COPY grc/risk_register.yaml grc/risk_register.yaml
+COPY deploy/us-east-2-bundle.pem deploy/us-east-2-bundle.pem
+ENV PGSSLROOTCERT=/app/deploy/us-east-2-bundle.pem
 RUN mkdir -p grc/evidence && chown -R app:app /app
 
 USER app

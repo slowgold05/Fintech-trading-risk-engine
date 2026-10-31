@@ -11,7 +11,8 @@ def configure(database_url: str, app_password: str) -> None:
     if url.get_backend_name() != "postgresql" or not app_password:
         raise ValueError("A PostgreSQL migration URL and app password are required")
     with psycopg.connect(host=url.host, port=url.port, dbname=url.database,
-                         user=url.username, password=url.password) as connection:
+                         user=url.username, password=url.password,
+                         sslmode=url.query.get("sslmode", "prefer")) as connection:
         with psycopg.ClientCursor(connection) as cursor:
             cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = 'fintech_app'")
             if cursor.fetchone():

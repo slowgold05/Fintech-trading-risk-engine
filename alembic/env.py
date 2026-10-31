@@ -65,7 +65,8 @@ def run_migrations_online() -> None:
 
     """
     db_url = os.getenv("MIGRATION_DATABASE_URL") or os.getenv("DATABASE_URL") or settings.migration_database_url or settings.database_url
-    config.set_main_option("sqlalchemy.url", db_url)
+    # ConfigParser treats percent-encoded URL characters as interpolation markers.
+    config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
