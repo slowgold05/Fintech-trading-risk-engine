@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     refresh_token_exp_days: int = 30
     refresh_cookie_secure: bool = False
     enable_hsts: bool = False
+    enable_api_docs: bool = True
     rate_limit_enabled: bool = True
     trading_halted: bool = False
     max_stock_concentration_pct: Decimal = Field(default=Decimal("50"), gt=0, le=100)

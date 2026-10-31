@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -15,6 +16,9 @@ app = FastAPI(
     title="Fintech Trading & Risk Engine",
     version="1.0.0",
     description="Secure backend for trading, portfolio analytics, and risk assessment",
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
 )
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
@@ -53,10 +57,15 @@ if settings.cors_origins:
 def root():
     return {
         "name": "Fintech Trading & Risk Engine",
-        "docs": "/docs",
-        "openapi": "/openapi.json",
+        **({"docs": "/docs", "openapi": "/openapi.json"} if settings.enable_api_docs else {}),
         "status": "running",
     }
+
+
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    db.execute(text("SELECT 1"))
+    return {"status": "ok"}
 
 
 @app.post("/token")
