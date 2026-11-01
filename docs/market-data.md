@@ -35,6 +35,8 @@ python -m app.scripts.refresh_market_data --sync-universe --tier hot --source eo
 
 ## Scheduled refreshes
 
+The AWS recruiter demo received one manual 50-symbol hot-tier EOD refresh after the 2026-10-31 database cutover. The hosted refresh is **not scheduled yet**. Its cached quotes will age and stock order checks reject reference prices older than seven calendar days. Schedule the commands below in the AWS environment before relying on ongoing market freshness; the local Windows reconciliation task does not refresh the hosted database.
+
 Run these commands from Windows Task Scheduler, cron, or the deployment
 platform's scheduler. The EOD worker fetches up to four symbols at a time.
 

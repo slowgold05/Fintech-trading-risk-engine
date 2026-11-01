@@ -1,6 +1,7 @@
 # Implementation Roadmap
 
 Companion to `PROJECT_REVIEW.md` (the review explains *why*; this file is the *how*).
+This is the earlier implementation backlog. The [finance GRC roadmap](../Finance%20Project%20Roadmap%20Built%20for%20GRC.md) and [current action items](GRC_ACTION_ITEMS.md) track the active control and deployment work.
 Each feature is broken into concrete steps with the files involved. Phases are ordered
 by dependency — later phases build on earlier ones. Check items off as you go.
 
@@ -223,9 +224,10 @@ Prereqs: Phases 2 (cash), 5 (audit), 7 (risk limits), 8 (sentiment). The securit
 - [ ] 10.2 Pin `requirements.txt` versions (`pip freeze` into a constraints file).
 - [ ] 10.3 GitHub Actions: on PR → `pytest`, `ruff`/`flake8`, `npm run lint`,
   `npm run build`, `pip-audit`, `npm audit --audit-level=high`.
-- [ ] 10.4 Deploy: Railway/Render/Fly.io for API + MySQL (or switch to Postgres),
-  Vercel/Netlify for the frontend; set real `CORS_ORIGINS`, secrets from the platform's
-  secret store.
+- [x] 10.4 Deploy the React frontend and FastAPI backend on AWS Lightsail with a private
+  PostgreSQL 17 database in `us-east-2`. The migrated recruiter demo is live on the
+  AWS-provided HTTPS address; see [AWS operations](aws_deployment.md). Hosted job
+  scheduling and production secret management remain open.
 - [ ] 10.5 Real `GET /health` (checks DB connection + cache freshness); structured JSON
   logging with request IDs.
 - [ ] 10.6 `Decimal` migration for money math (do this alongside — the test suite from

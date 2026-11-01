@@ -1,167 +1,86 @@
 # Sentinel Markets
 
-Every movement of money is explainable, every control is tested, and nothing changes without leaving proof.
+**A mock brokerage where trades, risks, and role changes leave an audit trail.**
 
-[Control matrix](grc/control_matrix.csv) · [Control workpapers](grc/workpapers) · [Threat model](docs/THREAT_MODEL.md) · [Roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md)
+Sentinel Markets is a mock brokerage built to show how trading systems and governance controls fit together. It uses paper cash and simulated orders; it does not connect to a brokerage or move real money. The project is a recruiter-facing demonstration, not a regulated production service.
 
-This repository contains a FastAPI backend and a React/Vite frontend for a
-mock brokerage and its risk and control evidence.
+**[Open the live demo](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/)** | [Control matrix](grc/control_matrix.csv) | [GRC roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md) | [Current action items](docs/GRC_ACTION_ITEMS.md)
 
-The [draft access-control policy](grc/policies/access_control.md) and [draft change-management policy](grc/policies/change_management.md) track requirements that still need owner approval.
+## What the demo shows
 
-The [CI workflow](.github/workflows/ci.yml) runs backend and frontend checks plus
-Gitleaks, Bandit, pip-audit, Semgrep, and Trivy on each push. Their check results appear on pull requests.
-Main branch protection requires pull requests and all six jobs. Approving reviews remain optional until a second collaborator is available.
+- **Paper trading:** New trader accounts start with $100,000 in simulated cash. Users can enter limit and market orders, inspect the order book, cancel open orders, and view holdings, lots, realized P&L, and risk alerts. The matching engine uses price-time priority and reserves cash or shares for open orders.
+- **Pre-trade controls:** Buying-power and available-share checks, a 20% reference-price band, a 50% per-symbol concentration limit, a $50,000 stock-position limit, idempotency keys, and an audited trading halt.
+- **Explainable accounting:** Trades create balanced, hash-chained ledger postings. PostgreSQL triggers reject ledger updates and deletes; a reconciliation command checks cash and positions against the ledger.
+- **Governance workflow:** Trader, admin, compliance-officer, and auditor roles; separate request, approval, and privileged application of role changes; quarterly access-review records; a risk register linked to controls; and a compliance console that displays control status.
+- **Market research:** A Nasdaq symbol universe, cached quotes and daily price history, sector heatmap, and SEC company fundamentals. Quotes display their freshness state. Alpha Vantage is optional for research; the public market view uses cached data.
 
-For a local staged-secret check, install Gitleaks and run `git config --local core.hooksPath .githooks`. The pre-commit hook blocks commits when Gitleaks is missing or finds a leak. This Windows checkout also supports an ignored `.local-tools/gitleaks.exe` binary.
+The live site has the existing PostgreSQL data copied from local development. Privileged account credentials are intentionally not published. Recruiters can register a trader account to explore the paper-trading flow.
 
-## Project Layout
+## Current implementation
 
-```text
-app/                 FastAPI application package
-alembic/             Database migrations
-frontend/            React + Vite + TypeScript frontend
-docs/                Architecture, security, and frontend handoff notes
-requirements.txt     Backend Python dependencies
-alembic.ini          Alembic configuration
-.env                 Local backend environment variables
-.env.example         Backend environment template
+| Area | Status |
+| --- | --- |
+| Web and API | React/Vite frontend and FastAPI backend live on an AWS Lightsail HTTPS address in the selected Region `us-east-2`; no custom domain is needed. |
+| Database | Private Lightsail PostgreSQL 17, Alembic revision `c7e8f1a2b345`, with a restricted application role and separate migration login. The 2026-10-31 cutover matched 15,164 rows across 21 application tables and 17 sequences. |
+| Recovery | Seven days of Lightsail automatic database backups and a retained post-migration manual snapshot. |
+| Controls | A 2026-10-31 operator run against AWS passed app-role grants, role-change audit, ledger reconciliation, and market-data freshness. Trading-halt, open-order price-band, and idempotency operating checks had no live sample. |
+| CI | Six required jobs: backend tests, frontend lint/tests/build, Gitleaks, Bandit and pip-audit, Semgrep, and Trivy. |
+
+Market quotes were refreshed once after the cutover. Automatic hosted quote refresh and ledger reconciliation are still open, so freshness will decline until those jobs are scheduled. The live compliance console currently shows 11 controls as `not_run`: the operator's passing evidence is stored outside the API container and is not yet mounted or imported there. MFA, independent evidence storage and review, and a completed access review are also open. See the [action-item ledger](docs/GRC_ACTION_ITEMS.md) before presenting this as a production control environment.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser[Recruiter or trader browser] -->|HTTPS| Web[Lightsail web container]
+    Web -->|/api on localhost| API[FastAPI container]
+    API -->|TLS, restricted role| DB[(Private PostgreSQL 17)]
+    Operator[Migration and control commands] -->|privileged login| DB
+    API --> Controls[Risk, orders, ledger, market cache]
 ```
 
-Generated frontend output and dependencies live under `frontend/dist/` and
-`frontend/node_modules/`.
+The web container runs Nginx on port 8080 and serves the single-page app. It proxies `/api/` to FastAPI on port 8000 in the same Lightsail container service. Only the web container has a public endpoint. The API health check performs a database query. See [Architecture](Architecture.md), the [threat model](docs/THREAT_MODEL.md), and the [AWS operations runbook](docs/aws_deployment.md).
 
-## Backend
+## Run locally
 
-Install dependencies from the repository root:
+Requirements: Docker, Node.js 22, and npm. From the repository root, copy `.env.compose.example` to ignored `.env.compose` and replace its three placeholders with distinct random values. Then start a clean PostgreSQL 17 database and API:
 
 ```powershell
-python -m pip install -r requirements.txt
+docker compose --env-file .env.compose up --build -d
 ```
 
-For an isolated non-root API and fresh PostgreSQL database, see [Docker Compose setup](docs/container_setup.md).
-
-Configure `.env` with PostgreSQL (see [migration steps](docs/postgresql_migration.md) when moving an existing MySQL database):
-
-```env
-DATABASE_URL=postgresql+psycopg://fintech_app:YOUR_APP_PASSWORD@localhost:5433/fintechapp
-MIGRATION_DATABASE_URL=postgresql+psycopg://fintech_migrate:YOUR_MIGRATION_PASSWORD@localhost:5433/fintechapp
-JWT_SECRET=replace_with_a_long_random_secret
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXP_MINUTES=30
-CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]
-```
-
-Apply migrations:
-
-```powershell
-python -m alembic upgrade head
-```
-
-The API login needs read/write grants on ordinary tables and only `SELECT`/`INSERT`
-on `ledger_entries`; the separate migration login creates schema changes. For
-role separation, give the app login `SELECT` on `role_changes` and restrict its
-`users` privileges to `SELECT`, `INSERT (email, password_hash, cash_balance)`,
-and `UPDATE (cash_balance)`. The local `fintech_app` login has these grants.
-
-Start the API:
-
-```powershell
-python -m uvicorn app.main:app --reload
-```
-
-Backend docs are available at:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-Use `POST /auth/register` to create an app user, then log in through the
-frontend with that email and password.
-
-## Compliance access
-
-New accounts are `trader` by database default. Seed the first admin and compliance officer after registering those accounts:
-
-```powershell
-python -m app.scripts.set_user_role --bootstrap --email admin@example.com --role admin --reason "Initial administrator"
-python -m app.scripts.set_user_role --bootstrap --email reviewer@example.com --role compliance_officer --reason "Initial compliance reviewer"
-```
-
-After bootstrap, an admin requests a role change in `/compliance`, a different compliance officer approves it, and a privileged operator applies the approved request:
-
-```powershell
-python -m app.scripts.set_user_role --request-id 1
-```
-
-The command requires `MIGRATION_DATABASE_URL`. A database trigger records every `users.role` update in `role_changes`, including a direct privileged update; the command passes the approved request ID, operator, and reason to that trigger and verifies its audit row before commit. The app login cannot update user roles or write role-change records. Role-change records also have database triggers that reject updates and deletes. Compliance officers, admins, and auditors can open `/compliance` and read the latest control statuses and access changes. Trader-only endpoints reject these roles. Bootstrap is limited to the first account in each role.
-
-The compliance page also lists every account for the current UTC quarter. Admins and compliance officers can record a retain or remove decision with a reason, except on their own account. Auditors can inspect reviews but cannot submit them. A changed role becomes unreviewed again. Remove decisions flag remediation; they do not change the role automatically.
-
-The same compliance view reads `grc/risk_register.yaml` and shows inherent and residual ratings for 16 risks. Seven currently have no mapped operating control and stay unverified. Residual rating drops one level only when every linked control has passing evidence from the last 36 hours. Failed, missing, stale, or no-sample evidence leaves the inherent rating in place; this provisional scoring method needs policy-owner review before operational use.
-
-Run `python -m app.scripts.configure_postgres_role` with `MIGRATION_DATABASE_URL` and `POSTGRES_APP_PASSWORD` after migrations. It grants the app role the table and column permissions it needs and keeps ledger updates, role changes, and access-review edits out of that role. Re-run it after future schema migrations. Protect the migration login as an operator credential because it can alter the triggers and audit rows.
-
-## Frontend
-
-Install dependencies and run from `frontend/`:
+In another terminal, start the frontend:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-The frontend runs at:
+Open <http://127.0.0.1:5173>. The local API is at <http://127.0.0.1:8000>, with development docs at `/docs`. Compose creates its own database volume; it does not use the migrated local database or the AWS database. To stop without deleting its volumes, run `docker compose --env-file .env.compose down`. For a non-Compose setup or a data migration, follow [PostgreSQL migration](docs/postgresql_migration.md). Never commit `.env` files, database dumps, or account credentials.
 
-```text
-http://127.0.0.1:5173
+## Verify changes
+
+```powershell
+python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
+cd frontend
+npm ci
+npm run lint
+npm test
+npm run build
 ```
 
-The frontend API client defaults to:
+From the repository root, `python -m app.scripts.run_controls` checks seven application controls when `DATABASE_URL`, `MIGRATION_DATABASE_URL`, and `JWT_SECRET` are configured. It writes evidence under ignored `grc/evidence/`; a `no_sample` result is not proof of operating effectiveness. CI also runs security scanners and uploads an API CycloneDX SBOM. The [security summary](Security.md), [control workpapers](grc/workpapers), and [policies](grc/policies) explain the safeguards and their limits.
 
-```text
-http://127.0.0.1:8000
-```
+## Repository map
 
-Override it with `frontend/.env` when needed:
+| Path | Purpose |
+| --- | --- |
+| `app/`, `alembic/`, `tests/` | FastAPI routes, services, migrations, and backend tests. |
+| `frontend/` | React/Vite client, API modules, and frontend tests. |
+| `grc/controls/`, `grc/workpapers/`, `grc/policies/` | Control definitions, test workpapers, and draft policies. |
+| `docs/postgresql_migration.md` | MySQL-to-PostgreSQL history and the verified AWS data cutover. |
+| `docs/aws_deployment.md` | Live AWS resources, deployment procedure, recovery, costs, and remaining operations. |
 
-```env
-VITE_API_BASE_URL=http://127.0.0.1:8000
-```
-
-## Connection Points
-
-- Login posts form-encoded credentials to `POST /token`.
-- Protected requests send `Authorization: Bearer <token>`.
-- Frontend API modules live in `frontend/src/api/`.
-- Backend routers live in `app/routers/`.
-- Main authenticated backend routes are `/trades/`, `/portfolio/`, and `/risk/`.
-
-## Order book
-
-`POST /orders/` and `POST /trades/` require an `Idempotency-Key` header (8–128 letters, digits, `_`, or `-`). Retry the same request with the same key to get its original response without placing another execution. Reusing the key for a different request returns `409`. Keys are scoped to each user and shared across both endpoints. `POST /orders/` accepts a stock `symbol`, `side`, `quantity`, `order_type` (`limit` or `market`), and `limit_price` for limit orders. Limit orders rest in the book until filled or canceled; market orders fill against available resting orders and cancel any remainder. The execution price is the resting order's price. The API rejects orders that exceed available cash or shares, including amounts reserved by open orders. It does not match a user's own orders.
-
-Use `GET /orders/book/{symbol}` for open bids and asks, `GET /orders/` for your orders, and `POST /orders/{id}/cancel` to release a remaining reservation. Direct `POST /trades/` still uses the quote provider; it also respects open order reservations. Portfolio reset requires all open orders to be canceled first.
-
-Example limit order:
-
-```json
-{"symbol":"AAPL","side":"buy","order_type":"limit","quantity":1.5,"limit_price":100.25}
-```
-
-Example market order:
-
-```json
-{"symbol":"AAPL","side":"sell","order_type":"market","quantity":1}
-```
-
-Run all seven app-role, role-audit, ledger, market-data, trading-halt, price-band, and idempotency controls with `python -m app.scripts.run_controls`. This requires both `DATABASE_URL` and `MIGRATION_DATABASE_URL`; the role-audit probe uses the privileged login and rolls back its test update. Each control writes a timestamped JSON evidence file in `grc/evidence/`; the command exits nonzero when a control fails. Trading-halt, price-band, and idempotency controls report `no_sample` when they have no live records to check.
-
-After a branch push CI run completes, run `python -m app.scripts.check_repository_controls --repo slowgold05/Fintech-trading-risk-engine --branch <branch>` from that branch. It verifies main protection and the latest run for the checked-out commit, then records SM-CM-01 and SM-SM-01 evidence. It requires an authenticated GitHub CLI.
-
-An admin can halt or resume new order placement and direct trades from the compliance page with a reason; PostgreSQL records each transition in append-only audit history. Existing orders can still be canceled. `TRADING_HALTED=true` is an emergency configuration override that also stops new entries and requires an API restart to clear.
-
-Stock orders require a cached reference quote no older than seven calendar days. Limit prices and execution prices must stay within 20% of that quote; otherwise order entry or matching fails with control ID `SM-PT-02`. The control runner checks open orders against the latest quote and writes evidence for this check.
-
-New stock buys also have a 50% per-symbol exposure cap (`MAX_STOCK_CONCENTRATION_PCT`). It counts held shares and open buys, and uses the higher of the limit and reference prices for pending exposure. Other holdings use their latest usable cached quote, or book cost where no usable quote exists; that fallback is a known limit for the demo.
+Development continues on the [draft GRC roadmap PR](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/1). The roadmap and policies are working documents; their approval and independent evidence review remain open.
