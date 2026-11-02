@@ -2,7 +2,7 @@
 
 **A mock brokerage where trades, risks, and role changes leave an audit trail.**
 
-Sentinel Markets is a mock brokerage built to show how trading systems and governance controls fit together. It uses paper cash and simulated orders; it does not connect to a brokerage or move real money. The project is a recruiter-facing demonstration, not a regulated production service.
+Sentinel Markets is a mock brokerage built to show how trading systems and governance controls fit together. It uses paper cash and simulated orders; it does not connect to a brokerage or move real money. It is a demonstration for anyone who wants to explore how financial controls work in a trading system, not a regulated production service.
 
 **[Open the live demo](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/)** | [Control matrix](grc/control_matrix.csv) | [GRC roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md) | [Current action items](docs/GRC_ACTION_ITEMS.md)
 
@@ -14,7 +14,7 @@ Sentinel Markets is a mock brokerage built to show how trading systems and gover
 - **Governance workflow:** Trader, admin, compliance-officer, and auditor roles; separate request, approval, and privileged application of role changes; quarterly access-review records; a risk register linked to controls; and a compliance console that displays control status.
 - **Market research:** A Nasdaq symbol universe, cached quotes and daily price history, sector heatmap, and SEC company fundamentals. Quotes display their freshness state. Alpha Vantage is optional for research; the public market view uses cached data.
 
-The live site has the existing PostgreSQL data copied from local development. Privileged account credentials are intentionally not published. Recruiters can register a trader account to explore the paper-trading flow.
+The live site has the existing PostgreSQL data copied from local development. Privileged account credentials are intentionally not published. Anyone who wants to explore can register a trader account and try the paper-trading flow.
 
 ## Current implementation
 
@@ -27,6 +27,10 @@ The live site has the existing PostgreSQL data copied from local development. Pr
 | CI | Six required jobs: backend tests, frontend lint/tests/build, Gitleaks, Bandit and pip-audit, Semgrep, and Trivy. |
 
 Market quotes were refreshed once after the cutover. Automatic hosted quote refresh and ledger reconciliation are still open, so freshness will decline until those jobs are scheduled. The live compliance console currently shows 11 controls as `not_run`: the operator's passing evidence is stored outside the API container and is not yet mounted or imported there. MFA, independent evidence storage and review, and a completed access review are also open. See the [action-item ledger](docs/GRC_ACTION_ITEMS.md) before presenting this as a production control environment.
+
+## Future roadmap
+
+The next work is to make hosted controls visible and repeatable: share control evidence with the live console, schedule market-data refresh and ledger reconciliation, and collect real operating samples for controls that currently report `no_sample`. Then complete an access review and strengthen authentication, rate limiting, and independent evidence retention. Later phases can expand the governance workflows with incident and vendor tracking, model-risk inventory and validation, and framework mappings. These are planned items, not features currently available. The [full GRC roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md) and [action-item ledger](docs/GRC_ACTION_ITEMS.md) track progress.
 
 ## Architecture
 
