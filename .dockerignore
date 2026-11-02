@@ -1,0 +1,9 @@
+.git
+.env*
+!.env.example
+frontend
+tests
+docs
+grc/evidence
+__pycache__
+*.pyc

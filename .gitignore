@@ -1,9 +1,14 @@
 # Environment variables (secrets)
 .env
+.env.*
+!.env.example
+!.env.compose.example
 
 # Python cache files
 __pycache__/
 *.pyc
+.hypothesis/
+.local-tools/
 
 # Virtual environments
 .venv/
@@ -22,3 +27,9 @@ alembic/__pycache__/
 
 # Logs
 *.log
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+grc/evidence/
+*.tsbuildinfo

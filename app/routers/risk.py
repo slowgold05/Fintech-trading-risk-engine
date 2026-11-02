@@ -14,10 +14,12 @@ from app.models.user import User
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 @router.get("/")
-def list_risk(db: Session = Depends(get_db)):
+def list_risk(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Returns risk assessments + alerts, newest first.
-    (User is hardcoded to user_id=1 for now.)
     """
     user_id = current_user.id
 
@@ -85,11 +87,15 @@ def list_risk(db: Session = Depends(get_db)):
 
 
 @router.get("/trade/{trade_id}")
-def risk_for_trade(trade_id: int, db: Session = Depends(get_db)):
+def risk_for_trade(
+    trade_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Returns the risk assessment + alerts for a specific trade.
     """
-    user_id = 1  # TODO: replace with JWT user later
+    user_id = current_user.id
 
     assessment = db.execute(
         select(RiskAssessment)

@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: fintech_migrate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.compose}
+      POSTGRES_DB: fintechapp
+    volumes:
+      - compose_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fintech_migrate -d fintechapp"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://fintech_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env.compose}@db:5432/fintechapp
+      MIGRATION_DATABASE_URL: postgresql+psycopg://fintech_migrate:${POSTGRES_PASSWORD}@db:5432/fintechapp
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.compose}
+      CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - compose_evidence:/app/grc/evidence
+    command: ["sh", "-c", "python -m alembic upgrade head && python -m app.scripts.configure_postgres_role && exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+volumes:
+  compose_pgdata:
+  compose_evidence:

@@ -1,0 +1,12 @@
+id: SM-PT-02
+title: Paper-order reference price band
+objective: Reject stock orders priced more than 20% from a usable reference quote and detect open orders that later breach the band.
+type: preventive and detective, automated
+owner: Trading Operations (first line)
+frequency: per order and daily
+test: python -m app.scripts.run_controls
+evidence: grc/evidence/SM-PT-02/<run-id>.json
+threshold: Price outside 80-120% of a reference quote no older than seven calendar days, or an unusable quote.
+mappings: {}
+risks:
+  - Erroneous paper orders executed at extreme prices

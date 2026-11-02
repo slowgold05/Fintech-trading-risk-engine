@@ -1,0 +1,12 @@
+id: SM-SM-01
+title: Secret scanning on repository changes
+objective: Verify the Gitleaks CI job passed on the checked-out commit.
+type: detective, automated
+owner: Security Operations (second line)
+frequency: per change
+test: python -m app.scripts.check_repository_controls --repo <owner>/<repo> --branch <branch>
+evidence: grc/evidence/SM-SM-01/<run-id>.json
+threshold: Gitleaks secrets job succeeds on the latest push run for the checked-out commit.
+mappings: {}
+risks:
+  - Secret committed without detection

@@ -1,0 +1,12 @@
+id: SM-AC-01
+title: Application database role separation
+objective: Detect an app login that can update user roles or role-change records.
+type: detective, automated
+owner: Security Operations (second line)
+frequency: daily
+test: python -m app.scripts.run_controls
+evidence: grc/evidence/SM-AC-01/<run-id>.json
+threshold: All four zero-row UPDATE probes must be denied by database privilege checks.
+mappings: {}
+risks:
+  - Application credential can escalate roles or alter access-change evidence

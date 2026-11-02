@@ -1,0 +1,12 @@
+id: SM-PT-05
+title: Stock position-size limit
+objective: Reject a stock buy when holdings and open buy orders would exceed the configured dollar cap for one symbol.
+type: preventive, automated
+owner: Trading Operations (first line)
+frequency: per stock buy
+test: python -m pytest tests/test_orders.py::test_position_size_counts_open_orders_and_holdings
+evidence: GitHub Actions backend job for the reviewed commit; operating sample pending
+threshold: Projected single-stock exposure must not exceed $50,000 by default.
+mappings: {}
+risks:
+  - Paper stock position exceeds its dollar cap

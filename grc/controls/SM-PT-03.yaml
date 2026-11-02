@@ -1,0 +1,12 @@
+id: SM-PT-03
+title: Stock concentration limit
+objective: Reject a stock buy when holdings and open buy orders would exceed 50% of account equity in one symbol.
+type: preventive, automated
+owner: Trading Operations (first line)
+frequency: per stock buy
+test: python -m pytest tests/test_orders.py::test_concentration_counts_open_buys_and_existing_holdings
+evidence: GitHub Actions backend job for the reviewed commit; operating sample pending
+threshold: Projected single-stock exposure must not exceed 50% of account equity.
+mappings: {}
+risks:
+  - Paper order breaches concentration limit

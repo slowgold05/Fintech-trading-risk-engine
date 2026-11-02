@@ -1,0 +1,11 @@
+id: SM-LD-01
+title: Paper-account ledger integrity and reconciliation
+objective: Detect changed ledger postings, unbalanced events, and cash or positions that differ from the ledger.
+type: detective, automated
+owner: Operations (first line)
+frequency: nightly
+test: python -m app.scripts.reconcile_ledger
+evidence: grc/evidence/SM-LD-01/<run-id>.json
+mappings: {}
+risks:
+  - Undetected alteration of paper-account balances or positions
