@@ -1,5 +1,13 @@
 # Expansion roadmap changes
 
+## Hosted release addendum — 2026-11-04
+
+The implemented components and reviewed audit fixes are now deployed in Lightsail deployment 7. Migrations through `f3a8c2d7e961` and application-role grants ran through a separate temporary private runner, with no migration credential in the web deployment. Existing row counts were preserved, all 14 accounts reconciled after smoke testing, and the runner was removed. The scheduler is enabled; its first cycle refreshed 180 quotes and stored 23 evidence payloads with verified export hashes. Live HTTP checks passed login, compliance reads, intent approval, paper cash replay, and order placement/replay/cancellation. Browser click-through remains unverified. See `docs/aws_deployment.md` for the release record.
+
+The full expansion roadmap remains incomplete. The integration limits below still apply. Historical statements about an undeployed working tree describe the original build, not the current hosted release. All 134 backend tests passed with disposable PostgreSQL, all 9 frontend tests and lint/build passed, and all six application-release CI jobs passed.
+
+## Original build record
+
 2026-11-04. This is the working tree. It is not deployed. `aws login` was not run. Nothing was committed. No vendor, SEC, Bluesky, or other public API was called. No language model was called. Kronos weights were not downloaded. Pandas, NumPy, PyTorch, VADER, and FinBERT were not added.
 
 The plan is `docs/Sentinel Markets — Expansion Roadmap.md`. Boxes are checked only where this tree has the behavior. The notes below are the limits.

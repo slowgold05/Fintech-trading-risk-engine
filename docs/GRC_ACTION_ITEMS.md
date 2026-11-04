@@ -1,5 +1,13 @@
 # GRC roadmap action items
 
+## 2026-11-04 hosted release completed
+
+- [PR #12](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/12) is merged, and Lightsail deployment 7 is active with the reviewed API and web images. All seven migrations through `f3a8c2d7e961` and refreshed application-role grants were applied through a separate private runner. The migration credential did not enter the web deployment environment or its history. Existing row counts were preserved; reconciliation passed for 13 accounts before rollout and 14 after the dedicated smoke trader was added.
+- `SCHEDULED_JOBS_ENABLED` is on. The first cycle refreshed 180 quotes, stored 23 control-evidence payloads, released its lease, and saved its next due time. Exported evidence hashes verified. The first control snapshot was 10 pass, 12 `no_sample`, one optional MFA-enrollment failure, and five controls outside this runner still `not_run`.
+- Live HTTP checks passed registration/login, operator roles, compliance reads and access denial, a propose-only intent approval, cash movement replays, and limit-order placement/replay/cancellation. The $1 deposit and withdrawal netted to zero; the order executed no fill. The dedicated smoke account remains, with credentials in ignored `.env.release-smoke-trader`; it needs a quarterly access-review decision. No model activation or policy approval was recorded.
+- All 134 backend tests passed on disposable PostgreSQL with no skips, frontend lint/9 tests/build passed, and all six release CI gates passed. Browser click-through remains open because the automation service was unavailable. The private runner, local release-test containers, and temporary SSH credentials were removed. The original development PostgreSQL container was retained.
+- This closes the hosted-image and schema lag. It does not close the full expansion roadmap: market-data enforcement and lineage, live feeds, intent risk integrations, Kronos, scheduled briefs and outbound alerts, independent evidence retention, secret management, owner approvals, the video, and GRC Sentinel remain open. Historical entries below describe the state at their recorded time; use this entry and the AWS runbook for current deployment status.
+
 ## 2026-11-04 Complete detection identity
 
 - Reviewed detections are compared by the full event-id set. The case row stores that set. The AML case list returns the first 20 ids. Surveillance uses the same identity check. This is not deployed. The hosted database is still Alembic `c7e8f1a2b345`.

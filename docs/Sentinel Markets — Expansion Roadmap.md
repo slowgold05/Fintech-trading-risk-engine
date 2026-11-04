@@ -21,13 +21,13 @@ Assumption: this plan builds on what you've described so far (risk engine, compl
 
 ## Status on 2026-11-04
 
-The working tree has the items checked below. It is not deployed. The write-up is `docs/EXPANSION_CHANGES.md`. Live vendor calls, Kronos weights, token rotation, a persisted bar store, wiring the data-quality block into order checks, PDF or XLSX workpapers, outbound alerts, and a vendor cron stay open. Phase 0 is not closed: the high findings in `docs/security/AUDIT-001.md` are still open.
+The implemented components and reviewed audit fixes are deployed in Lightsail deployment 7. The hosted schema is `f3a8c2d7e961`, application-role grants were refreshed through a separate private runner, and the scheduler is enabled. The first cycle refreshed 180 quotes and stored evidence for 23 application controls. The runner was removed after verification. The build write-up is `docs/EXPANSION_CHANGES.md`, and the current release record is `docs/aws_deployment.md`. Live expansion-vendor connections, Kronos weights, revocation evidence, persisted data lineage, order-path data-quality enforcement, PDF/XLSX workpapers, outbound alerts, and a vendor cron stay open. Phase 0 is not closed: secret management and the provider revocation artifact remain high findings.
 
 ## Left to complete
 
 This list is the remainder of the expansion plan. Checked boxes elsewhere in this file are already in the working tree. These items are not.
 
-The hosted database is still Alembic `c7e8f1a2b345`. Migrations `e7b2c5d9a174` and `f3a8c2d7e961` are not applied there. A later code audit fixed cash locking, scan cursors, wash-trade matching, sanctions parsing, authenticator consumption, AML retry, withdrawal replay, and the scheduler lease. A follow-on pass serializes scans per detector, skips detections whose events and rule version were already reviewed, and stores the scheduler's next due time on that same unreleased lease revision. A later pass keeps the full event-id identity and returns every qualifying structuring and rapid-movement pattern before that review check. That work did not close the items in this list.
+The hosted database is now Alembic `f3a8c2d7e961`; all seven release migrations are applied. The release includes the fixes for cash locking, scan cursors, wash-trade matching, sanctions parsing, authenticator consumption, AML retry, withdrawal replay, scheduler lease/due time, serialized scans, full event identities, and successive AML patterns. Container verification also corrected scoped application-role inserts. These fixes and deployment do not close the unfinished expansion integrations listed below.
 
 ### Still unwired in this tree
 
@@ -51,7 +51,7 @@ The hosted database is still Alembic `c7e8f1a2b345`. Migrations `e7b2c5d9a174` a
 
 ### Needs a person before it can be closed
 
-- Say when to deploy. Until then the hosted site does not run this code.
+- Complete browser click-through when the browser automation service is available. Live HTTP/API smoke tests passed, but no browser-based verification is claimed.
 - Attach the provider record that the exposed Alpha Vantage key was revoked.
 - Accept the draft policies, the forecast model card, the vendor notes, and the asset inventory. Those stay pending owner review.
 - For each signal account, supply the DID, whether it posted in the last 30 days, and the approver's name and time.
