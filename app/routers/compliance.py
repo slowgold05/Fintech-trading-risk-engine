@@ -1,12 +1,14 @@
-from hashlib import sha256
 import json
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response as FastAPIResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 import yaml
 
@@ -18,7 +20,26 @@ from app.models.role_change_request import RoleChangeRequest
 from app.models.access_review import AccessReview
 from app.models.user import User
 from app.models.trading_halt import TradingHaltState, TradingHaltEvent
-from app.services.control_evidence import EVIDENCE_DIR, control_status
+from app.services.access_review_check import current_review_period
+from app.services.control_evidence import EVIDENCE_DIR, describe_payload, latest_database_evidence
+from app.services.aml_cases import (
+    close_case as close_aml_case,
+    decide_activation as decide_aml_activation,
+    list_cases as list_aml_cases,
+    list_rule_states as list_aml_rules,
+    request_activation as request_aml_activation,
+    run_live_aml,
+)
+from app.services.incidents import close_incident, list_incidents, open_incident, record_notice
+from app.services.audit_bundle import build_evidence_zip
+from app.services.kri import kri_values
+from app.services.findings import list_findings
+from app.services.risk_brief import latest_brief
+from app.services.sar_draft import create_draft
+from app.services.trade_intents import approve_intent, compose_rationale, list_intents, propose_intent
+from app.services.surveillance_cases import (
+    close_case, decide_activation, list_cases, list_rule_states, request_activation, run_live_surveillance,
+)
 
 
 router = APIRouter(dependencies=[Depends(get_current_compliance_user)])
@@ -35,6 +56,15 @@ class RoleRequestCreate(BaseModel):
 class AccessReviewCreate(BaseModel):
     user_id: int = Field(gt=0)
     decision: Literal["retain", "remove"]
+    reason: str = Field(min_length=3, max_length=255)
+
+
+class SurveillanceRequestCreate(BaseModel):
+    reason: str = Field(min_length=3, max_length=255)
+
+
+class SurveillanceCaseClose(BaseModel):
+    disposition: Literal["true_positive", "false_positive", "inconclusive"]
     reason: str = Field(min_length=3, max_length=255)
 
 
@@ -82,17 +112,33 @@ def list_trading_halt_events(limit: int = Query(default=20, ge=1, le=100), db: S
                        for row in rows]}
 
 
-def current_review_period() -> str:
-    now = datetime.now(timezone.utc)
-    return f"{now.year}-Q{(now.month - 1) // 3 + 1}"
-
-
 def latest_role_change_id(db: Session, user_id: int) -> int | None:
     return db.execute(select(func.max(RoleChange.id)).where(RoleChange.user_id == user_id)).scalar_one()
 
 
+def evidence_table_ready(db: Session) -> bool:
+    try:
+        latest_database_evidence(db, "")
+    except (ProgrammingError, OperationalError):
+        db.rollback()
+        return False
+    return True
+
+
+def file_evidence(control_id: str) -> dict | None:
+    files = (EVIDENCE_DIR / control_id).glob("*.json")
+    latest = max(files, key=lambda path: path.stat().st_mtime, default=None)
+    if latest is None:
+        return None
+    try:
+        return describe_payload(control_id, latest.read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return {"status": "evidence_error", "run_at": None, "checked": None, "sha256": None}
+
+
 @router.get("/controls")
-def list_controls():
+def list_controls(db: Session = Depends(get_db)):
+    database_ready = evidence_table_ready(db)
     controls = []
     for definition in sorted(CONTROL_DIR.glob("*.yaml")):
         control = yaml.safe_load(definition.read_text(encoding="utf-8"))
@@ -100,27 +146,19 @@ def list_controls():
         item = {"id": control_id, "title": control["title"], "owner": control["owner"],
                 "frequency": control["frequency"], "status": "not_run", "run_at": None,
                 "checked": None, "sha256": None}
-        files = (EVIDENCE_DIR / control_id).glob("*.json")
-        latest = max(files, key=lambda path: path.stat().st_mtime, default=None)
-        if latest is not None:
-            try:
-                payload = latest.read_bytes()
-                evidence = json.loads(payload)
-                if evidence["control_id"] != control_id:
-                    raise ValueError("Control ID mismatch")
-                item.update(status=control_status(control_id, evidence["result"]),
-                            run_at=evidence["run_at"], checked=evidence["result"].get("checked"),
-                            sha256=sha256(payload).hexdigest())
-            except (OSError, ValueError, KeyError, TypeError):
-                item["status"] = "evidence_error"
+        evidence = latest_database_evidence(db, control_id) if database_ready else None
+        if evidence is None:
+            evidence = file_evidence(control_id)
+        if evidence is not None:
+            item.update(evidence)
         controls.append(item)
     return {"controls": controls}
 
 
 @router.get("/risks")
-def list_risks():
+def list_risks(db: Session = Depends(get_db)):
     register = yaml.safe_load(RISK_REGISTER.read_text(encoding="utf-8"))
-    controls = {item["id"]: item for item in list_controls()["controls"]}
+    controls = {item["id"]: item for item in list_controls(db)["controls"]}
     current_time = datetime.now(timezone.utc)
     ratings = {"high": "moderate", "moderate": "low", "low": "low"}
 
@@ -260,3 +298,219 @@ def submit_access_review(payload: AccessReviewCreate, db: Session = Depends(get_
     db.add(review)
     db.commit()
     return {"id": review.id, "period": period, "decision": review.decision}
+
+
+def _reviewer(current_user: User) -> None:
+    if current_user.role not in {"admin", "compliance_officer"}:
+        raise HTTPException(status_code=403, detail="A reviewer role is required")
+
+
+@router.get("/surveillance/rules")
+def list_surveillance_rules(db: Session = Depends(get_db)):
+    return {"rules": list_rule_states(db)}
+
+
+@router.post("/surveillance/rules/{rule_id}/request")
+def request_surveillance_rule(rule_id: str, payload: SurveillanceRequestCreate, db: Session = Depends(get_db),
+                              current_user: User = Depends(get_current_compliance_user)):
+    row = request_activation(db, current_user, rule_id, payload.reason)
+    return {"id": row.id, "rule_id": row.rule_id, "version": row.version, "status": row.status}
+
+
+@router.post("/surveillance/activations/{request_id}/approve")
+def approve_surveillance_rule(request_id: int, db: Session = Depends(get_db),
+                              current_user: User = Depends(get_current_compliance_user)):
+    row = decide_activation(db, current_user, request_id, True)
+    return {"id": row.id, "rule_id": row.rule_id, "status": row.status}
+
+
+@router.post("/surveillance/activations/{request_id}/reject")
+def reject_surveillance_rule(request_id: int, db: Session = Depends(get_db),
+                             current_user: User = Depends(get_current_compliance_user)):
+    row = decide_activation(db, current_user, request_id, False)
+    return {"id": row.id, "rule_id": row.rule_id, "status": row.status}
+
+
+@router.get("/surveillance/cases")
+def list_surveillance_cases(db: Session = Depends(get_db)):
+    return {"cases": list_cases(db)}
+
+
+@router.post("/surveillance/cases/{case_id}/close")
+def close_surveillance_case(case_id: int, payload: SurveillanceCaseClose, db: Session = Depends(get_db),
+                            current_user: User = Depends(get_current_compliance_user)):
+    row = close_case(db, current_user, case_id, payload.disposition, payload.reason)
+    return {"id": row.id, "status": row.status, "disposition": row.disposition}
+
+
+@router.post("/surveillance/run")
+def run_surveillance(db: Session = Depends(get_db), current_user: User = Depends(get_current_compliance_user)):
+    _reviewer(current_user)
+    return run_live_surveillance(db)
+
+
+class IncidentCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=255)
+    severity: Literal["low", "moderate", "high"]
+    summary: str = Field(min_length=3, max_length=255)
+
+
+class SarDraftCreate(BaseModel):
+    case_kind: Literal["surveillance", "aml"]
+    case_id: int = Field(gt=0)
+
+
+@router.get("/aml/rules")
+def list_aml_rule_states(db: Session = Depends(get_db)):
+    return {"rules": list_aml_rules(db)}
+
+
+@router.post("/aml/rules/{rule_id}/request")
+def request_aml_rule(rule_id: str, payload: SurveillanceRequestCreate, db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_compliance_user)):
+    row = request_aml_activation(db, current_user, rule_id, payload.reason)
+    return {"id": row.id, "rule_id": row.rule_id, "version": row.version, "status": row.status}
+
+
+@router.post("/aml/activations/{request_id}/approve")
+def approve_aml_rule(request_id: int, db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_compliance_user)):
+    row = decide_aml_activation(db, current_user, request_id, True)
+    return {"id": row.id, "rule_id": row.rule_id, "status": row.status}
+
+
+@router.post("/aml/activations/{request_id}/reject")
+def reject_aml_rule(request_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_compliance_user)):
+    row = decide_aml_activation(db, current_user, request_id, False)
+    return {"id": row.id, "rule_id": row.rule_id, "status": row.status}
+
+
+@router.get("/aml/cases")
+def get_aml_cases(db: Session = Depends(get_db)):
+    return {"cases": list_aml_cases(db)}
+
+
+@router.post("/aml/cases/{case_id}/close")
+def close_aml(case_id: int, payload: SurveillanceCaseClose, db: Session = Depends(get_db),
+              current_user: User = Depends(get_current_compliance_user)):
+    row = close_aml_case(db, current_user, case_id, payload.disposition, payload.reason)
+    return {"id": row.id, "status": row.status, "disposition": row.disposition}
+
+
+@router.post("/aml/run")
+def run_aml(db: Session = Depends(get_db), current_user: User = Depends(get_current_compliance_user)):
+    _reviewer(current_user)
+    return run_live_aml(db)
+
+
+@router.get("/incidents")
+def get_incidents(db: Session = Depends(get_db)):
+    return {"incidents": list_incidents(db)}
+
+
+@router.post("/incidents")
+def create_incident(payload: IncidentCreate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_compliance_user)):
+    row = open_incident(db, current_user, payload.title, payload.severity, payload.summary)
+    return {"id": row.id, "customer_notice_due_at": row.customer_notice_due_at}
+
+
+@router.post("/incidents/{incident_id}/notify")
+def notify_incident(incident_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_compliance_user)):
+    row = record_notice(db, current_user, incident_id)
+    return {"id": row.id, "customer_notified_at": row.customer_notified_at}
+
+
+@router.post("/incidents/{incident_id}/close")
+def finish_incident(incident_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_compliance_user)):
+    row = close_incident(db, current_user, incident_id)
+    return {"id": row.id, "status": row.status}
+
+
+@router.get("/kris")
+def get_kris(db: Session = Depends(get_db)):
+    return {"kris": kri_values(db)}
+
+
+@router.post("/sar-drafts")
+def create_sar_draft(payload: SarDraftCreate, db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_compliance_user)):
+    row = create_draft(db, current_user, payload.case_kind, payload.case_id)
+    return {"id": row.id, "narrative": row.narrative}
+
+
+@router.get("/evidence-export")
+def export_evidence(db: Session = Depends(get_db)):
+    payload = build_evidence_zip(db)
+    return FastAPIResponse(content=payload, media_type="application/zip",
+                           headers={"Content-Disposition": "attachment; filename=evidence-bundle.zip"})
+
+
+class IntentCreate(BaseModel):
+    symbol: str = ""
+    side: str = ""
+    quantity: str = "0"
+    reference_price: str = "0"
+    rationale: str = ""
+    confidence: str = "0"
+    news: list[str] = Field(default_factory=list)
+
+
+class IntentFromBars(BaseModel):
+    symbol: str = Field(min_length=1, max_length=20)
+    closes: list[str] = Field(min_length=2)
+    reference_price: str
+    quantity: str = "1"
+    news: list[str] = Field(default_factory=list)
+
+
+@router.get("/intents")
+def get_intents(db: Session = Depends(get_db)):
+    return {"intents": list_intents(db)}
+
+
+@router.post("/intents")
+def create_intent(payload: IntentCreate, db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_compliance_user)):
+    _reviewer(current_user)
+    row = propose_intent(
+        db, symbol=payload.symbol, side=payload.side, quantity=payload.quantity,
+        reference_price=payload.reference_price, rationale=payload.rationale,
+        confidence=payload.confidence, news=payload.news, proposed_by=f"user:{current_user.id}",
+    )
+    return {"id": row.id, "status": row.status, "rejection_reason": row.rejection_reason}
+
+
+@router.post("/intents/from-bars")
+def create_intent_from_bars(payload: IntentFromBars, db: Session = Depends(get_db),
+                            current_user: User = Depends(get_current_compliance_user)):
+    _reviewer(current_user)
+    closes = [Decimal(item) for item in payload.closes]
+    notional = Decimal(payload.quantity) * Decimal(payload.reference_price)
+    rationale, confidence = compose_rationale(closes, settings.max_stock_position_notional, notional)
+    row = propose_intent(
+        db, symbol=payload.symbol, side="buy", quantity=payload.quantity,
+        reference_price=payload.reference_price, rationale=rationale,
+        confidence=str(confidence), news=payload.news, proposed_by="deterministic-analyst",
+    )
+    return {"id": row.id, "status": row.status, "rationale": row.rationale}
+
+
+@router.post("/intents/{intent_id}/approve")
+def approve_trade_intent(intent_id: int, db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_compliance_user)):
+    row = approve_intent(db, current_user, intent_id)
+    return {"id": row.id, "status": row.status, "decided_by_user_id": row.decided_by_user_id}
+
+
+@router.get("/findings")
+def get_findings(db: Session = Depends(get_db)):
+    return {"findings": list_findings(db)}
+
+
+@router.get("/risk-brief")
+def get_risk_brief(db: Session = Depends(get_db)):
+    return {"brief": latest_brief(db)}

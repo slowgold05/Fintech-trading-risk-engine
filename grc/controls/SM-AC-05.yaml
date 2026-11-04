@@ -1,0 +1,13 @@
+id: SM-AC-05
+title: High-risk logins use step-up
+objective: Detect a session issued for a high-risk login that did not complete step-up.
+type: detective, automated
+owner: Security Operations (second line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_phase4_identity.py
+evidence: grc/evidence/SM-AC-05/<run-id>.json
+threshold: A successful login at or above the step-up score recorded that step-up was completed. No login events is no_sample.
+mappings:
+  nydfs_500: "500.12"
+risks:
+  - Credential stuffing bypasses login limits

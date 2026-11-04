@@ -1,0 +1,21 @@
+kris:
+  - id: KRI-01
+    title: Open AML cases past due
+    owner: Compliance
+    threshold: 0
+    escalation: The case owner reviews the breach the same day the indicator is above zero.
+  - id: KRI-02
+    title: Named accounts without a clear onboarding screen
+    owner: Security Operations
+    threshold: 0
+    escalation: Stop withdrawals for the account until a clear screen is recorded.
+  - id: KRI-03
+    title: Incidents past the customer-notice due time
+    owner: Security Operations
+    threshold: 0
+    escalation: A different reviewer records the customer notice or documents why notice is not required.
+  - id: KRI-04
+    title: Open surveillance cases past due
+    owner: Trading Surveillance
+    threshold: 0
+    escalation: A reviewer who did not place the trade dispositions the case the same day.

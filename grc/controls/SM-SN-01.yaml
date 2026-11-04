@@ -1,0 +1,13 @@
+id: SM-SN-01
+title: Sanctions screening on named accounts and withdrawals
+objective: Detect a named account or a paper withdrawal that lacks a clear sanctions screen.
+type: preventive and detective, automated
+owner: Security Operations (second line)
+frequency: per payout and daily
+test: python -m app.scripts.run_controls; tests/test_phase5_aml.py
+evidence: grc/evidence/SM-SN-01/<run-id>.json
+threshold: Every named account has a clear onboarding screen and every withdrawal has a clear payout screen. No names and no withdrawals is no_sample.
+mappings:
+  nydfs_500: "500.03"
+risks:
+  - A sanctioned name receives a paper withdrawal

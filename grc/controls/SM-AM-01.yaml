@@ -1,0 +1,13 @@
+id: SM-AM-01
+title: Asset inventory completeness
+objective: Detect a missing or incomplete inventory of the systems that hold credentials, orders, or control evidence.
+type: detective, automated
+owner: Security Operations (second line)
+frequency: per change and daily
+test: python -m app.scripts.run_controls; tests/test_phase4_identity.py
+evidence: grc/evidence/SM-AM-01/<run-id>.json
+threshold: The inventory lists the application, database, source repository, and evidence store, each with an owner, location, and data class.
+mappings:
+  nydfs_500: "500.13"
+risks:
+  - The asset inventory omits a system that holds credentials or evidence

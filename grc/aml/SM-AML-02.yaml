@@ -1,0 +1,15 @@
+id: SM-AML-02
+version: 1
+title: Rapid movement of funds
+purpose: Detect a paper deposit followed quickly by withdrawals that return most of that deposit.
+model_type: deterministic_threshold
+owner: Compliance (second line)
+parameters:
+  window_minutes: 60
+  min_deposit: "1000"
+  withdrawal_ratio: "0.9"
+sla_hours: 24
+limitations:
+  - The labeled scenarios are hand-written paper movements. They are not an IBM AMLSim graph export.
+  - A withdrawal that does not follow a deposit inside the window is not scored.
+  - The rule does not know the destination of a withdrawal outside this ledger.

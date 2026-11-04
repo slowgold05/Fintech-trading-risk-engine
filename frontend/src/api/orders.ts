@@ -6,10 +6,10 @@ export async function fetchOrders(): Promise<{ orders: OrderResponse[] }> {
   return response.data;
 }
 
-export async function createOrder({ idempotencyKey, ...payload }: CreateOrderPayload & { idempotencyKey: string }): Promise<OrderResponse> {
-  const response = await apiClient.post<OrderResponse>("/orders/", payload, {
-    headers: { "Idempotency-Key": idempotencyKey },
-  });
+export async function createOrder({ idempotencyKey, stepUpCode, ...payload }: CreateOrderPayload & { idempotencyKey: string; stepUpCode?: string }): Promise<OrderResponse> {
+  const headers: Record<string, string> = { "Idempotency-Key": idempotencyKey };
+  if (stepUpCode) headers["X-Step-Up-Code"] = stepUpCode;
+  const response = await apiClient.post<OrderResponse>("/orders/", payload, { headers });
   return response.data;
 }
 

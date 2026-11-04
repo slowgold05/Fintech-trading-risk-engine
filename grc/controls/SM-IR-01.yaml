@@ -1,0 +1,13 @@
+id: SM-IR-01
+title: Customer notice stays inside 30 days
+objective: Detect an incident whose customer notice is missing or late against the 30-day clock.
+type: detective, automated
+owner: Security Operations (second line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_phase5_aml.py
+evidence: grc/evidence/SM-IR-01/<run-id>.json
+threshold: Customer notice is recorded on or before the due time. No incidents is no_sample.
+mappings:
+  reg_s_p: customer-notice-30-days
+risks:
+  - Customer notice exceeds 30 days after discovery

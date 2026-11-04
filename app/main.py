@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,9 +12,24 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
-from app.routers import auth, assets, compliance, market, orders, trades, portfolio, risk
+from app.routers import auth, assets, cash, compliance, market, orders, trades, portfolio, risk
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stop = None
+    if settings.scheduled_jobs_enabled:
+        from app.services.scheduled_jobs import start_scheduled_jobs
+        stop = start_scheduled_jobs()
+    try:
+        yield
+    finally:
+        if stop is not None:
+            stop()
+
 
 app = FastAPI(
+    lifespan=lifespan,
     title="Fintech Trading & Risk Engine",
     version="1.0.0",
     description="Secure backend for trading, portfolio analytics, and risk assessment",
@@ -87,3 +104,4 @@ app.include_router(compliance.router, prefix="/compliance", tags=["Compliance"])
 app.include_router(portfolio.router, prefix="/portfolio", tags=["Portfolio"])
 app.include_router(risk.router, prefix="/risk", tags=["Risk"])
 app.include_router(assets.router, prefix="/assets", tags=["Assets"])
+app.include_router(cash.router, prefix="/cash", tags=["Cash"])

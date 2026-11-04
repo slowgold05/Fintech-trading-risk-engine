@@ -13,11 +13,14 @@ def test_control_export_uses_yaml_ids_and_rejects_incomplete_rows():
         root = Path(folder)
         assert root.resolve().parent == Path.cwd().resolve()
         output = root / "matrix.csv"
-        assert export_controls(Path("grc/controls"), output) == 11
+        assert export_controls(Path("grc/controls"), output) == 28
         with output.open(newline="", encoding="utf-8") as csv_file:
             rows = list(csv.DictReader(csv_file))
-        assert [row["id"] for row in rows] == ["SM-AC-01", "SM-AC-02", "SM-CM-01", "SM-LD-01",
-                                                 "SM-MD-01", "SM-PT-01", "SM-PT-02", "SM-PT-03", "SM-PT-04", "SM-PT-05", "SM-SM-01"]
+        assert [row["id"] for row in rows] == ["SM-AC-01", "SM-AC-02", "SM-AC-03", "SM-AC-04", "SM-AC-05", "SM-AI-01",
+                                                 "SM-AM-01", "SM-AML-03", "SM-AU-01", "SM-BR-01", "SM-CM-01", "SM-DQ-01",
+                                                 "SM-EV-01", "SM-FC-01", "SM-IR-01", "SM-LD-01", "SM-MD-01", "SM-PT-01",
+                                                 "SM-PT-02", "SM-PT-03", "SM-PT-04", "SM-PT-05", "SM-PT-06", "SM-RP-01",
+                                                 "SM-SG-01", "SM-SM-01", "SM-SN-01", "SM-SV-05"]
         assert all(row["test"] and row["evidence"] for row in rows)
 
         (root / "SM-BAD-01.yaml").write_text("id: SM-BAD-01\ntitle: Incomplete\n", encoding="utf-8")
@@ -29,6 +32,6 @@ def test_risk_register_has_unique_ids_and_known_control_links():
     risks = yaml.safe_load(Path("grc/risk_register.yaml").read_text(encoding="utf-8"))["risks"]
     ids = [risk["id"] for risk in risks]
     controls = {path.stem for path in Path("grc/controls").glob("*.yaml")}
-    assert len(risks) == len(set(ids)) == 16
+    assert len(risks) == len(set(ids)) == 29
     assert all(risk["inherent_rating"] in {"low", "moderate", "high"}
                and set(risk["controls"]) <= controls for risk in risks)

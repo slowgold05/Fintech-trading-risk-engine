@@ -110,7 +110,8 @@ export function Trades() {
     if (pendingOrder.current?.payload !== fingerprint) {
       pendingOrder.current = { payload: fingerprint, key: crypto.randomUUID() };
     }
-    orderMutation.mutate({ ...payload, idempotencyKey: pendingOrder.current.key });
+    const stepUpCode = String(formData.get("step_up_code") ?? "").trim();
+    orderMutation.mutate({ ...payload, idempotencyKey: pendingOrder.current.key, stepUpCode: stepUpCode || undefined });
   }
 
   const trades = tradesQuery.data?.trades ?? [];
@@ -230,6 +231,21 @@ export function Trades() {
               </div>
               <p className="mt-2 text-xs text-slate-500">A recent cached stock quote is required. Leave price blank for a market order.</p>
             </div>
+
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Authenticator code
+              </span>
+              <input
+                aria-label="Authenticator code"
+                autoComplete="one-time-code"
+                className="field-control mt-2 font-mono"
+                inputMode="numeric"
+                maxLength={6}
+                name="step_up_code"
+                placeholder="Required for a large order after MFA"
+              />
+            </label>
 
             <button
               aria-label="Submit trade order"

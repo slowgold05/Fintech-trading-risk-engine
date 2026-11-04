@@ -54,29 +54,94 @@ risks:
     title: Paper order spends more than available buying power
     owner: Trading Operations
     inherent_rating: high
-    controls: []
+    controls: [SM-PT-06]
   - id: R-12
     title: Local control evidence is changed or deleted
     owner: Compliance
     inherent_rating: high
-    controls: []
+    controls: [SM-EV-01]
   - id: R-13
     title: Credential stuffing bypasses login limits
     owner: Security Operations
     inherent_rating: high
-    controls: []
+    controls: [SM-AC-05]
   - id: R-14
     title: Market-data provider outage prevents timely quotes
     owner: Market Operations
     inherent_rating: moderate
-    controls: []
+    controls: [SM-MD-01]
   - id: R-15
     title: Quarterly access review is missed or incomplete
     owner: Compliance
     inherent_rating: high
-    controls: []
+    controls: [SM-AC-03]
   - id: R-16
     title: Paper trading continues during an operational halt
     owner: Trading Operations
     inherent_rating: high
     controls: [SM-PT-01]
+  - id: R-17
+    title: Paper trading can hide wash trades, spoofing, pump-and-dump, or unusual volume
+    owner: Trading Surveillance
+    inherent_rating: high
+    controls: [SM-SV-05]
+  - id: R-18
+    title: An account can sign in with only a password
+    owner: Security Operations
+    inherent_rating: high
+    controls: [SM-AC-04]
+  - id: R-19
+    title: The asset inventory omits a system that holds credentials or evidence
+    owner: Security Operations
+    inherent_rating: moderate
+    controls: [SM-AM-01]
+  - id: R-20
+    title: Repeated cash movements can hide structuring or rapid movement
+    owner: Compliance
+    inherent_rating: high
+    controls: [SM-AML-03]
+  - id: R-21
+    title: A sanctioned name receives a paper withdrawal
+    owner: Security Operations
+    inherent_rating: high
+    controls: [SM-SN-01]
+  - id: R-22
+    title: Customer notice exceeds 30 days after discovery
+    owner: Security Operations
+    inherent_rating: high
+    controls: [SM-IR-01]
+  - id: R-23
+    title: A narrative cites events the case does not contain or decides to file
+    owner: Compliance
+    inherent_rating: moderate
+    controls: [SM-RP-01]
+  - id: R-24
+    title: An auditor bundle does not match the stored evidence
+    owner: Compliance
+    inherent_rating: moderate
+    controls: [SM-AU-01]
+  - id: R-25
+    title: A risk number is computed from a bar that failed a data-quality check
+    owner: Market Operations
+    inherent_rating: high
+    controls: [SM-DQ-01]
+  - id: R-26
+    title: A degraded forecast still changes a risk decision
+    owner: Market Risk
+    inherent_rating: moderate
+    controls: [SM-FC-01]
+  - id: R-27
+    title: An agent proposal is treated as an approved trade
+    owner: Compliance
+    inherent_rating: high
+    controls: [SM-AI-01]
+  - id: R-28
+    title: Untrusted text reaches an agent and changes a proposal
+    owner: Security Operations
+    inherent_rating: high
+    controls: [SM-SG-01]
+  - id: R-29
+    title: A narrative states a risk number that was not computed
+    owner: Market Risk
+    inherent_rating: moderate
+    controls: [SM-BR-01]

@@ -17,7 +17,21 @@ class Settings(BaseSettings):
     enable_hsts: bool = False
     enable_api_docs: bool = True
     rate_limit_enabled: bool = True
+    mfa_required: bool = False
+    impossible_travel_minutes: int = Field(default=60, ge=1, le=1440)
+    login_geo_prefixes: str = ""
+    large_order_step_up_notional: Decimal = Field(default=Decimal("10000"), gt=0)
+    yente_url: str = ""
+    yente_match_threshold: Decimal = Field(default=Decimal("0.85"), gt=0, le=1)
+    massive_api_key: str = ""
+    finnhub_api_key: str = ""
+    twelve_data_api_key: str = ""
+    kronos_checkpoint: str = ""
     trading_halted: bool = False
+    scheduled_jobs_enabled: bool = False
+    scheduled_job_interval_hours: int = Field(default=24, ge=1, le=168)
+    scheduled_market_hot_limit: int = Field(default=200, ge=1, le=1000)
+    scheduled_market_daily_limit: int = Field(default=100, ge=0, le=1000)
     max_stock_concentration_pct: Decimal = Field(default=Decimal("50"), gt=0, le=100)
     max_stock_position_notional: Decimal = Field(default=Decimal("50000"), gt=0)
 

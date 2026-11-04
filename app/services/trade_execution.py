@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 
 from fastapi import HTTPException
@@ -36,7 +37,7 @@ def reserved_shares(db: Session, user_id: int, asset_id: int) -> Decimal:
     return sum((order.remaining_quantity for order in orders), Decimal(0))
 
 
-def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal, price: Decimal, order_id: int | None = None) -> tuple[Trade, int]:
+def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal, price: Decimal, order_id: int | None = None, executed_at: datetime | None = None) -> tuple[Trade, int]:
     if side not in ("buy", "sell") or qty <= 0 or price <= 0:
         raise ValueError("Invalid trade fill")
     notional = notional_amount(qty, price)
@@ -53,6 +54,8 @@ def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal,
 
     ensure_opening(db, user)
     trade = Trade(user_id=user.id, asset_id=asset.id, order_id=order_id, side=side, quantity=qty, price_at_execution=price)
+    if executed_at is not None:
+        trade.executed_at = executed_at
     db.add(trade)
     db.flush()
 

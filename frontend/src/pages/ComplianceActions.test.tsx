@@ -24,6 +24,22 @@ vi.mock("../api/compliance", () => ({
   requestRoleChange: actions.requestRoleChange,
   submitAccessReview: actions.submitAccessReview,
   approveRoleChange: vi.fn(),
+  fetchSurveillanceRules: () => Promise.resolve({ rules: [] }),
+  fetchSurveillanceCases: () => Promise.resolve({ cases: [] }),
+  requestSurveillanceActivation: vi.fn(),
+  approveSurveillanceActivation: vi.fn(),
+  fetchAmlRules: () => Promise.resolve({ rules: [] }),
+  fetchAmlCases: () => Promise.resolve({ cases: [] }),
+  requestAmlActivation: vi.fn(),
+  approveAmlActivation: vi.fn(),
+  fetchIncidents: () => Promise.resolve({ incidents: [] }),
+  openIncident: vi.fn(),
+  fetchKris: () => Promise.resolve({ kris: [] }),
+  fetchIntents: () => Promise.resolve({ intents: [] }),
+  approveIntent: vi.fn(),
+  fetchFindings: () => Promise.resolve({ findings: [] }),
+  fetchRiskBrief: () => Promise.resolve({ brief: null }),
+  downloadEvidenceBundle: vi.fn(),
 }));
 
 describe("Compliance actions", () => {

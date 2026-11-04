@@ -87,6 +87,31 @@ export interface AccessReviewAccountResponse {
   reviewed_at: string | null;
 }
 
+export interface SurveillanceRuleResponse {
+  id: string;
+  title: string;
+  version: number;
+  model_type: string;
+  sla_hours: number;
+  activation_status: "inactive" | "pending" | "active" | "rejected" | "retired";
+  request_id: number | null;
+  requested_by_user_id: number | null;
+}
+
+export interface SurveillanceCaseResponse {
+  id: number;
+  rule_id: string;
+  rule_version: number;
+  subject_user_id: number;
+  symbol: string;
+  status: "open" | "closed";
+  disposition: "true_positive" | "false_positive" | "inconclusive" | null;
+  summary: string;
+  opened_at: string;
+  due_at: string;
+  closed_at: string | null;
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;

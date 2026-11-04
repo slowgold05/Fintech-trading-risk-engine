@@ -1,0 +1,37 @@
+{
+  "rule_id": "SM-SV-01",
+  "scenarios": [
+    {
+      "id": "same-account-round-trip",
+      "label": true,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "100", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T15:05:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "100", "price": "10.02"}
+      ]
+    },
+    {
+      "id": "matched-pair",
+      "label": true,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "AAPL", "kind": "trade", "side": "sell", "quantity": "40", "price": "20"},
+        {"event_id": "t2", "at": "2026-11-03T15:01:00", "user_id": 2, "symbol": "AAPL", "kind": "trade", "side": "buy", "quantity": "40", "price": "20.05"}
+      ]
+    },
+    {
+      "id": "round-trip-outside-window",
+      "label": false,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "100", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T16:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "100", "price": "10"}
+      ]
+    },
+    {
+      "id": "unmatched-size",
+      "label": false,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "100", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T15:05:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "10", "price": "10"}
+      ]
+    }
+  ]
+}

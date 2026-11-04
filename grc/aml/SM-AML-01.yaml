@@ -1,0 +1,15 @@
+id: SM-AML-01
+version: 1
+title: Structuring
+purpose: Detect repeated paper deposits or withdrawals that each stay under a threshold and together reach it.
+model_type: deterministic_threshold
+owner: Compliance (second line)
+parameters:
+  window_hours: 24
+  threshold: "10000"
+  min_count: 3
+sla_hours: 24
+limitations:
+  - The labeled scenarios are hand-written paper movements. They are not an IBM AMLSim graph export.
+  - A movement at or above the threshold is not counted as structuring.
+  - The rule does not know cash activity outside this broker.

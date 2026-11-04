@@ -1,0 +1,106 @@
+status: draft
+approval: Pending model owner review
+method: Each scenario is labeled fire or do-not-fire before the detector runs. Precision
+  is true positives divided by alerts. Recall is true positives divided by labeled
+  positives. Surveillance scenarios live in grc/surveillance/scenarios. AML scenarios
+  are hand-labeled JSON in grc/aml/scenarios. They are not an AMLSim graph export.
+models:
+- id: SM-SV-01
+  version: 1
+  title: Wash trading
+  model_type: deterministic_threshold
+  owner: Trading Surveillance (first line)
+  activation: database record required; the YAML file is not an activation
+  validation_report: grc/models/reports/SM-SV-01.md
+  scenarios: 4
+  true_positive: 2
+  false_positive: 0
+  true_negative: 2
+  false_negative: 0
+  precision: 1.0
+  recall: 1.0
+- id: SM-SV-02
+  version: 1
+  title: Spoofing and layering
+  model_type: deterministic_threshold
+  owner: Trading Surveillance (first line)
+  activation: database record required; the YAML file is not an activation
+  validation_report: grc/models/reports/SM-SV-02.md
+  scenarios: 4
+  true_positive: 2
+  false_positive: 0
+  true_negative: 2
+  false_negative: 0
+  precision: 1.0
+  recall: 1.0
+- id: SM-SV-03
+  version: 1
+  title: Pump and dump
+  model_type: deterministic_threshold
+  owner: Trading Surveillance (first line)
+  activation: database record required; the YAML file is not an activation
+  validation_report: grc/models/reports/SM-SV-03.md
+  scenarios: 4
+  true_positive: 2
+  false_positive: 0
+  true_negative: 2
+  false_negative: 0
+  precision: 1.0
+  recall: 1.0
+- id: SM-SV-04
+  version: 1
+  title: Unusual volume
+  model_type: deterministic_threshold
+  owner: Trading Surveillance (first line)
+  activation: database record required; the YAML file is not an activation
+  validation_report: grc/models/reports/SM-SV-04.md
+  scenarios: 4
+  true_positive: 2
+  false_positive: 0
+  true_negative: 2
+  false_negative: 0
+  precision: 1.0
+  recall: 1.0
+- id: SM-AML-01
+  version: 1
+  title: Structuring
+  model_type: deterministic_threshold
+  owner: Compliance (second line)
+  activation: database record required; the YAML file is not an activation
+  validation_report: grc/models/reports/SM-AML-01.md
+  scenarios: 5
+  true_positive: 2
+  false_positive: 0
+  true_negative: 3
+  false_negative: 0
+  precision: 1.0
+  recall: 1.0
+- id: SM-AML-02
+  version: 1
+  title: Rapid movement of funds
+  model_type: deterministic_threshold
+  owner: Compliance (second line)
+  activation: database record required; the YAML file is not an activation
+  validation_report: grc/models/reports/SM-AML-02.md
+  scenarios: 5
+  true_positive: 2
+  false_positive: 0
+  true_negative: 3
+  false_negative: 0
+  precision: 1.0
+  recall: 1.0
+- id: SM-FC-01
+  version: 1
+  title: Historical volatility forecast
+  model_type: historical_volatility
+  owner: Market Risk
+  activation: advisory only after validation passes and the monitor is enabled; the
+    YAML row is not an activation
+  validation_report: grc/models/reports/SM-FC-01.md
+  model_card: grc/models/cards/SM-FC-01.md
+  trials: 30
+  hits: 30
+  hit_rate: 1.0
+  passed: true
+  note: Hit rate is the share of walk-forward closes inside the band. It is not precision
+    or recall.

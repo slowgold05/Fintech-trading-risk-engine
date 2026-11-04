@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-28
 **Control owner:** Trading Operations (first line)
-**Status:** Design tested; operating effectiveness and independent review pending
+**Status:** Design tested. One hosted open order exists as of 2026-11-03. The control runner has not inspected it, and independent review is pending.
 
 ## Risk and control
 
@@ -14,7 +14,7 @@ An extreme or stale paper-order price could cause a bad simulated fill. Order en
 
 ## Test of operating effectiveness
 
-The first local run found zero open orders and zero violations. Evidence: `grc/evidence/SM-PT-02/aae60ba115294c16aec07a4559f77d07.json`, SHA-256 `c0b6e16de8b00fa1cd8b36125b0cf8af12bbafc51737dd42d4bb9a343e049e4e`. The runner now labels this result `no_sample`; its latest run is `grc/evidence/SM-PT-02/53c9f2a338044b678b3bbb342f08aa1a.json`, SHA-256 `c6fc0bbd45939c1f51b8a7186a50104c737cfb440d317427ceffe810b4c91609`. With no open-order population, these runs do not establish operating effectiveness.
+The first local run found zero open orders and zero violations. Evidence: `grc/evidence/SM-PT-02/aae60ba115294c16aec07a4559f77d07.json`, SHA-256 `c0b6e16de8b00fa1cd8b36125b0cf8af12bbafc51737dd42d4bb9a343e049e4e`. The runner now labels this result `no_sample`; its latest run is `grc/evidence/SM-PT-02/53c9f2a338044b678b3bbb342f08aa1a.json`, SHA-256 `c6fc0bbd45939c1f51b8a7186a50104c737cfb440d317427ceffe810b4c91609`. With no open-order population, these runs do not establish operating effectiveness. On 2026-11-03 the hosted book gained one open order: NVDA buy 1 at $184.18, order id 1, against the cached $204.64 quote dated 2026-10-30. The same heatmap still had 496 quotes dated 2026-07-02, which the price band rejects. A passing control run against the new order is still required.
 
 ## Limits and follow-up
 

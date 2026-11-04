@@ -16,6 +16,6 @@
 
 ## Evidence and exceptions
 
-SM-CM-01 records the live main-branch rule and passing CI run for the checked-out commit. SM-SM-01 records the Gitleaks job result. GitHub PRs, CI logs, and SBOM artifacts are supporting evidence. Local control JSON is still writable by the machine operator and needs independent retention. Required approving reviews and hosted deployment checks remain open.
+SM-CM-01 records the live main-branch rule and passing CI run for the checked-out commit. SM-SM-01 records the Gitleaks job result. GitHub PRs, CI logs, and SBOM artifacts are supporting evidence. Application control runs are also stored in append-only `control_evidence` rows (SM-EV-01). A copy kept outside the database, where the operator cannot edit it, is still open. Required approving reviews and hosted deployment checks remain open.
 
 **Approval:** Pending policy owner review.
