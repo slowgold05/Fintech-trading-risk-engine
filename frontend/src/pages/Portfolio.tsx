@@ -1,5 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
+import { fetchMe, setLegalName } from "../api/auth";
+import { createCashMovement } from "../api/cash";
 import { fetchPortfolio, fetchPortfolioPnl } from "../api/portfolio";
+import { useToast } from "../context/useToast";
 import { PageHeader } from "../components/PageHeader";
 import {
   DashboardCard,
@@ -33,6 +38,96 @@ function getAssetExposure(positions: PortfolioPositionResponse[]) {
   return Object.entries(exposure)
     .map(([assetType, value]) => ({ assetType, value }))
     .sort((a, b) => b.value - a.value);
+}
+
+function CashPanel() {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const me = useQuery({ queryKey: ["me"], queryFn: fetchMe });
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [code, setCode] = useState("");
+  const nameMutation = useMutation({
+    mutationFn: setLegalName,
+    onSuccess: (result) => {
+      setName(result.full_name);
+      showToast("success", "Legal name saved.");
+    },
+    onError: (error) => showToast("error", isAxiosError(error) ? String(error.response?.data?.detail ?? "Legal name was not saved.") : "Legal name was not saved."),
+  });
+  const cashMutation = useMutation({
+    mutationFn: createCashMovement,
+    onSuccess: (result) => {
+      setAmount("");
+      setCode("");
+      showToast("success", `${result.kind} recorded.`);
+      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+    },
+    onError: (error) => showToast("error", isAxiosError(error) ? String(error.response?.data?.detail ?? "Cash movement was not recorded.") : "Cash movement was not recorded."),
+  });
+
+  function saveName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    nameMutation.mutate(name.trim());
+  }
+
+  function move(kind: "deposit" | "withdrawal") {
+    cashMutation.mutate({ kind, amount: amount.trim(), stepUpCode: code.trim() || undefined });
+  }
+
+  const trader = me.data?.role === "trader";
+
+  return (
+    <DashboardCard title="Paper cash">
+      <form onSubmit={saveName} className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <input
+          aria-label="Legal name"
+          value={name}
+          minLength={3}
+          maxLength={255}
+          required
+          placeholder="Legal name for screening"
+          onChange={(event) => setName(event.target.value)}
+          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+        />
+        <button type="submit" disabled={nameMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">
+          Save legal name
+        </button>
+      </form>
+      {me.isLoading ? <SkeletonBlock className="h-16" /> : trader ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input
+            aria-label="Cash amount"
+            value={amount}
+            inputMode="decimal"
+            placeholder="25.00"
+            onChange={(event) => setAmount(event.target.value)}
+            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+          />
+          <input
+            aria-label="Authenticator code"
+            value={code}
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="Code for a large withdrawal"
+            onChange={(event) => setCode(event.target.value)}
+            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+          />
+          <button type="button" disabled={cashMutation.isPending || amount.trim().length === 0} onClick={() => move("deposit")} className="rounded border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-50">
+            Deposit
+          </button>
+          <button type="button" disabled={cashMutation.isPending || amount.trim().length === 0} onClick={() => move("withdrawal")} className="rounded border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-50">
+            Withdraw
+          </button>
+          <p className="text-xs text-slate-500 sm:col-span-2">
+            A withdrawal needs a saved legal name. At or above $10,000 it also needs a current authenticator code.
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-400">Paper deposits and withdrawals are available to trader accounts.</p>
+      )}
+    </DashboardCard>
+  );
 }
 
 export function Portfolio() {
@@ -116,6 +211,8 @@ export function Portfolio() {
           </>
         )}
       </div>
+
+      <CashPanel />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.85fr)]">
         <DashboardCard

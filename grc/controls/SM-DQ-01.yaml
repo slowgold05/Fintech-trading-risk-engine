@@ -1,0 +1,13 @@
+id: SM-DQ-01
+title: Daily bars block bad symbols
+objective: Detect an open data-quality finding for a symbol whose bars are missing, stale, non-positive, jumpy, or inconsistent across sources.
+type: preventive and detective, automated
+owner: Market Operations (first line)
+frequency: per load and daily
+test: python -m app.scripts.run_controls; tests/test_expansion.py
+evidence: grc/evidence/SM-DQ-01/<run-id>.json
+threshold: No open data-quality finding. No findings is no_sample.
+mappings:
+  sox_itgc: "data-integrity"
+risks:
+  - A risk number is computed from a bar that failed a data-quality check

@@ -18,3 +18,10 @@ from app.models.order_request import OrderRequest
 from app.models.role_change_request import RoleChangeRequest
 from app.models.access_review import AccessReview
 from app.models.trading_halt import TradingHaltState, TradingHaltEvent
+from app.models.control_evidence import ControlEvidence
+from app.models.surveillance import SurveillanceActivation, SurveillanceCase
+from app.models.mfa import LoginChallenge, LoginEvent, MfaFactor
+from app.models.aml import AmlActivation, AmlCase, CashMovement, Incident, SanctionsScreen
+from app.models.sar import SarDraft
+from app.models.expansion import ExpansionAlert, Finding, RiskBrief, TradeIntent
+from app.models.ops_state import DetectionCursor, SchedulerLock

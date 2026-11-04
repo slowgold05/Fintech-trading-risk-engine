@@ -42,10 +42,10 @@ def main() -> None:
     args = parser.parse_args()
     with SessionLocal() as db:
         result = run(db, initialize=args.initialize)
-    output = {"result": result}
-    if not args.initialize:
-        path, digest = write_evidence("SM-LD-01", result)
-        output.update({"evidence": str(path), "sha256": digest})
+        output = {"result": result}
+        if not args.initialize:
+            path, digest = write_evidence("SM-LD-01", result, db)
+            output.update({"evidence": str(path), "sha256": digest})
     print(json.dumps(output, sort_keys=True))
     if result["failures"]:
         raise SystemExit(1)

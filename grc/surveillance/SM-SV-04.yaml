@@ -1,0 +1,16 @@
+id: SM-SV-04
+version: 1
+title: Unusual volume
+purpose: Detect an account whose quantity in a symbol is several times the other accounts trading that symbol in the same window.
+model_type: deterministic_threshold
+owner: Trading Surveillance (first line)
+parameters:
+  window_minutes: 10
+  multiple: "5"
+  min_quantity: "50"
+  min_peers: 3
+sla_hours: 24
+limitations:
+  - The baseline is other accounts in this window, not the symbol's historical volume.
+  - A busy symbol with fewer than the required peer accounts produces no alert.
+  - The rule does not separate block trades that were expected.

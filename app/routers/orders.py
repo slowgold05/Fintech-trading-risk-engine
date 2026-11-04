@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.models.market_symbol import MarketSymbol
 from app.schemas.order import OrderCreate
 from app.services.order_book import cancel_order, place_order
 from app.services.idempotency import execute_once
+from app.services.order_step_up import order_notional, require_notional_step_up
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -50,10 +51,12 @@ def list_orders(limit: int = Query(default=50, ge=1, le=100), db: Session = Depe
 
 @router.post("/")
 @limiter.limit("60/minute")
-def create_order(request: Request, payload: OrderCreate,
+def create_order(request: Request, response: Response, payload: OrderCreate,
                  idempotency_key: str = Header(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
+                 step_up_code: str | None = Header(default=None, alias="X-Step-Up-Code"),
                  db: Session = Depends(get_db), current_user: User = Depends(get_current_trader)):
     def execute() -> dict:
+        require_notional_step_up(db, current_user, order_notional(db, payload), step_up_code)
         order, trade_ids = place_order(db, current_user.id, payload)
         asset = db.get(Asset, order.asset_id)
         return {**_order_out(order, asset.symbol), "trade_ids": trade_ids}
@@ -63,7 +66,7 @@ def create_order(request: Request, payload: OrderCreate,
 
 @router.post("/{order_id}/cancel")
 @limiter.limit("60/minute")
-def cancel(request: Request, order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_trader)):
+def cancel(request: Request, response: Response, order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_trader)):
     try:
         order = cancel_order(db, current_user.id, order_id)
         db.commit()

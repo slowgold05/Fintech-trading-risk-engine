@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -80,8 +81,9 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
         require_price_in_band(db, payload.symbol, maker.limit_price)
         # Resting order sets the execution price for both sides.
         buy_order, sell_order = (order, maker) if order.side == "buy" else (maker, order)
-        buy_trade, _ = execute_fill(db, users[buy_order.user_id], asset, "buy", qty, maker.limit_price, buy_order.id)
-        sell_trade, _ = execute_fill(db, users[sell_order.user_id], asset, "sell", qty, maker.limit_price, sell_order.id)
+        filled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        buy_trade, _ = execute_fill(db, users[buy_order.user_id], asset, "buy", qty, maker.limit_price, buy_order.id, filled_at)
+        sell_trade, _ = execute_fill(db, users[sell_order.user_id], asset, "sell", qty, maker.limit_price, sell_order.id, filled_at)
         trade_ids.extend((buy_trade.id, sell_trade.id))
         order.remaining_quantity -= qty
         maker.remaining_quantity -= qty
@@ -93,6 +95,7 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
         order.status = "filled"
     elif order.order_type == "market":
         order.status = "canceled"
+        order.canceled_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.flush()
     return order, trade_ids
 
@@ -107,5 +110,7 @@ def cancel_order(db: Session, user_id: int, order_id: int) -> Order:
     if order.status != "open":
         raise HTTPException(status_code=409, detail="Order is no longer open")
     order.status = "canceled"
+    if order.canceled_at is None:
+        order.canceled_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.flush()
     return order

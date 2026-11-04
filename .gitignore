@@ -28,6 +28,13 @@ alembic/__pycache__/
 # Logs
 *.log
 
+# Local model weights and exported market-data files
+*.parquet
+*.safetensors
+*.pt
+*.onnx
+/data/
+
 # Frontend dependencies and build output
 node_modules/
 dist/

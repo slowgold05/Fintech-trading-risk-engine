@@ -1,0 +1,42 @@
+{
+  "rule_id": "SM-SV-04",
+  "scenarios": [
+    {
+      "id": "one-account-dominates",
+      "label": true,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "200", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T15:01:00", "user_id": 2, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "10", "price": "10"},
+        {"event_id": "t3", "at": "2026-11-03T15:02:00", "user_id": 3, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "10", "price": "10"},
+        {"event_id": "t4", "at": "2026-11-03T15:03:00", "user_id": 4, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "10", "price": "10"}
+      ]
+    },
+    {
+      "id": "second-window-dominates",
+      "label": true,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T16:00:00", "user_id": 8, "symbol": "AMD", "kind": "trade", "side": "sell", "quantity": "80", "price": "20"},
+        {"event_id": "t2", "at": "2026-11-03T16:01:00", "user_id": 5, "symbol": "AMD", "kind": "trade", "side": "buy", "quantity": "10", "price": "20"},
+        {"event_id": "t3", "at": "2026-11-03T16:02:00", "user_id": 6, "symbol": "AMD", "kind": "trade", "side": "buy", "quantity": "12", "price": "20"},
+        {"event_id": "t4", "at": "2026-11-03T16:03:00", "user_id": 7, "symbol": "AMD", "kind": "trade", "side": "sell", "quantity": "11", "price": "20"}
+      ]
+    },
+    {
+      "id": "similar-sizes",
+      "label": false,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "100", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T15:01:00", "user_id": 2, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "100", "price": "10"},
+        {"event_id": "t3", "at": "2026-11-03T15:02:00", "user_id": 3, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "100", "price": "10"},
+        {"event_id": "t4", "at": "2026-11-03T15:03:00", "user_id": 4, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "100", "price": "10"}
+      ]
+    },
+    {
+      "id": "no-peers",
+      "label": false,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "200", "price": "10"}
+      ]
+    }
+  ]
+}

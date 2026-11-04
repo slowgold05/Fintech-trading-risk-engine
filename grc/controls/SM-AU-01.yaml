@@ -1,0 +1,13 @@
+id: SM-AU-01
+title: Auditor evidence bundle hash
+objective: Detect stored control evidence whose payload hash does not match the recorded digest.
+type: detective, automated
+owner: Compliance (second line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_phase6_pack.py
+evidence: grc/evidence/SM-AU-01/<run-id>.json
+threshold: Every latest evidence row matches its sha256. No evidence rows is no_sample.
+mappings:
+  sox_itgc: evidence
+risks:
+  - An auditor bundle does not match the stored evidence

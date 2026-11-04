@@ -1,0 +1,12 @@
+id: SM-EV-01
+title: Append-only control evidence
+objective: Detect an application login that can change or delete stored control evidence.
+type: preventive and detective, automated
+owner: Compliance (second line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_phase2_controls.py
+evidence: grc/evidence/SM-EV-01/<run-id>.json
+threshold: Both a zero-row update and a zero-row delete of control_evidence are denied.
+mappings: {}
+risks:
+  - Local control evidence is changed or deleted

@@ -1,0 +1,17 @@
+id: SM-SV-03
+version: 1
+title: Pump and dump
+purpose: Detect an account that buys while a symbol's traded price rises by the threshold and then sells.
+model_type: deterministic_threshold
+owner: Trading Surveillance (first line)
+parameters:
+  rise_pct: "10"
+  rise_minutes: 15
+  dump_minutes: 10
+  min_buy_quantity: "10"
+  min_sell_quantity: "10"
+sla_hours: 24
+limitations:
+  - The price path is this book's own fills, not a consolidated market.
+  - The rule does not show that the account caused the rise.
+  - A rise below the threshold is ignored even if the account sells afterward.

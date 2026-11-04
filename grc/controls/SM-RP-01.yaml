@@ -1,0 +1,13 @@
+id: SM-RP-01
+title: SAR drafts cite only the case events
+objective: Detect a stored narrative that cites an event outside the case or that states a filing decision.
+type: preventive and detective, automated
+owner: Compliance (second line)
+frequency: per draft and daily
+test: python -m app.scripts.run_controls; tests/test_phase6_pack.py
+evidence: grc/evidence/SM-RP-01/<run-id>.json
+threshold: Every stored draft cites exactly the case event ids and contains no filing decision. No drafts is no_sample.
+mappings:
+  mas_trm: "responsible-ai"
+risks:
+  - A narrative cites events the case does not contain or decides to file

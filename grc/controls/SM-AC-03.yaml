@@ -1,0 +1,12 @@
+id: SM-AC-03
+title: Quarterly access review completeness
+objective: Detect an application account whose current role has no independent review in the open quarter.
+type: detective, automated
+owner: Compliance (second line)
+frequency: quarterly and daily
+test: python -m app.scripts.run_controls; tests/test_phase2_controls.py
+evidence: grc/evidence/SM-AC-03/<run-id>.json
+threshold: Every account has a current-quarter review by someone else, matching the account's present role and latest role-change row.
+mappings: {}
+risks:
+  - Quarterly access review is missed or incomplete

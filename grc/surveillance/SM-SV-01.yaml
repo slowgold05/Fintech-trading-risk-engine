@@ -1,0 +1,16 @@
+id: SM-SV-01
+version: 1
+title: Wash trading
+purpose: Detect offsetting buy and sell fills in the same symbol, either in one account or between two accounts, close in time, size, and price.
+model_type: deterministic_threshold
+owner: Trading Surveillance (first line)
+parameters:
+  window_minutes: 15
+  quantity_match_ratio: "0.9"
+  price_tolerance_pct: "0.5"
+sla_hours: 24
+limitations:
+  - The rule does not know beneficial ownership outside this broker.
+  - A legitimate round trip inside the window is scored the same as a wash.
+  - One order-book execution is not a wash. The two fills have different accounts and different order ids, and they share the execution time, quantity, and price. There is no separate match id on the trade.
+  - Paper fills are the model's only price and quantity source.

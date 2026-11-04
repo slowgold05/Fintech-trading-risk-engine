@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 
-import { approveRoleChange, fetchAccessReview, fetchControlStatuses, fetchRegisteredRisks, fetchRoleChanges, fetchRoleRequests, fetchTradingHalt, fetchTradingHaltEvents, requestRoleChange, setTradingHalt, submitAccessReview } from "../api/compliance";
+import { approveAmlActivation, approveIntent, approveRoleChange, approveSurveillanceActivation, downloadEvidenceBundle, fetchAccessReview, fetchAmlCases, fetchAmlRules, fetchControlStatuses, fetchFindings, fetchIncidents, fetchIntents, fetchKris, fetchRegisteredRisks, fetchRiskBrief, fetchRoleChanges, fetchRoleRequests, fetchSurveillanceCases, fetchSurveillanceRules, fetchTradingHalt, fetchTradingHaltEvents, openIncident, requestAmlActivation, requestRoleChange, requestSurveillanceActivation, setTradingHalt, submitAccessReview } from "../api/compliance";
 import { fetchMe } from "../api/auth";
 import { PageHeader } from "../components/PageHeader";
 import { DashboardCard, SkeletonBlock } from "../features/dashboard/components";
@@ -29,6 +29,15 @@ export function Compliance() {
   const roleRequests = useQuery({ queryKey: ["role-requests"], queryFn: fetchRoleRequests });
   const accessReview = useQuery({ queryKey: ["access-review"], queryFn: fetchAccessReview });
   const registeredRisks = useQuery({ queryKey: ["registered-risks"], queryFn: fetchRegisteredRisks });
+  const surveillanceRules = useQuery({ queryKey: ["surveillance-rules"], queryFn: fetchSurveillanceRules });
+  const surveillanceCases = useQuery({ queryKey: ["surveillance-cases"], queryFn: fetchSurveillanceCases });
+  const amlRules = useQuery({ queryKey: ["aml-rules"], queryFn: fetchAmlRules });
+  const amlCases = useQuery({ queryKey: ["aml-cases"], queryFn: fetchAmlCases });
+  const incidents = useQuery({ queryKey: ["incidents"], queryFn: fetchIncidents });
+  const kris = useQuery({ queryKey: ["kris"], queryFn: fetchKris });
+  const findings = useQuery({ queryKey: ["findings"], queryFn: fetchFindings });
+  const riskBrief = useQuery({ queryKey: ["risk-brief"], queryFn: fetchRiskBrief });
+  const intents = useQuery({ queryKey: ["trade-intents"], queryFn: fetchIntents });
   const tradingHalt = useQuery({ queryKey: ["trading-halt"], queryFn: fetchTradingHalt });
   const haltEvents = useQuery({ queryKey: ["trading-halt-events"], queryFn: fetchTradingHaltEvents });
   const haltMutation = useMutation({
@@ -53,6 +62,52 @@ export function Compliance() {
     onSuccess: () => { showToast("success", "Access review recorded."); void queryClient.invalidateQueries({ queryKey: ["access-review"] }); },
     onError: () => showToast("error", "Access review could not be recorded."),
   });
+  const activationMutation = useMutation({
+    mutationFn: requestSurveillanceActivation,
+    onSuccess: () => { showToast("success", "Surveillance activation requested."); void queryClient.invalidateQueries({ queryKey: ["surveillance-rules"] }); },
+    onError: () => showToast("error", "Surveillance activation could not be requested."),
+  });
+  const activationApprovalMutation = useMutation({
+    mutationFn: approveSurveillanceActivation,
+    onSuccess: () => { showToast("success", "Surveillance rule activation recorded."); void queryClient.invalidateQueries({ queryKey: ["surveillance-rules"] }); },
+    onError: () => showToast("error", "Surveillance activation could not be approved."),
+  });
+  const amlActivationMutation = useMutation({
+    mutationFn: requestAmlActivation,
+    onSuccess: () => { showToast("success", "AML activation requested."); void queryClient.invalidateQueries({ queryKey: ["aml-rules"] }); },
+    onError: () => showToast("error", "AML activation could not be requested."),
+  });
+  const amlApprovalMutation = useMutation({
+    mutationFn: approveAmlActivation,
+    onSuccess: () => { showToast("success", "AML rule activation recorded."); void queryClient.invalidateQueries({ queryKey: ["aml-rules"] }); },
+    onError: () => showToast("error", "AML activation could not be approved."),
+  });
+  const incidentMutation = useMutation({
+    mutationFn: openIncident,
+    onSuccess: () => { showToast("success", "Incident opened."); void queryClient.invalidateQueries({ queryKey: ["incidents"] }); },
+    onError: () => showToast("error", "Incident could not be opened."),
+  });
+  const intentApproval = useMutation({
+    mutationFn: approveIntent,
+    onSuccess: () => { showToast("success", "Intent approved. No order was placed."); void queryClient.invalidateQueries({ queryKey: ["trade-intents"] }); },
+    onError: () => showToast("error", "Intent could not be approved."),
+  });
+  function submitAmlActivation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    amlActivationMutation.mutate({ rule_id: String(values.get("rule_id") ?? ""), reason: String(values.get("reason") ?? "").trim() });
+  }
+  function submitIncident(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    incidentMutation.mutate({ title: String(values.get("title") ?? "").trim(), severity: String(values.get("severity") ?? ""), summary: String(values.get("summary") ?? "").trim() });
+    event.currentTarget.reset();
+  }
+  function submitActivation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    activationMutation.mutate({ rule_id: String(values.get("rule_id") ?? ""), reason: String(values.get("reason") ?? "").trim() });
+  }
   function submitRoleRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
@@ -210,6 +265,185 @@ export function Compliance() {
                   </tr>
                 ))}</tbody>
               </table></div>
+            )}
+          </DashboardCard>
+          <DashboardCard title="Surveillance">
+            {surveillanceRules.isLoading || surveillanceCases.isLoading ? <SkeletonBlock className="h-24" /> : surveillanceRules.isError || surveillanceCases.isError ? (
+              <p className="text-sm text-rose-300">Surveillance could not be loaded.</p>
+            ) : (
+              <>
+                {(me.data?.role === "admin" || me.data?.role === "compliance_officer") && (surveillanceRules.data?.rules.length ?? 0) > 0 && (
+                  <form onSubmit={submitActivation} className="mb-4 grid gap-2 sm:grid-cols-3">
+                    <select name="rule_id" aria-label="Surveillance rule" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                      {surveillanceRules.data?.rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.id}</option>)}
+                    </select>
+                    <input name="reason" required minLength={3} maxLength={255} placeholder="Activation reason" aria-label="Activation reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+                    <button type="submit" disabled={activationMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Request activation</button>
+                  </form>
+                )}
+                {!surveillanceRules.data?.rules.length ? (
+                  <p className="mb-3 text-sm text-slate-400">No surveillance rules loaded.</p>
+                ) : (
+                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                    <thead><tr><th className="text-left">Rule</th><th className="text-left">Version</th><th className="text-left">Activation</th><th className="text-right">Action</th></tr></thead>
+                    <tbody>{surveillanceRules.data.rules.map((rule) => (
+                      <tr key={rule.id}>
+                        <td className="text-sm text-slate-100">{rule.title}</td>
+                        <td className="font-mono text-xs text-slate-300">{rule.id} v{rule.version}</td>
+                        <td className="capitalize">{rule.activation_status}</td>
+                        <td className="text-right">{rule.request_id !== null && me.data && (me.data.role === "admin" || me.data.role === "compliance_officer") && rule.requested_by_user_id !== me.data.id && (
+                          <button type="button" disabled={activationApprovalMutation.isPending} onClick={() => activationApprovalMutation.mutate(rule.request_id as number)} className="rounded border border-emerald-400/50 px-2 py-1 text-xs text-emerald-300 disabled:opacity-50">Approve rule</button>
+                        )}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                {!surveillanceCases.data?.cases.length ? (
+                  <p className="text-sm text-slate-400">No surveillance cases.</p>
+                ) : (
+                  <div className="table-shell"><table className="data-table min-w-[760px]">
+                    <thead><tr><th className="text-left">Rule</th><th className="text-left">Symbol</th><th className="text-left">Summary</th><th className="text-left">Status</th><th className="text-right">Due</th></tr></thead>
+                    <tbody>{surveillanceCases.data.cases.map((item) => (
+                      <tr key={item.id}>
+                        <td className="font-mono text-xs text-slate-300">{item.rule_id}</td>
+                        <td className="text-sm text-slate-100">{item.symbol}</td>
+                        <td className="text-sm text-slate-400">{item.summary}</td>
+                        <td className="capitalize">{item.status}</td>
+                        <td className="text-right text-sm text-slate-400">{formatDateTime(item.due_at)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+              </>
+            )}
+          </DashboardCard>
+          <DashboardCard title="AML and incidents">
+            {amlRules.isLoading || amlCases.isLoading || incidents.isLoading || kris.isLoading ? <SkeletonBlock className="h-24" /> : amlRules.isError || amlCases.isError || incidents.isError || kris.isError ? (
+              <p className="text-sm text-rose-300">AML and incident data could not be loaded.</p>
+            ) : (
+              <>
+                {(me.data?.role === "admin" || me.data?.role === "compliance_officer") && (amlRules.data?.rules.length ?? 0) > 0 && (
+                  <form onSubmit={submitAmlActivation} className="mb-4 grid gap-2 sm:grid-cols-3">
+                    <select name="rule_id" aria-label="AML rule" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                      {amlRules.data?.rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.id}</option>)}
+                    </select>
+                    <input name="reason" required minLength={3} maxLength={255} placeholder="Activation reason" aria-label="AML activation reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+                    <button type="submit" disabled={amlActivationMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Request AML activation</button>
+                  </form>
+                )}
+                {!amlCases.data?.cases.length ? (
+                  <p className="mb-3 text-sm text-slate-400">No AML cases.</p>
+                ) : (
+                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                    <thead><tr><th className="text-left">Rule</th><th className="text-left">Summary</th><th className="text-left">Status</th><th className="text-right">Due</th></tr></thead>
+                    <tbody>{amlCases.data.cases.map((item) => (
+                      <tr key={item.id}>
+                        <td className="font-mono text-xs text-slate-300">{item.rule_id}</td>
+                        <td className="text-sm text-slate-400">{item.summary}</td>
+                        <td className="capitalize">{item.status}</td>
+                        <td className="text-right text-sm text-slate-400">{formatDateTime(item.due_at)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                {(me.data?.role === "admin" || me.data?.role === "compliance_officer") && (
+                  <form onSubmit={submitIncident} className="mb-4 grid gap-2 sm:grid-cols-4">
+                    <input name="title" required minLength={3} maxLength={255} aria-label="Incident title" placeholder="Incident title" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+                    <select name="severity" aria-label="Incident severity" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                      <option value="low">low</option>
+                      <option value="moderate">moderate</option>
+                      <option value="high">high</option>
+                    </select>
+                    <input name="summary" required minLength={3} maxLength={255} aria-label="Incident summary" placeholder="What was discovered" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+                    <button type="submit" disabled={incidentMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Open incident</button>
+                  </form>
+                )}
+                {!incidents.data?.incidents.length ? (
+                  <p className="mb-3 text-sm text-slate-400">No incidents.</p>
+                ) : (
+                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                    <thead><tr><th className="text-left">Title</th><th className="text-left">Severity</th><th className="text-left">Status</th><th className="text-right">Notice due</th></tr></thead>
+                    <tbody>{incidents.data.incidents.map((item) => (
+                      <tr key={item.id}>
+                        <td className="text-sm text-slate-100">{item.title}</td>
+                        <td className="capitalize">{item.severity}</td>
+                        <td className="capitalize">{item.status}</td>
+                        <td className="text-right text-sm text-slate-400">{formatDateTime(item.customer_notice_due_at)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                {!kris.data?.kris.length ? (
+                  <p className="mb-3 text-sm text-slate-400">No KRI readings.</p>
+                ) : (
+                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                    <thead><tr><th className="text-left">Indicator</th><th className="text-right">Value</th><th className="text-right">Threshold</th><th className="text-left">Status</th></tr></thead>
+                    <tbody>{kris.data.kris.map((item) => (
+                      <tr key={item.id}>
+                        <td className="text-sm text-slate-100">{item.title}</td>
+                        <td className="text-right font-mono text-xs text-slate-300">{item.value}</td>
+                        <td className="text-right font-mono text-xs text-slate-300">{item.threshold}</td>
+                        <td className="capitalize">{item.status.replaceAll("_", " ")}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                <button type="button" onClick={() => { void downloadEvidenceBundle().catch(() => showToast("error", "Evidence bundle could not be downloaded.")); }} className="rounded border border-slate-600 px-3 py-2 text-sm text-slate-100">Download evidence bundle</button>
+                {amlRules.data?.rules.some((rule) => rule.request_id !== null && me.data && (me.data.role === "admin" || me.data.role === "compliance_officer") && rule.requested_by_user_id !== me.data.id) ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {amlRules.data.rules.filter((rule) => rule.request_id !== null && me.data && rule.requested_by_user_id !== me.data.id).map((rule) => (
+                      <button key={rule.id} type="button" disabled={amlApprovalMutation.isPending} onClick={() => amlApprovalMutation.mutate(rule.request_id as number)} className="rounded border border-emerald-400/50 px-2 py-1 text-xs text-emerald-300 disabled:opacity-50">Approve {rule.id}</button>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </DashboardCard>
+          <DashboardCard title="Intents, findings, and risk brief">
+            {findings.isLoading || riskBrief.isLoading || intents.isLoading ? <SkeletonBlock className="h-24" /> : findings.isError || riskBrief.isError || intents.isError ? (
+              <p className="text-sm text-rose-300">Intent and brief data could not be loaded.</p>
+            ) : (
+              <>
+                <p className="mb-3 text-sm text-slate-400">Vendor register: Massive, Finnhub, Twelve Data, FRED, and Bluesky are not connected. The file is docs/vendors.md.</p>
+                {!intents.data?.intents.length ? (
+                  <p className="mb-3 text-sm text-slate-400">No trade intents.</p>
+                ) : (
+                  <div className="table-shell mb-4"><table className="data-table min-w-[760px]">
+                    <thead><tr><th className="text-left">Symbol</th><th className="text-left">Side</th><th className="text-left">Status</th><th className="text-left">Approver</th><th className="text-right">Decided</th></tr></thead>
+                    <tbody>{intents.data.intents.map((item) => (
+                      <tr key={item.id}>
+                        <td className="text-sm text-slate-100">{item.symbol}</td>
+                        <td className="capitalize">{item.side}</td>
+                        <td className="capitalize">{item.status}</td>
+                        <td className="font-mono text-xs text-slate-300">{item.decided_by_user_id ?? "none"}</td>
+                        <td className="text-right text-sm text-slate-400">{item.decided_at ? formatDateTime(item.decided_at) : "pending"}{item.status === "proposed" && me.data && (me.data.role === "admin" || me.data.role === "compliance_officer") ? (
+                          <button type="button" disabled={intentApproval.isPending} onClick={() => intentApproval.mutate(item.id)} className="ml-2 rounded border border-emerald-400/50 px-2 py-1 text-xs text-emerald-300 disabled:opacity-50">Approve intent</button>
+                        ) : null}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                {!findings.data?.findings.length ? (
+                  <p className="mb-3 text-sm text-slate-400">No findings.</p>
+                ) : (
+                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                    <thead><tr><th className="text-left">Control</th><th className="text-left">Summary</th><th className="text-left">Status</th><th className="text-right">Due</th></tr></thead>
+                    <tbody>{findings.data.findings.map((item) => (
+                      <tr key={item.id}>
+                        <td className="font-mono text-xs text-slate-300">{item.control_id}</td>
+                        <td className="text-sm text-slate-400">{item.summary}</td>
+                        <td className="capitalize">{item.status}</td>
+                        <td className="text-right text-sm text-slate-400">{formatDateTime(item.due_at)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                {!riskBrief.data?.brief ? (
+                  <p className="text-sm text-slate-400">No risk brief.</p>
+                ) : (
+                  <pre className="whitespace-pre-wrap text-sm text-slate-300">{riskBrief.data.brief.body}</pre>
+                )}
+              </>
             )}
           </DashboardCard>
           <DashboardCard title="Access changes">

@@ -1,0 +1,38 @@
+{
+  "rule_id": "SM-SV-03",
+  "scenarios": [
+    {
+      "id": "buy-into-rise-then-sell",
+      "label": true,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "50", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T15:05:00", "user_id": 2, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "5", "price": "11"},
+        {"event_id": "t3", "at": "2026-11-03T15:08:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "50", "price": "12"}
+      ]
+    },
+    {
+      "id": "second-account-dump",
+      "label": true,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T16:00:00", "user_id": 3, "symbol": "AAPL", "kind": "trade", "side": "buy", "quantity": "20", "price": "100"},
+        {"event_id": "t2", "at": "2026-11-03T16:06:00", "user_id": 3, "symbol": "AAPL", "kind": "trade", "side": "sell", "quantity": "20", "price": "115"}
+      ]
+    },
+    {
+      "id": "rise-without-sale",
+      "label": false,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "50", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T15:08:00", "user_id": 2, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "5", "price": "12"}
+      ]
+    },
+    {
+      "id": "sell-without-a-rise",
+      "label": false,
+      "events": [
+        {"event_id": "t1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "buy", "quantity": "50", "price": "10"},
+        {"event_id": "t2", "at": "2026-11-03T15:08:00", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "50", "price": "10.1"}
+      ]
+    }
+  ]
+}

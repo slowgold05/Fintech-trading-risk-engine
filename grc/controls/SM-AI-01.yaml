@@ -1,0 +1,13 @@
+id: SM-AI-01
+title: Approved trade intents have a human approver
+objective: Detect an approved trade intent that has no approver.
+type: detective, automated
+owner: Compliance (second line)
+frequency: per intent and daily
+test: python -m app.scripts.run_controls; tests/test_expansion.py
+evidence: grc/evidence/SM-AI-01/<run-id>.json
+threshold: Every approved intent records the approver. No intents is no_sample.
+mappings:
+  sox_itgc: "segregation-of-duties"
+risks:
+  - An agent proposal is treated as an approved trade
