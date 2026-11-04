@@ -6,7 +6,7 @@ Sentinel Markets is a mock brokerage built to show how trading systems and gover
 
 **[Open the live demo](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/)** | [Control matrix](grc/control_matrix.csv) | [Video shot list](docs/VIDEO_SCRIPT.md) | [GRC roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md) | [Current action items](docs/GRC_ACTION_ITEMS.md)
 
-The two-minute walkthrough has not been recorded. `docs/VIDEO_SCRIPT.md` is the shot list. There is no GIF. The live demo is the previous image. Phase 5 and Phase 6 exist in this working tree.
+The 2026-11-04 release adds surveillance, authenticator enrollment, paper cash movements, AML cases, incidents, stored control evidence, and propose-only trade intents to the hosted demo. The two-minute walkthrough has not been recorded; `docs/VIDEO_SCRIPT.md` is the shot list. The expansion roadmap remains partly complete, with live feeds, risk integrations, and owner approvals still open.
 
 ## What the demo shows
 
@@ -15,6 +15,9 @@ The two-minute walkthrough has not been recorded. `docs/VIDEO_SCRIPT.md` is the 
 - **Explainable accounting:** Trades create balanced, hash-chained ledger postings. PostgreSQL triggers reject ledger updates and deletes; a reconciliation command checks cash and positions against the ledger.
 - **Governance workflow:** Trader, admin, compliance-officer, and auditor roles; separate request, approval, and privileged application of role changes; quarterly access-review records; a risk register linked to controls; and a compliance console that displays control status.
 - **Market research:** A Nasdaq symbol universe, cached quotes and daily price history, sector heatmap, and SEC company fundamentals. Quotes display their freshness state. Alpha Vantage is optional for research; the public market view uses cached data.
+- **Surveillance and AML:** Four versioned trade-surveillance rules and two cash-monitoring rules, independent activation approval, case dispositions and deadlines, and repeat-scan protection using complete event identities. The rules remain inactive until separately approved; their validation uses small labeled fixtures.
+- **Identity and cash:** Optional authenticator enrollment, login-risk step-up, and current-code checks for large transactions. Paper deposits and withdrawals use locked balances and idempotent ledger postings. Sanctions screening uses a clearly labeled local fixture while `YENTE_URL` is empty.
+- **Compliance evidence and proposals:** Stored control results, evidence export with hash verification, incident tracking, verified template SAR drafts, and trade intents that record a human decision without placing an order. Historical-volatility forecasts and template risk briefs are demonstration components, not external AI model calls.
 
 The live site has the existing PostgreSQL data copied from local development. Privileged account credentials are intentionally not published. Anyone who wants to explore can register a trader account and try the paper-trading flow.
 
@@ -23,16 +26,28 @@ The live site has the existing PostgreSQL data copied from local development. Pr
 | Area | Status |
 | --- | --- |
 | Web and API | React/Vite frontend and FastAPI backend live on an AWS Lightsail HTTPS address in the selected Region `us-east-2`; no custom domain is needed. |
-| Database | Private Lightsail PostgreSQL 17, Alembic revision `c7e8f1a2b345`, with a restricted application role and separate migration login. The 2026-10-31 cutover matched 15,164 rows across 21 application tables and 17 sequences. |
+| Database | Private Lightsail PostgreSQL 17, Alembic revision `f3a8c2d7e961`, with a restricted application role and separate migration login. The 2026-11-04 migrations ran through a temporary private runner, preserving existing row counts; 13 accounts reconciled with no ledger failures before deployment. |
 | Recovery | Seven days of Lightsail automatic database backups and a retained post-migration manual snapshot. |
-| Controls | Twenty-eight controls and twenty-nine risks are defined in this working tree. The hosted database is still at Alembic `c7e8f1a2b345`. Migrations `1c4e8a7b2d90`, `a8d3c1e4b672`, `b7e2a9c4d815`, `c4d8e1a7b936`, `d5e9f2b8c047`, `e7b2c5d9a174`, and `f3a8c2d7e961` are not applied there. The live console still shows `not_run`. The live site does not run the expansion intents, findings, or risk brief. |
+| Controls | Twenty-eight controls and twenty-nine risks are defined. The hosted scheduler runs quote refreshes, application controls, evidence backfill, and approved surveillance/AML rules. Results are stored as append-only database evidence; failures and `no_sample` remain visible rather than being counted as passes. |
 | CI | Six required jobs: backend tests, frontend lint/tests/build, Gitleaks, Bandit and pip-audit, Semgrep, and Trivy. |
+| Release validation | 134 backend tests passed against a fresh disposable PostgreSQL 17 database with no skips; frontend lint, all 9 tests, and build passed. All six CI jobs passed for the application release in [PR #12](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/12). |
 
-Market quotes were refreshed once after the cutover. The API can now refresh hot and daily quotes, reconcile the ledger, and write control evidence on a schedule when `SCHEDULED_JOBS_ENABLED=true`. That flag is for the hosted service. The running Lightsail image does not include it yet, so freshness will decline until the new image is deployed. Evidence rows are append-only in PostgreSQL. A copy outside the database is still open. The Q4 2026 access review was recorded on the live API on 2026-11-03. Authenticator enrollment exists in this working tree and is not on the running image. `MFA_REQUIRED` stays false. See the [action-item ledger](docs/GRC_ACTION_ITEMS.md) before presenting this as a production control environment.
+Deployment 7 serves API image `:fintechapp-preview.api.3` and web image `:fintechapp-preview.web.4`. Live HTTP checks passed operator login, compliance reads, recorded intent approval, paper deposit/withdrawal replay, and order placement/replay/cancellation. The test order did not execute a fill. After those checks, all 14 accounts reconciled with no ledger failures. The first scheduled cycle refreshed 180 quotes and produced 23 evidence payloads whose export hashes verified. Its status snapshot contained 10 passes, 12 `no_sample`, and one MFA-enrollment failure; five controls outside the scheduled runner remained `not_run`. Browser click-through remains unverified because the browser automation service was unavailable.
+
+The hosted service enables `SCHEDULED_JOBS_ENABLED`; a database lease and persisted next-due time coordinate multiple instances. Quote freshness still depends on the upstream provider and refresh limits. The Q4 2026 access review was recorded on 2026-11-03. Authenticator enrollment is available, while `MFA_REQUIRED` remains false. Migration credentials are kept out of the web deployment; normal application credentials remain environment values readable by project administrators. Independent evidence retention and a secret manager remain open. See the [action-item ledger](docs/GRC_ACTION_ITEMS.md) before presenting this as a production control environment.
 
 ## Future roadmap
 
-The code for the Phase 2 operating loop is in place: database evidence, scheduled refresh and reconciliation, and checks for access-review completeness, evidence immutability, and buying-power reservations. Phase 3 adds versioned surveillance rules, a labeled backtest, case SLAs, and second-approver activation. Those rules are not active, and the model-risk policy is still a draft. Phase 4 adds authenticator enrollment, login-risk step-up, and a current code on a large order. Passkey signing is not implemented. The access-control policy and the asset inventory are still drafts. The hosted service has not received this image. A later deploy would run migrations `1c4e8a7b2d90`, `a8d3c1e4b672`, `b7e2a9c4d815`, `c4d8e1a7b936`, `d5e9f2b8c047`, `e7b2c5d9a174`, and `f3a8c2d7e961`, reapply the app-role grants, and set `SCHEDULED_JOBS_ENABLED=true`. Leave `MFA_REQUIRED` false until every hosted account has enrolled. Leave `YENTE_URL` empty. The [full GRC roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md), the [expansion roadmap](docs/Sentinel%20Markets%20%E2%80%94%20Expansion%20Roadmap.md), and [action-item ledger](docs/GRC_ACTION_ITEMS.md) track progress. The change notes are [Phase 2](docs/PHASE2_CHANGES.md), [Phase 3](docs/PHASE3_CHANGES.md), [Phase 4](docs/PHASE4_CHANGES.md), [Phase 5](docs/PHASE5_CHANGES.md), [Phase 6](docs/PHASE6_CHANGES.md), and the [expansion](docs/EXPANSION_CHANGES.md).
+The implemented workflows are deployed, but the full expansion is not complete. Remaining work includes:
+
+- Enforcing market-data quality checks on every load and order; persisting checksums, lineage, and override records.
+- Connecting live provider feeds, historical backfills, and the news/social signal store and panel.
+- Applying the full pre-trade checks and a daily-loss limit to intents; connecting forecast advice. Kronos weights are not loaded.
+- Scheduling risk briefs and delivering authorized alerts; adding PDF/XLSX workpapers if required.
+- Establishing independent evidence retention and a secret manager; recording provider revocation evidence for the exposed Alpha Vantage key.
+- Owner approval of policies, models, vendors, and inventory; safe MFA recovery and enrollment before broad enforcement; the demo video and external GRC Sentinel connection.
+
+Passkeys, crypto, and replay mode remain deferred. `YENTE_URL` remains empty, and fixture validation is not a production performance claim. The [GRC roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md), [expansion roadmap](docs/Sentinel%20Markets%20%E2%80%94%20Expansion%20Roadmap.md), and [action-item ledger](docs/GRC_ACTION_ITEMS.md) track these limits. Historical build notes are [Phase 2](docs/PHASE2_CHANGES.md), [Phase 3](docs/PHASE3_CHANGES.md), [Phase 4](docs/PHASE4_CHANGES.md), [Phase 5](docs/PHASE5_CHANGES.md), [Phase 6](docs/PHASE6_CHANGES.md), and the [expansion](docs/EXPANSION_CHANGES.md).
 
 ## Architecture
 
@@ -77,7 +92,7 @@ npm test
 npm run build
 ```
 
-From the repository root, `python -m app.scripts.run_controls` checks twenty-four controls when `DATABASE_URL`, `MIGRATION_DATABASE_URL`, and `JWT_SECRET` are configured. That count includes SM-AC-02, which uses the migration login. Four more controls are repository or design checks and are not in that runner. The exported matrix has twenty-eight controls. SM-AM-01 reads `grc/asset_inventory.yaml`. The runner writes evidence under ignored `grc/evidence/`; a `no_sample` result is not proof of operating effectiveness. CI also runs security scanners and uploads an API CycloneDX SBOM. The [security summary](Security.md), [control workpapers](grc/workpapers), and [policies](grc/policies) explain the safeguards and their limits. Phase 5, Phase 6, and the expansion are written up in [docs/PHASE5_CHANGES.md](docs/PHASE5_CHANGES.md), [docs/PHASE6_CHANGES.md](docs/PHASE6_CHANGES.md), and [docs/EXPANSION_CHANGES.md](docs/EXPANSION_CHANGES.md). The hosted image does not run that expansion code.
+From the repository root, `python -m app.scripts.run_controls` checks twenty-four controls when `DATABASE_URL`, `MIGRATION_DATABASE_URL`, and `JWT_SECRET` are configured. That count includes SM-AC-02, which uses the migration login and stays outside the normal hosted API. Four more controls are repository or design checks and are not in that runner. The exported matrix has twenty-eight controls. SM-AM-01 reads `grc/asset_inventory.yaml`. The runner writes evidence under ignored `grc/evidence/` and can persist database evidence; a `no_sample` result is not proof of operating effectiveness. To run PostgreSQL migration and race proofs, set `AUDIT_DATABASE_URL` to a fresh disposable PostgreSQL database before pytest; those tests create test data and refresh a database role, so never point them at the hosted or development database. CI also runs security scanners and uploads an API CycloneDX SBOM. The [security summary](Security.md), [control workpapers](grc/workpapers), and [policies](grc/policies) explain the safeguards and their limits.
 
 ## Repository map
 
@@ -89,4 +104,4 @@ From the repository root, `python -m app.scripts.run_controls` checks twenty-fou
 | `docs/postgresql_migration.md` | MySQL-to-PostgreSQL history and the verified AWS data cutover. |
 | `docs/aws_deployment.md` | Live AWS resources, deployment procedure, recovery, costs, and remaining operations. |
 
-Development continues on the [draft GRC roadmap PR](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/1). The roadmap and policies are working documents; their approval and independent evidence review remain open.
+The audited application release was merged in [PR #12](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/12). The roadmap and policies are working documents; their approval and independent evidence review remain open.
