@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text, func, null
 
 from app.core.database import Base
 
@@ -13,8 +13,8 @@ class MfaFactor(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     method = Column(String(12), nullable=False, default="totp")
     secret_ciphertext = Column(Text, nullable=False)
-    confirmed_at = Column(DateTime, nullable=True)
-    last_counter = Column(Integer, nullable=True)
+    confirmed_at = Column(DateTime, nullable=True, server_default=null())
+    last_counter = Column(Integer, nullable=True, server_default=null())
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
@@ -42,7 +42,7 @@ class LoginChallenge(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     expires_at = Column(DateTime, nullable=False)
-    consumed_at = Column(DateTime, nullable=True)
+    consumed_at = Column(DateTime, nullable=True, server_default=null())
     risk_score = Column(Integer, nullable=False, default=0)
     reasons = Column(Text, nullable=False, default="[]")
     created_at = Column(DateTime, nullable=False, server_default=func.now())

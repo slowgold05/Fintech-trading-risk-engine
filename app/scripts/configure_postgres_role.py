@@ -51,7 +51,7 @@ def configure(database_url: str, app_password: str) -> None:
                            "ON surveillance_cases TO fintech_app")
             cursor.execute("GRANT INSERT (user_id, method, secret_ciphertext) ON mfa_factors TO fintech_app")
             cursor.execute("GRANT UPDATE (secret_ciphertext, confirmed_at, last_counter) ON mfa_factors TO fintech_app")
-            cursor.execute("GRANT INSERT (user_id, email, ip, user_agent_hash, outcome, risk_score, step_up_satisfied, reasons) "
+            cursor.execute("GRANT INSERT (user_id, email, ip, user_agent_hash, outcome, risk_score, step_up_satisfied, reasons, created_at) "
                            "ON login_events TO fintech_app")
             cursor.execute("GRANT INSERT (user_id, expires_at, risk_score, reasons) ON login_challenges TO fintech_app")
             cursor.execute("GRANT UPDATE (consumed_at) ON login_challenges TO fintech_app")
@@ -68,12 +68,12 @@ def configure(database_url: str, app_password: str) -> None:
                            "ON incidents TO fintech_app")
             cursor.execute("GRANT INSERT (case_kind, case_id, event_ids, narrative, created_by_user_id) ON sar_drafts TO fintech_app")
             cursor.execute("GRANT INSERT (symbol, side, quantity, reference_price, rationale, confidence, data_used, "
-                           "status, rejection_reason, proposed_by) ON trade_intents TO fintech_app")
+                           "status, rejection_reason, proposed_by, created_at) ON trade_intents TO fintech_app")
             cursor.execute("GRANT UPDATE (status, decided_by_user_id, decided_at) ON trade_intents TO fintech_app")
             cursor.execute("GRANT INSERT (control_id, severity, owner, summary, status, due_at, opened_at) ON findings TO fintech_app")
             cursor.execute("GRANT UPDATE (status) ON findings TO fintech_app")
-            cursor.execute("GRANT INSERT (brief_date, body, figures) ON risk_briefs TO fintech_app")
-            cursor.execute("GRANT INSERT (kind, summary, evidence_ref) ON expansion_alerts TO fintech_app")
+            cursor.execute("GRANT INSERT (brief_date, body, figures, created_at) ON risk_briefs TO fintech_app")
+            cursor.execute("GRANT INSERT (kind, summary, evidence_ref, created_at) ON expansion_alerts TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON detection_cursors TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON scheduler_locks TO fintech_app")
 

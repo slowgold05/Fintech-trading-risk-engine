@@ -162,41 +162,69 @@ class _Body:
     def __init__(self, raw):
         self.raw = raw
 
-    def read(self):
-        return self.raw
+    def json(self):
+        return json.loads(self.raw)
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, traceback):
-        return False
+    def raise_for_status(self):
+        pass
 
 
 def test_invalid_sanctions_response_blocks_the_withdrawal(client, auth_headers, db_session, monkeypatch):
     headers = auth_headers("screen-user@example.com", "password123")
     assert client.put("/auth/name", headers=headers, json={"full_name": "Ada Trader"}).status_code == 200
     monkeypatch.setattr(settings, "yente_url", "http://yente.invalid")
-    monkeypatch.setattr("app.services.sanctions.urlopen", lambda request, timeout=3: _Body(b"{}"))
+    monkeypatch.setattr("app.services.sanctions.requests.post", lambda url, json, timeout=3: _Body(b"{}"))
     denied = client.post("/cash/movements", headers={**headers, "Idempotency-Key": uuid4().hex},
                          json={"kind": "withdrawal", "amount": "12.00"})
     assert denied.status_code == 403, denied.text
     assert db_session.query(CashMovement).count() == 0
 
     monkeypatch.setattr(
-        "app.services.sanctions.urlopen",
-        lambda request, timeout=3: _Body(b'{"responses":{"q":{"results":[]}}}'),
+        "app.services.sanctions.requests.post",
+        lambda url, json, timeout=3: _Body(b'{"responses":{"q":{"results":[]}}}'),
     )
     allowed = client.post("/cash/movements", headers={**headers, "Idempotency-Key": uuid4().hex},
                           json={"kind": "withdrawal", "amount": "12.00"})
     assert allowed.status_code == 200, allowed.text
     monkeypatch.setattr(
-        "app.services.sanctions.urlopen",
-        lambda request, timeout=3: _Body(b'{"responses":{"q":{"results":[{"score":0.99}]}}}'),
+        "app.services.sanctions.requests.post",
+        lambda url, json, timeout=3: _Body(b'{"responses":{"q":{"results":[{"score":0.99}]}}}'),
     )
     matched = client.post("/cash/movements", headers={**headers, "Idempotency-Key": uuid4().hex},
                           json={"kind": "withdrawal", "amount": "12.00"})
     assert matched.status_code == 403, matched.text
     assert db_session.query(CashMovement).count() == 1
+
+
+def test_sanctions_transport_failure_stays_closed(monkeypatch):
+    import requests
+    from app.services.sanctions import screen_name
+
+    monkeypatch.setattr(settings, "yente_url", "https://yente.invalid")
+
+    def unavailable(url, **kwargs):
+        raise requests.Timeout("Provider unavailable")
+
+    monkeypatch.setattr("app.services.sanctions.requests.post", unavailable)
+    assert screen_name("Grant Test")["decision"] == "provider_error"
+
+
+def test_operating_sample_http_request_keeps_form_auth_and_error_body(monkeypatch):
+    import requests
+    from app.scripts.collect_operating_samples import request
+
+    def denied(method, url, **kwargs):
+        assert method == "POST" and url.endswith("/auth/login")
+        assert kwargs["data"] == {"username": "test", "password": "test"}
+        assert kwargs["json"] is None
+        assert kwargs["headers"]["Authorization"] == "Bearer test"
+        response = requests.Response()
+        response.status_code = 403
+        response._content = b'{"detail":"denied"}'
+        return response
+
+    monkeypatch.setattr("app.scripts.collect_operating_samples.requests.request", denied)
+    assert request("POST", "/auth/login", token="test", form={"username": "test", "password": "test"}) == (403, {"detail": "denied"})
 
 
 def test_cash_movement_survives_an_aml_failure_and_replay_does_not_duplicate(client, auth_headers, db_session, monkeypatch):

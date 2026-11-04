@@ -12,6 +12,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 import pytest
 from sqlalchemy import create_engine, func, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -80,6 +81,57 @@ def test_migrations_and_app_role_grants_on_disposable_postgres():
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 cursor.execute("UPDATE users SET role = 'admin'")
             connection.rollback()
+
+
+def test_app_role_can_write_runtime_records_without_inserting_review_fields():
+    from sqlalchemy.engine import make_url
+    from app.models.aml import AmlActivation, AmlCase, Incident
+    from app.models.expansion import TradeIntent, RiskBrief, ExpansionAlert
+    from app.models.mfa import LoginEvent
+    from app.models.role_change_request import RoleChangeRequest
+    from app.models.surveillance import SurveillanceActivation, SurveillanceCase
+    from app.scripts.configure_postgres_role import configure
+
+    owner_url = os.environ["AUDIT_DATABASE_URL"]
+    _upgrade()
+    configure(owner_url, "audit-app-secret")
+    app_url = make_url(owner_url).set(username="fintech_app", password="audit-app-secret")
+    engine = create_engine(app_url, poolclass=NullPool)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        with sessionmaker(bind=engine)() as db:
+            user = User(email=f"grants-{uuid4().hex}@example.com", password_hash="x", full_name="Grant Test")
+            db.add(user)
+            db.flush()
+            db.add_all([
+                LoginEvent(user_id=user.id, email=user.email, user_agent_hash="x", outcome="success",
+                           risk_score=0, step_up_satisfied=False, reasons="[]", created_at=now),
+                MfaFactor(user_id=user.id, method="totp", secret_ciphertext=encrypt_secret("JBSWY3DPEHPK3PXP")),
+                LoginChallenge(user_id=user.id, expires_at=now + timedelta(minutes=5), risk_score=0, reasons="[]"),
+                RoleChangeRequest(target_user_id=user.id, old_role="trader", old_change_id=None,
+                                  new_role="analyst", reason="Grant proof", requested_by_user_id=user.id),
+                SurveillanceActivation(rule_id="SM-SV-01", version=1, reason="Grant proof", requested_by_user_id=user.id),
+                AmlActivation(rule_id="SM-AML-01", version=1, reason="Grant proof", requested_by_user_id=user.id),
+                SurveillanceCase(rule_id="SM-SV-01", rule_version=1, subject_user_id=user.id, symbol="NVDA",
+                                 event_ids='["trade-1"]', summary="Grant proof", opened_at=now, due_at=now + timedelta(days=1)),
+                AmlCase(rule_id="SM-AML-01", rule_version=1, subject_user_id=user.id, event_ids='["cash-1"]',
+                        summary="Grant proof", opened_at=now, due_at=now + timedelta(days=1)),
+                Incident(title="Grant proof", severity="low", summary="Grant proof", discovered_at=now,
+                         customer_notice_due_at=now + timedelta(days=30), opened_by_user_id=user.id),
+                TradeIntent(symbol="NVDA", side="buy", quantity=1, reference_price=10, rationale="Grant proof",
+                            confidence=Decimal("0.5"), data_used="[]", status="proposed", proposed_by="test", created_at=now),
+                RiskBrief(brief_date=now.date(), body="Grant proof", figures="{}", created_at=now),
+                ExpansionAlert(kind="test", summary="Grant proof", evidence_ref="test", created_at=now),
+            ])
+            db.flush()
+            db.rollback()
+            with pytest.raises(ProgrammingError) as denied:
+                db.execute(text("INSERT INTO mfa_factors (user_id, method, secret_ciphertext, confirmed_at) "
+                                "VALUES (:id, 'totp', 'x', NOW())"), {"id": user.id})
+            assert getattr(denied.value.orig, "sqlstate", None) == "42501"
+            db.rollback()
+    finally:
+        engine.dispose()
 
 
 def test_two_deposits_both_count_and_two_withdrawals_cannot_spend_the_same_cash():

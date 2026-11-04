@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, func, text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, func, null, text
 
 from app.core.database import Base
 
@@ -48,10 +48,10 @@ class AmlActivation(Base):
     version = Column(Integer, nullable=False)
     reason = Column(String(255), nullable=False)
     requested_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, server_default=null())
     status = Column(String(12), nullable=False, server_default=text("'pending'"))
     requested_at = Column(DateTime, nullable=False, server_default=func.now())
-    approved_at = Column(DateTime, nullable=True)
+    approved_at = Column(DateTime, nullable=True, server_default=null())
 
 
 class AmlCase(Base):
@@ -71,12 +71,12 @@ class AmlCase(Base):
     event_ids = Column(Text, nullable=False)
     summary = Column(String(255), nullable=False)
     status = Column(String(12), nullable=False, server_default=text("'open'"))
-    disposition = Column(String(20), nullable=True)
-    close_reason = Column(String(255), nullable=True)
+    disposition = Column(String(20), nullable=True, server_default=null())
+    close_reason = Column(String(255), nullable=True, server_default=null())
     opened_at = Column(DateTime, nullable=False, server_default=func.now())
     due_at = Column(DateTime, nullable=False)
-    closed_at = Column(DateTime, nullable=True)
-    closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    closed_at = Column(DateTime, nullable=True, server_default=null())
+    closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, server_default=null())
 
 
 class Incident(Base):
@@ -97,8 +97,8 @@ class Incident(Base):
     summary = Column(String(255), nullable=False)
     discovered_at = Column(DateTime, nullable=False)
     customer_notice_due_at = Column(DateTime, nullable=False)
-    customer_notified_at = Column(DateTime, nullable=True)
+    customer_notified_at = Column(DateTime, nullable=True, server_default=null())
     opened_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    notified_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    closed_at = Column(DateTime, nullable=True)
+    notified_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, server_default=null())
+    closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, server_default=null())
+    closed_at = Column(DateTime, nullable=True, server_default=null())

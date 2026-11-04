@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func, null
 
 from app.core.database import Base
 
@@ -21,9 +21,9 @@ class TradeIntent(Base):
     status = Column(String(12), nullable=False)
     rejection_reason = Column(String(255), nullable=True)
     proposed_by = Column(String(64), nullable=False)
-    decided_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    decided_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, server_default=null())
     created_at = Column(DateTime, nullable=False, server_default=func.now())
-    decided_at = Column(DateTime, nullable=True)
+    decided_at = Column(DateTime, nullable=True, server_default=null())
 
 
 class Finding(Base):

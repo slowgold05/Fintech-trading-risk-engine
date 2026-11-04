@@ -7,11 +7,9 @@ Passwords stay in the environment and are not printed.
 import json
 import os
 import secrets
-import urllib.error
-import urllib.parse
-import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 
+import requests
 
 def api_base() -> str:
     return os.environ.get("API_BASE_URL", "https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/api").rstrip("/")
@@ -19,28 +17,18 @@ def api_base() -> str:
 
 def request(method: str, path: str, token: str | None = None, body: dict | None = None,
             form: dict | None = None, headers: dict | None = None) -> tuple[int, dict | list | str]:
-    data = None
     request_headers = dict(headers or {})
     if token:
         request_headers["Authorization"] = f"Bearer {token}"
-    if form is not None:
-        data = urllib.parse.urlencode(form).encode()
-        request_headers["Content-Type"] = "application/x-www-form-urlencoded"
-    elif body is not None:
-        data = json.dumps(body).encode()
-        request_headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(api_base() + path, data=data, headers=request_headers, method=method)
+    response = requests.request(method, api_base() + path, data=form, json=body if form is None else None,
+                                headers=request_headers, timeout=30)
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            raw = response.read().decode()
-            return response.status, json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode()
-        try:
-            parsed = json.loads(raw) if raw else {}
-        except json.JSONDecodeError:
-            parsed = raw
-        return exc.code, parsed
+        parsed = response.json() if response.content else {}
+    except ValueError:
+        if response.ok:
+            raise
+        parsed = response.text
+    return response.status_code, parsed
 
 
 def login(email: str, password: str) -> str:

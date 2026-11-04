@@ -1,9 +1,8 @@
-import json
 import math
 from decimal import Decimal
 from pathlib import Path
-from urllib.request import Request, urlopen
 
+import requests
 import yaml
 from sqlalchemy.orm import Session
 
@@ -70,11 +69,11 @@ def interpret_yente_payload(payload: object, name: str, threshold: Decimal | flo
 
 def _screen_yente(name: str) -> dict:
     url = settings.yente_url.rstrip("/") + "/match/default"
-    body = json.dumps({"queries": {"q": {"schema": "Person", "properties": {"name": [name]}}}}).encode()
-    request = Request(url, data=body, headers={"Content-Type": "application/json"})
+    body = {"queries": {"q": {"schema": "Person", "properties": {"name": [name]}}}}
     try:
-        with urlopen(request, timeout=3) as response:
-            payload = json.loads(response.read().decode())
+        response = requests.post(url, json=body, timeout=3)
+        response.raise_for_status()
+        payload = response.json()
     except Exception:
         return _provider_error(name)
     return interpret_yente_payload(payload, name, settings.yente_match_threshold)
