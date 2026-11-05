@@ -12,7 +12,7 @@ The system keeps trading limits deterministic and review decisions explicit. Sur
 
 ## Explore the live demo
 
-Start with the public homepage, then [register or sign in](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/login) to explore a trader account with **$100,000 in paper cash**. Admin and compliance-officer credentials are not published.
+The application opens its public market dashboard at `/` or `/dashboard`, with a **Log in** button at the top right. Signing in opens the account dashboard; market research remains available at `/market`. Portfolio, trading, risk, and compliance pages require a session. [Register or sign in](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/login) to explore a trader account with **$100,000 in paper cash**. Admin and compliance-officer credentials are not published. This entry-flow update requires a frontend deployment after the release recorded below.
 
 | Area | What to explore |
 | --- | --- |
