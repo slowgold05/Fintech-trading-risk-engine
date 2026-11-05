@@ -1,5 +1,11 @@
 FROM python:3.12-slim
 
+# Patch the base image's APT verification vulnerability (CVE-2026-109518).
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade apt \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && useradd --create-home --uid 10001 app
