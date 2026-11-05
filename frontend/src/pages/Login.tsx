@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Check, Lock, User } from "@phosphor-icons/react";
 import { isAxiosError } from "axios";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { completeLoginMfa, confirmMfaEnrollment, enrollMfa, login, register } from "../api/auth";
 import { useAuth } from "../context/useAuth";
 
@@ -183,6 +183,9 @@ export function Login() {
       {/* Right panel — login form */}
       <div className="flex flex-1 items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-md">
+          <Link to="/" className="mb-6 inline-flex text-sm text-slate-400 transition hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">
+            Back to dashboard
+          </Link>
           {/* Mobile logo */}
           <div className="mb-8 flex items-center gap-3 md:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.25)]">

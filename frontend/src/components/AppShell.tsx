@@ -17,7 +17,7 @@ import { useAuth } from "../context/useAuth";
 import { fetchMe } from "../api/auth";
 
 const navigationItems: Array<{ label: string; to: string; Icon: Icon; end?: boolean }> = [
-  { label: "Home", to: "/", Icon: HouseLine, end: true },
+  { label: "Market", to: "/market", Icon: HouseLine, end: true },
   { label: "Dashboard", to: "/dashboard", Icon: SquaresFour },
   { label: "Trades", to: "/trades", Icon: Swap },
   { label: "Portfolio", to: "/portfolio", Icon: ChartPieSlice },

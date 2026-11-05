@@ -512,14 +512,14 @@ export function Home() {
               <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">
                 getrichyesterday
               </div>
-              <div className="hidden text-[10px] text-slate-500 sm:block">Market Research Console</div>
+              <div className="hidden text-[10px] text-slate-500 sm:block">Market dashboard</div>
             </div>
           </div>
           <Link
             className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:bg-slate-800/80 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 active:translate-y-px"
             to={isAuthenticated ? "/dashboard" : "/login"}
           >
-            {isAuthenticated ? "Open dashboard →" : "Sign in →"}
+            {isAuthenticated ? "Open dashboard →" : "Log in"}
           </Link>
         </div>
       </header>
@@ -530,10 +530,10 @@ export function Home() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <span className="inline-flex items-center rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-400">
-                Public research view
+                Public dashboard
               </span>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
-                Market Research Console
+                Market dashboard
               </h1>
               <p className="mt-3 max-w-xl text-sm leading-7 text-slate-400">
                 Delayed index pulse, sector heatmaps, and company fundamentals — no account required.
