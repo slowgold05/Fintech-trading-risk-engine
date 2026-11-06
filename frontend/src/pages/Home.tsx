@@ -10,6 +10,7 @@ import {
 } from "../api/market";
 import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
+import { DailyHistory } from "../components/DailyHistory";
 import { FreshnessBadge } from "../components/FreshnessBadge";
 import type {
   MarketHeatmapItemResponse,
@@ -738,6 +739,7 @@ export function Home() {
             )}
           </div>
         </div>
+        <DailyHistory />
       </section>
     </main>
   );
