@@ -182,8 +182,10 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
-P3-B, the read-only order preview contract, and then that preview's API and tests. Ticket lifecycle and watchlists remain later parts of P3-B. Preview writes no cash, order, holding, lot, or ledger row. The existing immediate `POST /trades/` dashboard path stays unchanged. Matching and execution policies stay unchanged.
+Preview-branch CI and review, then the preview/confirm ticket. Controls and the local full suite are done. `POST /orders/preview` is under review on `codex/v2-order-preview-20261106`, based on PR 17 final HEAD `c7a7a4eb4cc39ec4578c2f9eb503735dae2be392`. Local evidence as of 2026-11-06 14:18 EST: [P3B_PREVIEW_VERIFICATION.md](P3B_PREVIEW_VERIFICATION.md). Contract: [P3B_ORDER_PREVIEW_CONTRACT.md](P3B_ORDER_PREVIEW_CONTRACT.md). Preview-branch CI and PR review are pending. Do not mark P3-B done. Order lifecycle and watchlists stay later.
+
+Preview writes no cash, order, holding, lot, or ledger row. `POST /orders/` still revalidates. The existing immediate `POST /trades/` dashboard path stays unchanged. Matching and execution policies stay unchanged. No new migration, dependency, grant, merge, or deploy.
 
 The P3-A first cached chart slice is accepted and is not the next task. Indicator warm-up, a reviewed exchange calendar, provider approval, and live ingestion stay open. Full P3-A and the broader phases stay open. This note checks no roadmap box.
 
-PR 17 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/17) on `codex/v2-cached-daily-chart-20261106` is stacked on PR 16 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/16). Main is unchanged. No merge, deploy, or hosted mutation.
+PR 16 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/16) and PR 17 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/17) are ready. All 7 CI jobs are green. Main and the hosted service are unchanged. No merge, deploy, or hosted mutation.

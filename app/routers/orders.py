@@ -12,6 +12,7 @@ from app.models.market_symbol import MarketSymbol
 from app.schemas.order import OrderCreate
 from app.services.order_book import cancel_order, place_order
 from app.services.idempotency import execute_once
+from app.services.order_preview import preview_order
 from app.services.order_step_up import order_notional, require_notional_step_up
 
 
@@ -62,6 +63,14 @@ def create_order(request: Request, response: Response, payload: OrderCreate,
         return {**_order_out(order, asset.symbol), "trade_ids": trade_ids}
 
     return execute_once(db, current_user.id, idempotency_key, "order", payload, execute)
+
+
+@router.post("/preview")
+@limiter.limit("60/minute")
+def preview(request: Request, response: Response, payload: OrderCreate,
+            db: Session = Depends(get_db), current_user: User = Depends(get_current_trader)):
+    owner_id = current_user.id
+    return preview_order(db, owner_id, payload)
 
 
 @router.post("/{order_id}/cancel")
