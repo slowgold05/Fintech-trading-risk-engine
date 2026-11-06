@@ -647,67 +647,108 @@ def _risk_error_ready(driver: webdriver.Chrome) -> bool:
 
 
 def _orders_shell_shows_details(driver: webdriver.Chrome, symbol: str) -> bool:
-    try:
-        return bool(driver.execute_script(
-            """
-            const symbol = arguments[0];
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
-            if (!orders) { return false; }
-            const shell = orders.querySelector(".table-shell");
-            if (!shell) { return false; }
-            shell.scrollLeft = shell.scrollWidth;
-            const maxScroll = shell.scrollWidth - shell.clientWidth;
-            if (maxScroll <= 1 || shell.scrollLeft < maxScroll - 1) { return false; }
-            const headerRow = orders.querySelector("thead tr")
-              || Array.from(orders.querySelectorAll("tr")).find((candidate) => candidate.querySelector("th"));
-            if (!headerRow) { return false; }
-            const headings = Array.from(headerRow.cells).map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
-            const indexes = ["Remaining", "Status", "Limit"].map((label) => headings.indexOf(label));
-            if (indexes.some((index) => index < 0)) { return false; }
-            const dataRows = Array.from(orders.querySelectorAll("tbody tr"));
-            const candidates = dataRows.length
-              ? dataRows
-              : Array.from(orders.querySelectorAll("tr")).filter((candidate) => candidate.querySelector("td"));
-            const row = candidates.find((candidate) => {
-              const cells = Array.from(candidate.cells);
-              return cells.length === 6 && Array.from(cells[0].querySelectorAll("div")).some((node) =>
-                node.textContent.replace(/\\s+/g, " ").trim() === symbol
-              );
-            });
-            if (!row) { return false; }
-            const cells = indexes.map((index) => row.cells[index]);
-            if (cells.some((cell) => !cell)) { return false; }
-            const shellRect = shell.getBoundingClientRect();
-            const within = cells.every((cell) => {
-              const rect = cell.getBoundingClientRect();
-              return rect.width > 0
-                && rect.height > 0
-                && rect.left >= shellRect.left - 1
-                && rect.right <= shellRect.right + 1
-                && rect.top >= shellRect.top - 1
-                && rect.bottom <= shellRect.bottom + 1
-                && rect.top >= -1
-                && rect.left >= -1
-                && rect.bottom <= window.innerHeight + 1
-                && rect.right <= window.innerWidth + 1;
-            });
-            if (!within) { return false; }
-            const text = cells.map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
-            const root = document.documentElement;
-            const main = document.querySelector("main");
-            return text[0] === "1"
-              && text[1].toLowerCase() === "open"
-              && text[2] === "$100.00"
-              && !!main
-              && root.scrollWidth <= root.clientWidth
-              && main.scrollWidth <= main.clientWidth;
-            """,
-            symbol,
-        ))
-    except Exception:
+    result = driver.execute_script(
+        """
+        const symbol = arguments[0];
+        const orders = Array.from(document.querySelectorAll("section")).find((section) =>
+          Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+        );
+        if (!orders) { return {pending: true}; }
+        const shell = orders.querySelector(".table-shell");
+        const root = document.documentElement;
+        const main = document.querySelector("main");
+        if (!shell || !main) { return {pending: true}; }
+        const headerRow = orders.querySelector("thead tr")
+          || Array.from(orders.querySelectorAll("tr")).find((candidate) => candidate.querySelector("th"));
+        if (!headerRow) { return {pending: true}; }
+        const headings = Array.from(headerRow.cells).map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
+        const targets = [
+          {label: "Remaining", expected: "1"},
+          {label: "Status", expected: "open"},
+          {label: "Limit", expected: "$100.00"},
+        ];
+        const indexes = targets.map((target) => headings.indexOf(target.label));
+        if (indexes.some((index) => index < 0)) { return {pending: true}; }
+        const dataRows = Array.from(orders.querySelectorAll("tbody tr"));
+        const candidates = dataRows.length
+          ? dataRows
+          : Array.from(orders.querySelectorAll("tr")).filter((candidate) => candidate.querySelector("td"));
+        const row = candidates.find((candidate) => {
+          const cells = Array.from(candidate.cells);
+          return cells.length === 6 && Array.from(cells[0].querySelectorAll("div")).some((node) =>
+            node.textContent.replace(/\\s+/g, " ").trim() === symbol
+          );
+        });
+        if (!row) { return {pending: true}; }
+        const box = (rect) => ({
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          right: Math.round(rect.right),
+          bottom: Math.round(rect.bottom),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        });
+        const fullyInside = (rect, bounds) => rect.width > 0
+          && rect.height > 0
+          && rect.left >= bounds.left - 1
+          && rect.right <= bounds.right + 1
+          && rect.top >= bounds.top - 1
+          && rect.bottom <= bounds.bottom + 1;
+        for (let index = 0; index < targets.length; index += 1) {
+          const target = targets[index];
+          const cell = row.cells[indexes[index]];
+          if (!cell) { return {pending: true}; }
+          cell.scrollIntoView({block: "nearest", inline: "nearest", behavior: "instant"});
+          const rect = cell.getBoundingClientRect();
+          const shellRect = shell.getBoundingClientRect();
+          const text = cell.textContent.replace(/\\s+/g, " ").trim();
+          const textOk = target.label === "Status" ? text.toLowerCase() === target.expected : text === target.expected;
+          if (!text) { return {pending: true}; }
+          if (!textOk) { return {pending: false, ok: false, reason: "text"}; }
+          const view = {left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight};
+          const shellOk = fullyInside(rect, shellRect);
+          const viewOk = fullyInside(rect, view);
+          const overflowOk = root.scrollWidth <= root.clientWidth && main.scrollWidth <= main.clientWidth;
+          if (!shellOk || !viewOk || !overflowOk) {
+            return {
+              pending: false,
+              ok: false,
+              reason: overflowOk ? "bounds" : "overflow",
+              geometry: {
+                column: target.label,
+                shellOk: shellOk,
+                viewOk: viewOk,
+                overflowOk: overflowOk,
+                cell: box(rect),
+                shell: box(shellRect),
+                viewport: {width: window.innerWidth, height: window.innerHeight},
+                rootScrollWidth: root.scrollWidth,
+                rootClientWidth: root.clientWidth,
+                mainScrollWidth: main.scrollWidth,
+                mainClientWidth: main.clientWidth,
+              },
+            };
+          }
+        }
+        return {ok: true};
+        """,
+        symbol,
+    )
+    if not isinstance(result, dict) or result.get("pending"):
         return False
+    if result.get("ok"):
+        return True
+    if result.get("reason") == "text":
+        pytest.fail("orders mobile detail cell text did not match")
+    message = (
+        "orders mobile detail overflowed the page"
+        if result.get("reason") == "overflow"
+        else "orders mobile detail cell was not fully inside the shell"
+    )
+    geometry = result.get("geometry")
+    if geometry:
+        pytest.fail(message + " " + json.dumps(geometry, sort_keys=True))
+    pytest.fail(message)
 
 
 def _orders_shell_scroll_reset(driver: webdriver.Chrome) -> bool:
