@@ -1,6 +1,6 @@
 # P3-B contract: POST /orders/preview
 
-Implemented API under review as of 2026-11-06 14:18 EST. Locally verified; preview-branch CI and PR review are pending. Evidence: [P3B_PREVIEW_VERIFICATION.md](P3B_PREVIEW_VERIFICATION.md). Indicative read-only preview. `POST /orders/` revalidates. Preview reserves nothing and is not an execution guarantee. `eligible` does not authorize step-up.
+The first backend preview unit is accepted locally and in CI. Evidence: [P3B_PREVIEW_VERIFICATION.md](P3B_PREVIEW_VERIFICATION.md). Full P3-B is not done: the preview/confirm ticket, lifecycle, and watchlists stay later. Indicative, non-binding read-only preview. It is not an MFA authorization. `POST /orders/` revalidates. Preview reserves nothing and is not an execution guarantee. `eligible` does not authorize step-up.
 
 ## Route and snapshot
 
