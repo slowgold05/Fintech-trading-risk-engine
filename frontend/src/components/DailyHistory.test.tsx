@@ -1,0 +1,243 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HistoryBar, HistoryResponse, MarketDataStatus } from "../api/history";
+import { DailyHistory } from "./DailyHistory";
+
+const READ_AT = "2026-11-06T12:00:00Z";
+const FETCHED_AT = "2026-11-06T11:00:00Z";
+const PARTIAL = "Partial cached bars for the requested window. Missing sessions stay missing.";
+const EMPTY = "No cached daily bars for this symbol, source, and adjustment.";
+const MISMATCH = "Cached history did not match the selected symbol, source, and adjustment.";
+const PLOT = "Cached daily bars could not be plotted.";
+const SHOWING = "Showing TEST, source fixture, adjustment raw.";
+const RAW_SERIES = JSON.stringify(["fixture", "raw"]);
+
+const historyApi = vi.hoisted(() => ({ fetchCachedSeries: vi.fn(), fetchDailyHistory: vi.fn() }));
+const chartApi = vi.hoisted(() => ({
+  createChart: vi.fn(),
+  ColorType: { Solid: "solid" },
+  CandlestickSeries: { type: "candlestick" },
+}));
+vi.mock("../api/history", () => historyApi);
+vi.mock("lightweight-charts", () => chartApi);
+
+type ChartMount = {
+  setData: ReturnType<typeof vi.fn>;
+  fitContent: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+  addSeries: ReturnType<typeof vi.fn>;
+};
+const mounts: ChartMount[] = [];
+const clients: QueryClient[] = [];
+const catalog: MarketDataStatus = {
+  read_at: READ_AT,
+  collection: "disabled",
+  coverage_status: "not_verified",
+  expected_session_count: null,
+  canonical_history: {
+    series: [
+      { provider: "fixture", adjustment_type: "raw" },
+      { provider: "fixture", adjustment_type: "split_adjusted" },
+    ],
+  },
+};
+
+function bar(session: string, open: string, high: string, low: string, close: string): HistoryBar {
+  return {
+    session_date: session, open, high, low, close, volume: "0", fetched_at: FETCHED_AT,
+    provider: "fixture", adjustment_type: "raw", quality_status: "valid",
+  };
+}
+
+function history(close = "108.500000"): HistoryResponse {
+  return {
+    symbol: "TEST", interval: "1d", range: "2y", provider: "fixture", adjustment_type: "raw",
+    status: "partial", coverage_status: "not_verified", expected_session_count: null, collection: "disabled",
+    read_at: READ_AT, requested_start: "2024-11-06", requested_end: "2026-11-06",
+    available_start: "2026-11-04", available_end: "2026-11-05", excluded_row_count: 0,
+    bars: [
+      bar("2026-11-04", "101.250000", "105.500000", "99.500000", "103.750000"),
+      bar("2026-11-05", "103.750000", "110.000000", "100.000000", close),
+    ],
+  };
+}
+
+function mountChart() {
+  const setData = vi.fn();
+  const fitContent = vi.fn();
+  const remove = vi.fn();
+  const addSeries = vi.fn(() => ({ setData }));
+  mounts.push({ setData, fitContent, remove, addSeries });
+  return { addSeries, timeScale: () => ({ fitContent }), remove };
+}
+
+function renderHistory() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  clients.push(client);
+  return render(<QueryClientProvider client={client}><DailyHistory /></QueryClientProvider>);
+}
+
+function fact(label: string) {
+  const value = screen.getByText(label, { selector: "dt" }).nextElementSibling;
+  if (!(value instanceof HTMLElement)) throw new Error(`Missing ${label}.`);
+  return value.textContent;
+}
+
+function fillTest(symbol = "TEST") {
+  fireEvent.change(screen.getByRole("textbox", { name: "Symbol" }), { target: { value: symbol } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: RAW_SERIES } });
+}
+
+function submitForm() {
+  const form = screen.getByRole("button", { name: "View history" }).closest("form");
+  if (!(form instanceof HTMLFormElement)) throw new Error("Missing history form.");
+  fireEvent.submit(form);
+}
+
+function onlyChart() {
+  const chart = mounts[0];
+  if (chart === undefined || mounts.length !== 1) throw new Error("Expected one chart.");
+  return chart;
+}
+
+describe("DailyHistory", () => {
+  beforeEach(() => {
+    mounts.length = 0;
+    historyApi.fetchCachedSeries.mockReset();
+    historyApi.fetchDailyHistory.mockReset();
+    chartApi.createChart.mockReset();
+    chartApi.createChart.mockImplementation(mountChart);
+  });
+  afterEach(() => {
+    cleanup();
+    for (const client of clients) client.clear();
+    clients.length = 0;
+  });
+
+  it("retries a failed catalog into an empty list without history or a chart", async () => {
+    historyApi.fetchCachedSeries
+      .mockRejectedValueOnce(new Error("catalog down"))
+      .mockResolvedValueOnce({ ...catalog, canonical_history: { series: [] } });
+    renderHistory();
+    expect((await screen.findByRole("alert")).textContent).toBe("Cached series could not be loaded.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("No canonical daily series available.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+    expect(chartApi.createChart).not.toHaveBeenCalled();
+  });
+
+  it("views one explicit series, ignores unsent edits, refreshes in place, and removes on unmount", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValueOnce(history()).mockResolvedValueOnce(history("107.250000"));
+    const view = renderHistory();
+    expect(await screen.findByRole("textbox", { name: "Symbol" })).toHaveAttribute("id", "daily-history-symbol");
+    expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveAttribute("id", "daily-history-series");
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+    fillTest();
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw"]]);
+    expect(screen.getByText(PARTIAL)).toBeInTheDocument();
+    expect(screen.getByText(SHOWING)).toBeInTheDocument();
+    expect([fact("Status"), fact("Source"), fact("Coverage"), fact("Collection")]).toEqual([
+      "Partial", "fixture", "Not verified", "Disabled",
+    ]);
+    expect(screen.getByText("Session prices")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "101.250000" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "108.500000" })).toBeInTheDocument();
+    expect(screen.getByText(/TradingView Lightweight Charts™, Copyright \(\u0441\) 2025 TradingView, Inc\./)).toBeInTheDocument();
+    for (const [name, href] of [
+      ["https://www.tradingview.com/", "https://www.tradingview.com/"],
+      ["lightweight-charts license", "/licenses/lightweight-charts-LICENSE.txt"],
+      ["lightweight-charts notice", "/licenses/lightweight-charts-NOTICE.txt"],
+      ["fancy-canvas license", "/licenses/fancy-canvas-LICENSE.txt"],
+    ] as const) {
+      expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
+    }
+    expect(chartApi.createChart.mock.calls[0]?.[1]).toMatchObject({
+      autoSize: true,
+      layout: { attributionLogo: true, background: { type: chartApi.ColorType.Solid } },
+    });
+    expect(chart.addSeries.mock.calls[0]?.[0]).toBe(chartApi.CandlestickSeries);
+    expect(chart.addSeries.mock.calls[0]?.[1]).toMatchObject({ priceFormat: { precision: 6 } });
+    expect(chart.setData).toHaveBeenCalledTimes(1);
+    expect(chart.fitContent).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByRole("textbox", { name: "Symbol" }), { target: { value: "MSFT" } });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText(SHOWING)).toBeInTheDocument();
+    expect(screen.getByText("The form has unsent changes. Prices below stay on the last viewed series.")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "108.500000" })).toBeInTheDocument();
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
+    expect(chart.setData).toHaveBeenCalledTimes(1);
+    expect(chart.fitContent).toHaveBeenCalledTimes(1);
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    fillTest("TEST");
+    submitForm();
+    await waitFor(() => expect(screen.getByRole("cell", { name: "107.250000" })).toBeInTheDocument());
+    expect(screen.queryByRole("cell", { name: "108.500000" })).not.toBeInTheDocument();
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw"], ["TEST", "fixture", "raw"]]);
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    expect(chart.setData).toHaveBeenLastCalledWith([
+      { time: "2026-11-04", open: 101.25, high: 105.5, low: 99.5, close: 103.75 },
+      { time: "2026-11-05", open: 103.75, high: 110, low: 100, close: 107.25 },
+    ]);
+    expect(chart.fitContent).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(chart.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides a failed refresh and restores the chart on retry", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory
+      .mockResolvedValueOnce(history())
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(history());
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    submitForm();
+    expect((await screen.findByRole("alert")).textContent).toBe("Cached daily history could not be loaded.");
+    expect(screen.queryByText(PARTIAL)).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    await waitFor(() => expect(chart.remove).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(chartApi.createChart).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByText(PARTIAL)).toBeInTheDocument();
+  });
+
+  it.each<{ name: string; body: HistoryResponse; alert?: string; status?: string }>([
+    { name: "valid unavailable bars", body: { ...history(), status: "unavailable", available_start: null, available_end: null, bars: [] }, status: EMPTY },
+    { name: "wrong provider", body: { ...history(), provider: "other" }, alert: MISMATCH },
+    { name: "wrong symbol", body: { ...history(), symbol: "MSFT" }, alert: MISMATCH },
+    {
+      name: "invalid bar",
+      body: { ...history(), bars: history().bars.map((entry, index) => (index === 0 ? { ...entry, open: "101.25" } : entry)) },
+      alert: PLOT,
+    },
+  ])("$name does not construct a chart", async ({ body, alert, status }) => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(body);
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    if (alert) expect((await screen.findByRole("alert")).textContent).toBe(alert);
+    else {
+      expect(await screen.findByText(status ?? "")).toBeInTheDocument();
+      expect(fact("Status")).toBe("Unavailable");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    }
+    await act(async () => { await Promise.resolve(); });
+    expect(chartApi.createChart).not.toHaveBeenCalled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(PARTIAL)).not.toBeInTheDocument();
+  });
+});

@@ -9,7 +9,12 @@ const api = vi.hoisted(() => ({
   fetchMarketOverview: vi.fn(), fetchMarketHeatmap: vi.fn(),
   fetchMarketTrending: vi.fn(), fetchMarketResearch: vi.fn(),
 }));
+const historyApi = vi.hoisted(() => ({
+  fetchCachedSeries: vi.fn(),
+  fetchDailyHistory: vi.fn(),
+}));
 vi.mock("../api/market", () => api);
+vi.mock("../api/history", () => historyApi);
 vi.mock("../context/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false }) }));
 
 function open() {
@@ -20,6 +25,12 @@ function open() {
 describe("public market data truth", () => {
   beforeEach(() => {
     for (const call of Object.values(api)) call.mockRejectedValue(new Error("Unavailable"));
+    historyApi.fetchCachedSeries.mockResolvedValue({
+      read_at: "2026-11-06T12:00:00Z", collection: "disabled",
+      coverage_status: "not_verified", expected_session_count: null,
+      canonical_history: { row_count: 0, series: [] },
+    });
+    historyApi.fetchDailyHistory.mockRejectedValue(new Error("No series selected"));
   });
   afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
