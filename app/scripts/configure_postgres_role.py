@@ -27,7 +27,7 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE, DELETE ON assets, holdings, lots, "
                            "market_fundamentals_cache, market_quote_cache, market_symbols, orders, "
-                           "price_history, price_history_daily, refresh_tokens, risk_alerts, "
+                           "price_history, price_history_daily, market_bars_daily, refresh_tokens, risk_alerts, "
                            "risk_assessments, trades TO fintech_app")
             cursor.execute("GRANT INSERT ON ledger_entries TO fintech_app")
             cursor.execute("GRANT INSERT (email, password_hash, cash_balance, full_name) ON users TO fintech_app")

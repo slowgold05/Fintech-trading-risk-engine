@@ -50,7 +50,6 @@ export function Trades() {
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
         queryClient.invalidateQueries({ queryKey: ["trades"] }),
         queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio", "pnl"] }),
         queryClient.invalidateQueries({ queryKey: ["risk"] }),
       ]);
     },

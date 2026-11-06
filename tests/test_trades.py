@@ -1,9 +1,14 @@
-import pytest
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import uuid4
+
+import pytest
 from sqlalchemy import text
 
 from app.models.holding import Holding
 from app.models.lot import Lot
+from app.models.market_quote_cache import MarketQuoteCache
+from app.models.market_symbol import MarketSymbol
 from app.models.trade import Trade
 from app.models.user import User
 from app.services.idempotency_check import check_idempotency_records
@@ -99,7 +104,20 @@ def test_fractional_trade_uses_decimal_rounding(client, auth_headers, db_session
     assert str(user.cash_balance) == "100000.30"
     assert str(trade.realized_pnl) == "0.40"
 
-    monkeypatch.setattr("app.routers.portfolio.get_live_price", lambda symbol, asset_type: 0.30)
+    db_session.add(MarketSymbol(symbol="AAPL", company_name="Apple", exchange="NASDAQ", is_active=True))
+    db_session.flush()
+    observed = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+    db_session.add(MarketQuoteCache(
+        symbol="AAPL",
+        price=Decimal("0.30"),
+        change_amount=0,
+        change_percent=0,
+        volume=0,
+        source="yahoo",
+        quote_at=observed,
+        fetched_at=observed,
+    ))
+    db_session.commit()
     summary = client.get("/portfolio/", headers=headers).json()["summary"]
     assert summary["total_portfolio_value"] == 0.30
     assert summary["total_account_value"] == 100000.60

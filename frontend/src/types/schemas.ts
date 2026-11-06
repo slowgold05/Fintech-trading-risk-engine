@@ -172,28 +172,39 @@ export interface CreateOrderPayload {
   limit_price?: number;
 }
 
+export type ValuationStatus = "complete" | "incomplete";
+
+export type PriceStatus = "available" | "unavailable";
+
+export type UnavailableReason = "missing" | "invalid" | "stale" | "unsupported_asset";
+
 export interface PortfolioPositionResponse {
   symbol: string;
   asset_type: string;
   quantity: number;
   avg_cost: number;
-  current_price: number;
-  position_value: number;
+  current_price: number | null;
+  position_value: number | null;
   cost_basis: number;
-  unrealized_pnl: number;
-  unrealized_pnl_pct: number;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+  price_status: PriceStatus;
+  unavailable_reason: UnavailableReason | null;
+  source: string | null;
+  quote_at: string | null;
+  fetched_at: string | null;
 }
 
 export interface PortfolioSummaryResponse {
   cash_balance: number;
   buying_power: number;
-  total_account_value: number;
-  total_portfolio_value: number;
+  total_account_value: number | null;
+  total_portfolio_value: number | null;
   total_cost_basis: number;
-  total_unrealized_pnl: number;
-  total_unrealized_pnl_pct: number;
+  total_unrealized_pnl: number | null;
+  total_unrealized_pnl_pct: number | null;
   total_realized_pnl: number;
-  total_pnl: number;
+  total_pnl: number | null;
 }
 
 export interface PortfolioResponse {
@@ -201,21 +212,11 @@ export interface PortfolioResponse {
     id: number;
     email: string;
   };
+  valuation_status: ValuationStatus;
+  snapshot_read_at: string;
+  unavailable_symbols: string[];
   positions: PortfolioPositionResponse[];
   summary: PortfolioSummaryResponse;
-}
-
-export interface PortfolioPnlPointResponse {
-  label: string;
-  value: number;
-}
-
-export interface PortfolioPnlResponse {
-  points?: PortfolioPnlPointResponse[];
-  total_pnl?: number;
-  total_pnl_pct?: number;
-  daily_pnl?: number;
-  daily_pnl_pct?: number;
 }
 
 export interface RiskAlertResponse {
@@ -299,10 +300,10 @@ export interface MarketHeatmapResponse {
 
 export interface MarketMoverResponse {
   symbol: string;
-  price: number;
-  change_amount: number;
-  change_percent: number;
-  volume: number;
+  price: number | null;
+  change_amount: number | null;
+  change_percent: number | null;
+  volume: number | null;
 }
 
 export interface MarketTrendingResponse {
@@ -328,8 +329,8 @@ export interface MarketResearchResponse {
   analyst_target_price?: number | null;
   price?: number | null;
   change_percent?: number | null;
-  research_risk_score?: number;
-  research_risk_label?: "Low" | "Medium" | "High";
+  research_risk_score?: number | null;
+  research_risk_label?: "Low" | "Medium" | "High" | null;
   risk_factors?: string[];
   description?: string | null;
   fundamentals?: {

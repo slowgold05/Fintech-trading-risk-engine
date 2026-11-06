@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
-from app.routers import auth, assets, cash, compliance, market, orders, trades, portfolio, risk
+from app.routers import auth, assets, cash, compliance, market, market_history, orders, trades, portfolio, risk
 
 
 @asynccontextmanager
@@ -98,6 +98,7 @@ def token(
 # Register routers
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(market.router, prefix="/market", tags=["Market"])
+app.include_router(market_history.router, prefix="/market", tags=["Market"])
 app.include_router(trades.router, prefix="/trades", tags=["Trades"])
 app.include_router(orders.router, prefix="/orders", tags=["Orders"])
 app.include_router(compliance.router, prefix="/compliance", tags=["Compliance"])
