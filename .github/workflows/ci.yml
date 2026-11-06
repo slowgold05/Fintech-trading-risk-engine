@@ -136,7 +136,7 @@ jobs:
     env:
       P0B_BROWSER: "1"
       P0B_TRADER_EMAIL: designatedemail@example.com
-      P0B_TRADER_PASSWORD: testpassword
+      P0B_TRADER_PASSWORD: Ci-browser-test-2026!
       P0B_WEB_URL: http://127.0.0.1:4173
       P0B_API_URL: http://127.0.0.1:8000
       P0B_DISPOSABLE_DATABASE_URL: postgresql+psycopg://ci_browser:ci-only-browser@127.0.0.1:54331/p0b_browser
