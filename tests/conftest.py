@@ -56,7 +56,6 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Session:
         return prices.get(symbol.upper(), 100.0)
 
     monkeypatch.setattr("app.routers.trades.get_live_price", fake_live_price)
-    monkeypatch.setattr("app.routers.portfolio.get_live_price", fake_live_price)
 
     try:
         yield session

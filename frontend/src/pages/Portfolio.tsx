@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { fetchMe, setLegalName } from "../api/auth";
 import { createCashMovement } from "../api/cash";
-import { fetchPortfolio, fetchPortfolioPnl } from "../api/portfolio";
+import { fetchPortfolio } from "../api/portfolio";
 import { useToast } from "../context/useToast";
 import { PageHeader } from "../components/PageHeader";
 import {
@@ -12,15 +12,20 @@ import {
   PnlValue,
   SkeletonBlock,
 } from "../features/dashboard/components";
+import { valuationReasonLabel } from "../features/dashboard/adapters";
 import {
   formatCurrency,
+  formatDateTime,
   formatPercent,
   formatQuantity,
   formatSignedPercent,
 } from "../utils/format";
 import type { PortfolioPositionResponse } from "../types/schemas";
 
-function getExposurePercent(positionValue: number, totalValue: number) {
+function getExposurePercent(positionValue: number | null, totalValue: number | null) {
+  if (positionValue == null || totalValue == null) {
+    return null;
+  }
   if (totalValue <= 0) {
     return 0;
   }
@@ -29,9 +34,17 @@ function getExposurePercent(positionValue: number, totalValue: number) {
 }
 
 function getAssetExposure(positions: PortfolioPositionResponse[]) {
+  if (positions.some((position) => position.position_value == null)) {
+    return null;
+  }
+
   const exposure = positions.reduce<Record<string, number>>((acc, position) => {
+    const value = position.position_value;
+    if (value == null) {
+      return acc;
+    }
     const key = position.asset_type.toUpperCase();
-    acc[key] = (acc[key] ?? 0) + position.position_value;
+    acc[key] = (acc[key] ?? 0) + value;
     return acc;
   }, {});
 
@@ -136,20 +149,17 @@ export function Portfolio() {
     queryFn: fetchPortfolio,
   });
 
-  const portfolioPnlQuery = useQuery({
-    queryKey: ["portfolio", "pnl"],
-    queryFn: fetchPortfolioPnl,
-    retry: false,
-  });
-
   const portfolio = portfolioQuery.data;
   const summary = portfolio?.summary;
   const positions = portfolio?.positions ?? [];
-  const positionsValue = summary?.total_portfolio_value ?? 0;
-  const totalValue = summary?.total_account_value ?? positionsValue;
-  const cashBalance = summary?.cash_balance ?? 0;
-  const totalPnl = portfolioPnlQuery.data?.total_pnl ?? summary?.total_pnl ?? 0;
-  const assetExposure = getAssetExposure(positions);
+  const valuationIncomplete = portfolio?.valuation_status === "incomplete";
+  const positionsValue = valuationIncomplete ? null : (summary?.total_portfolio_value ?? null);
+  const totalValue = valuationIncomplete ? null : (summary?.total_account_value ?? null);
+  const cashBalance = summary?.cash_balance ?? null;
+  const totalPnl = valuationIncomplete
+    ? null
+    : (summary?.total_pnl ?? null);
+  const assetExposure = valuationIncomplete ? null : getAssetExposure(positions);
 
   return (
     <div className="space-y-6">
@@ -164,6 +174,15 @@ export function Portfolio() {
           Portfolio data could not be loaded. Check the API server and
           authentication state.
         </div>
+      ) : null}
+
+      {valuationIncomplete && portfolio ? (
+        <p className="rounded-md border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-slate-200">
+          Valuation incomplete
+          {portfolio.unavailable_symbols.length > 0
+            ? `: ${portfolio.unavailable_symbols.join(", ")}`
+            : ""}
+        </p>
       ) : null}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -181,7 +200,11 @@ export function Portfolio() {
                 Portfolio value
               </div>
               <div className="mt-1 font-mono text-lg font-semibold text-slate-50">
-                {formatCurrency(totalValue, false)}
+                {totalValue == null ? (
+                  <span className="text-slate-400">Unavailable</span>
+                ) : (
+                  formatCurrency(totalValue, false)
+                )}
               </div>
             </div>
             <div className="metric-tile">
@@ -189,7 +212,11 @@ export function Portfolio() {
                 Cash
               </div>
               <div className="mt-1 font-mono text-lg font-semibold text-slate-50">
-                {formatCurrency(cashBalance, false)}
+                {cashBalance == null ? (
+                  <span className="text-slate-400">Unavailable</span>
+                ) : (
+                  formatCurrency(cashBalance, false)
+                )}
               </div>
             </div>
             <div className="metric-tile">
@@ -197,7 +224,11 @@ export function Portfolio() {
                 Total P&L
               </div>
               <div className="mt-1 text-sm">
-                <PnlValue value={totalPnl} />
+                {totalPnl == null ? (
+                  <span className="text-slate-400">Unavailable</span>
+                ) : (
+                  <PnlValue value={totalPnl} />
+                )}
               </div>
             </div>
             <div className="metric-tile">
@@ -255,14 +286,19 @@ export function Portfolio() {
                       position.position_value,
                       positionsValue,
                     );
+                    const reason = valuationReasonLabel(position.unavailable_reason);
+                    const unrealized = position.unrealized_pnl;
+                    const unrealizedPct = position.unrealized_pnl_pct;
 
                     return (
                       <tr
                         className={[
                           "border-l-2",
-                          position.unrealized_pnl >= 0
-                            ? "border-l-emerald-400/70"
-                            : "border-l-rose-400/70",
+                          unrealized == null
+                            ? "border-l-slate-400/70"
+                            : unrealized >= 0
+                              ? "border-l-emerald-400/70"
+                              : "border-l-rose-400/70",
                         ].join(" ")}
                         key={`${position.asset_type}-${position.symbol}`}
                       >
@@ -281,37 +317,65 @@ export function Portfolio() {
                           {formatCurrency(position.avg_cost)}
                         </td>
                         <td className="text-right font-mono tabular-nums">
-                          {formatCurrency(position.current_price)}
+                          {position.current_price == null ? (
+                            <span className="text-slate-400">
+                              Unavailable
+                              {reason ? <span className="mt-1 block text-[11px]">{reason}</span> : null}
+                            </span>
+                          ) : (
+                            formatCurrency(position.current_price)
+                          )}
+                          {position.quote_at ? (
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              {formatDateTime(position.quote_at)}
+                            </div>
+                          ) : null}
                         </td>
                         <td className="text-right font-mono tabular-nums">
-                          {formatCurrency(position.position_value)}
+                          {position.position_value == null ? (
+                            <span className="text-slate-400">Unavailable</span>
+                          ) : (
+                            formatCurrency(position.position_value)
+                          )}
                         </td>
                         <td className="text-right font-mono tabular-nums text-slate-500">
                           --
                         </td>
                         <td className="text-right">
-                          <PnlValue value={position.unrealized_pnl} />
-                          <div
-                            className={[
-                              "mt-1 font-mono text-[11px]",
-                              position.unrealized_pnl_pct >= 0
-                                ? "text-emerald-300/80"
-                                : "text-rose-300/80",
-                            ].join(" ")}
-                          >
-                            {formatSignedPercent(position.unrealized_pnl_pct)}
-                          </div>
+                          {unrealized == null ? (
+                            <span className="text-slate-400">Unavailable</span>
+                          ) : (
+                            <PnlValue value={unrealized} />
+                          )}
+                          {unrealizedPct == null ? (
+                            <div className="mt-1 font-mono text-[11px] text-slate-500">Unavailable</div>
+                          ) : (
+                            <div
+                              className={[
+                                "mt-1 font-mono text-[11px]",
+                                unrealizedPct >= 0 ? "text-emerald-300/80" : "text-rose-300/80",
+                              ].join(" ")}
+                            >
+                              {formatSignedPercent(unrealizedPct)}
+                            </div>
+                          )}
                         </td>
                         <td className="text-right font-mono tabular-nums">
-                          {formatPercent(exposurePercent)}
-                          <div className="ml-auto mt-1 h-1 w-20 overflow-hidden rounded bg-slate-800">
-                            <div
-                              className="h-full rounded bg-slate-500"
-                              style={{
-                                width: `${Math.min(exposurePercent, 100)}%`,
-                              }}
-                            />
-                          </div>
+                          {exposurePercent == null ? (
+                            <span className="text-slate-400">Unavailable</span>
+                          ) : (
+                            <>
+                              {formatPercent(exposurePercent)}
+                              <div className="ml-auto mt-1 h-1 w-20 overflow-hidden rounded bg-slate-800">
+                                <div
+                                  className="h-full rounded bg-slate-500"
+                                  style={{
+                                    width: `${Math.min(exposurePercent, 100)}%`,
+                                  }}
+                                />
+                              </div>
+                            </>
+                          )}
                         </td>
                       </tr>
                     );
@@ -337,7 +401,11 @@ export function Portfolio() {
                     Realized P&L
                   </div>
                   <div className="mt-1 text-sm">
-                    <PnlValue value={summary?.total_realized_pnl ?? 0} />
+                    {summary == null ? (
+                      <span className="text-slate-400">Unavailable</span>
+                    ) : (
+                      <PnlValue value={summary.total_realized_pnl} />
+                    )}
                   </div>
                 </div>
                 <div className="rounded border border-slate-800 bg-slate-900/70 p-3">
@@ -345,33 +413,39 @@ export function Portfolio() {
                     Unrealized P&L
                   </div>
                   <div className="mt-1 text-sm">
-                    <PnlValue value={summary?.total_unrealized_pnl ?? 0} />
+                    {summary?.total_unrealized_pnl == null ? (
+                      <span className="text-slate-400">Unavailable</span>
+                    ) : (
+                      <PnlValue value={summary.total_unrealized_pnl} />
+                    )}
                   </div>
-                  <div
-                    className={[
-                      "mt-1 font-mono text-[11px]",
-                      (summary?.total_unrealized_pnl_pct ?? 0) >= 0
-                        ? "text-emerald-300/80"
-                        : "text-rose-300/80",
-                    ].join(" ")}
-                  >
-                    {formatSignedPercent(summary?.total_unrealized_pnl_pct ?? 0)}
-                  </div>
+                  {summary?.total_unrealized_pnl_pct == null ? (
+                    <div className="mt-1 font-mono text-[11px] text-slate-500">Unavailable</div>
+                  ) : (
+                    <div
+                      className={[
+                        "mt-1 font-mono text-[11px]",
+                        summary.total_unrealized_pnl_pct >= 0
+                          ? "text-emerald-300/80"
+                          : "text-rose-300/80",
+                      ].join(" ")}
+                    >
+                      {formatSignedPercent(summary.total_unrealized_pnl_pct)}
+                    </div>
+                  )}
                 </div>
                 <div className="rounded border border-slate-800 bg-slate-900/70 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                     Cost basis
                   </div>
                   <div className="mt-1 font-mono text-sm text-slate-100">
-                    {formatCurrency(summary?.total_cost_basis ?? 0, false)}
+                    {summary == null ? (
+                      <span className="text-slate-400">Unavailable</span>
+                    ) : (
+                      formatCurrency(summary.total_cost_basis, false)
+                    )}
                   </div>
                 </div>
-                {portfolioPnlQuery.isError ? (
-                  <p className="text-xs leading-5 text-slate-500">
-                    Detailed `/portfolio/pnl` data is unavailable. Showing
-                    portfolio summary P&L from `/portfolio`.
-                  </p>
-                ) : null}
               </div>
             )}
           </DashboardCard>
@@ -383,6 +457,8 @@ export function Portfolio() {
                   <SkeletonBlock className="h-10" key={item} />
                 ))}
               </div>
+            ) : assetExposure == null ? (
+              <p className="text-sm text-slate-300">Valuation incomplete</p>
             ) : assetExposure.length === 0 ? (
               <EmptyState
                 detail="Asset exposure will appear once holdings exist."
@@ -395,6 +471,13 @@ export function Portfolio() {
                     item.value,
                     positionsValue,
                   );
+                  if (exposurePercent == null) {
+                    return (
+                      <p className="text-sm text-slate-300" key={item.assetType}>
+                        Valuation incomplete
+                      </p>
+                    );
+                  }
 
                   return (
                     <div
@@ -413,16 +496,18 @@ export function Portfolio() {
                         <div className="text-right font-mono text-sm text-slate-200">
                           {formatCurrency(item.value, false)}
                           <div className="text-[11px] text-slate-500">
-                            {formatPercent(exposurePercent)}
+                            {exposurePercent == null ? "Unavailable" : formatPercent(exposurePercent)}
                           </div>
                         </div>
                       </div>
-                      <div className="mt-3 h-1.5 overflow-hidden rounded bg-slate-800">
-                        <div
-                          className="h-full rounded bg-emerald-400/70"
-                          style={{ width: `${Math.min(exposurePercent, 100)}%` }}
-                        />
-                      </div>
+                      {exposurePercent == null ? null : (
+                        <div className="mt-3 h-1.5 overflow-hidden rounded bg-slate-800">
+                          <div
+                            className="h-full rounded bg-emerald-400/70"
+                            style={{ width: `${Math.min(exposurePercent, 100)}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}

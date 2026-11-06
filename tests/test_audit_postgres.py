@@ -32,6 +32,64 @@ def _engine():
     return create_engine(os.environ["AUDIT_DATABASE_URL"], poolclass=NullPool, future=True)
 
 
+def test_portfolio_snapshot_includes_concurrent_reservations():
+    from sqlalchemy import event
+    from app.models.asset import Asset
+    from app.models.holding import Holding
+    from app.models.market_quote_cache import MarketQuoteCache
+    from app.models.market_symbol import MarketSymbol
+    from app.models.order import Order
+    from app.services.portfolio_valuation import build_portfolio_response
+
+    _upgrade()
+    engine = _engine()
+    sessions = sessionmaker(bind=engine, autoflush=False)
+    symbol = f"P1A{uuid4().hex[:10].upper()}"
+    email = f"snapshot-{uuid4().hex}@example.com"
+    with sessions() as seed:
+        user = User(email=email, password_hash="fixture", cash_balance=Decimal("1000"))
+        asset = Asset(symbol=symbol, asset_type="stock")
+        seed.add_all([user, asset, MarketSymbol(symbol=symbol, company_name="Fixture", exchange="NASDAQ")])
+        seed.flush()
+        user_id, asset_id = user.id, asset.id
+        observed = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+        seed.add_all([
+            Holding(user_id=user_id, asset_id=asset_id, quantity=1, avg_cost=10),
+            MarketQuoteCache(symbol=symbol, price=10, source="yahoo", quote_at=observed, fetched_at=observed),
+        ])
+        seed.commit()
+
+    fired = False
+
+    def update_between_reads(_conn, _cursor, statement, _parameters, _context, _executemany):
+        nonlocal fired
+        if fired or "market_quote_cache" not in statement.lower():
+            return
+        fired = True
+        with sessions() as writer:
+            writer.get(User, user_id).cash_balance = Decimal("500")
+            writer.add(Order(user_id=user_id, asset_id=asset_id, side="buy", order_type="limit",
+                             quantity=1, remaining_quantity=1, limit_price=100, status="open"))
+            writer.commit()
+
+    event.listen(engine, "after_cursor_execute", update_between_reads)
+    try:
+        with sessions() as reader:
+            body = build_portfolio_response(reader, user_id, email)
+        assert fired
+        assert body["summary"]["cash_balance"] == 1000
+        assert body["summary"]["buying_power"] == 1000
+    finally:
+        event.remove(engine, "after_cursor_execute", update_between_reads)
+    try:
+        with sessions() as reader:
+            later = build_portfolio_response(reader, user_id, email)
+        assert later["summary"]["cash_balance"] == 500
+        assert later["summary"]["buying_power"] == 400
+    finally:
+        engine.dispose()
+
+
 def _sessions():
     return sessionmaker(bind=_engine(), future=True)
 
@@ -63,7 +121,7 @@ def test_migrations_and_app_role_grants_on_disposable_postgres():
     configure(owner_url, "audit-app-secret")
     with _engine().connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    assert version == "f3a8c2d7e961"
+    assert version == "a21c9e7d4b60"
 
     import psycopg
     from sqlalchemy.engine import make_url

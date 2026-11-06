@@ -1,4 +1,4 @@
-import { formatPercent, formatQuantity } from "../../../utils/format";
+import { formatPercent, formatQuantity, formatUtcDateTime } from "../../../utils/format";
 import { EmptyState } from "./EmptyState";
 import { SkeletonBlock } from "./SkeletonBlock";
 import type { Position } from "../types";
@@ -35,11 +35,13 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
           <tr>
             <th className="text-left">Symbol</th>
             <th className="text-right">Quantity</th>
-            <th className="text-right">Change %</th>
+            <th className="text-right">Unrealized %</th>
           </tr>
         </thead>
         <tbody>
-          {positions.map((position) => (
+          {positions.map((position) => {
+            const change = position.changePercent;
+            return (
             <tr
               className={[
                 "border-l-2",
@@ -47,7 +49,9 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
                   ? "border-l-rose-400/70"
                   : position.risk === "Medium"
                     ? "border-l-amber-400/70"
-                    : "border-l-emerald-400/70",
+                    : position.risk === "Low"
+                      ? "border-l-emerald-400/70"
+                      : "border-l-slate-400/70",
               ].join(" ")}
               key={position.symbol}
             >
@@ -62,7 +66,12 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
                     </div>
                     <div className="font-mono text-[11px] text-slate-500">
                       {formatQuantity(position.quantity)} units /{" "}
-                      {position.risk} risk
+                      {position.risk == null
+                        ? (position.unavailableReason ?? "Unavailable")
+                        : `${position.risk} risk`}
+                    </div>
+                    <div className="font-mono text-[11px] text-slate-500">
+                      Quote observed {formatUtcDateTime(position.quoteAt) ?? "Unavailable"}
                     </div>
                   </div>
                 </div>
@@ -71,22 +80,30 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
                 {formatQuantity(position.quantity)}
               </td>
               <td className="text-right">
-                <span
-                  className={[
-                    "inline-flex items-center justify-end gap-1 font-mono tabular-nums",
-                    position.changePercent >= 0
-                      ? "text-emerald-300"
-                      : "text-rose-300",
-                  ].join(" ")}
-                >
-                  <span aria-hidden="true">
-                    {position.changePercent >= 0 ? "▲" : "▼"}
+                {change == null ? (
+                  <span className="font-mono text-slate-400">
+                    Unavailable
+                    {position.unavailableReason ? (
+                      <span className="mt-1 block text-[11px]">
+                        {position.unavailableReason}
+                      </span>
+                    ) : null}
                   </span>
-                  {formatPercent(Math.abs(position.changePercent))}
-                </span>
+                ) : (
+                  <span
+                    className={[
+                      "inline-flex items-center justify-end gap-1 font-mono tabular-nums",
+                      change >= 0 ? "text-emerald-300" : "text-rose-300",
+                    ].join(" ")}
+                  >
+                    <span aria-hidden="true">{change >= 0 ? "▲" : "▼"}</span>
+                    {formatPercent(Math.abs(change))}
+                  </span>
+                )}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
