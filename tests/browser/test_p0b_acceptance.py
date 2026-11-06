@@ -610,11 +610,44 @@ def _wait_for_events(log_path: Path, offset: int) -> list[dict]:
 
 
 def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None:
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    from sqlalchemy.orm import Session
+    from app.models.market_quote_cache import MarketQuoteCache
+    from app.models.market_symbol import MarketSymbol
+
     email = disposable_api.email
     password = os.environ.get("P0B_TRADER_PASSWORD", "")
     web = disposable_api.web_url
     if not password:
         pytest.fail("P0B_TRADER_PASSWORD is required")
+
+    quoted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    with Session(disposable_api.engine) as db:
+        item = db.get(MarketSymbol, SYMBOL)
+        if item is None:
+            item = MarketSymbol(symbol=SYMBOL, company_name="Fixture company", exchange="NASDAQ")
+            db.add(item)
+        item.company_name = "Fixture company"
+        item.exchange = "NASDAQ"
+        item.sector = "Technology"
+        item.is_active = True
+        item.is_test = False
+        item.is_etf = False
+        item.refresh_tier = "hot"
+        db.flush()
+        quote = db.get(MarketQuoteCache, SYMBOL)
+        if quote is None:
+            quote = MarketQuoteCache(symbol=SYMBOL)
+            db.add(quote)
+        quote.price = Decimal(100)
+        quote.change_amount = 0
+        quote.change_percent = Decimal(0)
+        quote.volume = 100
+        quote.source = "fixture"
+        quote.quote_at = quoted_at
+        quote.fetched_at = quoted_at
+        db.commit()
 
     driver = _driver()
     try:
@@ -740,6 +773,48 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
             return text.includes("Valuation read") && text.includes("UTC") && !text.toLowerCase().includes("no date");
             """
         ))
+
+        original_viewport = _viewport(driver)
+        driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        _wait(driver).until(lambda current: _viewport(current)["width"] == 390 and current.execute_script(
+            """
+            const root = document.documentElement;
+            const main = document.querySelector("main");
+            return !!main
+              && root.scrollWidth <= root.clientWidth
+              && main.scrollWidth <= main.clientWidth;
+            """
+        ))
+        assert _viewport(driver)["width"] == 390
+        assert driver.execute_script(
+            """
+            const root = document.documentElement;
+            const main = document.querySelector("main");
+            return !!main
+              && root.scrollWidth <= root.clientWidth
+              && main.scrollWidth <= main.clientWidth;
+            """
+        )
+        assert driver.execute_script(
+            """
+            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
+              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+            );
+            if (!orders) { return false; }
+            orders.scrollIntoView({block: "center", inline: "nearest"});
+            return true;
+            """
+        )
+        orders_artifacts = REPO_ROOT / ".local-tools" / "p2-overview"
+        orders_artifacts.mkdir(parents=True, exist_ok=True)
+        driver.save_screenshot(str(orders_artifacts / "orders-mobile.png"))
+        driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "width": int(original_viewport["width"]),
+            "height": int(original_viewport["height"]),
+            "deviceScaleFactor": 1,
+            "mobile": False,
+        })
+        _wait(driver).until(lambda current: _viewport(current)["width"] == int(original_viewport["width"]))
 
         driver.get(web + "/trades")
         cancel = _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, f"button[aria-label='Cancel {SYMBOL} order {order_id}']")))
@@ -971,6 +1046,8 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                 db.add(item)
             item.is_etf = etf
             item.sector = "Technology"
+            if symbol == "P1PUBLIC":
+                item.heatmap_size = "MICRO"
             db.flush()
             quote = db.get(MarketQuoteCache, symbol)
             if quote is None:
@@ -987,6 +1064,8 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
 
     driver = _driver()
     try:
+        driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
+        _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)
         driver.get(disposable_api.web_url + "/market")
         _wait(driver).until(lambda current: "$123.45" in current.find_element(By.TAG_NAME, "body").text)
         text = driver.find_element(By.TAG_NAME, "body").text
@@ -997,6 +1076,88 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         assert not driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='market pulse trend']")
         stale = _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//div[@title][.//*[normalize-space()='P1PUBLIC']]")))
         assert "Stale" in stale.text and "+99.00%" not in stale.text
+        from selenium.common.exceptions import StaleElementReferenceException
+
+        heatmap_artifacts = REPO_ROOT / ".local-tools" / "public-browser"
+        heatmap_artifacts.mkdir(parents=True, exist_ok=True)
+        tile_xpath = "//div[@title][.//*[normalize-space()='P1PUBLIC']]"
+
+        def prove_heatmap_scales() -> None:
+            for scale in ("compact", "standard", "expanded"):
+                selector = f"button[aria-label='Set heatmap size to {scale}']"
+                _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+                driver.execute_script(
+                    "document.querySelector(arguments[0]).scrollIntoView({block: 'center', inline: 'nearest'});",
+                    selector,
+                )
+                _click(driver, driver.find_element(By.CSS_SELECTOR, selector))
+                driver.execute_script(
+                    """
+                    const tile = document.evaluate(
+                      arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+                    ).singleNodeValue;
+                    if (tile) { tile.scrollIntoView({block: "center", inline: "nearest"}); }
+                    """,
+                    tile_xpath,
+                )
+
+                def tile_visible(current) -> bool:
+                    try:
+                        found = current.find_elements(By.XPATH, tile_xpath)
+                        if not found:
+                            return False
+                        visible = found[0].text
+                    except StaleElementReferenceException:
+                        return False
+                    return "Stale" in visible and "+99" not in visible
+
+                _wait(driver).until(tile_visible)
+                visible = driver.find_element(By.XPATH, tile_xpath).text
+                assert "Stale" in visible and "+99" not in visible
+                assert driver.execute_script(
+                    """
+                    const tile = document.evaluate(
+                      arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+                    ).singleNodeValue;
+                    if (!tile) { return false; }
+                    const nodes = Array.from(tile.querySelectorAll("*")).filter((node) => (node.innerText || "").trim());
+                    return nodes.length > 0 && nodes.every((node) => {
+                      const rect = node.getBoundingClientRect();
+                      return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0;
+                    });
+                    """,
+                    tile_xpath,
+                )
+                assert driver.execute_script(
+                    "return document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+                )
+
+        prove_heatmap_scales()
+        driver.execute_script(
+            """
+            const tile = document.evaluate(
+              arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            ).singleNodeValue;
+            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest"}); }
+            """,
+            tile_xpath,
+        )
+        driver.save_screenshot(str(heatmap_artifacts / "heatmap-desktop.png"))
+        driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        _wait(driver).until(lambda current: _viewport(current)["width"] == 390)
+        prove_heatmap_scales()
+        driver.execute_script(
+            """
+            const tile = document.evaluate(
+              arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            ).singleNodeValue;
+            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest"}); }
+            """,
+            tile_xpath,
+        )
+        driver.save_screenshot(str(heatmap_artifacts / "heatmap-mobile.png"))
+        driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
+        _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)
         field = driver.find_element(By.ID, "research-symbol")
         field.clear()
         field.send_keys("P1NOFACTS")

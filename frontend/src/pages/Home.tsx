@@ -102,25 +102,25 @@ function getStockTileSize(size: MarketHeatmapItemResponse["size"], scale: Heatma
     Record<MarketHeatmapItemResponse["size"], string>
   > = {
     compact: {
-      mega: "col-span-5 row-span-3 min-h-20",
-      large: "col-span-4 row-span-2 min-h-14",
-      medium: "col-span-3 row-span-2 min-h-12",
-      small: "col-span-2 row-span-1 min-h-8",
-      micro: "col-span-1 row-span-1 min-h-7",
+      mega: "col-span-12 row-span-3 min-h-20",
+      large: "col-span-8 row-span-2 min-h-14",
+      medium: "col-span-6 row-span-2 min-h-12",
+      small: "col-span-5 row-span-1 min-h-8",
+      micro: "col-span-4 row-span-1 min-h-7",
     },
     standard: {
-      mega: "col-span-5 row-span-4 min-h-28",
-      large: "col-span-4 row-span-3 min-h-20",
-      medium: "col-span-3 row-span-2 min-h-16",
-      small: "col-span-2 row-span-1 min-h-10",
-      micro: "col-span-1 row-span-1 min-h-8",
+      mega: "col-span-12 row-span-4 min-h-28",
+      large: "col-span-8 row-span-3 min-h-20",
+      medium: "col-span-6 row-span-2 min-h-16",
+      small: "col-span-5 row-span-1 min-h-10",
+      micro: "col-span-4 row-span-1 min-h-8",
     },
     expanded: {
-      mega: "col-span-6 row-span-4 min-h-40",
-      large: "col-span-4 row-span-3 min-h-28",
-      medium: "col-span-3 row-span-2 min-h-20",
-      small: "col-span-2 row-span-1 min-h-14",
-      micro: "col-span-1 row-span-1 min-h-10",
+      mega: "col-span-12 row-span-4 min-h-40",
+      large: "col-span-8 row-span-3 min-h-28",
+      medium: "col-span-6 row-span-2 min-h-20",
+      small: "col-span-5 row-span-1 min-h-14",
+      micro: "col-span-4 row-span-1 min-h-10",
     },
   };
 
@@ -165,14 +165,14 @@ function getSectorGridClass(scale: HeatmapScale) {
 
 function getStockGroupGridClass(scale: HeatmapScale) {
   if (scale === "expanded") {
-    return "columns-1 gap-2 lg:columns-2 xl:columns-3";
+    return "grid grid-cols-[repeat(auto-fit,minmax(min(100%,24rem),1fr))] items-start gap-2";
   }
 
   if (scale === "compact") {
-    return "columns-1 gap-2 md:columns-2 xl:columns-4";
+    return "grid grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] items-start gap-2";
   }
 
-  return "columns-1 gap-2 lg:columns-2 xl:columns-3";
+  return "grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] items-start gap-2";
 }
 
 function getStockTileTone(changePercent: number) {

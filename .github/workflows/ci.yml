@@ -162,3 +162,14 @@ jobs:
       - run: python -m alembic upgrade head
       - run: python -c "import os; from sqlalchemy.engine import make_url; from app.scripts.configure_postgres_role import configure; configure(os.environ['MIGRATION_DATABASE_URL'], make_url(os.environ['P0B_APP_DATABASE_URL']).password)"
       - run: python -m pytest -q -ra tests/browser/test_p0b_acceptance.py -k 'not hosted'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-screenshots
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            .local-tools/public-browser/*.png
+            .local-tools/p1a-browser/*.png
+            .local-tools/p2-shell/*.png
+            .local-tools/p2-overview/*.png
