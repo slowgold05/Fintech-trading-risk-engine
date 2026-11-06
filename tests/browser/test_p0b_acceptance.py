@@ -801,10 +801,27 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
               Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
             );
             if (!orders) { return false; }
-            orders.scrollIntoView({block: "center", inline: "nearest"});
+            orders.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
             return true;
             """
         )
+        _wait(driver).until(lambda current: current.execute_script(
+            """
+            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
+              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+            );
+            if (!orders) { return false; }
+            const heading = Array.from(orders.querySelectorAll("h2")).find((node) => node.textContent.trim() === "Recent Orders");
+            const row = orders.querySelector("tbody tr");
+            if (!heading || !row) { return false; }
+            const headingRect = heading.getBoundingClientRect();
+            const rowRect = row.getBoundingClientRect();
+            return headingRect.height > 0
+              && rowRect.height > 0
+              && headingRect.top >= 0
+              && rowRect.bottom <= window.innerHeight;
+            """
+        ))
         orders_artifacts = REPO_ROOT / ".local-tools" / "p2-overview"
         orders_artifacts.mkdir(parents=True, exist_ok=True)
         driver.save_screenshot(str(orders_artifacts / "orders-mobile.png"))
@@ -1047,7 +1064,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
             item.is_etf = etf
             item.sector = "Technology"
             if symbol == "P1PUBLIC":
-                item.heatmap_size = "MICRO"
+                item.heatmap_size = "micro"
             db.flush()
             quote = db.get(MarketQuoteCache, symbol)
             if quote is None:
@@ -1087,7 +1104,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                 selector = f"button[aria-label='Set heatmap size to {scale}']"
                 _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
                 driver.execute_script(
-                    "document.querySelector(arguments[0]).scrollIntoView({block: 'center', inline: 'nearest'});",
+                    "document.querySelector(arguments[0]).scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'});",
                     selector,
                 )
                 _click(driver, driver.find_element(By.CSS_SELECTOR, selector))
@@ -1096,7 +1113,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                     const tile = document.evaluate(
                       arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
                     ).singleNodeValue;
-                    if (tile) { tile.scrollIntoView({block: "center", inline: "nearest"}); }
+                    if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
                     """,
                     tile_xpath,
                 )
@@ -1121,10 +1138,32 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                     ).singleNodeValue;
                     if (!tile) { return false; }
                     const nodes = Array.from(tile.querySelectorAll("*")).filter((node) => (node.innerText || "").trim());
-                    return nodes.length > 0 && nodes.every((node) => {
+                    const positive = nodes.length > 0 && nodes.every((node) => {
                       const rect = node.getBoundingClientRect();
                       return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0;
                     });
+                    if (!positive) { return false; }
+                    const status = tile.children[1];
+                    if (!status || !(status.textContent || "").trim()) { return false; }
+                    if (status.clientWidth < status.scrollWidth) { return false; }
+                    const statusRect = status.getBoundingClientRect();
+                    const tileRect = tile.getBoundingClientRect();
+                    const tileStyle = window.getComputedStyle(tile);
+                    const borderLeft = parseFloat(tileStyle.borderLeftWidth) || 0;
+                    const borderRight = parseFloat(tileStyle.borderRightWidth) || 0;
+                    const borderTop = parseFloat(tileStyle.borderTopWidth) || 0;
+                    const borderBottom = parseFloat(tileStyle.borderBottomWidth) || 0;
+                    const withinPadding = statusRect.width > 0
+                      && statusRect.height > 0
+                      && statusRect.left >= tileRect.left + borderLeft
+                      && statusRect.right <= tileRect.right - borderRight
+                      && statusRect.top >= tileRect.top + borderTop
+                      && statusRect.bottom <= tileRect.bottom - borderBottom;
+                    const withinViewport = statusRect.top >= 0
+                      && statusRect.left >= 0
+                      && statusRect.bottom <= window.innerHeight
+                      && statusRect.right <= window.innerWidth;
+                    return withinPadding && withinViewport;
                     """,
                     tile_xpath,
                 )
@@ -1138,7 +1177,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
             const tile = document.evaluate(
               arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
             ).singleNodeValue;
-            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest"}); }
+            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
             """,
             tile_xpath,
         )
@@ -1151,7 +1190,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
             const tile = document.evaluate(
               arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
             ).singleNodeValue;
-            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest"}); }
+            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
             """,
             tile_xpath,
         )
