@@ -14,6 +14,8 @@ The backend CI job starts an isolated PostgreSQL 17 service, maps it to a localh
 
 On 2026-11-06 Codex accepted the P2 shell, overview, and Risk correction slice. Overview CI is in [P2_OVERVIEW_VERIFICATION.md](P2_OVERVIEW_VERIFICATION.md). Risk run 42184498741 on `7dbddce5646b7bafb358ee4c7078196e10bba720` succeeded; see [P2_RISK_VERIFICATION.md](P2_RISK_VERIFICATION.md). Roadmap 2.0 Phase 2 stays open for discovery, watchlists, and performance prerequisites.
 
+On 2026-11-06 Codex accepted the P3-A first cached chart slice at `f1eb5a69f8a2622fb11dddca3cf5e3fe3df664f4`. CI run 42266086014 passed all 7 jobs. See [P3A_HISTORY_VERIFICATION.md](P3A_HISTORY_VERIFICATION.md). Indicator warm-up, a reviewed exchange calendar, provider approval, and live ingestion remain open. That acceptance does not complete P3-A or a broader phase, and it checks no roadmap box.
+
 Passing the SQLite suite is evidence for P0-A. It is not evidence that a later phase is done.
 
 P0-B progress on 2026-11-05 is recorded in [P0B_VERIFICATION.md](P0B_VERIFICATION.md): PostgreSQL proofs, isolated restore/upgrade/grants, local browser acceptance, hosted reconciliation/snapshot recovery, and active deployment image labels/digests. The revised browser guards and failure diagnostics passed review. Hosted frontend divergence remains recorded; image identity is verified, while source-commit build attestation is not established. [Provider source review](PROVIDER_ACCESS_REVIEW.md) is complete to its stated retrieval limits; actual data entitlements are not approved. The table below preserves the original P0-A state, not the latest P0-B status.
@@ -144,9 +146,11 @@ Release boundary: visual only where the data is already real.
 
 ### P3-A. Chart slice
 
-Prerequisites: P1-B history and a pinned Lightweight Charts review. Current review, install, and source status are in Next task.
+Prerequisites: P1-B history and a pinned Lightweight Charts review. The pin is [P3A_CHART_REVIEW.md](P3A_CHART_REVIEW.md).
 
-Acceptance: daily bars from the API, indicator warm-up, missing-data behavior, resize and unmount cleanup. No intraday mode until intraday bars exist.
+The first cached chart slice is accepted. See [P3A_HISTORY_VERIFICATION.md](P3A_HISTORY_VERIFICATION.md). Head `f1eb5a69f8a2622fb11dddca3cf5e3fe3df664f4`, CI run 42266086014, all 7 jobs passed. Daily cached bars, missing-data behavior, resize, and unmount cleanup are in that slice. Indicator warm-up and a reviewed exchange calendar remain open. No intraday mode until intraday bars exist. Full P3-A is not complete.
+
+Acceptance for the rest of P3-A: indicator warm-up, plus the exchange-calendar coverage that missing sessions still need. The cached slice does not close those items.
 
 ### P3-B. Ticket, lifecycle, and watchlists
 
@@ -178,6 +182,8 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
-P3-A, the first cached chart: implementation, source, tests, and browser proof on `codex/v2-cached-data-dashboard-20261106`, draft PR 16 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/16). [P3A_CHART_REVIEW.md](P3A_CHART_REVIEW.md) is reviewed. `lightweight-charts` 5.2.1 is installed locally and is not committed. Chart source is a Grok worker in progress and is not accepted. Provider history, indicator warm-up, and the exchange calendar stay gated.
+P3-B, the read-only order preview contract, and then that preview's API and tests. Ticket lifecycle and watchlists remain later parts of P3-B. Preview writes no cash, order, holding, lot, or ledger row. The existing immediate `POST /trades/` dashboard path stays unchanged. Matching and execution policies stay unchanged.
 
-Main is unchanged. No merge, deploy, or hosted mutation.
+The P3-A first cached chart slice is accepted and is not the next task. Indicator warm-up, a reviewed exchange calendar, provider approval, and live ingestion stay open. Full P3-A and the broader phases stay open. This note checks no roadmap box.
+
+PR 17 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/17) on `codex/v2-cached-daily-chart-20261106` is stacked on PR 16 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/16). Main is unchanged. No merge, deploy, or hosted mutation.
