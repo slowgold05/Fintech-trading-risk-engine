@@ -609,6 +609,124 @@ def _wait_for_events(log_path: Path, offset: int) -> list[dict]:
     return events
 
 
+def _normalized_body(driver: webdriver.Chrome) -> str:
+    try:
+        return " ".join(driver.find_element(By.TAG_NAME, "body").text.split())
+    except Exception:
+        return ""
+
+
+def _has_low_label(text: str) -> bool:
+    return re.search(r"(?<![A-Za-z])Low(?![A-Za-z])", text) is not None
+
+
+def _risk_gauge_present(driver: webdriver.Chrome) -> bool:
+    return bool(driver.find_elements(By.CSS_SELECTOR, "[role='img'][aria-label^='Risk score ']"))
+
+
+def _risk_empty_ready(driver: webdriver.Chrome) -> bool:
+    text = _normalized_body(driver)
+    return (
+        "No trade assessments yet." in text
+        and "No assessment alerts." in text
+        and "Risk assessments could not be loaded" not in text
+        and not _has_low_label(text)
+        and not _risk_gauge_present(driver)
+    )
+
+
+def _risk_error_ready(driver: webdriver.Chrome) -> bool:
+    text = _normalized_body(driver)
+    return (
+        "Risk assessments could not be loaded" in text
+        and "No trade assessments yet." not in text
+        and "No assessment alerts." not in text
+        and not _has_low_label(text)
+        and not _risk_gauge_present(driver)
+    )
+
+
+def _orders_shell_shows_details(driver: webdriver.Chrome, symbol: str) -> bool:
+    try:
+        return bool(driver.execute_script(
+            """
+            const symbol = arguments[0];
+            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
+              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+            );
+            if (!orders) { return false; }
+            const shell = orders.querySelector(".table-shell");
+            if (!shell) { return false; }
+            shell.scrollLeft = shell.scrollWidth;
+            const maxScroll = shell.scrollWidth - shell.clientWidth;
+            if (maxScroll <= 1 || shell.scrollLeft < maxScroll - 1) { return false; }
+            const headerRow = orders.querySelector("thead tr")
+              || Array.from(orders.querySelectorAll("tr")).find((candidate) => candidate.querySelector("th"));
+            if (!headerRow) { return false; }
+            const headings = Array.from(headerRow.cells).map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
+            const indexes = ["Remaining", "Status", "Limit"].map((label) => headings.indexOf(label));
+            if (indexes.some((index) => index < 0)) { return false; }
+            const dataRows = Array.from(orders.querySelectorAll("tbody tr"));
+            const candidates = dataRows.length
+              ? dataRows
+              : Array.from(orders.querySelectorAll("tr")).filter((candidate) => candidate.querySelector("td"));
+            const row = candidates.find((candidate) => {
+              const cells = Array.from(candidate.cells);
+              return cells.length === 6 && Array.from(cells[0].querySelectorAll("div")).some((node) =>
+                node.textContent.replace(/\\s+/g, " ").trim() === symbol
+              );
+            });
+            if (!row) { return false; }
+            const cells = indexes.map((index) => row.cells[index]);
+            if (cells.some((cell) => !cell)) { return false; }
+            const shellRect = shell.getBoundingClientRect();
+            const within = cells.every((cell) => {
+              const rect = cell.getBoundingClientRect();
+              return rect.width > 0
+                && rect.height > 0
+                && rect.left >= shellRect.left - 1
+                && rect.right <= shellRect.right + 1
+                && rect.top >= shellRect.top - 1
+                && rect.bottom <= shellRect.bottom + 1
+                && rect.top >= -1
+                && rect.left >= -1
+                && rect.bottom <= window.innerHeight + 1
+                && rect.right <= window.innerWidth + 1;
+            });
+            if (!within) { return false; }
+            const text = cells.map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
+            const root = document.documentElement;
+            const main = document.querySelector("main");
+            return text[0] === "1"
+              && text[1].toLowerCase() === "open"
+              && text[2] === "$100.00"
+              && !!main
+              && root.scrollWidth <= root.clientWidth
+              && main.scrollWidth <= main.clientWidth;
+            """,
+            symbol,
+        ))
+    except Exception:
+        return False
+
+
+def _orders_shell_scroll_reset(driver: webdriver.Chrome) -> bool:
+    try:
+        return bool(driver.execute_script(
+            """
+            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
+              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+            );
+            const shell = orders && orders.querySelector(".table-shell");
+            if (!shell) { return false; }
+            shell.scrollLeft = 0;
+            return shell.scrollLeft === 0;
+            """
+        ))
+    except Exception:
+        return False
+
+
 def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None:
     from datetime import datetime, timezone
     from decimal import Decimal
@@ -825,6 +943,9 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         orders_artifacts = REPO_ROOT / ".local-tools" / "p2-overview"
         orders_artifacts.mkdir(parents=True, exist_ok=True)
         driver.save_screenshot(str(orders_artifacts / "orders-mobile.png"))
+        _wait(driver).until(lambda current: _orders_shell_shows_details(current, SYMBOL))
+        driver.save_screenshot(str(orders_artifacts / "orders-mobile-details.png"))
+        _wait(driver).until(_orders_shell_scroll_reset)
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
             "width": int(original_viewport["width"]),
             "height": int(original_viewport["height"]),
@@ -872,6 +993,33 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
             """,
             SYMBOL,
         ))
+
+        driver.get(web + "/risk")
+        try:
+            WebDriverWait(driver, 40).until(_risk_empty_ready)
+        except TimeoutException:
+            pytest.fail("risk empty state did not finish")
+        driver.save_screenshot(str(orders_artifacts / "risk-empty.png"))
+        driver.execute_cdp_cmd("Network.enable", {})
+        try:
+            driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": ["*127.0.0.1:8000/risk/*"]})
+            driver.get(web + "/risk")
+            try:
+                WebDriverWait(driver, 40).until(_risk_error_ready)
+            except TimeoutException:
+                pytest.fail("risk source error did not replace the empty state")
+            driver.save_screenshot(str(orders_artifacts / "risk-error.png"))
+            driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": []})
+            retry = WebDriverWait(driver, 40).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[normalize-space()='Retry']"))
+            )
+            _click(driver, retry)
+            try:
+                WebDriverWait(driver, 40).until(_risk_empty_ready)
+            except TimeoutException:
+                pytest.fail("risk empty state did not recover after retry")
+        finally:
+            driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": []})
 
         _wait(driver).until(EC.element_to_be_clickable((By.LINK_TEXT, "Trades")))
         if not _refresh_cookie_present(driver):
@@ -932,6 +1080,9 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
             "replay_order_id": replay["id"],
             "cash_after_cancel": "$100,000",
             "buying_power_while_open": "$99,900",
+            "risk_empty": "no_trade_assessments",
+            "risk_source_error": "blocked_retry_recovered",
+            "orders_mobile_details": "remaining_status_limit_in_shell",
             "expired_access_token": "login_required",
             "expired_authorization_replacements": replaced,
             "protected_401_count": len(protected),
@@ -1171,29 +1322,40 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                     "return document.documentElement.scrollWidth <= document.documentElement.clientWidth"
                 )
 
+        def scroll_heatmap_tile_into_view() -> None:
+            driver.execute_script(
+                """
+                const tile = document.evaluate(
+                  arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+                ).singleNodeValue;
+                if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
+                """,
+                tile_xpath,
+            )
+            _wait(driver).until(lambda current: current.execute_script(
+                """
+                const tile = document.evaluate(
+                  arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+                ).singleNodeValue;
+                if (!tile) { return false; }
+                const rect = tile.getBoundingClientRect();
+                return rect.width > 0
+                  && rect.height > 0
+                  && rect.top >= 0
+                  && rect.left >= 0
+                  && rect.bottom <= window.innerHeight
+                  && rect.right <= window.innerWidth;
+                """,
+                tile_xpath,
+            ))
+
         prove_heatmap_scales()
-        driver.execute_script(
-            """
-            const tile = document.evaluate(
-              arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-            ).singleNodeValue;
-            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
-            """,
-            tile_xpath,
-        )
+        scroll_heatmap_tile_into_view()
         driver.save_screenshot(str(heatmap_artifacts / "heatmap-desktop.png"))
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
         _wait(driver).until(lambda current: _viewport(current)["width"] == 390)
         prove_heatmap_scales()
-        driver.execute_script(
-            """
-            const tile = document.evaluate(
-              arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-            ).singleNodeValue;
-            if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
-            """,
-            tile_xpath,
-        )
+        scroll_heatmap_tile_into_view()
         driver.save_screenshot(str(heatmap_artifacts / "heatmap-mobile.png"))
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
         _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)

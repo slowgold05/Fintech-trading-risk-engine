@@ -336,7 +336,7 @@ describe("valuation display", () => {
     expect(await screen.findByText("Risk assessment unavailable.")).toBeInTheDocument();
     expect(screen.queryByText("No assessments")).not.toBeInTheDocument();
     expect(screen.queryByText("No activity")).not.toBeInTheDocument();
-    expect(screen.queryByText("Buffer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Risk score/ })).not.toBeInTheDocument();
     expect(within(riskTile()).getByText("Unavailable")).toBeInTheDocument();
     expect(within(riskTile()).queryByText("0")).not.toBeInTheDocument();
     expect(screen.getByText("$50,160", { selector: ".text-4xl" })).toBeInTheDocument();
@@ -349,7 +349,8 @@ describe("valuation display", () => {
     expect(screen.queryByText("Risk assessment unavailable.")).not.toBeInTheDocument();
     expect(within(riskTile()).getByText("High")).toBeInTheDocument();
     expect(within(riskCard()).getAllByText("High").length).toBeGreaterThan(0);
-    expect(within(riskCard()).getByText("Buffer")).toBeInTheDocument();
+    expect(within(riskCard()).getByRole("img", { name: "Risk score 91 of 100, High" })).toBeInTheDocument();
+    expect(within(riskCard()).getByText("91")).toBeInTheDocument();
     expect(screen.getByText("$50,160", { selector: ".text-4xl" })).toBeInTheDocument();
     expect(screen.getByText("Cash").parentElement).toHaveTextContent("$50,000");
   });
@@ -367,7 +368,7 @@ describe("valuation display", () => {
     expect(within(riskTile()).getByText("--")).toBeInTheDocument();
     expect(within(riskTile()).queryByText("0")).not.toBeInTheDocument();
     expect(screen.queryByText("No activity")).not.toBeInTheDocument();
-    expect(screen.queryByText("Buffer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Risk score/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Risk assessment unavailable.")).not.toBeInTheDocument();
     expect(screen.getByText("$50,160", { selector: ".text-4xl" })).toBeInTheDocument();
     expect(screen.getByText("Cash").parentElement).toHaveTextContent("$50,000");
@@ -384,7 +385,7 @@ describe("valuation display", () => {
     expect(within(riskTile()).getByText("0")).toBeInTheDocument();
     expect(within(riskCard()).getAllByText("Low").length).toBeGreaterThan(0);
     expect(within(riskCard()).getByText("0")).toBeInTheDocument();
-    expect(within(riskCard()).getByText("Buffer")).toBeInTheDocument();
+    expect(within(riskCard()).getByRole("img", { name: "Risk score 0 of 100, Low" })).toBeInTheDocument();
     expect(screen.queryByText("No activity")).not.toBeInTheDocument();
     expect(screen.queryByText("No assessments")).not.toBeInTheDocument();
     const row = screen.getByText("TRD-4").closest("tr") as HTMLElement;
@@ -409,7 +410,7 @@ describe("valuation display", () => {
     expect(await screen.findByText(/not shown as current/)).toBeInTheDocument();
     expect(screen.getByText("Risk assessment unavailable.")).toBeInTheDocument();
     expect(screen.queryByText("73")).not.toBeInTheDocument();
-    expect(screen.queryByText("Buffer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Risk score/ })).not.toBeInTheDocument();
     expect(within(riskTile()).getByText("Unavailable")).toBeInTheDocument();
     expect(screen.getByText("$50,160", { selector: ".text-4xl" })).toBeInTheDocument();
     expect(screen.getByText("Cash").parentElement).toHaveTextContent("$50,000");
