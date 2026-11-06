@@ -182,8 +182,10 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
-P3-B, the read-only order preview contract, and then that preview's API and tests. Ticket lifecycle and watchlists remain later parts of P3-B. Preview writes no cash, order, holding, lot, or ledger row. The existing immediate `POST /trades/` dashboard path stays unchanged. Matching and execution policies stay unchanged.
+The preview/confirm ticket on the existing Trades page, then lifecycle, chart integration, and watchlists. The accepted backend preview is not the next task. No preview UI is built. Evidence: [P3B_PREVIEW_VERIFICATION.md](P3B_PREVIEW_VERIFICATION.md). Contract: [P3B_ORDER_PREVIEW_CONTRACT.md](P3B_ORDER_PREVIEW_CONTRACT.md). Commit `0aa62afd64a24bba2d659dc3044cebe6265e6929` on `codex/v2-order-preview-20261106`. [PR 18](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/18) is stacked on PR 17. [CI run 42278953737](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42278953737) succeeded on all 7 jobs. Codex review and CI accepted this backend unit. This note does not claim a formal GitHub approval. Do not mark full P3-B done. Full phases stay open.
+
+Preview writes no cash, order, holding, lot, or ledger row. `POST /orders/` still revalidates. The existing immediate `POST /trades/` dashboard path stays unchanged. Matching and execution policies stay unchanged. This slice adds no new repository migration and no new grant policy. Existing migration and grant proofs ran only on isolated disposable instances. The hosted database had no migration or grant change. No merge or deploy.
 
 The P3-A first cached chart slice is accepted and is not the next task. Indicator warm-up, a reviewed exchange calendar, provider approval, and live ingestion stay open. Full P3-A and the broader phases stay open. This note checks no roadmap box.
 
-PR 17 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/17) on `codex/v2-cached-daily-chart-20261106` is stacked on PR 16 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/16). Main is unchanged. No merge, deploy, or hosted mutation.
+PR 16 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/16) and PR 17 (https://github.com/slowgold05/Fintech-trading-risk-engine/pull/17) are ready. All 7 CI jobs are green. Main and the hosted service are unchanged. No merge, deploy, or hosted mutation.
