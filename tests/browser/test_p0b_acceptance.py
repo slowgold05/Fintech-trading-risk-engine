@@ -834,6 +834,28 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
 
         driver.get(web + "/trades")
         _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Trade symbol']")))
+        ticket_dir = REPO_ROOT / ".local-tools" / "p3b-ticket"
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//*[normalize-space()='Order Management']")))
+        _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//*[normalize-space()='Order Entry']")))
+        driver.save_screenshot(str(ticket_dir / "baseline-desktop.png"))
+        driver.set_window_size(390, 844)
+        _wait(driver).until(lambda current: _viewport(current)["width"] <= 390 and current.execute_script("""
+            const entry = document.evaluate("//*[normalize-space()='Order Entry']", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+            const input = document.querySelector("input[aria-label='Trade symbol']");
+            if (!entry || !input) { return false; }
+            entry.scrollIntoView({block: "start", inline: "nearest", behavior: "instant"});
+            input.scrollIntoView({block: "nearest", inline: "nearest", behavior: "instant"});
+            const entryBox = entry.getBoundingClientRect();
+            const inputBox = input.getBoundingClientRect();
+            return entryBox.height > 0 && inputBox.height > 0 && entryBox.top < innerHeight && entryBox.bottom > 0 && inputBox.top >= 0 && inputBox.bottom <= innerHeight;
+        """))
+        widths = driver.execute_script("const root=document.documentElement,body=document.body,main=document.querySelector('main');return body&&main?{rootScroll:root.scrollWidth,rootClient:root.clientWidth,bodyScroll:body.scrollWidth,bodyClient:body.clientWidth,mainScroll:main.scrollWidth,mainClient:main.clientWidth}:null;")
+        driver.save_screenshot(str(ticket_dir / "baseline-mobile.png"))
+        assert isinstance(widths, dict) and widths["rootScroll"] <= widths["rootClient"] and widths["bodyScroll"] <= widths["bodyClient"] and widths["mainScroll"] <= widths["mainClient"], widths
+        driver.set_window_size(*VIEWPORT)
+        driver.execute_script("window.scrollTo({top:0,left:0,behavior:'instant'});")
+        _wait(driver).until(lambda current: _viewport(current)["width"] >= 1200 and EC.element_to_be_clickable((By.CSS_SELECTOR, "input[aria-label='Trade symbol']"))(current))
         _install_order_hook(driver, disposable_api.api_url)
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade symbol']").send_keys(SYMBOL)
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").send_keys("1")
