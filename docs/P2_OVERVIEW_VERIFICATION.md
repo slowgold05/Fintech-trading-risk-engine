@@ -1,8 +1,8 @@
 # P2 overview verification
 
-Recorded 2026-11-06. This note covers the recent-orders dashboard and the separation of portfolio snapshot read time from quote observation time. The unit is implemented locally. Acceptance is pending browser proof. Full P2 remains open. No commit, push, hosted mutation, or deployment is part of this record. Preparation is on review branch `codex/v2-cached-data-dashboard-20261106`, which is not yet committed or pushed.
+Recorded 2026-11-06. Recent orders, and portfolio snapshot read time separated from quote observation time, on review branch `codex/v2-cached-data-dashboard-20261106`. Draft PR 16: https://github.com/slowgold05/Fintech-trading-risk-engine/pull/16. Main is unchanged.
 
-Source and worker changes are by Grok. Codex reviewed them and ran the local checks below.
+Source and worker changes are by Grok. Codex reviewed them.
 
 ## Recent orders
 
@@ -22,38 +22,14 @@ Timestamps render as UTC year, date, and time. A missing, naive, or invalid valu
 
 No history backfill, provider writer, or performance curve was added.
 
-## Checks that ran
+## Remote CI
 
-Codex, on the local tree:
+`52868ca5eb11cf8a4f2553455644c418c7e8f22e`, GitHub Actions run 42181947104: all 7 jobs succeeded. Prior `78abee8`, run 42180986655: all 7 jobs succeeded.
 
-- Vitest: 11 files, 52 tests passed.
-- Lint passed. Production build passed. Bundle: `/assets/index-DfNNFfbT.js`, 495.87 kB.
-- Formatter: 6 focused tests passed, including an explicit offset and a finite guard for an ISO value with an invalid month.
-- Existing browser-isolation unit: 1 passed. That result is the isolation unit. It is separate from this slice's Selenium journey.
-- Impeccable source detector returned `[]` for the three new surfaces.
+- Backend: 190 passed, 1 skipped. The backend job does not install Selenium. Browser coverage is the dedicated browser job.
+- Frontend: 52 tests, lint, and build passed. Bundle from the 528 source: `index-BtUUj0-8.js`, 495.99 kB.
+- Browser: 4 passed, 1 deselected (hosted excluded). Isolated fresh PostgreSQL 17, database `p0b_browser`, loopback port 54331. Migrations and grants applied. Provider HTTP blocked. A synthetic P0-B symbol and a fresh reference quote of 100 are seeded. The order is posted through the UI.
 
-New browser assertions for resting P0 border cases (open, canceled, remaining, and limit) and for UTC timestamps are implemented.
+Codex downloaded the CI PNGs. At 390px the micro tile Stale is fully visible, and the populated orders table scrolls horizontally inside its container. Public compact, standard, and expanded Selenium text and status at 1280 and 390 fit with no overflow.
 
-Initial browser failures were harness defects and were corrected: skip-link keyboard focus after the new link changed the tab count, and the header text `Side/type` versus `Side / type`.
-
-Local Selenium helper execution is blocked by Windows Application Control (`WinError 4551`). This note does not claim that the current unit's browser journey passed.
-
-No security control was changed. The prior backend result of 190 passed and 1 skipped remains historical. That suite was not rerun for this frontend unit.
-
-## CI browser job, pending review and run
-
-Headless Linux CI browser job and harness portability are implemented. Review and a remote run are still pending.
-
-- Isolated PostgreSQL 17, database `p0b_browser`, loopback port 54331.
-- Migrations and grants applied in that job.
-- A new designated UUID email per test.
-- The job uses its own POSIX process groups. Windows cleanup is unchanged.
-- Provider HTTP is blocked. The hosted test is excluded.
-
-CI bootstrap settings and import corrections are under review. Remote CI has not run.
-
-## Still open
-
-Finish CI and source verification, then run remote headless browser acceptance on `codex/v2-cached-data-dashboard-20261106`. Until that proof exists, this overview unit is local implementation only.
-
-Full P2 stays open. P1-C provider ingestion and the exchange calendar stay gated. Do not start an ingestion writer. Do not mark Phase 0 or Phase 1 complete.
+The heatmap instant-scroll wait and the mobile-table end details passed on `7dbddce5646b7bafb358ee4c7078196e10bba720`, run 42184498741. See [P2_RISK_VERIFICATION.md](P2_RISK_VERIFICATION.md).
