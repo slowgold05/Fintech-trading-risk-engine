@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import type { CandlestickData, Time } from "lightweight-charts";
+import type { CandlestickData, LineData, Time, WhitespaceData } from "lightweight-charts";
 import { Link } from "react-router-dom";
 import {
   type AdjustmentType,
@@ -10,12 +10,17 @@ import {
   fetchCachedSeries,
   fetchDailyHistory,
 } from "../api/history";
-import { historyCandles } from "./historyData";
+import { fetchDailyIndicators, type IndicatorName } from "../api/indicators";
+import { historyCandles, indicatorOverlay, type IndicatorOverlay } from "./historyData";
+
+type IndicatorChoice = "none" | IndicatorName;
 
 type SubmittedSeries = {
   symbol: string;
   provider: string;
   adjustment_type: AdjustmentType;
+  indicator: IndicatorChoice;
+  period: number;
 };
 
 type SeriesOption = {
@@ -36,17 +41,31 @@ type HistoryMeta = Pick<
 
 type PriceRow = Pick<HistoryBar, "session_date" | "open" | "high" | "low" | "close">;
 
+type IndicatorLine = (LineData<Time> | WhitespaceData<Time>)[];
+
+type HistoryBundle = {
+  history: HistoryResponse;
+  overlay: IndicatorOverlay | null;
+};
+
 type AcceptedHistory =
   | { state: "mismatch" }
   | { state: "invalid" }
   | { state: "empty"; meta: HistoryMeta }
-  | { state: "partial"; meta: HistoryMeta; points: CandlestickData<Time>[]; rows: PriceRow[] };
+  | {
+      state: "partial";
+      meta: HistoryMeta;
+      points: CandlestickData<Time>[];
+      rows: PriceRow[];
+      overlay: IndicatorOverlay | null;
+    };
 
 type LightweightChartsModule = typeof import("lightweight-charts");
 type DailyChart = ReturnType<LightweightChartsModule["createChart"]>;
 
 const SYMBOL_MAX = 20;
 const PROVIDER_MAX = 32;
+const PERIOD_DEFAULT = 20;
 
 function addCandleSeries(chart: DailyChart, charts: LightweightChartsModule) {
   return chart.addSeries(charts.CandlestickSeries, {
@@ -65,6 +84,22 @@ function addCandleSeries(chart: DailyChart, charts: LightweightChartsModule) {
 
 type CandleSeries = ReturnType<typeof addCandleSeries>;
 
+function addLineSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return chart.addSeries(charts.LineSeries, {
+    color: "#7dd3fc",
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    priceFormat: {
+      type: "price",
+      precision: 6,
+      minMove: 0.000001,
+    },
+  });
+}
+
+type LineSeriesHandle = ReturnType<typeof addLineSeries>;
+
 export function DailyHistory({
   value,
   onValueChange,
@@ -82,6 +117,8 @@ export function DailyHistory({
     onValueChange?.(next);
   }
   const [seriesKey, setSeriesKey] = useState("");
+  const [indicatorDraft, setIndicatorDraft] = useState<IndicatorChoice>("none");
+  const [periodDraft, setPeriodDraft] = useState(String(PERIOD_DEFAULT));
   const [submitted, setSubmitted] = useState<SubmittedSeries | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const catalogQuery = useQuery({
@@ -98,13 +135,33 @@ export function DailyHistory({
       submitted?.adjustment_type ?? "",
       "1d",
       "2y",
+      submitted?.indicator ?? "none",
+      submitted?.period ?? PERIOD_DEFAULT,
     ],
-    queryFn: () => {
+    queryFn: async (): Promise<HistoryBundle> => {
       const request = submitted;
       if (request === null) {
         throw new Error("No submitted series.");
       }
-      return fetchDailyHistory(request.symbol, request.provider, request.adjustment_type);
+      if (request.indicator === "none") {
+        const history = await fetchDailyHistory(request.symbol, request.provider, request.adjustment_type);
+        return { history, overlay: null };
+      }
+      const payload = await fetchDailyIndicators(
+        request.symbol,
+        request.provider,
+        request.adjustment_type,
+        request.indicator,
+        request.period,
+      );
+      const overlay = indicatorOverlay(payload, {
+        symbol: request.symbol,
+        provider: request.provider,
+        adjustment_type: request.adjustment_type,
+        name: request.indicator,
+        period: request.period,
+      });
+      return { history: overlay.history, overlay };
     },
     enabled: submitted !== null,
     retry: false,
@@ -116,11 +173,15 @@ export function DailyHistory({
   const options = catalog?.ok ? catalog.options : [];
   const selected = options.find((option) => option.key === seriesKey) ?? null;
   const draftSymbol = draftValue.trim().toUpperCase();
+  const draftPeriod = readPeriod(periodDraft);
+  const indicatorActive = indicatorDraft !== "none" || submitted?.indicator !== "none";
   const formDiffers =
     submitted !== null &&
     (draftSymbol !== submitted.symbol ||
       selected?.provider !== submitted.provider ||
-      selected?.adjustment_type !== submitted.adjustment_type);
+      selected?.adjustment_type !== submitted.adjustment_type ||
+      indicatorDraft !== submitted.indicator ||
+      (indicatorActive && draftPeriod !== submitted.period));
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,17 +194,26 @@ export function DailyHistory({
       setFormError("Choose a cached series.");
       return;
     }
+    const period = indicatorDraft === "none" ? PERIOD_DEFAULT : draftPeriod;
+    if (period === null) {
+      setFormError("Enter a whole period from 2 to 200.");
+      return;
+    }
     setFormError(null);
     const next = {
       symbol,
       provider: selected.provider,
       adjustment_type: selected.adjustment_type,
+      indicator: indicatorDraft,
+      period,
     };
     if (
       submitted !== null &&
       submitted.symbol === next.symbol &&
       submitted.provider === next.provider &&
-      submitted.adjustment_type === next.adjustment_type
+      submitted.adjustment_type === next.adjustment_type &&
+      submitted.indicator === next.indicator &&
+      submitted.period === next.period
     ) {
       void historyQuery.refetch();
       return;
@@ -238,6 +308,42 @@ export function DailyHistory({
                 View history
               </button>
             </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,8rem)] sm:items-end">
+              <div className="min-w-0">
+                <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-indicator">
+                  Indicator
+                </label>
+                <select
+                  className="field-control"
+                  id="daily-history-indicator"
+                  onChange={(event) => setIndicatorDraft(readIndicatorChoice(event.target.value))}
+                  value={indicatorDraft}
+                >
+                  <option value="none">None</option>
+                  <option value="sma">SMA</option>
+                  <option value="ema">EMA</option>
+                </select>
+              </div>
+              {indicatorDraft !== "none" ? (
+                <div className="min-w-0">
+                  <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-period">
+                    Period
+                  </label>
+                  <input
+                    aria-invalid={formError !== null && draftPeriod === null}
+                    className="field-control"
+                    id="daily-history-period"
+                    inputMode="numeric"
+                    max={200}
+                    min={2}
+                    onChange={(event) => setPeriodDraft(event.target.value)}
+                    step={1}
+                    type="number"
+                    value={periodDraft}
+                  />
+                </div>
+              ) : null}
+            </div>
             {formError ? (
               <p className="text-sm text-rose-200" role="alert">
                 {formError}
@@ -312,8 +418,14 @@ export function DailyHistory({
                   </p>
                 ) : null}
                 <HistoryFacts meta={accepted.meta} submitted={submitted} />
-                <DailyHistoryCanvas points={accepted.points} />
-                <SessionPrices rows={accepted.rows} submitted={submitted} />
+                {accepted.overlay ? <IndicatorFacts overlay={accepted.overlay} /> : null}
+                <DailyHistoryCanvas line={accepted.overlay?.line ?? null} points={accepted.points} />
+                <SessionPrices
+                  indicatorLabel={accepted.overlay ? indicatorLabel(accepted.overlay) : null}
+                  rows={accepted.rows}
+                  submitted={submitted}
+                  values={accepted.overlay?.values ?? null}
+                />
               </div>
             ) : null}
           </div>
@@ -403,7 +515,38 @@ function HistoryFacts({ meta, submitted }: { meta: HistoryMeta; submitted: Submi
   );
 }
 
-function SessionPrices({ rows, submitted }: { rows: PriceRow[]; submitted: SubmittedSeries }) {
+function IndicatorFacts({ overlay }: { overlay: IndicatorOverlay }) {
+  const label = indicatorLabel(overlay);
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-sm text-slate-200">{label} on observed stored closes.</p>
+      {overlay.status === "insufficient" ? (
+        <p className="text-sm text-slate-300">Insufficient stored closes for this period. No indicator curve is drawn.</p>
+      ) : null}
+      {overlay.status === "unavailable" ? (
+        <p className="text-sm text-slate-300">Indicator values are unavailable. No indicator curve is drawn.</p>
+      ) : null}
+      {overlay.status === "partial" || overlay.status === "insufficient" ? (
+        <p className="text-sm text-slate-300">
+          Warm-up: the first {overlay.period - 1} observed stored closes have no indicator value.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function SessionPrices({
+  rows,
+  submitted,
+  values,
+  indicatorLabel: columnLabel,
+}: {
+  rows: PriceRow[];
+  submitted: SubmittedSeries;
+  values: (string | null)[] | null;
+  indicatorLabel: string | null;
+}) {
+  const showIndicator = values !== null && columnLabel !== null;
   return (
     <details className="min-w-0">
       <summary className="cursor-pointer rounded-lg text-sm font-semibold text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50">
@@ -412,8 +555,10 @@ function SessionPrices({ rows, submitted }: { rows: PriceRow[]; submitted: Submi
       <div className="table-shell mt-3 max-h-80 min-w-0 overflow-auto overscroll-contain">
         <table className="data-table">
           <caption className="sr-only">
-            Open, high, low, and close for {submitted.symbol}, source {submitted.provider}, adjustment{" "}
-            {submitted.adjustment_type}. Values are the cached decimal strings.
+            Open, high, low, and close
+            {showIndicator ? ` and ${columnLabel}` : ""} for {submitted.symbol}, source {submitted.provider}, adjustment{" "}
+            {submitted.adjustment_type}. Values are the cached decimal strings
+            {showIndicator ? ", or Warm-up where the indicator has no value" : ""}.
           </caption>
           <thead>
             <tr>
@@ -432,10 +577,15 @@ function SessionPrices({ rows, submitted }: { rows: PriceRow[]; submitted: Submi
               <th className="text-right" scope="col">
                 Close
               </th>
+              {showIndicator ? (
+                <th className="text-right" scope="col">
+                  {columnLabel}
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {rows.map((row, index) => (
               <tr key={row.session_date}>
                 <th className="text-left font-mono text-slate-100" scope="row">
                   {row.session_date}
@@ -444,6 +594,9 @@ function SessionPrices({ rows, submitted }: { rows: PriceRow[]; submitted: Submi
                 <td className="text-right font-mono">{row.high}</td>
                 <td className="text-right font-mono">{row.low}</td>
                 <td className="text-right font-mono">{row.close}</td>
+                {showIndicator ? (
+                  <td className="text-right font-mono">{values[index] ?? "Warm-up"}</td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -453,11 +606,14 @@ function SessionPrices({ rows, submitted }: { rows: PriceRow[]; submitted: Submi
   );
 }
 
-function DailyHistoryCanvas({ points }: { points: CandlestickData<Time>[] }) {
+function DailyHistoryCanvas({ points, line }: { points: CandlestickData<Time>[]; line: IndicatorLine | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<DailyChart | null>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
+  const lineSeriesRef = useRef<LineSeriesHandle | null>(null);
+  const libraryRef = useRef<LightweightChartsModule | null>(null);
   const pointsRef = useRef(points);
+  const lineRef = useRef(line);
   const disposeRef = useRef<(() => void) | null>(null);
   const failedRef = useRef(false);
   const [attempt, setAttempt] = useState(0);
@@ -465,6 +621,7 @@ function DailyHistoryCanvas({ points }: { points: CandlestickData<Time>[] }) {
 
   useEffect(() => {
     pointsRef.current = points;
+    lineRef.current = line;
     if (failedRef.current) {
       failedRef.current = false;
       setFailed(false);
@@ -478,12 +635,13 @@ function DailyHistoryCanvas({ points }: { points: CandlestickData<Time>[] }) {
     }
     try {
       series.setData(points);
+      syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, line);
     } catch {
       disposeRef.current?.();
       failedRef.current = true;
       setFailed(true);
     }
-  }, [points]);
+  }, [points, line]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -503,6 +661,8 @@ function DailyHistoryCanvas({ points }: { points: CandlestickData<Time>[] }) {
       active = null;
       chartRef.current = null;
       seriesRef.current = null;
+      lineSeriesRef.current = null;
+      libraryRef.current = null;
     };
     disposeRef.current = dispose;
 
@@ -534,9 +694,11 @@ function DailyHistoryCanvas({ points }: { points: CandlestickData<Time>[] }) {
           });
           active = created;
           chartRef.current = created;
+          libraryRef.current = charts;
           const series = addCandleSeries(created, charts);
           seriesRef.current = series;
           series.setData(pointsRef.current);
+          syncIndicatorLine(created, charts, lineSeriesRef, lineRef.current);
           created.timeScale().fitContent();
         } catch {
           failedRef.current = true;
@@ -607,7 +769,8 @@ function readCatalog(data: unknown): { ok: true; options: SeriesOption[] } | { o
   return { ok: true, options };
 }
 
-function acceptHistory(data: HistoryResponse, request: SubmittedSeries): AcceptedHistory {
+function acceptHistory(bundle: HistoryBundle, request: SubmittedSeries): AcceptedHistory {
+  const data = bundle.history;
   if (!isRecord(data)) {
     return { state: "invalid" };
   }
@@ -620,13 +783,85 @@ function acceptHistory(data: HistoryResponse, request: SubmittedSeries): Accepte
   }
   try {
     const points = historyCandles(data);
+    const overlay = bundle.overlay;
+    if (request.indicator === "none" || overlay === null) {
+      if (overlay !== null || request.indicator !== "none") {
+        return { state: "invalid" };
+      }
+      if (points.length === 0) {
+        return { state: "empty", meta: data };
+      }
+      return { state: "partial", meta: data, points, rows: data.bars, overlay: null };
+    }
+    if (
+      overlay.name !== request.indicator ||
+      overlay.period !== request.period ||
+      overlay.candles.length !== points.length ||
+      overlay.line.length !== points.length ||
+      overlay.values.length !== data.bars.length ||
+      !alignedTimes(points, overlay)
+    ) {
+      return { state: "invalid" };
+    }
     if (points.length === 0) {
       return { state: "empty", meta: data };
     }
-    return { state: "partial", meta: data, points, rows: data.bars };
+    return { state: "partial", meta: data, points, rows: data.bars, overlay };
   } catch {
     return { state: "invalid" };
   }
+}
+
+function syncIndicatorLine(
+  chart: DailyChart,
+  charts: LightweightChartsModule | null,
+  lineSeriesRef: { current: LineSeriesHandle | null },
+  line: IndicatorLine | null,
+) {
+  if (line === null) {
+    lineSeriesRef.current?.setData([]);
+    return;
+  }
+  if (!charts) {
+    return;
+  }
+  if (lineSeriesRef.current === null) {
+    lineSeriesRef.current = addLineSeries(chart, charts);
+  }
+  lineSeriesRef.current.setData(line);
+}
+
+function alignedTimes(points: CandlestickData<Time>[], overlay: IndicatorOverlay): boolean {
+  for (let index = 0; index < points.length; index += 1) {
+    if (overlay.candles[index]?.time !== points[index]?.time || overlay.line[index]?.time !== points[index]?.time) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function indicatorLabel(overlay: IndicatorOverlay): string {
+  const name = overlay.name === "sma" ? "SMA" : "EMA";
+  return `${name} (${overlay.period})`;
+}
+
+function readIndicatorChoice(value: string): IndicatorChoice {
+  if (value === "sma" || value === "ema") {
+    return value;
+  }
+  return "none";
+}
+
+function readPeriod(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d{1,3}$/.test(trimmed)) {
+    return null;
+  }
+  const period = Number(trimmed);
+  if (!Number.isInteger(period) || period < 2 || period > 200) {
+    return null;
+  }
+  return period;
 }
 
 function isProvider(value: string): boolean {

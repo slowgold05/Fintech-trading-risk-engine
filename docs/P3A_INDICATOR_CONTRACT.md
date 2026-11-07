@@ -1,6 +1,6 @@
 # P3A — Cached daily SMA/EMA indicator contract
 
-**Status:** Backend code accepted by Grok at `770ced43a7ab27c993ed266b72ddc9768061ce5f`. Evidence: [P3A_INDICATOR_VERIFICATION.md](P3A_INDICATOR_VERIFICATION.md). This file is the contract for that backend read. It is not a phase-completion record. Chart integration and other indicators stay open.
+**Status:** Backend code accepted by Grok at `770ced43a7ab27c993ed266b72ddc9768061ce5f`. Evidence: [P3A_INDICATOR_VERIFICATION.md](P3A_INDICATOR_VERIFICATION.md). This file is the contract for that backend read. Chart integration later added one additive field to the response, documented in section 7; see [P3A_CHART_INTEGRATION_VERIFICATION.md](P3A_CHART_INTEGRATION_VERIFICATION.md) for that acceptance. This file is not a phase-completion record. Other indicators stay open.
 
 **Authority:** `Sentinel_Markets_2_0_Roadmap.md` Phase 3 (advanced charting: SMA and EMA only, as the next backend slice) and the public reader `read_symbol_history` in `app/services/market_history.py`, exposed today as `GET /market/symbols/{symbol}/history`.
 
@@ -184,12 +184,13 @@ HTTP 200 body. Identity and metadata below are copied from the single `read_symb
 | `session_basis` | `"not_exchange_sessions"` |
 | `status` | section 8 |
 | `points` | array of `{ "session_date", "value" }` |
+| `history` | the single `read_symbol_history` result, unmodified, nested verbatim |
 
 `source` is the literal string `observed_valid_closes`. It names the series as those observed valid stored closes. It is not a provider id and not a second data fetch. The numeric field `observed_valid_closes` remains the count of those closes.
 
 `points` preserves accepted-bar order. `session_date` is the history bar’s date string. `value` is `null` or a six-place decimal string.
 
-The body has no `bars` array. It does not include open, high, low, or volume.
+The top level of this body has no `bars` array and does not include open, high, low, or volume directly. The additive `history` field nests the complete original history response from that same single read, including its own `bars`, so a client can plot candles and the indicator overlay from one response and one database snapshot instead of issuing or combining two independently fetched reads. This field was added for chart integration (accepted at `c93250bde11ebfafbb4a4f7bb3072ad28f0ac65b`; see [P3A_CHART_INTEGRATION_VERIFICATION.md](P3A_CHART_INTEGRATION_VERIFICATION.md)) and does not change the single-read rule in section 5: `history` is the same dict already returned by that one `read_symbol_history` call, not a second query.
 
 `status` is never `complete`. A long cached series stays `partial` when any value is computed. `coverage_status` stays `not_verified` on that same body.
 

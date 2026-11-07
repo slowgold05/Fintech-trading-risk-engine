@@ -170,4 +170,5 @@ def _response(history: dict, indicator: tuple[str, int], points: list[dict]) -> 
         "session_basis": "not_exchange_sessions",
         "status": status,
         "points": points,
+        "history": history,
     }
