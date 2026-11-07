@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import {
   type AdjustmentType,
   type HistoryBar,
+  type HistoryCoverageStatus,
   type HistoryResponse,
   fetchCachedSeries,
   fetchDailyHistory,
@@ -37,6 +38,8 @@ type HistoryMeta = Pick<
   | "available_start"
   | "available_end"
   | "excluded_row_count"
+  | "coverage_status"
+  | "expected_session_count"
 >;
 
 type PriceRow = Pick<HistoryBar, "session_date" | "open" | "high" | "low" | "close">;
@@ -500,7 +503,8 @@ function HistoryFacts({ meta, submitted }: { meta: HistoryMeta; submitted: Submi
     ["Requested", `${meta.requested_start} to ${meta.requested_end}`],
     ["Available", available],
     ["Excluded rows", String(meta.excluded_row_count)],
-    ["Coverage", "Not verified"],
+    ["Coverage", coverageStatusLabel(meta.coverage_status)],
+    ["Expected sessions", meta.expected_session_count === null ? "Not verified" : String(meta.expected_session_count)],
     ["Collection", "Disabled"],
   ];
   return (
@@ -838,6 +842,21 @@ function alignedTimes(points: CandlestickData<Time>[], overlay: IndicatorOverlay
     }
   }
   return true;
+}
+
+function coverageStatusLabel(status: HistoryCoverageStatus): string {
+  switch (status) {
+    case "not_verified":
+      return "Not verified";
+    case "complete":
+      return "Complete";
+    case "gaps":
+      return "Gaps";
+    case "unexpected_sessions":
+      return "Unexpected sessions";
+    case "gaps_and_unexpected_sessions":
+      return "Gaps and unexpected sessions";
+  }
 }
 
 function indicatorLabel(overlay: IndicatorOverlay): string {

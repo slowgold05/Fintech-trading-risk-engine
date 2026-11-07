@@ -37,6 +37,22 @@ export type HistoryBar = {
 };
 
 /** GET /market/symbols/{symbol}/history body. Status is never "complete". */
+/**
+ * "not_verified" means the reviewed NYSE calendar could not evaluate the requested window
+ * (outside its supported range); expected_session_count is then null. Otherwise the
+ * calendar compared returned sessions against the standard annual NYSE schedule:
+ * "complete" (every expected session present, nothing extra), "gaps" (expected sessions
+ * missing, nothing extra), "unexpected_sessions" (nothing missing, but a returned session
+ * falls on a day the calendar marks non-trading), or "gaps_and_unexpected_sessions" (both).
+ * The calendar models the standard annual schedule only, not ad hoc closures.
+ */
+export type HistoryCoverageStatus =
+  | "not_verified"
+  | "complete"
+  | "gaps"
+  | "unexpected_sessions"
+  | "gaps_and_unexpected_sessions";
+
 export type HistoryResponse = {
   symbol: string;
   interval: "1d";
@@ -44,8 +60,8 @@ export type HistoryResponse = {
   provider: string;
   adjustment_type: AdjustmentType;
   status: "unavailable" | "partial";
-  coverage_status: "not_verified";
-  expected_session_count: null;
+  coverage_status: HistoryCoverageStatus;
+  expected_session_count: number | null;
   collection: "disabled";
   read_at: string;
   requested_start: string;

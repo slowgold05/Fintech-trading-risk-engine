@@ -18,6 +18,7 @@ from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.price_history_daily import PriceHistoryDaily
+from app.services import exchange_calendar
 from app.services.market_cache_service import _freshness
 
 PRICE_QUANTUM = Decimal("0.000001")
@@ -327,6 +328,7 @@ def _symbol_history(
 
     available_start = bars[0]["session_date"] if bars else None
     available_end = bars[-1]["session_date"] if bars else None
+    coverage_status, expected_session_count = _coverage(start, end, bars)
     return {
         "symbol": symbol,
         "interval": interval,
@@ -334,8 +336,8 @@ def _symbol_history(
         "provider": provider,
         "adjustment_type": adjustment_type,
         "status": "partial" if bars else "unavailable",
-        "coverage_status": COVERAGE_STATUS,
-        "expected_session_count": None,
+        "coverage_status": coverage_status,
+        "expected_session_count": expected_session_count,
         "collection": COLLECTION,
         "read_at": _iso_z(clock),
         "requested_start": start.isoformat(),
@@ -345,6 +347,35 @@ def _symbol_history(
         "excluded_row_count": excluded,
         "bars": bars,
     }
+
+
+def _coverage(start: date, end: date, bars: list[dict]) -> tuple[str, int | None]:
+    """Compare returned sessions against the reviewed NYSE calendar for [start, end].
+
+    Read-only reporting: never filters or alters `bars`. Falls back to the prior
+    "not_verified"/None pair when the window falls outside the calendar's supported range,
+    which should not happen in practice since the window is always "today minus two years"
+    to "today", but the guard stays honest rather than assuming that can't change.
+    """
+    try:
+        expected_dates = set(exchange_calendar.expected_session_dates(start, end))
+    except ValueError:
+        return COVERAGE_STATUS, None
+
+    returned_dates = {date.fromisoformat(bar["session_date"]) for bar in bars}
+    missing = expected_dates - returned_dates
+    extra = returned_dates - expected_dates
+
+    if not missing and not extra:
+        status = "complete"
+    elif missing and not extra:
+        status = "gaps"
+    elif extra and not missing:
+        status = "unexpected_sessions"
+    else:
+        status = "gaps_and_unexpected_sessions"
+
+    return status, len(expected_dates)
 
 
 def _invalid_quote(price, quote_at, fetched_at, clock: datetime) -> bool:

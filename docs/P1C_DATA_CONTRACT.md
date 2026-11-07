@@ -93,9 +93,29 @@ The primary key is one row per symbol, session, provider, and adjustment, so the
 
 `available_start` and `available_end` are the first and last returned session, or null when there are no bars. `requested_start` and `requested_end` are the window. `status` is `unavailable` or `partial`. It is never `complete`. `coverage_status` is `not_verified`. `expected_session_count` is null. `collection` is `disabled` with the same meaning as on data-status: canonical-history ingestion is off, not quote refresh.
 
+## Reviewed exchange calendar (per-symbol history only)
+
+`GET /market/symbols/{symbol}/history` now compares its returned sessions against a reviewed,
+local NYSE trading-day calendar (`app/services/exchange_calendar.py`; see
+[P1C_EXCHANGE_CALENDAR_VERIFICATION.md](P1C_EXCHANGE_CALENDAR_VERIFICATION.md)). `coverage_status`
+is one of `"not_verified"`, `"complete"`, `"gaps"`, `"unexpected_sessions"`, or
+`"gaps_and_unexpected_sessions"`, and `expected_session_count` is a real integer except when
+`coverage_status` is `"not_verified"` (the requested window fell outside the calendar's
+1990-2035 supported range, which does not happen for the normal "today minus two years" window).
+The calendar models the standard annual NYSE holiday schedule only; it does not know about ad
+hoc closures such as September 11, 2001, or weather/system outages, so a `"complete"` result is
+a calendar-schedule comparison, not a claim of total historical accuracy.
+
+`GET /market/data-status` is **not** changed by this. Its `coverage_status` stays `"not_verified"`
+and `expected_session_count` stays `null` unconditionally, because that route has no single
+symbol's stored sessions to compare against a window; this is a deferred, separate unit, not
+an oversight.
+
 ## What this unit does not do
 
-No provider client, backfill, scheduler change, migration, grant change, frontend change, or hosted change. Restart-safe ingestion, invalid-OHLC rejection at write time, and an exchange calendar that explains gaps remain unmet P1-C acceptance items. Empty or partial history stays an unavailable or partial payload, not a generated series.
+No provider client, backfill, scheduler change, migration, or grant change. Restart-safe
+ingestion and invalid-OHLC rejection at write time remain unmet P1-C acceptance items. Empty or
+partial history stays an unavailable or partial payload, not a generated series.
 
 ## Verification, 2026-11-05
 

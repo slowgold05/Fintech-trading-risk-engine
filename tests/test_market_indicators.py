@@ -251,7 +251,11 @@ def test_warmup_empty_unknown_and_excluded_do_not_leak(client, db_session, monke
     assert bare.json()["status"] == "unavailable"
     assert bare.json()["points"] == []
     assert bare.json()["observed_valid_closes"] == 0
-    assert bare.json()["coverage_status"] == "not_verified"
+    # No bars were returned for BARE: the calendar reports this as "gaps" against the
+    # expected NYSE trading days in the window, same as the plain history endpoint would.
+    bare_history = client.get("/market/symbols/BARE/history", params=_history_params()).json()
+    assert bare.json()["coverage_status"] == bare_history["coverage_status"] == "gaps"
+    assert bare.json()["expected_session_count"] == bare_history["expected_session_count"]
 
     unknown = client.get("/market/symbols/NO_SUCH/indicators", params=_params())
     assert unknown.status_code == 404

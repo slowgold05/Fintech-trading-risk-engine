@@ -166,8 +166,8 @@ describe("DailyHistory", () => {
     expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw"]]);
     expect(screen.getByText(PARTIAL)).toBeInTheDocument();
     expect(screen.getByText(SHOWING)).toBeInTheDocument();
-    expect([fact("Status"), fact("Source"), fact("Coverage"), fact("Collection")]).toEqual([
-      "Partial", "fixture", "Not verified", "Disabled",
+    expect([fact("Status"), fact("Source"), fact("Coverage"), fact("Expected sessions"), fact("Collection")]).toEqual([
+      "Partial", "fixture", "Not verified", "Not verified", "Disabled",
     ]);
     expect(screen.getByText("Session prices")).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "101.250000" })).toBeInTheDocument();
@@ -211,6 +211,23 @@ describe("DailyHistory", () => {
     expect(chart.fitContent).toHaveBeenCalledTimes(1);
     view.unmount();
     expect(chart.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the real reviewed-calendar coverage status and expected session count", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValueOnce({
+      ...history(),
+      coverage_status: "gaps_and_unexpected_sessions",
+      expected_session_count: 504,
+    });
+    renderHistory();
+    await screen.findByRole("textbox", { name: "Symbol" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts.length).toBeGreaterThan(0));
+    expect([fact("Coverage"), fact("Expected sessions")]).toEqual([
+      "Gaps and unexpected sessions", "504",
+    ]);
   });
 
   it("hides a failed refresh and restores the chart on retry", async () => {

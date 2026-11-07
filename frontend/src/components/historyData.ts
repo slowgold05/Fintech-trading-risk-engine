@@ -1,8 +1,15 @@
 import type { CandlestickData, LineData, Time, WhitespaceData } from "lightweight-charts";
 import type { IndicatorName } from "../api/indicators";
-import type { HistoryResponse } from "../api/history";
+import type { HistoryCoverageStatus, HistoryResponse } from "../api/history";
 
 const SESSION_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const COVERAGE_STATUSES: readonly HistoryCoverageStatus[] = [
+  "not_verified",
+  "complete",
+  "gaps",
+  "unexpected_sessions",
+  "gaps_and_unexpected_sessions",
+];
 /** Server Numeric(18,6): up to 12 integer digits and exactly 6 decimal places. */
 const CANONICAL_PRICE = /^(?:0|[1-9]\d{0,11})\.\d{6}$/;
 const CANONICAL_VOLUME = /^(?:0|[1-9]\d*)$/;
@@ -35,10 +42,19 @@ export function historyCandles(history: unknown): CandlestickData<Time>[] {
   } else if (body.status !== "partial") {
     throw new Error("History status is invalid.");
   }
-  if (body.coverage_status !== "not_verified") {
+  if (!COVERAGE_STATUSES.includes(body.coverage_status as HistoryCoverageStatus)) {
     throw new Error("Coverage status is invalid.");
   }
-  if (body.expected_session_count !== null) {
+  const expectedSessionCount = body.expected_session_count;
+  if (body.coverage_status === "not_verified") {
+    if (expectedSessionCount !== null) {
+      throw new Error("Expected session count is invalid.");
+    }
+  } else if (
+    typeof expectedSessionCount !== "number" ||
+    !Number.isSafeInteger(expectedSessionCount) ||
+    expectedSessionCount < 0
+  ) {
     throw new Error("Expected session count is invalid.");
   }
   if (body.collection !== "disabled") {

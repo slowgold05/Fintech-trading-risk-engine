@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 import test_p0b_acceptance as harness
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_symbol import MarketSymbol
+from app.services import exchange_calendar
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = harness.disposable_api
@@ -120,7 +121,12 @@ def test_cached_daily_chart(chart_api):
         canvas = harness._wait(driver).until(_plot)
         text = _section(driver).text
         assert PROVIDER in text and "adjustment raw" in text
-        assert "Not verified" in text and "Disabled" in text and "Partial" in text
+        # Only 2 of the many expected NYSE trading days in the 2-year window were stored, so
+        # the reviewed calendar always reports at least "Gaps". If either fixture session
+        # itself falls on a real non-trading day, it also reports "Unexpected sessions".
+        unexpected = any(not exchange_calendar.is_nyse_trading_day(session) for session in sessions)
+        expected_coverage_label = "Gaps and unexpected sessions" if unexpected else "Gaps"
+        assert expected_coverage_label in text and "Disabled" in text and "Partial" in text
         for session in sessions:
             assert session.isoformat() in text
         _open_prices(driver)
