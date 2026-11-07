@@ -182,6 +182,29 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+Three more stacked PRs landed on 2026-11-07, after the four below, each ready with all 7 CI jobs
+green: [PR 31](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/31) (per-series
+`coverage_status`/`expected_session_count` on `GET /market/data-status`'s
+`canonical_history.series[]`, backend-only, evidence
+[P1C_DATA_STATUS_COVERAGE_VERIFICATION.md](P1C_DATA_STATUS_COVERAGE_VERIFICATION.md) — the
+user chose this per-series design over leaving the top-level fields alone, which stay
+`not_verified`/null unconditionally since series can span different dates), [PR 32](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/32)
+(persists an unresolved order-retry attempt across reload/unmount so a reload can't mint a new
+idempotency key and risk a duplicate order, frontend-only, evidence
+[P3B_ORDER_RETRY_DURABILITY_VERIFICATION.md](P3B_ORDER_RETRY_DURABILITY_VERIFICATION.md) — this
+closes the "mounted-only unknown-order retry... release-hardening gate" named earlier in this
+file), and [PR 33](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/33) (a second
+supported history range, `range=1y` alongside `2y`, backend-only, evidence
+[P1C_HISTORY_RANGE_1Y_VERIFICATION.md](P1C_HISTORY_RANGE_1Y_VERIFICATION.md)). PRs 31-33 were
+implemented by Grok's CLI against precise written specs and independently verified the same way
+as 29-30. PR 33's first head's CI caught a real regression — not a flake, confirmed only after
+investigating an identical repeated failure rather than assuming flakiness from rereading it a
+third time — a test-only monkeypatch fixture (`tests/browser/isolated_api.py`) called the
+changed function with a stale argument set; fixed on the same branch. None of these three close
+full P3-A, P3-B, or P1-C: MACD, other chart timeframes beyond `1y`/`2y`, preferences, a frontend
+range selector, and a frontend `CanonicalHistorySeries` type update for the new per-series
+coverage fields (deliberately deferred, no current consumer) remain open.
+
 Four stacked PRs landed on 2026-11-07, each ready with all 7 CI jobs green:
 [PR 27](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/27) (reviewed exchange
 calendar, see below), [PR 28](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/28)
