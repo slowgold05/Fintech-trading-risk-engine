@@ -182,6 +182,24 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 36](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/36) landed on
+2026-11-07, after PR 35, ready with all 7 CI jobs green on the first attempt: MACD as a
+selectable chart indicator (MACD line, signal line, histogram, three series sharing one price
+scale), frontend-only. Evidence:
+[P3A_MACD_CHART_INTEGRATION_VERIFICATION.md](P3A_MACD_CHART_INTEGRATION_VERIFICATION.md). The
+real new wrinkle versus RSI's own chart integration: MACD/signal/histogram can be negative, so
+new sign-permissive `canonicalSignedValue`/`chartSignedNumber` validators were added alongside
+(not replacing) the existing RSI and OHLC ones, and MACD's two independently-timed warm-ups
+(line vs. signal/histogram) needed a dedicated per-field parser rather than the single shared
+`warmup` cutoff SMA/EMA/RSI use. Implemented by Grok's CLI; one apparent test regression during
+review turned out to be a stale Vite/Vitest transform-cache artifact (confirmed by clearing
+`node_modules/.vite`), not a real defect. This closes the Phase 3 roadmap's "SMA, EMA, Bollinger
+Bands, RSI, and MACD" indicator line item except for Bollinger Bands, which remains open and is
+not implemented here. User-configurable indicator parameters beyond the existing period/signal
+input, persisted chart preferences, and every other open Phase 3 chart item (chart modes beyond
+candlestick, timeframes beyond 1y/2y, trade execution markers, price levels for open orders)
+remain open.
+
 [PR 35](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/35) landed on
 2026-11-07, after PR 34: MACD as a fourth cached daily indicator (`sma`, `ema`, `rsi`, `macd`),
 backend-only, ready with all 7 CI jobs green on the first attempt. Evidence:
