@@ -182,6 +182,25 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+Four stacked PRs landed on 2026-11-07, each ready with all 7 CI jobs green:
+[PR 27](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/27) (reviewed exchange
+calendar, see below), [PR 28](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/28)
+(volume histogram on the daily chart and a Volume session-prices column — frontend-only, evidence
+[P3A_VOLUME_OVERLAY_VERIFICATION.md](P3A_VOLUME_OVERLAY_VERIFICATION.md)), [PR 29](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/29)
+(Wilder RSI as a third cached indicator, backend-only, evidence
+[P3A_RSI_INDICATOR_VERIFICATION.md](P3A_RSI_INDICATOR_VERIFICATION.md)), and
+[PR 30](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/30) (RSI as a selectable
+chart indicator on its own price scale, frontend-only, evidence
+[P3A_RSI_CHART_INTEGRATION_VERIFICATION.md](P3A_RSI_CHART_INTEGRATION_VERIFICATION.md)). PRs 29
+and 30 were implemented by Grok's CLI against precise written specs (including, for RSI, a
+reference value table computed independently beforehand from Wilder's formula, not derived from
+either implementation) and independently verified — line-by-line diff review, re-run test suites,
+and for PR 30 a downloaded-and-reviewed CI screenshot — before being accepted. None of these four
+close full P3-A: other indicators (MACD — a bigger design change, since its response shape is
+three values per point, not one, unlike SMA/EMA/RSI), other chart timeframes, preferences, and
+the `/market/data-status` coverage fields (explicitly deferred, see
+[P1C_DATA_CONTRACT.md](P1C_DATA_CONTRACT.md)) remain open. No merge or deploy of any of the four.
+
 The reviewed NYSE exchange calendar for per-symbol history is accepted and is not the next
 task. Evidence: [P1C_EXCHANGE_CALENDAR_VERIFICATION.md](P1C_EXCHANGE_CALENDAR_VERIFICATION.md).
 Accepted code `5bc6d60` on `codex/v2-exchange-calendar-20261107`, stacked on ready PR 26 at
