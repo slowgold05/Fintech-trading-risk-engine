@@ -41,6 +41,7 @@ from selenium import webdriver
 from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -768,6 +769,86 @@ def _orders_shell_scroll_reset(driver: webdriver.Chrome) -> bool:
         return False
 
 
+def _owner_activity_counts(engine, email: str) -> dict[str, int]:
+    """Owner-scoped row counts. Failures stay redacted to counts and statuses."""
+    from sqlalchemy import text
+
+    tables = ("orders", "trades", "holdings", "lots", "ledger_entries", "order_requests")
+    database = None
+    user_id = None
+    raw: list[int] = []
+    try:
+        with engine.connect() as connection:
+            database = connection.execute(text("SELECT current_database()")).scalar()
+            if database != DISPOSABLE_DATABASE:
+                user_id = None
+            else:
+                user_id = connection.execute(
+                    text("SELECT id FROM users WHERE email = :email"),
+                    {"email": email},
+                ).scalar()
+                if user_id is not None:
+                    for table in tables:
+                        raw.append(int(connection.execute(
+                            text(f"SELECT COUNT(*) FROM {table} WHERE user_id = :user_id"),
+                            {"user_id": user_id},
+                        ).scalar() or 0))
+    except Exception:
+        pytest.fail("owner activity count failed")
+    if database != DISPOSABLE_DATABASE:
+        pytest.fail("refusing to read activity counts outside the disposable browser database")
+    if user_id is None:
+        pytest.fail("designated trader is missing from the disposable browser database")
+    return dict(zip(tables, raw, strict=True))
+
+
+def _preview_fields(driver: webdriver.Chrome) -> dict | None:
+    """Preview dt/dd values. The label is the dt's own text, not a nested detail span."""
+    found = driver.execute_script(
+        """
+        const heading = Array.from(document.querySelectorAll("h3")).find((node) => node.textContent.trim() === "Order preview");
+        const root = heading && (heading.closest("section, form") || heading.parentElement);
+        if (!root) { return null; }
+        const own = (node) => Array.from(node.childNodes)
+          .filter((child) => child.nodeType === Node.TEXT_NODE)
+          .map((child) => child.textContent)
+          .join(" ")
+          .replace(/\\s+/g, " ")
+          .trim();
+        const values = {};
+        for (const dt of root.querySelectorAll("dt")) {
+          const label = own(dt);
+          const dd = dt.nextElementSibling;
+          if (!label || !dd || dd.tagName !== "DD") { continue; }
+          values[label] = (dd.textContent || "").replace(/[$,\\s]/g, "");
+        }
+        return {ready: (root.innerText || "").includes("Preview ready"), values: values};
+        """
+    )
+    if not isinstance(found, dict) or not isinstance(found.get("values"), dict):
+        return None
+    return {
+        "ready": bool(found.get("ready")),
+        "values": {str(label): str(value) for label, value in found["values"].items()},
+    }
+
+
+def _preview_has_values(driver: webdriver.Chrome, expected: dict[str, str]) -> bool:
+    fields = _preview_fields(driver)
+    if not fields or not fields["ready"]:
+        return False
+    return all(fields["values"].get(label) == value for label, value in expected.items())
+
+
+def _order_preview_ready(driver: webdriver.Chrome) -> bool:
+    return _preview_has_values(driver, {
+        "Initial reservation": "100.00",
+        "Estimated fill quantity": "0.000000",
+        "Estimated fill notional": "0.00",
+        "Unfilled quantity": "1.000000",
+    })
+
+
 def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None:
     from datetime import datetime, timezone
     from decimal import Decimal
@@ -838,20 +919,28 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         ticket_dir.mkdir(parents=True, exist_ok=True)
         _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//*[normalize-space()='Order Management']")))
         _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//*[normalize-space()='Order Entry']")))
-        driver.save_screenshot(str(ticket_dir / "baseline-desktop.png"))
+        driver.save_screenshot(str(ticket_dir / "ticket-initial-desktop.png"))
         driver.set_window_size(390, 844)
         _wait(driver).until(lambda current: _viewport(current)["width"] <= 390 and current.execute_script("""
-            const entry = document.evaluate("//*[normalize-space()='Order Entry']", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
             const input = document.querySelector("input[aria-label='Trade symbol']");
-            if (!entry || !input) { return false; }
-            entry.scrollIntoView({block: "start", inline: "nearest", behavior: "instant"});
-            input.scrollIntoView({block: "nearest", inline: "nearest", behavior: "instant"});
-            const entryBox = entry.getBoundingClientRect();
-            const inputBox = input.getBoundingClientRect();
-            return entryBox.height > 0 && inputBox.height > 0 && entryBox.top < innerHeight && entryBox.bottom > 0 && inputBox.top >= 0 && inputBox.bottom <= innerHeight;
+            if (!input) { return false; }
+            const limit = () => Array.from(document.querySelectorAll("header, [class*='sticky']")).reduce((max, node) => {
+              const style = getComputedStyle(node);
+              const box = node.getBoundingClientRect();
+              if ((style.position !== "sticky" && style.position !== "fixed") || box.bottom <= 0 || box.top > 0) { return max; }
+              return Math.max(max, box.bottom);
+            }, 0);
+            const shown = () => {
+              const box = input.getBoundingClientRect();
+              return box.width > 0 && box.height > 0 && box.top >= limit() - 1 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth;
+            };
+            window.scrollTo(0, 0);
+            if (shown()) { return true; }
+            window.scrollTo(0, Math.max(0, input.getBoundingClientRect().top + window.scrollY - limit() - 8));
+            return shown();
         """))
         widths = driver.execute_script("const root=document.documentElement,body=document.body,main=document.querySelector('main');return body&&main?{rootScroll:root.scrollWidth,rootClient:root.clientWidth,bodyScroll:body.scrollWidth,bodyClient:body.clientWidth,mainScroll:main.scrollWidth,mainClient:main.clientWidth}:null;")
-        driver.save_screenshot(str(ticket_dir / "baseline-mobile.png"))
+        driver.save_screenshot(str(ticket_dir / "ticket-initial-mobile.png"))
         assert isinstance(widths, dict) and widths["rootScroll"] <= widths["rootClient"] and widths["bodyScroll"] <= widths["bodyClient"] and widths["mainScroll"] <= widths["mainClient"], widths
         driver.set_window_size(*VIEWPORT)
         driver.execute_script("window.scrollTo({top:0,left:0,behavior:'instant'});")
@@ -860,7 +949,47 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade symbol']").send_keys(SYMBOL)
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").send_keys("1")
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Limit price']").send_keys("100")
-        _click(driver, driver.find_element(By.CSS_SELECTOR, "button[aria-label='Submit trade order']"))
+        before_preview = _owner_activity_counts(disposable_api.engine, email)
+        _click(driver, driver.find_element(By.CSS_SELECTOR, "button[aria-label='Preview order']"))
+        try:
+            _wait(driver).until(_order_preview_ready)
+        except TimeoutException:
+            captured = driver.execute_script(
+                "return (window.__p0bOrders || []).map((item) => ({kind: item.kind, status: item.status}));"
+            )
+            pytest.fail(f"preview was not ready; statuses={captured}")
+        created = _order_summary(driver)
+        if created:
+            pytest.fail("preview posted an order: " + json.dumps({
+                "count": len(created),
+                "statuses": [item["status"] for item in created],
+            }))
+        after_preview = _owner_activity_counts(disposable_api.engine, email)
+        if after_preview != before_preview:
+            pytest.fail("owner activity changed before an order: " + json.dumps({
+                "before": before_preview,
+                "after": after_preview,
+            }))
+        confirm = _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "button[aria-label='Confirm paper order']")))
+        driver.execute_script(
+            """
+            const node = arguments[0];
+            const offset = Array.from(document.querySelectorAll("header, [class*='sticky']")).reduce((max, bar) => {
+              const style = getComputedStyle(bar);
+              const box = bar.getBoundingClientRect();
+              if ((style.position !== "sticky" && style.position !== "fixed") || box.bottom <= 0 || box.top > 0) { return max; }
+              return Math.max(max, box.bottom);
+            }, 0);
+            const box = node.getBoundingClientRect();
+            if (box.top < offset || box.bottom > window.innerHeight) {
+              window.scrollTo(0, Math.max(0, box.top + window.scrollY - offset - 8));
+            }
+            node.focus();
+            """,
+            confirm,
+        )
+        _wait(driver).until(lambda current: current.switch_to.active_element.get_attribute("aria-label") == "Confirm paper order")
+        driver.switch_to.active_element.send_keys(Keys.ENTER)
         try:
             _wait(driver).until(EC.presence_of_element_located((By.XPATH, f"//button[starts-with(@aria-label, 'Cancel {SYMBOL} order ')]")))
         except TimeoutException:
