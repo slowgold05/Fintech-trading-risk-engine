@@ -26,4 +26,4 @@ Codex reviewed `details-desktop`, `details-mobile`, `fills-desktop`, `fills-mobi
 
 This slice adds no application backend, migration, grant, dependency, or policy. Existing migration and grant proofs stay inside isolated CI only. No hosted or development database mutation. No merge, deploy, or AWS change.
 
-The mounted-only unknown-order retry still drops its intent on reload or unmount. That remains a release gate. Next is chart-to-ticket symbol-only integration, then watchlists. P1 provider, calendar, and ingestion stay open. Remaining P3-A, P4 and later, and the core release gate stay open.
+The mounted-only unknown-order retry still drops its intent on reload or unmount. That remains a release gate. Next is chart-to-ticket symbol-only integration, then watchlists. P1 provider, calendar, and ingestion stay open. Remaining P3-A, P4 and later, and the core release gate stay open. Chart-to-ticket symbol-only integration, named as next at this revision, is now accepted in [P3B_CHART_TICKET_VERIFICATION.md](P3B_CHART_TICKET_VERIFICATION.md).
