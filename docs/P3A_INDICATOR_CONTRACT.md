@@ -34,7 +34,7 @@ This document does not authorize any of the following, and an implementation of 
 - Weakening `read_symbol_history` eligibility, status codes, or validation messages.
 - Filling missing session dates, resetting the recurrence across a gap, or treating N as a count of exchange sessions.
 
-`coverage_status` remains the history value `not_verified`. `expected_session_count` remains `null`. `collection` remains the history value. This slice must not claim a verified exchange calendar or a complete two-year series.
+`coverage_status` and `expected_session_count` are copied verbatim from the single history read. As of the reviewed exchange calendar (see [P1C_EXCHANGE_CALENDAR_VERIFICATION.md](P1C_EXCHANGE_CALENDAR_VERIFICATION.md)), those history values are real comparisons against the standard NYSE annual schedule, not always `not_verified`/`null` as when this slice was first written. `collection` remains the history value. This slice must not claim a complete two-year series beyond what the calendar comparison states, and the calendar itself does not claim coverage of ad hoc closures.
 
 ## 3. Route
 
@@ -168,8 +168,8 @@ HTTP 200 body. Identity and metadata below are copied from the single `read_symb
 | `range` | history (`"2y"`) |
 | `provider` | history |
 | `adjustment_type` | history |
-| `coverage_status` | history (`"not_verified"`) |
-| `expected_session_count` | history (`null`) |
+| `coverage_status` | history (see [P1C_EXCHANGE_CALENDAR_VERIFICATION.md](P1C_EXCHANGE_CALENDAR_VERIFICATION.md) for the possible values) |
+| `expected_session_count` | history (integer, or `null` only when `coverage_status` is `"not_verified"`) |
 | `collection` | history |
 | `read_at` | history snapshot clock, unchanged |
 | `requested_start` | history |
@@ -192,7 +192,7 @@ HTTP 200 body. Identity and metadata below are copied from the single `read_symb
 
 The top level of this body has no `bars` array and does not include open, high, low, or volume directly. The additive `history` field nests the complete original history response from that same single read, including its own `bars`, so a client can plot candles and the indicator overlay from one response and one database snapshot instead of issuing or combining two independently fetched reads. This field was added for chart integration (accepted at `c93250bde11ebfafbb4a4f7bb3072ad28f0ac65b`; see [P3A_CHART_INTEGRATION_VERIFICATION.md](P3A_CHART_INTEGRATION_VERIFICATION.md)) and does not change the single-read rule in section 5: `history` is the same dict already returned by that one `read_symbol_history` call, not a second query.
 
-`status` is never `complete`. A long cached series stays `partial` when any value is computed. `coverage_status` stays `not_verified` on that same body.
+`status` is never `complete`. A long cached series stays `partial` when any value is computed. `coverage_status` on that same body reflects the reviewed exchange calendar's comparison, not a fixed value.
 
 ## 8. Status
 

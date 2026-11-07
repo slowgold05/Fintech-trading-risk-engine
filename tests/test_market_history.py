@@ -17,6 +17,7 @@ from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.price_history_daily import PriceHistoryDaily
 from app.models.user import User
+from app.services import exchange_calendar
 from app.services.market_history import (
     read_data_status,
     read_symbol_history,
@@ -270,8 +271,14 @@ def test_legacy_only_symbol_is_unavailable_without_fallback(client, db_session):
     assert body["available_end"] is None
     assert body["excluded_row_count"] == 0
     assert "outside_range_count" not in body
-    assert body["coverage_status"] == "not_verified"
-    assert body["expected_session_count"] is None
+    # No canonical bars were returned for this symbol/provider, so every expected NYSE
+    # trading day in the requested window is missing: the calendar reports "gaps".
+    requested_start = date.fromisoformat(body["requested_start"])
+    requested_end = date.fromisoformat(body["requested_end"])
+    assert body["coverage_status"] == "gaps"
+    assert body["expected_session_count"] == exchange_calendar.expected_session_count(
+        requested_start, requested_end
+    )
     serialized = json.dumps(body)
     assert "99.125" not in serialized
     assert "77.25" not in serialized
@@ -481,9 +488,100 @@ def test_leap_day_bounds_and_requested_window(client, db_session, monkeypatch):
     assert "outside_range_count" not in body
     assert "4.000000" not in json.dumps(body["bars"])
     assert "7.000000" not in json.dumps(body["bars"])
+    # Only 2 of the many expected NYSE trading days in this ~2-year window were returned
+    # (both are themselves real trading days, so none are "unexpected"): the calendar
+    # reports "gaps".
+    assert body["coverage_status"] == "gaps"
+    assert body["expected_session_count"] == exchange_calendar.expected_session_count(start, end)
+    assert body["status"] == "partial"
+
+
+def test_coverage_status_complete_when_every_expected_session_is_present(client, db_session, monkeypatch):
+    end = date(2026, 6, 15)
+    _pin_clock(monkeypatch, datetime(2026, 6, 15, 16, 0))
+    start = two_calendar_years_before(end)
+    _symbol(db_session, "FULL")
+    fetched = _aware(datetime(2026, 6, 15, 10, 0))
+    expected = exchange_calendar.expected_session_dates(start, end)
+    for day in expected:
+        _bar(db_session, "FULL", day, fetched_at=fetched, close_price=Decimal("1.000000"))
+    db_session.commit()
+
+    response = client.get("/market/symbols/FULL/history", params=_history_params())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "partial"
+    assert body["coverage_status"] == "complete"
+    assert body["expected_session_count"] == len(expected)
+    assert len(body["bars"]) == len(expected)
+
+
+def test_coverage_status_unexpected_sessions_when_bar_on_non_trading_day(client, db_session, monkeypatch):
+    end = date(2026, 6, 15)
+    _pin_clock(monkeypatch, datetime(2026, 6, 15, 16, 0))
+    start = two_calendar_years_before(end)
+    _symbol(db_session, "STRAY")
+    fetched = _aware(datetime(2026, 6, 15, 10, 0))
+    expected = exchange_calendar.expected_session_dates(start, end)
+    for day in expected:
+        _bar(db_session, "STRAY", day, fetched_at=fetched, close_price=Decimal("1.000000"))
+    # 2026-06-13 is a Saturday within [start, end]: confirmed non-trading, and not in `expected`.
+    non_trading_day = date(2026, 6, 13)
+    assert exchange_calendar.is_nyse_trading_day(non_trading_day) is False
+    assert non_trading_day not in expected
+    _bar(db_session, "STRAY", non_trading_day, fetched_at=fetched, close_price=Decimal("1.000000"))
+    db_session.commit()
+
+    response = client.get("/market/symbols/STRAY/history", params=_history_params())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["coverage_status"] == "unexpected_sessions"
+    assert body["expected_session_count"] == len(expected)
+    assert len(body["bars"]) == len(expected) + 1
+
+
+def test_coverage_status_gaps_and_unexpected_sessions_combined(client, db_session, monkeypatch):
+    end = date(2026, 6, 15)
+    _pin_clock(monkeypatch, datetime(2026, 6, 15, 16, 0))
+    start = two_calendar_years_before(end)
+    _symbol(db_session, "MIXED")
+    fetched = _aware(datetime(2026, 6, 15, 10, 0))
+    expected = exchange_calendar.expected_session_dates(start, end)
+    # Omit the very first expected day (a gap), and add a bar on a confirmed non-trading
+    # Saturday (an unexpected session).
+    missing_day = expected[0]
+    for day in expected[1:]:
+        _bar(db_session, "MIXED", day, fetched_at=fetched, close_price=Decimal("1.000000"))
+    non_trading_day = date(2026, 6, 13)
+    assert exchange_calendar.is_nyse_trading_day(non_trading_day) is False
+    _bar(db_session, "MIXED", non_trading_day, fetched_at=fetched, close_price=Decimal("1.000000"))
+    db_session.commit()
+
+    response = client.get("/market/symbols/MIXED/history", params=_history_params())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["coverage_status"] == "gaps_and_unexpected_sessions"
+    assert body["expected_session_count"] == len(expected)
+    returned_dates = {bar["session_date"] for bar in body["bars"]}
+    assert missing_day.isoformat() not in returned_dates
+    assert non_trading_day.isoformat() in returned_dates
+
+
+def test_coverage_status_falls_back_to_not_verified_outside_calendar_range(client, db_session, monkeypatch):
+    # The calendar supports 1990-2035. Pin the clock past that range so the requested
+    # window itself falls outside it, forcing the documented ValueError fallback.
+    clock = datetime(2036, 6, 15, 16, 0)
+    _pin_clock(monkeypatch, clock)
+    _symbol(db_session, "FUTURE")
+    db_session.commit()
+    with pytest.raises(ValueError):
+        exchange_calendar.expected_session_dates(two_calendar_years_before(clock.date()), clock.date())
+
+    response = client.get("/market/symbols/FUTURE/history", params=_history_params())
+    assert response.status_code == 200
+    body = response.json()
     assert body["coverage_status"] == "not_verified"
     assert body["expected_session_count"] is None
-    assert body["status"] == "partial"
 
 
 def test_history_query_fetches_only_the_requested_window(client, db_session, monkeypatch):
