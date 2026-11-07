@@ -1,6 +1,6 @@
 # P3A — Cached daily SMA/EMA indicator contract
 
-**Status:** Scope reviewed by Codex. Implementation is under review, pending CI. This file is not an acceptance record and does not claim phase completion.
+**Status:** Backend code accepted by Grok at `770ced43a7ab27c993ed266b72ddc9768061ce5f`. Evidence: [P3A_INDICATOR_VERIFICATION.md](P3A_INDICATOR_VERIFICATION.md). This file is the contract for that backend read. It is not a phase-completion record. Chart integration and other indicators stay open.
 
 **Authority:** `Sentinel_Markets_2_0_Roadmap.md` Phase 3 (advanced charting: SMA and EMA only, as the next backend slice) and the public reader `read_symbol_history` in `app/services/market_history.py`, exposed today as `GET /market/symbols/{symbol}/history`.
 
@@ -288,4 +288,4 @@ The intended shape is a thin service, for example `read_symbol_indicators(...)`,
 
 It should import and call the public history function. Copying `_symbol_history`’s SQL, clock read, or eligibility would be a second snapshot and is outside this proposal.
 
-Scope was reviewed by Codex. The service, route, and tests are under review pending CI. This is not an acceptance record and does not claim phase completion.
+Backend code at `770ced43a7ab27c993ed266b72ddc9768061ce5f` is accepted. Evidence: [P3A_INDICATOR_VERIFICATION.md](P3A_INDICATOR_VERIFICATION.md). This contract is not a phase-completion record. Chart integration and other indicators stay open.
