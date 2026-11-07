@@ -1,8 +1,10 @@
 """Cached canonical history and public market-data status.
 
 Reads use one database snapshot and the existing quote-freshness policy.
-No provider is called and nothing is written. Coverage is not a claim that
-an exchange calendar or a two-year series has been verified.
+No provider is called and nothing is written. Top-level coverage stays
+not_verified: series spans differ, so there is no single aggregate.
+Each canonical series compares its own stored span with the local NYSE
+calendar. That comparison is not a claim that two years of sessions exist.
 """
 
 from datetime import date, datetime, timezone
@@ -138,9 +140,14 @@ def _data_status(db: Session) -> dict:
         .group_by(MarketBarDaily.provider, MarketBarDaily.adjustment_type)
         .order_by(MarketBarDaily.provider.asc(), MarketBarDaily.adjustment_type.asc())
     ).all()
+    # Distinct sessions, any quality_status. Same row scope as the span min/max above.
+    session_rows = db.execute(
+        select(MarketBarDaily.provider, MarketBarDaily.adjustment_type, MarketBarDaily.session_date)
+        .distinct()
+    ).all()
     legacy_count = db.execute(select(func.count()).select_from(PriceHistoryDaily)).scalar_one()
     quote_census = _quote_census(db, clock)
-    canonical = _canonical_history(quality_rows, span_rows)
+    canonical = _canonical_history(quality_rows, span_rows, session_rows)
 
     return {
         "read_at": _iso_z(clock),
@@ -214,23 +221,32 @@ def _quote_census(db: Session, clock: datetime) -> dict:
     }
 
 
-def _canonical_history(quality_rows, span_rows) -> dict:
+def _empty_canonical_series(provider: str, adjustment_type: str) -> dict:
+    return {
+        "provider": provider,
+        "adjustment_type": adjustment_type,
+        "row_count": 0,
+        "quality_counts": {name: 0 for name in QUALITY_STATUSES},
+        "symbol_count": 0,
+        "stored_session_start": None,
+        "stored_session_end": None,
+        "coverage_status": COVERAGE_STATUS,
+        "expected_session_count": None,
+    }
+
+
+def _canonical_history(quality_rows, span_rows, session_rows) -> dict:
     series: dict[tuple[str, str], dict] = {}
+    # Date objects for the coverage window, kept beside the ISO text the response publishes.
+    spans: dict[tuple[str, str], tuple[date | None, date | None]] = {}
+    stored_dates: dict[tuple[str, str], set[date]] = {}
     totals = {name: 0 for name in QUALITY_STATUSES}
     row_count = 0
     for provider, adjustment_type, quality_status, count in quality_rows:
         count = int(count)
         entry = series.setdefault(
             (provider, adjustment_type),
-            {
-                "provider": provider,
-                "adjustment_type": adjustment_type,
-                "row_count": 0,
-                "quality_counts": {name: 0 for name in QUALITY_STATUSES},
-                "symbol_count": 0,
-                "stored_session_start": None,
-                "stored_session_end": None,
-            },
+            _empty_canonical_series(provider, adjustment_type),
         )
         entry["row_count"] += count
         row_count += count
@@ -240,21 +256,28 @@ def _canonical_history(quality_rows, span_rows) -> dict:
         totals[quality_status] += count
 
     for provider, adjustment_type, symbol_count, session_start, session_end in span_rows:
-        entry = series.setdefault(
-            (provider, adjustment_type),
-            {
-                "provider": provider,
-                "adjustment_type": adjustment_type,
-                "row_count": 0,
-                "quality_counts": {name: 0 for name in QUALITY_STATUSES},
-                "symbol_count": 0,
-                "stored_session_start": None,
-                "stored_session_end": None,
-            },
-        )
+        key = (provider, adjustment_type)
+        entry = series.setdefault(key, _empty_canonical_series(provider, adjustment_type))
         entry["symbol_count"] = int(symbol_count or 0)
-        entry["stored_session_start"] = _date_text(session_start) if session_start is not None else None
-        entry["stored_session_end"] = _date_text(session_end) if session_end is not None else None
+        start_text = _date_text(session_start) if session_start is not None else None
+        end_text = _date_text(session_end) if session_end is not None else None
+        entry["stored_session_start"] = start_text
+        entry["stored_session_end"] = end_text
+        spans[key] = (
+            date.fromisoformat(start_text) if start_text is not None else None,
+            date.fromisoformat(end_text) if end_text is not None else None,
+        )
+
+    for provider, adjustment_type, session_date in session_rows:
+        key = (provider, adjustment_type)
+        series.setdefault(key, _empty_canonical_series(provider, adjustment_type))
+        stored_dates.setdefault(key, set()).add(date.fromisoformat(_date_text(session_date)))
+
+    for key, entry in series.items():
+        start_date, end_date = spans.get(key, (None, None))
+        status, expected_count = _series_coverage(start_date, end_date, stored_dates.get(key, set()))
+        entry["coverage_status"] = status
+        entry["expected_session_count"] = expected_count
 
     return {
         "row_count": row_count,
@@ -349,6 +372,18 @@ def _symbol_history(
     }
 
 
+def _coverage_status_from_dates(expected: set[date], actual: set[date]) -> str:
+    missing = expected - actual
+    extra = actual - expected
+    if not missing and not extra:
+        return "complete"
+    if missing and not extra:
+        return "gaps"
+    if extra and not missing:
+        return "unexpected_sessions"
+    return "gaps_and_unexpected_sessions"
+
+
 def _coverage(start: date, end: date, bars: list[dict]) -> tuple[str, int | None]:
     """Compare returned sessions against the reviewed NYSE calendar for [start, end].
 
@@ -363,19 +398,21 @@ def _coverage(start: date, end: date, bars: list[dict]) -> tuple[str, int | None
         return COVERAGE_STATUS, None
 
     returned_dates = {date.fromisoformat(bar["session_date"]) for bar in bars}
-    missing = expected_dates - returned_dates
-    extra = returned_dates - expected_dates
+    return _coverage_status_from_dates(expected_dates, returned_dates), len(expected_dates)
 
-    if not missing and not extra:
-        status = "complete"
-    elif missing and not extra:
-        status = "gaps"
-    elif extra and not missing:
-        status = "unexpected_sessions"
-    else:
-        status = "gaps_and_unexpected_sessions"
 
-    return status, len(expected_dates)
+def _series_coverage(start: date | None, end: date | None, stored_dates: set[date]) -> tuple[str, int | None]:
+    """Same comparison as _coverage, but against one canonical_history series' own
+    stored span and its own distinct stored session dates (any quality_status — this
+    mirrors how stored_session_start/stored_session_end already span every row, not
+    just "valid" ones)."""
+    if start is None or end is None:
+        return COVERAGE_STATUS, None
+    try:
+        expected_dates = set(exchange_calendar.expected_session_dates(start, end))
+    except ValueError:
+        return COVERAGE_STATUS, None
+    return _coverage_status_from_dates(expected_dates, stored_dates), len(expected_dates)
 
 
 def _invalid_quote(price, quote_at, fetched_at, clock: datetime) -> bool:

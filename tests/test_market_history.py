@@ -796,6 +796,145 @@ def test_data_status_denominators_reconcile_and_invalid_quotes_are_not_fresh(cli
     assert history["row_count"] == 4
 
 
+def _status_week():
+    """Monday 2024-06-03 through Friday 2024-06-07. No NYSE holiday falls in this week."""
+    start = date(2024, 6, 3)
+    end = date(2024, 6, 7)
+    expected = exchange_calendar.expected_session_dates(start, end)
+    assert expected == [
+        date(2024, 6, 3),
+        date(2024, 6, 4),
+        date(2024, 6, 5),
+        date(2024, 6, 6),
+        date(2024, 6, 7),
+    ]
+    return start, end, expected
+
+
+def _seed_status_bars(db, symbol, days, *, provider, adjustment="raw", quality="valid"):
+    fetched = _aware(_utc_now() - timedelta(hours=2))
+    for day in days:
+        _bar(
+            db, symbol, day,
+            provider=provider, adjustment=adjustment, quality=quality, fetched_at=fetched,
+        )
+
+
+def _assert_top_level_coverage_unchanged(body):
+    assert body["coverage_status"] == "not_verified"
+    assert body["expected_session_count"] is None
+
+
+def _data_status_series(client):
+    response = client.get("/market/data-status")
+    assert response.status_code == 200
+    body = response.json()
+    series = {
+        (item["provider"], item["adjustment_type"]): item
+        for item in body["canonical_history"]["series"]
+    }
+    return body, series
+
+
+def test_data_status_series_coverage_complete(client, db_session):
+    _start, _end, expected = _status_week()
+    _symbol(db_session, "AAPL")
+    # Friday is flagged on purpose. Series coverage counts every stored session, not only "valid".
+    _seed_status_bars(db_session, "AAPL", expected[:-1], provider="fixture", adjustment="raw")
+    _seed_status_bars(db_session, "AAPL", expected[-1:], provider="fixture", adjustment="raw", quality="flagged")
+    db_session.commit()
+
+    body, series = _data_status_series(client)
+    item = series[("fixture", "raw")]
+    assert item["coverage_status"] == "complete"
+    assert item["expected_session_count"] == len(expected)
+    assert item["stored_session_start"] == expected[0].isoformat()
+    assert item["stored_session_end"] == expected[-1].isoformat()
+    assert item["quality_counts"]["flagged"] == 1
+    _assert_top_level_coverage_unchanged(body)
+
+
+def test_data_status_series_coverage_gaps(client, db_session):
+    _start, _end, expected = _status_week()
+    missing = expected[2]
+    _symbol(db_session, "AAPL")
+    _seed_status_bars(
+        db_session, "AAPL", [day for day in expected if day != missing],
+        provider="fixture", adjustment="raw",
+    )
+    db_session.commit()
+
+    body, series = _data_status_series(client)
+    item = series[("fixture", "raw")]
+    assert item["coverage_status"] == "gaps"
+    assert item["expected_session_count"] == len(expected)
+    assert item["stored_session_start"] == expected[0].isoformat()
+    assert item["stored_session_end"] == expected[-1].isoformat()
+    _assert_top_level_coverage_unchanged(body)
+
+
+def test_data_status_series_coverage_unexpected_sessions(client, db_session):
+    _start, _end, expected = _status_week()
+    saturday = date(2024, 6, 8)
+    assert saturday.weekday() == 5
+    assert exchange_calendar.is_nyse_trading_day(saturday) is False
+    assert saturday not in expected
+    _symbol(db_session, "AAPL")
+    _seed_status_bars(db_session, "AAPL", expected, provider="fixture", adjustment="raw")
+    # Rejected on purpose: a non-trading day still counts, at any quality_status.
+    _seed_status_bars(db_session, "AAPL", [saturday], provider="fixture", adjustment="raw", quality="rejected")
+    db_session.commit()
+
+    body, series = _data_status_series(client)
+    item = series[("fixture", "raw")]
+    assert item["coverage_status"] == "unexpected_sessions"
+    assert item["expected_session_count"] == len(exchange_calendar.expected_session_dates(expected[0], saturday))
+    assert item["stored_session_end"] == saturday.isoformat()
+    _assert_top_level_coverage_unchanged(body)
+
+
+def test_data_status_series_coverage_gaps_and_unexpected_sessions(client, db_session):
+    _start, _end, expected = _status_week()
+    missing = expected[2]
+    saturday = date(2024, 6, 8)
+    assert exchange_calendar.is_nyse_trading_day(saturday) is False
+    _symbol(db_session, "AAPL")
+    _seed_status_bars(
+        db_session, "AAPL", [day for day in expected if day != missing],
+        provider="fixture", adjustment="raw",
+    )
+    _seed_status_bars(db_session, "AAPL", [saturday], provider="fixture", adjustment="raw")
+    db_session.commit()
+
+    body, series = _data_status_series(client)
+    item = series[("fixture", "raw")]
+    assert item["coverage_status"] == "gaps_and_unexpected_sessions"
+    assert item["expected_session_count"] == len(exchange_calendar.expected_session_dates(expected[0], saturday))
+    _assert_top_level_coverage_unchanged(body)
+
+
+def test_data_status_series_coverage_stays_independent_across_series(client, db_session):
+    _start, _end, expected = _status_week()
+    missing = expected[2]
+    _symbol(db_session, "AAPL")
+    _seed_status_bars(db_session, "AAPL", expected, provider="fixture", adjustment="raw")
+    _seed_status_bars(
+        db_session, "AAPL", [day for day in expected if day != missing],
+        provider="other", adjustment="raw",
+    )
+    db_session.commit()
+
+    body, series = _data_status_series(client)
+    complete = series[("fixture", "raw")]
+    gaps = series[("other", "raw")]
+    assert complete["coverage_status"] == "complete"
+    assert complete["expected_session_count"] == len(expected)
+    assert gaps["coverage_status"] == "gaps"
+    assert gaps["expected_session_count"] == len(expected)
+    assert complete["coverage_status"] != gaps["coverage_status"]
+    _assert_top_level_coverage_unchanged(body)
+
+
 def test_data_status_query_count_does_not_grow_with_symbols(client, db_session):
     engine = db_session.get_bind()
     assert client.get("/market/data-status").status_code == 200

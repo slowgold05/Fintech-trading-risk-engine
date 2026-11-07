@@ -26,7 +26,7 @@ These window and clock corrections are local source changes. The executed check 
 
 Public. No auth. No account, user, ledger, holding, deployment, Alembic revision, database identity, credential, or provider-key field.
 
-`collection` is `disabled`. That value means canonical-history ingestion is off. It does not describe the existing quote refresh paths, and it is not a request option. `coverage_status` is `not_verified`. `expected_session_count` is null.
+`collection` is `disabled`. That value means canonical-history ingestion is off. It does not describe the existing quote refresh paths, and it is not a request option. The top-level `coverage_status` is `not_verified`. The top-level `expected_session_count` is null. Both stay that way on purpose: series spans differ, so there is no single aggregate. Per-series coverage is on each `canonical_history.series` entry.
 
 ### Populations
 
@@ -53,13 +53,19 @@ A positive price with a null `quote_at` follows the existing `_freshness` rule a
 
 Freshness uses that same snapshot clock. Yahoo and Alpha Vantage keep the calendar-day rule (through 1 day `delayed`, through 7 days `cached`, otherwise `stale`). Any other source keeps the tier elapsed-time rule, including `live-ish` for a hot symbol inside the hot interval. The census calls `_freshness` while streaming. The policy is not copied into SQL, so the status route cannot drift from the heatmap rule. The cost is one projection scan of the non-ETF universe. The scan fetches 500 rows at a time, keeps counters only, and does not build a symbol cache. Identical empty quotes are not collapsed.
 
-The statement count does not grow with the symbol count: one snapshot pin (the single `sqlite_master` row on SQLite, or `current_timestamp` on PostgreSQL), one universe count, two canonical aggregates, one legacy count, and one census stream.
+The statement count does not grow with the symbol count: one snapshot pin (the single `sqlite_master` row on SQLite, or `current_timestamp` on PostgreSQL), one universe count, three canonical reads (quality counts, stored span, and distinct session dates), one legacy count, and one census stream.
 
 `status_counts` always has `live-ish`, `delayed`, `cached`, and `stale`.
 
 ### Canonical series
 
-Each series reports `provider`, `adjustment_type`, `row_count`, `quality_counts` (`valid`, `flagged`, `rejected`), `symbol_count`, and the stored session min/max. The stored span includes flagged and rejected rows. It is not an exchange calendar and it is not two-year coverage. An unrecognized quality label fails the status read instead of being filed as valid.
+Each series reports `provider`, `adjustment_type`, `row_count`, `quality_counts` (`valid`, `flagged`, `rejected`), `symbol_count`, the stored session min/max, `coverage_status`, and `expected_session_count`. The stored span includes flagged and rejected rows. An unrecognized quality label fails the status read instead of being filed as valid.
+
+Each series' `coverage_status` and `expected_session_count` use the same comparison as `GET /market/symbols/{symbol}/history`, against that series' own `stored_session_start`/`stored_session_end` and its own distinct stored `session_date` values. Those dates are not limited to `quality_status` `"valid"`. Flagged and rejected rows count, the same scope as the stored span. `coverage_status` is `"complete"`, `"gaps"`, `"unexpected_sessions"`, `"gaps_and_unexpected_sessions"`, or `"not_verified"` when the span is missing or outside the calendar's supported range. `expected_session_count` is the number of expected sessions in that span, or null when coverage is `"not_verified"`. A `"complete"` series matches the calendar across its own stored span. It is not a claim that two years of sessions exist.
+
+The top-level `coverage_status` and `expected_session_count` remain `"not_verified"` and null unconditionally. Series can have different spans, so there is still no single aggregate value. That is deliberate, not an oversight.
+
+No migration, grant, provider, or frontend change is part of this unit. The frontend type for `canonical_history.series` entries will be widened in a separate small follow-up.
 
 `canonical_history.row_count` equals the sum of the quality counts and the sum of the series row counts. It does not include `legacy_price_history_daily.row_count`.
 
@@ -93,7 +99,7 @@ The primary key is one row per symbol, session, provider, and adjustment, so the
 
 `available_start` and `available_end` are the first and last returned session, or null when there are no bars. `requested_start` and `requested_end` are the window. `status` is `unavailable` or `partial`. It is never `complete`. `coverage_status` is `not_verified`. `expected_session_count` is null. `collection` is `disabled` with the same meaning as on data-status: canonical-history ingestion is off, not quote refresh.
 
-## Reviewed exchange calendar (per-symbol history only)
+## Reviewed exchange calendar
 
 `GET /market/symbols/{symbol}/history` now compares its returned sessions against a reviewed,
 local NYSE trading-day calendar (`app/services/exchange_calendar.py`; see
@@ -106,10 +112,13 @@ The calendar models the standard annual NYSE holiday schedule only; it does not 
 hoc closures such as September 11, 2001, or weather/system outages, so a `"complete"` result is
 a calendar-schedule comparison, not a claim of total historical accuracy.
 
-`GET /market/data-status` is **not** changed by this. Its `coverage_status` stays `"not_verified"`
-and `expected_session_count` stays `null` unconditionally, because that route has no single
-symbol's stored sessions to compare against a window; this is a deferred, separate unit, not
-an oversight.
+`GET /market/data-status` still has no single window. Its top-level `coverage_status` stays
+`"not_verified"` and its top-level `expected_session_count` stays null unconditionally. That is
+deliberate: series can span different dates, and there is no one aggregate that would mean the
+same thing for every series. Each `canonical_history.series` entry reports its own
+`coverage_status` and `expected_session_count` for that series' stored span. See Canonical series
+above. No migration, grant, provider, or frontend change is part of that per-series reporting.
+The frontend type for those series entries will be widened in a separate small follow-up.
 
 ## What this unit does not do
 
