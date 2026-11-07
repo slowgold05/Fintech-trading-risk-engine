@@ -1,8 +1,6 @@
 # P3-B next unit: GET /orders/{order_id}
 
-Initial local-review record; not accepted. CI and PostgreSQL execution are pending. The first draft PR will record its revision and CI evidence. Full P3-B stays open. This note does not accept the unit or any phase.
-
-Branch `codex/v2-order-detail-20261106` is based on PR 19 final `92b6b92900e5789c4a35697016dc5a5b69f3fa90`. PR 19 is READY: all seven jobs passed on documentation CI `42328643341`. Accepted code `90074df` and CI `42327832410` stay historical.
+Accepted backend read. Evidence: [P3B_DETAIL_VERIFICATION.md](P3B_DETAIL_VERIFICATION.md). Code `792aab73061fce3ced67fc03e7150e5e208b8d19` on `codex/v2-order-detail-20261106`. Draft [PR 20](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/20), stacked on PR 19. [CI 42330081496](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42330081496) passed all 7 jobs. Full P3-B stays open. This note does not accept lifecycle UI, the cancel-versus-fill race, or any phase. PR 19 remains the accepted ticket base (`90074df`, CI `42327832410`).
 
 ## Scope
 
@@ -30,14 +28,14 @@ The order row, count, and page in one response share that snapshot. A later requ
 
 Each fill: `trade_id`, `quantity` (6), `execution_price` (6, `price_at_execution`), `notional` (2, existing `notional_amount`: cent, `ROUND_HALF_UP`, prec 50; `1.000000 * 10.005000` is `10.01`), `realized_pnl` (2, stored column, not recomputed), `executed_at` UTC `Z`. No `realized_pnl_pct`.
 
-## Acceptance under verification
+## Verified acceptance
 
-Fresh open, no fills. Open partial. Filled. Market canceled with zero fills, and market canceled after a partial. Limit canceled after a partial. Own versus other user versus unknown id versus 401; the two misses share one 404 body. Null `Trade.order_id` excluded. Counterparty trade excluded when `order_id` is this order; both owner filters always apply, and no counterparty id is returned. Absent `after_id` allowed. Two requests over unchanged fixtures return consecutive nonoverlapping pages; each request has its own snapshot, and new fills can change later totals. `limit` and `after_id` `<= 0` or non-integer are 422. A positive cursor that matches no owned fill returns an empty page without a lookup leak. Same response: order, `total_fill_count`, and page agree. A second request may observe new fills. Half-cent per-fill rounding, large 6-decimal values, true zero as `0.000000` / `0.00`. Timestamps match `YYYY-MM-DDTHH:MM:SSZ` with fractional seconds when the source has them, always suffixed `Z`. Read-only SQL and unchanged sequences. On isolated PostgreSQL, a commit after the snapshot starts stays invisible in that response. No provider, execution, or MFA calls.
+Fresh open, no fills. Open partial. Filled. Market canceled with zero fills, and market canceled after a partial. Limit canceled after a partial. Own versus other user versus unknown id versus 401; the two misses share one 404 body. Null `Trade.order_id` excluded. Counterparty trade excluded when `order_id` is this order; both owner filters always apply, and no counterparty id is returned. Absent `after_id` allowed. Two requests over unchanged fixtures return consecutive nonoverlapping pages; each request has its own snapshot, and new fills can change later totals. `limit` and `after_id` `<= 0` or non-integer are 422. A positive cursor that matches no owned fill returns an empty page without a lookup leak. Same response: order, `total_fill_count`, and page agree. A second request may observe new fills. Half-cent per-fill rounding, large 6-decimal values, true zero as `0.000000` / `0.00`. Timestamps match `YYYY-MM-DDTHH:MM:SSZ` with fractional seconds when the source has them, always suffixed `Z`. Read-only SQL and unchanged sequences. On isolated PostgreSQL, a commit after the snapshot starts stays invisible in that response. These cases are verified in [P3B_DETAIL_VERIFICATION.md](P3B_DETAIL_VERIFICATION.md), except the separate cancel-versus-fill race below. No provider, execution, or MFA calls.
 
 `cancel_order` locks `MarketSymbol`, then the user, then the order, and returns 409 when status is not `open`. This note does not verify a concurrent PostgreSQL proof of that race and does not claim it tested. This GET does not take those locks.
 
 ## Paths
 
-Actual scope of this local-review unit: `app/routers/orders.py` adds `get_order_detail` only. New tests are `tests/test_order_detail.py` and `tests/test_order_detail_postgres.py`. `notional_amount` is called as-is; `app/services/trade_execution.py` is not edited. `app/core/read_snapshot.py`, models, `app/services/order_book.py`, matching, cash, auth roles, migrations, grants, and dependencies stay unchanged. Legacy list, create, cancel, preview, book, and immediate trade paths stay unchanged.
+Actual scope of this accepted backend unit: `app/routers/orders.py` adds `get_order_detail` only. New tests are `tests/test_order_detail.py` and `tests/test_order_detail_postgres.py`. `notional_amount` is called as-is; `app/services/trade_execution.py` is not edited. `app/core/read_snapshot.py`, models, `app/services/order_book.py`, matching, cash, auth roles, migrations, grants, and dependencies stay unchanged. Legacy list, create, cancel, preview, book, and immediate trade paths stay unchanged.
 
 A cancel-versus-fill race proof is a separate future unit. The detail snapshot test does not prove it.
