@@ -1,6 +1,6 @@
 # P3-B watchlist contract (planned)
 
-Status: approved backend-first spec on branch `codex/v2-watchlists-backend-20261107`. PR 22 handoff is READY at `9f46e49` (CI `42356944574`, all 7 checks). The watchlist backend is written in the working tree and under review, not accepted. An approved spec is not backend acceptance. App PostgreSQL concurrency and migration role proofs are still pending CI. UI is a later unit and is not implemented. Full P3-B and phase acceptance stay open. No merge and no deploy.
+Status: backend accepted on `codex/v2-watchlists-backend-20261107` at `31333a319e5a0104dacbf8ff1dfa4be2059513c6`. Evidence: [P3B_WATCHLIST_VERIFICATION.md](P3B_WATCHLIST_VERIFICATION.md). Code CI [42358277720](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42358277720) succeeded on all 7 jobs. Draft PR 23, stacked on PR 22, stays pending final documentation-head CI. That accepted code CI is not the later documentation head. UI is a later unit and is not implemented. Full P3-B and phase acceptance stay open. No merge and no deploy.
 
 This unit adds persistent user-owned watchlists. It does not add prices, provider links, forecasts, orders, or research payloads. Later UI may link an owned symbol string to existing market and order clients.
 
