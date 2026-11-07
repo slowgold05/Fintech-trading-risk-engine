@@ -111,6 +111,30 @@ means there before changing it.
 - `docs/P1C_DATA_CONTRACT.md`, `docs/P3A_INDICATOR_CONTRACT.md`: updated to describe the new
   per-symbol values; `data-status` sections explicitly left stating the unchanged behavior.
 
+## Corrections found during browser verification
+
+Two issues surfaced only once this unit's own CI ran, both fixed on the same branch before
+this unit was accepted:
+
+1. **UI display bug** (`frontend/src/components/DailyHistory.tsx`): the "Coverage" row in the
+   Daily price history card hardcoded the display text `"Not verified"` regardless of the
+   actual `coverage_status` value, so a genuinely `"complete"` or `"gaps"` result would still
+   show as unverified to the user — the exact kind of misleading-data problem this project's
+   workflow guide warns against. Fixed with a label mapping for all five values, an added
+   "Expected sessions" row, and a new frontend test (`DailyHistory.test.tsx`) that asserts a
+   non-default `coverage_status` actually renders, not just that the old default still works.
+2. **Stale browser-test literal** (`tests/browser/test_p3a_history.py::test_cached_daily_chart`):
+   the fixture stores only 2 of the many expected trading days in the 2-year window, so the
+   calendar now reports `"Gaps"` (or `"Gaps and unexpected sessions"` if a fixture date happens
+   to land on a non-trading day) instead of the old `"Not verified"`. Fixed by computing the
+   expected label from `app.services.exchange_calendar` directly in the test, since the fixture
+   dates are relative to `datetime.now()` at test-run time and not fixed — the same reasoning
+   applied to the per-unit backend tests above, not a re-hardcoded literal.
+
+A third browser failure (`test_p3b_watchlists_ui.py::test_private_watchlists_ui`,
+`StaleElementReferenceException`) was confirmed as an unrelated flake by rerunning the same CI
+head: the rerun passed with no source change, and this unit does not touch watchlists code.
+
 ## Verification run, 2026-11-07
 
 Local environment: Python 3.14.6, `AUDIT_DATABASE_URL` unset (SQLite). Node/npm per
@@ -125,10 +149,14 @@ Local environment: Python 3.14.6, `AUDIT_DATABASE_URL` unset (SQLite). Node/npm 
   SQLite-file-locking environment issue, not something this change introduced, and the CI
   `backend` job runs on Linux against PostgreSQL where this path is not exercised the same way).
 - Frontend: `npm run lint` clean, `npx tsc -b --noEmit` clean, `npm run test` (Vitest):
-  **300 passed (300), 26 test files passed (26)** — unchanged from before this unit, since the
-  new validator is a strict superset of the old behavior (the old `"not_verified"`/`null`
-  default case is still accepted). `npm run build`: succeeds, same pre-existing ~566 kB main
-  bundle size warning as before.
+  **301 passed (301), 26 test files passed (26)** after the Coverage-display fix (+1 for the new
+  non-default-`coverage_status` rendering test). `npm run build`: succeeds, same pre-existing
+  ~566 kB main bundle size warning as before.
+- CI on the final head (`62e5e32`): [run 42396697276](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42396697276)
+  passed all 7 jobs after one rerun of the `browser` job, which failed once on the confirmed
+  unrelated watchlist flake described above and passed clean on rerun with no source change.
+  `browser`: 10 passed, 1 hosted excluded, matching PR 26's baseline exactly (no browser test
+  count change — one existing test was corrected, none added or removed).
 
 This does not close full P3-A (other indicators, chart modes, timeframes, volume, preferences)
 or P1-C (provider ingestion remains gated by a written provider decision; `data-status`'s
