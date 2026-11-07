@@ -133,7 +133,9 @@ def _symbol_order_count(engine) -> int:
         if connection.execute(text("SELECT current_database()")).scalar() != h.DISPOSABLE_DATABASE:
             pytest.fail("refusing to read orders outside the disposable browser database")
         return int(connection.execute(
-            text("SELECT COUNT(*) FROM orders WHERE symbol = :symbol"), {"symbol": SYMBOL},
+            text(
+                "SELECT COUNT(*) FROM orders o JOIN assets a ON a.id = o.asset_id WHERE a.symbol = :symbol"
+            ), {"symbol": SYMBOL},
         ).scalar() or 0)
 
 
@@ -145,8 +147,10 @@ def _owner_order(engine, email: str) -> dict | None:
             text(
                 """
                 SELECT o.id, o.status, o.quantity, o.remaining_quantity, o.limit_price, o.side, o.order_type
-                FROM orders o JOIN users u ON u.id = o.user_id
-                WHERE u.email = :email AND o.symbol = :symbol
+                FROM orders o
+                JOIN users u ON u.id = o.user_id
+                JOIN assets a ON a.id = o.asset_id
+                WHERE u.email = :email AND a.symbol = :symbol
                 ORDER BY o.id
                 """
             ),
