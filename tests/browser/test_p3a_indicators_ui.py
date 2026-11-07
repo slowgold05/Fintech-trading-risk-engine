@@ -275,6 +275,22 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         assert "Warm-up: the first 3 observed stored closes have no indicator value." in _section(driver).text
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "rsi-desktop.png")
 
+        Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value("macd")
+        assert _section(driver).find_element(
+            By.XPATH, ".//label[@for='daily-history-period']",
+        ).text == "Signal period"
+        macd_draft = _starts(driver)
+        _view(driver)
+        # Only 6 bars are seeded, far short of MACD's fixed 26-close slow period, so this
+        # exercises the insufficient path: confirms the UI accepts "macd" end to end, with no
+        # crash, rather than a fully-warmed-up value (that needs a much longer series).
+        h._wait(driver).until(lambda current: _starts(current)["indicators"] > macd_draft["indicators"])
+        assert "Some of the earliest sessions have no MACD value yet" in _section(driver).text
+        _open_prices(driver)
+        h._wait(driver).until(lambda current: _headers(current)[-1] == "MACD (3)")
+        assert _indicator_cells(driver) == ["Warm-up"] * 6
+        t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "macd-desktop.png")
+
         _fill(driver, MISSING, "none", None)
         _view(driver)
         h._wait(driver).until(lambda current: "This symbol is not in the cached symbol list." in _section(current).text)

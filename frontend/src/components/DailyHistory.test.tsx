@@ -80,6 +80,9 @@ function mountChart() {
     if (options?.priceScaleId === "daily-history-rsi") {
       return { setData: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
+    if (options?.priceScaleId === "daily-history-macd") {
+      return { setData: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
     return { setData };
   });
   mounts.push({ setData, volumeSetData, fitContent, remove, addSeries });

@@ -489,10 +489,117 @@ describe("indicatorOverlay RSI", () => {
     expect(result.line.every((point) => !Object.hasOwn(point, "value"))).toBe(true);
   });
 
-  it("rejects an indicator name other than sma, ema, or rsi", () => {
+  it("rejects an indicator name other than sma, ema, rsi, or macd", () => {
     const values = Array.from({ length: 15 }, (_, index) => (index < 14 ? null : "57.915021"));
-    const body = indicatorBody("macd", 14, values, "partial");
+    const body = indicatorBody("vwap", 14, values, "partial");
 
     expect(() => indicatorOverlay(body, RSI_REQUEST)).toThrow("Indicator name is invalid.");
+  });
+
+  it("still rejects a negative RSI value and a negative close", () => {
+    const values = Array.from({ length: 15 }, (_, index) => (index < 14 ? null : "-1.000000"));
+
+    expect(() => indicatorOverlay(indicatorBody("rsi", 14, values, "partial"), RSI_REQUEST)).toThrow("Price is invalid.");
+    expect(() => historyCandles(dailyPayload([bar({ close: "-1.000000" })]))).toThrow("Price is invalid.");
+  });
+});
+
+type MacdFields = { value: string | null; signal: string | null; histogram: string | null };
+
+function macdBody(period: number, fields: MacdFields[], status: "unavailable" | "insufficient" | "partial") {
+  const dates = indicatorSessions(fields.length);
+  const bars = dates.map((session_date) => bar({ session_date }));
+  const history = dailyPayload(bars);
+  const flat: Record<string, unknown> = { ...history };
+  delete flat.bars;
+  return {
+    ...flat,
+    history,
+    name: "macd",
+    period,
+    source: "observed_valid_closes",
+    session_basis: "not_exchange_sessions",
+    observed_valid_closes: fields.length,
+    status,
+    points: dates.map((session_date, index) => ({
+      session_date,
+      value: fields[index]?.value ?? null,
+      signal: fields[index]?.signal ?? null,
+      histogram: fields[index]?.histogram ?? null,
+    })),
+  };
+}
+
+const MACD_REQUEST = {
+  symbol: "TEST",
+  provider: "fixture",
+  adjustment_type: "raw" as const,
+  name: "macd" as const,
+  period: 9,
+};
+
+describe("indicatorOverlay MACD", () => {
+  it("keeps a real MACD line while signal and histogram are still null", () => {
+    const dates = indicatorSessions(26);
+    const fields = Array.from({ length: 26 }, (_, index) =>
+      index < 25
+        ? { value: null, signal: null, histogram: null }
+        : { value: "0.150000", signal: null, histogram: null },
+    );
+    const result = indicatorOverlay(macdBody(9, fields, "partial"), MACD_REQUEST);
+
+    expect(result.name).toBe("macd");
+    expect(result.status).toBe("partial");
+    expect(result.values[25]).toBe("0.150000");
+    expect(result.line[25]).toEqual({ time: dates[25], value: Number("0.150000") });
+    expect(result.macdSignal).toHaveLength(26);
+    expect(result.macdHistogram).toHaveLength(26);
+    expect(result.macdSignal?.[25]).toEqual({ time: dates[25] });
+    expect(result.macdHistogram?.[25]).toEqual({ time: dates[25] });
+    expect(result.macdSignal?.[25]).not.toHaveProperty("value");
+    expect(result.macdHistogram?.[25]).not.toHaveProperty("value");
+    expect(result.macdHistogram?.every((point) => !Object.hasOwn(point, "color"))).toBe(true);
+    expect(result.line.slice(0, 25).every((point) => !Object.hasOwn(point, "value"))).toBe(true);
+  });
+
+  it("accepts negative and zero MACD readings without coloring the histogram", () => {
+    const dates = indicatorSessions(26);
+    const fields: MacdFields[] = Array.from({ length: 26 }, () => ({ value: null, signal: null, histogram: null }));
+    fields[25] = { value: "-0.023577", signal: "0.000000", histogram: "-0.013577" };
+    const result = indicatorOverlay(macdBody(9, fields, "partial"), MACD_REQUEST);
+
+    expect(result.values[25]).toBe("-0.023577");
+    expect(result.line[25]).toEqual({ time: dates[25], value: Number("-0.023577") });
+    expect(result.macdSignal?.[25]).toEqual({ time: dates[25], value: 0 });
+    expect(result.macdHistogram?.[25]).toEqual({ time: dates[25], value: Number("-0.013577") });
+    expect(result.macdHistogram?.[25]).not.toHaveProperty("color");
+  });
+
+  it("uses 26 closes for status and ignores the signal period", () => {
+    const short = Array.from({ length: 25 }, () => ({ value: null, signal: null, histogram: null }));
+    const shortRequest = { ...MACD_REQUEST, period: 9 };
+    const shortResult = indicatorOverlay(macdBody(9, short, "insufficient"), shortRequest);
+    expect(shortResult.status).toBe("insufficient");
+
+    const ready = Array.from({ length: 26 }, (_, index) =>
+      index < 25
+        ? { value: null, signal: null, histogram: null }
+        : { value: "0.100000", signal: null, histogram: null },
+    );
+    const longRequest = { ...MACD_REQUEST, period: 200 };
+    const readyResult = indicatorOverlay(macdBody(200, ready, "partial"), longRequest);
+    expect(readyResult.status).toBe("partial");
+    expect(readyResult.period).toBe(200);
+    expect(() => indicatorOverlay(macdBody(200, ready, "insufficient"), longRequest)).toThrow(
+      "Indicator status is invalid.",
+    );
+  });
+
+  it("does not attach MACD series to an RSI overlay", () => {
+    const values = Array.from({ length: 15 }, (_, index) => (index < 14 ? null : "57.915021"));
+    const result = indicatorOverlay(indicatorBody("rsi", 14, values, "partial"), RSI_REQUEST);
+
+    expect(result.macdSignal).toBeUndefined();
+    expect(result.macdHistogram).toBeUndefined();
   });
 });

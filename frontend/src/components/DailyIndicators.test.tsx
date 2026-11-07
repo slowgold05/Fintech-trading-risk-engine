@@ -34,6 +34,9 @@ type ChartMount = {
   volumeSetData: ReturnType<typeof vi.fn>;
   lineSetData: ReturnType<typeof vi.fn>;
   rsiSetData: ReturnType<typeof vi.fn>;
+  macdLineSetData: ReturnType<typeof vi.fn>;
+  macdSignalSetData: ReturnType<typeof vi.fn>;
+  macdHistogramSetData: ReturnType<typeof vi.fn>;
   fitContent: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
   addSeries: ReturnType<typeof vi.fn>;
@@ -88,11 +91,23 @@ function mountChart() {
   const volumeSetData = vi.fn();
   const lineSetData = vi.fn();
   const rsiSetData = vi.fn();
+  const macdLineSetData = vi.fn();
+  const macdSignalSetData = vi.fn();
+  const macdHistogramSetData = vi.fn();
   const fitContent = vi.fn();
   const remove = vi.fn();
-  const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string }) => {
+  const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string; color?: string }) => {
     if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-rsi") {
       return { setData: rsiSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
+    if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-macd" && options.color === "#60a5fa") {
+      return { setData: macdLineSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
+    if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-macd") {
+      return { setData: macdSignalSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
+    if (kind === chartApi.HistogramSeries && options?.priceScaleId === "daily-history-macd") {
+      return { setData: macdHistogramSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     if (kind === chartApi.LineSeries) return { setData: lineSetData };
     if (kind === chartApi.CandlestickSeries) return { setData: candleSetData };
@@ -101,7 +116,18 @@ function mountChart() {
     }
     throw new Error("Unexpected series.");
   });
-  mounts.push({ candleSetData, volumeSetData, lineSetData, rsiSetData, fitContent, remove, addSeries });
+  mounts.push({
+    candleSetData,
+    volumeSetData,
+    lineSetData,
+    rsiSetData,
+    macdLineSetData,
+    macdSignalSetData,
+    macdHistogramSetData,
+    fitContent,
+    remove,
+    addSeries,
+  });
   return { addSeries, timeScale: () => ({ fitContent }), remove };
 }
 
@@ -132,10 +158,11 @@ function chooseSeries(symbol = "test") {
   fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: RAW_SERIES } });
 }
 
-function chooseIndicator(name: "sma" | "ema" | "rsi" | "none", period?: string) {
+function chooseIndicator(name: "sma" | "ema" | "rsi" | "macd" | "none", period?: string) {
   fireEvent.change(screen.getByRole("combobox", { name: "Indicator" }), { target: { value: name } });
   if (period !== undefined) {
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Period" }), { target: { value: period } });
+    const periodName = name === "macd" ? "Signal period" : "Period";
+    fireEvent.change(screen.getByRole("spinbutton", { name: periodName }), { target: { value: period } });
   }
 }
 
@@ -173,6 +200,24 @@ function rsiPoints(chart: ChartMount) {
   return points as { time: string; value?: number }[];
 }
 
+function macdLinePoints(chart: ChartMount) {
+  const points = chart.macdLineSetData.mock.calls.at(-1)?.[0];
+  if (!Array.isArray(points)) throw new Error("Missing MACD line data.");
+  return points as { time: string; value?: number }[];
+}
+
+function macdSignalPoints(chart: ChartMount) {
+  const points = chart.macdSignalSetData.mock.calls.at(-1)?.[0];
+  if (!Array.isArray(points)) throw new Error("Missing MACD signal data.");
+  return points as { time: string; value?: number }[];
+}
+
+function macdHistogramPoints(chart: ChartMount) {
+  const points = chart.macdHistogramSetData.mock.calls.at(-1)?.[0];
+  if (!Array.isArray(points)) throw new Error("Missing MACD histogram data.");
+  return points as { time: string; value?: number; color?: string }[];
+}
+
 function openSessionPrices() {
   const prices = screen.getByText("Session prices").closest("details");
   if (prices instanceof HTMLDetailsElement && !prices.open) fireEvent.click(screen.getByText("Session prices"));
@@ -185,6 +230,63 @@ function cachedBundle(name: "sma" | "ema" | "rsi", period: number, values: reado
     provider: "fixture",
     adjustment_type: "raw",
     name,
+    period,
+  });
+  return { history: overlay.history, overlay };
+}
+
+type MacdFields = { value: string | null; signal: string | null; histogram: string | null };
+
+const MACD_HISTOGRAM_DOWN = "rgba(251, 113, 133, 0.5)";
+
+function macdDates(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => new Date(Date.UTC(2025, 5, 2 + index)).toISOString().slice(0, 10));
+}
+
+function macdSample(): MacdFields[] {
+  return Array.from({ length: 26 }, (_, index) => {
+    if (index < 24) return { value: null, signal: null, histogram: null };
+    if (index === 24) return { value: "0.150000", signal: null, histogram: null };
+    return { value: "-0.023577", signal: "-0.010000", histogram: "-0.013577" };
+  });
+}
+
+function macdIndicatorPayload(period: number, fields: readonly MacdFields[]) {
+  const dates = macdDates(fields.length);
+  const bars = dates.map((session) => bar(session, "10.000000"));
+  const nested = {
+    ...history(),
+    available_start: dates[0] ?? "2025-06-02",
+    available_end: dates[dates.length - 1] ?? "2025-06-02",
+    bars,
+  };
+  const count = bars.length;
+  const status = count < 26 ? "insufficient" : "partial";
+  return {
+    ...nested,
+    name: "macd" as const,
+    period,
+    source: "observed_valid_closes",
+    observed_valid_closes: count,
+    session_basis: "not_exchange_sessions",
+    status,
+    points: dates.map((session_date, index) => ({
+      session_date,
+      value: fields[index]?.value ?? null,
+      signal: fields[index]?.signal ?? null,
+      histogram: fields[index]?.histogram ?? null,
+    })),
+    history: nested,
+  };
+}
+
+function macdCachedBundle(period: number, fields: readonly MacdFields[]) {
+  const payload = macdIndicatorPayload(period, fields);
+  const overlay = indicatorOverlay(payload, {
+    symbol: "TEST",
+    provider: "fixture",
+    adjustment_type: "raw",
+    name: "macd",
     period,
   });
   return { history: overlay.history, overlay };
@@ -229,6 +331,9 @@ describe("DailyIndicators", () => {
       chartApi.CandlestickSeries,
       chartApi.HistogramSeries,
       chartApi.LineSeries,
+      chartApi.LineSeries,
+      chartApi.LineSeries,
+      chartApi.HistogramSeries,
       chartApi.LineSeries,
     ]);
     const line = linePoints(chart);
@@ -279,7 +384,7 @@ describe("DailyIndicators", () => {
     ]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
-    expect(chart.addSeries).toHaveBeenCalledTimes(4);
+    expect(chart.addSeries).toHaveBeenCalledTimes(7);
     expect(chart.candleSetData).toHaveBeenLastCalledWith(expect.arrayContaining([{ time: DATES[5], open: 7, high: 7, low: 7, close: 7 }]));
     expect(linePoints(chart).at(-1)).toEqual({ time: DATES[5], value: 6 });
     expect(chart.remove).not.toHaveBeenCalled();
@@ -367,6 +472,9 @@ describe("DailyIndicators", () => {
       chartApi.CandlestickSeries,
       chartApi.HistogramSeries,
       chartApi.LineSeries,
+      chartApi.LineSeries,
+      chartApi.LineSeries,
+      chartApi.HistogramSeries,
     ]);
     expect(current.addSeries.mock.calls[2]?.[1]).toMatchObject({ priceScaleId: "daily-history-rsi" });
     expect(current.lineSetData).not.toHaveBeenCalled();
@@ -480,5 +588,108 @@ describe("DailyIndicators", () => {
     await waitFor(() => expect(indicatorApi.fetchDailyIndicators).toHaveBeenCalledTimes(1));
     expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "1y", "sma", 3]]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+  });
+
+  it("plots MACD, its signal, and its histogram on one scale, including a negative value", async () => {
+    await ready();
+    chooseSeries();
+    chooseIndicator("macd", "9");
+    expect(screen.getByRole("spinbutton", { name: "Signal period" })).toHaveAttribute("id", "daily-history-period");
+    const fields = macdSample();
+    indicatorApi.fetchDailyIndicators.mockResolvedValue(macdIndicatorPayload(9, fields));
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = mounts[0];
+    if (chart === undefined) throw new Error("Missing chart.");
+    const macdSeries = chart.addSeries.mock.calls.filter((call) => call[1]?.priceScaleId === "daily-history-macd");
+    expect(macdSeries).toHaveLength(3);
+    expect(macdSeries.map((call) => call[0])).toEqual([
+      chartApi.LineSeries,
+      chartApi.LineSeries,
+      chartApi.HistogramSeries,
+    ]);
+    expect(macdSeries[0]?.[1]).toMatchObject({ color: "#60a5fa" });
+    expect(macdSeries[1]?.[1]).toMatchObject({ color: "#f59e0b" });
+    expect(chart.lineSetData).not.toHaveBeenCalled();
+    expect(rsiPoints(chart)).toEqual([]);
+    const dates = macdDates(fields.length);
+    const line = macdLinePoints(chart);
+    expect(line).toHaveLength(fields.length);
+    expect(line[24]).toEqual({ time: dates[24], value: Number("0.150000") });
+    expect(line[24]).toHaveProperty("value");
+    expect(line.at(-1)).toEqual({ time: dates[25], value: Number("-0.023577") });
+    const signal = macdSignalPoints(chart);
+    expect(signal[24]).toEqual({ time: dates[24] });
+    expect(signal[24]).not.toHaveProperty("value");
+    expect(signal.at(-1)).toEqual({ time: dates[25], value: Number("-0.010000") });
+    expect(macdHistogramPoints(chart).at(-1)).toEqual({
+      time: dates[25],
+      value: Number("-0.013577"),
+      color: MACD_HISTOGRAM_DOWN,
+    });
+    expect(macdHistogramPoints(chart)[24]).toEqual({ time: dates[24] });
+    expect(
+      screen.getByText(
+        "Some of the earliest sessions have no MACD value yet; the signal line and histogram need additional sessions beyond that.",
+      ),
+    ).toBeInTheDocument();
+    openSessionPrices();
+    expect(screen.getByRole("columnheader", { name: "MACD (9)" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "-0.023577" })).toBeInTheDocument();
+    expect(screen.getAllByRole("cell", { name: "Warm-up" })).toHaveLength(24);
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+  });
+
+  it("clears the inactive series when SMA and MACD swap on the same chart", async () => {
+    await ready();
+    chooseSeries();
+    chooseIndicator("sma", "3");
+    indicatorApi.fetchDailyIndicators.mockImplementation((...args: unknown[]) => {
+      if (args[4] === "macd") return Promise.resolve(macdIndicatorPayload(9, macdSample()));
+      return Promise.resolve(indicatorPayload("sma", 3, SMA3));
+    });
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = mounts[0];
+    if (chart === undefined) throw new Error("Missing chart.");
+    expect(linePoints(chart).slice(2).map((point) => point.value)).toEqual(SMA3.slice(2).map(Number));
+    expect(macdLinePoints(chart)).toEqual([]);
+    expect(macdSignalPoints(chart)).toEqual([]);
+    expect(macdHistogramPoints(chart)).toEqual([]);
+    const client = clients[0];
+    if (client === undefined) throw new Error("Missing query client.");
+    const fields = macdSample();
+    client.setQueryData(
+      ["market", "history", "TEST", "fixture", "raw", "1d", "2y", "macd", 9],
+      macdCachedBundle(9, fields),
+    );
+    chooseIndicator("macd", "9");
+    submitForm();
+    openSessionPrices();
+    await waitFor(() => expect(screen.getByRole("columnheader", { name: "MACD (9)" })).toBeInTheDocument());
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    expect(mounts).toHaveLength(1);
+    expect(chart.lineSetData).toHaveBeenLastCalledWith([]);
+    expect(chart.rsiSetData).toHaveBeenLastCalledWith([]);
+    expect(macdLinePoints(chart).at(-1)).toEqual({ time: macdDates(fields.length)[25], value: Number("-0.023577") });
+    expect(macdSignalPoints(chart).at(-1)?.value).toBe(Number("-0.010000"));
+    expect(macdHistogramPoints(chart).at(-1)).toMatchObject({
+      value: Number("-0.013577"),
+      color: MACD_HISTOGRAM_DOWN,
+    });
+    client.setQueryData(
+      ["market", "history", "TEST", "fixture", "raw", "1d", "2y", "sma", 3],
+      cachedBundle("sma", 3, SMA3),
+    );
+    chooseIndicator("sma", "3");
+    submitForm();
+    await waitFor(() => expect(screen.getByRole("columnheader", { name: "SMA (3)" })).toBeInTheDocument());
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    expect(mounts).toHaveLength(1);
+    expect(chart.macdLineSetData).toHaveBeenLastCalledWith([]);
+    expect(chart.macdSignalSetData).toHaveBeenLastCalledWith([]);
+    expect(chart.macdHistogramSetData).toHaveBeenLastCalledWith([]);
+    expect(linePoints(chart).slice(2).map((point) => point.value)).toEqual(SMA3.slice(2).map(Number));
+    expect(chart.remove).not.toHaveBeenCalled();
   });
 });

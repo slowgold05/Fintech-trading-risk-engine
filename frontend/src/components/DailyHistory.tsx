@@ -121,6 +121,67 @@ function addRsiSeries(chart: DailyChart, charts: LightweightChartsModule) {
 
 type RsiSeriesHandle = ReturnType<typeof addRsiSeries>;
 
+/** Same up/down colors as the volume histogram in historyData.ts. */
+const MACD_HISTOGRAM_UP = "rgba(52, 211, 153, 0.5)";
+const MACD_HISTOGRAM_DOWN = "rgba(251, 113, 133, 0.5)";
+
+function addMacdLineSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  const series = chart.addSeries(charts.LineSeries, {
+    color: "#60a5fa",
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    priceScaleId: "daily-history-macd",
+    priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+  });
+  series.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.68 } });
+  return series;
+}
+
+type MacdLineSeriesHandle = ReturnType<typeof addMacdLineSeries>;
+
+function addMacdSignalSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return chart.addSeries(charts.LineSeries, {
+    color: "#f59e0b",
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    priceScaleId: "daily-history-macd",
+    priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+  });
+}
+
+type MacdSignalSeriesHandle = ReturnType<typeof addMacdSignalSeries>;
+
+function addMacdHistogramSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return chart.addSeries(charts.HistogramSeries, {
+    priceScaleId: "daily-history-macd",
+    priceLineVisible: false,
+    lastValueVisible: false,
+    priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+  });
+}
+
+type MacdHistogramSeriesHandle = ReturnType<typeof addMacdHistogramSeries>;
+
+type MacdHistogramPoints = NonNullable<IndicatorOverlay["macdHistogram"]>;
+
+function coloredMacdHistogram(points: MacdHistogramPoints | null): MacdHistogramPoints {
+  if (points === null) {
+    return [];
+  }
+  return points.map((point) => {
+    if (!("value" in point)) {
+      return { time: point.time };
+    }
+    return {
+      time: point.time,
+      value: point.value,
+      color: point.value >= 0 ? MACD_HISTOGRAM_UP : MACD_HISTOGRAM_DOWN,
+    };
+  });
+}
+
 function addVolumeSeries(chart: DailyChart, charts: LightweightChartsModule) {
   const series = chart.addSeries(charts.HistogramSeries, {
     priceFormat: { type: "volume" },
@@ -381,12 +442,13 @@ export function DailyHistory({
                   <option value="sma">SMA</option>
                   <option value="ema">EMA</option>
                   <option value="rsi">RSI</option>
+                  <option value="macd">MACD</option>
                 </select>
               </div>
               {indicatorDraft !== "none" ? (
                 <div className="min-w-0">
                   <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-period">
-                    Period
+                    {indicatorDraft === "macd" ? "Signal period" : "Period"}
                   </label>
                   <input
                     aria-invalid={formError !== null && draftPeriod === null}
@@ -479,9 +541,22 @@ export function DailyHistory({
                 <HistoryFacts meta={accepted.meta} submitted={submitted} />
                 {accepted.overlay ? <IndicatorFacts overlay={accepted.overlay} /> : null}
                 <DailyHistoryCanvas
+                  macdHistogram={
+                    accepted.overlay !== null && accepted.overlay.name === "macd"
+                      ? (accepted.overlay.macdHistogram ?? null)
+                      : null
+                  }
+                  macdLine={accepted.overlay !== null && accepted.overlay.name === "macd" ? accepted.overlay.line : null}
+                  macdSignalLine={
+                    accepted.overlay !== null && accepted.overlay.name === "macd"
+                      ? (accepted.overlay.macdSignal ?? null)
+                      : null
+                  }
                   points={accepted.points}
                   priceScaleLine={
-                    accepted.overlay !== null && accepted.overlay.name !== "rsi" ? accepted.overlay.line : null
+                    accepted.overlay !== null && accepted.overlay.name !== "rsi" && accepted.overlay.name !== "macd"
+                      ? accepted.overlay.line
+                      : null
                   }
                   rsiLine={accepted.overlay !== null && accepted.overlay.name === "rsi" ? accepted.overlay.line : null}
                   volume={accepted.volume}
@@ -584,7 +659,10 @@ function HistoryFacts({ meta, submitted }: { meta: HistoryMeta; submitted: Submi
 
 function IndicatorFacts({ overlay }: { overlay: IndicatorOverlay }) {
   const label = indicatorLabel(overlay);
-  const warmupCount = overlay.name === "rsi" ? overlay.period : overlay.period - 1;
+  const warmupText =
+    overlay.name === "macd"
+      ? "Some of the earliest sessions have no MACD value yet; the signal line and histogram need additional sessions beyond that."
+      : `Warm-up: the first ${overlay.name === "rsi" ? overlay.period : overlay.period - 1} observed stored closes have no indicator value.`;
   return (
     <div className="min-w-0 space-y-1">
       <p className="text-sm text-slate-200">{label} on observed stored closes.</p>
@@ -595,9 +673,7 @@ function IndicatorFacts({ overlay }: { overlay: IndicatorOverlay }) {
         <p className="text-sm text-slate-300">Indicator values are unavailable. No indicator curve is drawn.</p>
       ) : null}
       {overlay.status === "partial" || overlay.status === "insufficient" ? (
-        <p className="text-sm text-slate-300">
-          Warm-up: the first {warmupCount} observed stored closes have no indicator value.
-        </p>
+        <p className="text-sm text-slate-300">{warmupText}</p>
       ) : null}
     </div>
   );
@@ -683,11 +759,17 @@ function DailyHistoryCanvas({
   volume,
   priceScaleLine,
   rsiLine,
+  macdLine,
+  macdSignalLine,
+  macdHistogram,
 }: {
   points: CandlestickData<Time>[];
   volume: HistogramData<Time>[];
   priceScaleLine: IndicatorLine | null;
   rsiLine: IndicatorLine | null;
+  macdLine: IndicatorLine | null;
+  macdSignalLine: IndicatorLine | null;
+  macdHistogram: MacdHistogramPoints | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<DailyChart | null>(null);
@@ -695,11 +777,17 @@ function DailyHistoryCanvas({
   const volumeSeriesRef = useRef<VolumeSeriesHandle | null>(null);
   const lineSeriesRef = useRef<LineSeriesHandle | null>(null);
   const rsiSeriesRef = useRef<RsiSeriesHandle | null>(null);
+  const macdLineSeriesRef = useRef<MacdLineSeriesHandle | null>(null);
+  const macdSignalSeriesRef = useRef<MacdSignalSeriesHandle | null>(null);
+  const macdHistogramSeriesRef = useRef<MacdHistogramSeriesHandle | null>(null);
   const libraryRef = useRef<LightweightChartsModule | null>(null);
   const pointsRef = useRef(points);
   const volumeRef = useRef(volume);
   const priceScaleLineRef = useRef(priceScaleLine);
   const rsiLineRef = useRef(rsiLine);
+  const macdLineRef = useRef(macdLine);
+  const macdSignalLineRef = useRef(macdSignalLine);
+  const macdHistogramRef = useRef(macdHistogram);
   const disposeRef = useRef<(() => void) | null>(null);
   const failedRef = useRef(false);
   const [attempt, setAttempt] = useState(0);
@@ -710,6 +798,9 @@ function DailyHistoryCanvas({
     volumeRef.current = volume;
     priceScaleLineRef.current = priceScaleLine;
     rsiLineRef.current = rsiLine;
+    macdLineRef.current = macdLine;
+    macdSignalLineRef.current = macdSignalLine;
+    macdHistogramRef.current = macdHistogram;
     if (failedRef.current) {
       failedRef.current = false;
       setFailed(false);
@@ -726,12 +817,15 @@ function DailyHistoryCanvas({
       volumeSeriesRef.current?.setData(volume);
       syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, priceScaleLine);
       rsiSeriesRef.current?.setData(rsiLine ?? []);
+      macdLineSeriesRef.current?.setData(macdLine ?? []);
+      macdSignalSeriesRef.current?.setData(macdSignalLine ?? []);
+      macdHistogramSeriesRef.current?.setData(coloredMacdHistogram(macdHistogram));
     } catch {
       disposeRef.current?.();
       failedRef.current = true;
       setFailed(true);
     }
-  }, [points, volume, priceScaleLine, rsiLine]);
+  }, [points, volume, priceScaleLine, rsiLine, macdLine, macdSignalLine, macdHistogram]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -754,6 +848,9 @@ function DailyHistoryCanvas({
       volumeSeriesRef.current = null;
       lineSeriesRef.current = null;
       rsiSeriesRef.current = null;
+      macdLineSeriesRef.current = null;
+      macdSignalSeriesRef.current = null;
+      macdHistogramSeriesRef.current = null;
       libraryRef.current = null;
     };
     disposeRef.current = dispose;
@@ -796,6 +893,15 @@ function DailyHistoryCanvas({
           const rsiSeries = addRsiSeries(created, charts);
           rsiSeriesRef.current = rsiSeries;
           rsiSeries.setData(rsiLineRef.current ?? []);
+          const macdLineSeries = addMacdLineSeries(created, charts);
+          macdLineSeriesRef.current = macdLineSeries;
+          macdLineSeries.setData(macdLineRef.current ?? []);
+          const macdSignalSeries = addMacdSignalSeries(created, charts);
+          macdSignalSeriesRef.current = macdSignalSeries;
+          macdSignalSeries.setData(macdSignalLineRef.current ?? []);
+          const macdHistogramSeries = addMacdHistogramSeries(created, charts);
+          macdHistogramSeriesRef.current = macdHistogramSeries;
+          macdHistogramSeries.setData(coloredMacdHistogram(macdHistogramRef.current));
           syncIndicatorLine(created, charts, lineSeriesRef, priceScaleLineRef.current);
           created.timeScale().fitContent();
         } catch {
@@ -902,6 +1008,16 @@ function acceptHistory(bundle: HistoryBundle, request: SubmittedSeries): Accepte
     ) {
       return { state: "invalid" };
     }
+    if (overlay.name === "macd") {
+      if (
+        overlay.macdSignal === undefined ||
+        overlay.macdHistogram === undefined ||
+        overlay.macdSignal.length !== points.length ||
+        overlay.macdHistogram.length !== points.length
+      ) {
+        return { state: "invalid" };
+      }
+    }
     if (points.length === 0) {
       return { state: "empty", meta: data };
     }
@@ -935,6 +1051,12 @@ function alignedTimes(points: CandlestickData<Time>[], overlay: IndicatorOverlay
     if (overlay.candles[index]?.time !== points[index]?.time || overlay.line[index]?.time !== points[index]?.time) {
       return false;
     }
+    if (overlay.macdSignal !== undefined && overlay.macdSignal[index]?.time !== points[index]?.time) {
+      return false;
+    }
+    if (overlay.macdHistogram !== undefined && overlay.macdHistogram[index]?.time !== points[index]?.time) {
+      return false;
+    }
   }
   return true;
 }
@@ -955,12 +1077,19 @@ function coverageStatusLabel(status: HistoryCoverageStatus): string {
 }
 
 function indicatorLabel(overlay: IndicatorOverlay): string {
-  const name = overlay.name === "sma" ? "SMA" : overlay.name === "ema" ? "EMA" : "RSI";
+  let name = "MACD";
+  if (overlay.name === "sma") {
+    name = "SMA";
+  } else if (overlay.name === "ema") {
+    name = "EMA";
+  } else if (overlay.name === "rsi") {
+    name = "RSI";
+  }
   return `${name} (${overlay.period})`;
 }
 
 function readIndicatorChoice(value: string): IndicatorChoice {
-  if (value === "sma" || value === "ema" || value === "rsi") {
+  if (value === "sma" || value === "ema" || value === "rsi" || value === "macd") {
     return value;
   }
   return "none";

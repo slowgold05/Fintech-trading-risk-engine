@@ -12,6 +12,10 @@ const COVERAGE_STATUSES: readonly HistoryCoverageStatus[] = [
 ];
 /** Server Numeric(18,6): up to 12 integer digits and exactly 6 decimal places. */
 const CANONICAL_PRICE = /^(?:0|[1-9]\d{0,11})\.\d{6}$/;
+/** Same text as a price, with an optional minus. Zero and negatives are real MACD readings. */
+const CANONICAL_SIGNED_VALUE = /^-?(?:0|[1-9]\d{0,11})\.\d{6}$/;
+/** MACD status uses the fixed slow period. The request period is the signal length. */
+const MACD_CLOSES_REQUIRED = 26;
 const CANONICAL_VOLUME = /^(?:0|[1-9]\d*)$/;
 const VOLUME_UP_COLOR = "rgba(52, 211, 153, 0.5)";
 const VOLUME_DOWN_COLOR = "rgba(251, 113, 133, 0.5)";
@@ -287,6 +291,61 @@ function chartIndicatorNumber(value: string): number {
   return number;
 }
 
+/** Same canonical text shape as a price, but negative and zero are both real MACD readings. */
+function canonicalSignedValue(value: unknown): string {
+  if (typeof value !== "string" || !CANONICAL_SIGNED_VALUE.test(value)) {
+    throw new Error("Price is invalid.");
+  }
+  return value;
+}
+
+/** Same chart number as a price, but negative and zero are both real MACD readings. */
+function chartSignedNumber(value: string): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    throw new Error("Price is invalid.");
+  }
+  return number;
+}
+
+function signedSeriesPoint(
+  time: Time,
+  value: unknown,
+): { text: string | null; point: LineData<Time> | WhitespaceData<Time> } {
+  if (value === null) {
+    return { text: null, point: { time } };
+  }
+  const text = canonicalSignedValue(value);
+  return { text, point: { time, value: chartSignedNumber(text) } };
+}
+
+function parseMacdPoints(points: readonly unknown[], candles: CandlestickData<Time>[]): {
+  values: (string | null)[];
+  line: (LineData<Time> | WhitespaceData<Time>)[];
+  macdSignal: (LineData<Time> | WhitespaceData<Time>)[];
+  macdHistogram: (HistogramData<Time> | WhitespaceData<Time>)[];
+} {
+  const values: (string | null)[] = [];
+  const line: (LineData<Time> | WhitespaceData<Time>)[] = [];
+  const macdSignal: (LineData<Time> | WhitespaceData<Time>)[] = [];
+  const macdHistogram: (HistogramData<Time> | WhitespaceData<Time>)[] = [];
+  for (let index = 0; index < candles.length; index += 1) {
+    const point = record(points[index], "Indicator point is invalid.");
+    const candle = candles[index];
+    if (candle === undefined || point.session_date !== candle.time) {
+      throw new Error("Indicator point date does not match history.");
+    }
+    const macdLine = signedSeriesPoint(candle.time, point.value);
+    const signal = signedSeriesPoint(candle.time, point.signal);
+    const histogram = signedSeriesPoint(candle.time, point.histogram);
+    values.push(macdLine.text);
+    line.push(macdLine.point);
+    macdSignal.push(signal.point);
+    macdHistogram.push(histogram.point);
+  }
+  return { values, line, macdSignal, macdHistogram };
+}
+
 function assertBounds(open: bigint, high: bigint, low: bigint, close: bigint): void {
   // 999999999999.000001 and 999999999999.000000 collapse under IEEE rounding.
   const lower = open <= close ? open : close;
@@ -296,12 +355,14 @@ function assertBounds(open: bigint, high: bigint, low: bigint, close: bigint): v
   }
 }
 
-/** One validated SMA, EMA, or RSI line over the nested history snapshot. Status is never "complete". */
+/** One validated SMA, EMA, RSI, or MACD overlay over the nested history snapshot. Status is never "complete". */
 export type IndicatorOverlay = {
   history: HistoryResponse;
   candles: CandlestickData<Time>[];
   line: (LineData<Time> | WhitespaceData<Time>)[];
   values: (string | null)[];
+  macdSignal?: (LineData<Time> | WhitespaceData<Time>)[];
+  macdHistogram?: (HistogramData<Time> | WhitespaceData<Time>)[];
   name: IndicatorName;
   period: number;
   status: "unavailable" | "insufficient" | "partial";
@@ -358,7 +419,7 @@ export function indicatorOverlay(
   ) {
     throw new Error("Indicator request identity does not match.");
   }
-  if (body.name !== "sma" && body.name !== "ema" && body.name !== "rsi") {
+  if (body.name !== "sma" && body.name !== "ema" && body.name !== "rsi" && body.name !== "macd") {
     throw new Error("Indicator name is invalid.");
   }
   if (body.name !== request.name) {
@@ -398,7 +459,8 @@ export function indicatorOverlay(
   }
 
   // RSI's first value needs `period` diffs, so it lands one close later than SMA/EMA.
-  const closesRequired = body.name === "rsi" ? period + 1 : period;
+  // MACD's status threshold is the fixed slow period, not the signal `period`.
+  const closesRequired = body.name === "rsi" ? period + 1 : body.name === "macd" ? MACD_CLOSES_REQUIRED : period;
   let status: IndicatorOverlay["status"];
   if (count === 0) {
     status = "unavailable";
@@ -409,6 +471,22 @@ export function indicatorOverlay(
   }
   if (body.status !== status) {
     throw new Error("Indicator status is invalid.");
+  }
+
+  // value, signal, and histogram each leave warm-up on their own index. Do not share one cutoff.
+  if (body.name === "macd") {
+    const macd = parseMacdPoints(body.points, candles);
+    return {
+      history: history as HistoryResponse,
+      candles,
+      line: macd.line,
+      values: macd.values,
+      macdSignal: macd.macdSignal,
+      macdHistogram: macd.macdHistogram,
+      name: body.name,
+      period,
+      status,
+    };
   }
 
   const warmupLength = body.name === "rsi" ? period : period - 1;
