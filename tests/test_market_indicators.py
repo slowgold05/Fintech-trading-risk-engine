@@ -29,7 +29,7 @@ _DATES = (
 _CLOSES = (1, 4, 2, 8, 3, 9)
 _SMA = (None, None, "2.333333", "4.666667", "4.333333", "6.666667")
 _EMA = (None, None, "2.333333", "5.166667", "4.083333", "6.541667")
-_NAME_DETAIL = "name must be sma, ema, or rsi."
+_NAME_DETAIL = "name must be sma, ema, rsi, or macd."
 _PERIOD_DETAIL = "period must be an integer from 2 through 200."
 _OHLC_DETAIL = "Accepted bar prices are not usable."
 _META = (
@@ -190,6 +190,17 @@ def test_exact_half_quantizes_half_up(db_session, monkeypatch):
         ("rsi", 1, _PERIOD_DETAIL),
         ("rsi", 201, _PERIOD_DETAIL),
         ("rsi", "201", _PERIOD_DETAIL),
+        ("MACD", 9, _NAME_DETAIL),
+        ("macd", True, _PERIOD_DETAIL),
+        ("macd", False, _PERIOD_DETAIL),
+        ("macd", 2.0, _PERIOD_DETAIL),
+        ("macd", "2.0", _PERIOD_DETAIL),
+        ("macd", "2e1", _PERIOD_DETAIL),
+        ("macd", " 2", _PERIOD_DETAIL),
+        ("macd", "02", _PERIOD_DETAIL),
+        ("macd", 1, _PERIOD_DETAIL),
+        ("macd", 201, _PERIOD_DETAIL),
+        ("macd", "201", _PERIOD_DETAIL),
     ],
 )
 def test_service_rejects_name_and_noninteger_period(name, period, detail):
@@ -518,4 +529,111 @@ def test_rsi_accepts_same_period_bounds_as_sma(db_session, monkeypatch):
     assert [point["value"] for point in high["points"]] == [None, None, None]
     text = _call(db_session, symbol="RSIBOUND", name="rsi", period="14")
     assert text["period"] == 14
+    assert text["status"] == "insufficient"
+
+
+_MACD_CLOSES = (
+    "99.0", "97.5", "98.5", "99.0", "99.5",
+    "99.0", "98.0", "97.0", "99.0", "97.5",
+    "96.0", "95.0", "95.5", "96.0", "94.5",
+    "95.0", "97.0", "97.5", "95.5", "96.5",
+    "95.0", "94.5", "96.5", "98.0", "99.0",
+    "98.5", "99.0", "100.5", "99.5", "98.5",
+    "100.5", "99.5", "101.0", "102.5", "103.5",
+    "102.0", "100.0", "99.0", "101.0", "100.0",
+)
+_MACD_VALUES = (
+    *(None,) * 25,
+    "-0.010303", "0.144690", "0.384133", "0.487580", "0.483300",
+    "0.633984", "0.665044", "0.801457", "1.018859", "1.257349",
+    "1.310213", "1.177156", "0.979722", "0.973416", "0.877611",
+)
+_MACD_SIGNAL = (
+    *(None,) * 33,
+    "0.512083", "0.661136", "0.790952", "0.868192",
+    "0.890498", "0.907082", "0.901188",
+)
+_MACD_HISTOGRAM = (
+    *(None,) * 33,
+    "0.506776", "0.596213", "0.519262", "0.308964",
+    "0.089223", "0.066334", "-0.023577",
+)
+
+
+def test_macd_reference_vector(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    rows = _rsi_rows(_MACD_CLOSES)
+    _seed(db_session, "MACDREF", rows)
+    body = _call(db_session, symbol="MACDREF", name="macd", period=9)
+    expected = [
+        {
+            "session_date": day.isoformat(),
+            "value": value,
+            "signal": signal,
+            "histogram": histogram,
+        }
+        for (day, _close), value, signal, histogram in zip(
+            rows, _MACD_VALUES, _MACD_SIGNAL, _MACD_HISTOGRAM, strict=True,
+        )
+    ]
+    assert body["status"] == "partial"
+    assert body["observed_valid_closes"] == 40
+    assert body["name"] == "macd" and body["period"] == 9
+    assert body["points"] == expected
+    assert list(body["points"][0]) == ["session_date", "value", "signal", "histogram"]
+    assert list(body["points"][33]) == ["session_date", "value", "signal", "histogram"]
+
+
+def test_macd_insufficient_until_slow_period(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "MACD25", _rsi_rows(_MACD_CLOSES[:25]))
+    short = _call(db_session, symbol="MACD25", name="macd", period=2)
+    assert short["status"] == "insufficient"
+    assert short["observed_valid_closes"] == 25
+    assert [
+        (point["value"], point["signal"], point["histogram"]) for point in short["points"]
+    ] == [(None, None, None)] * 25
+
+    _seed(db_session, "MACD26", _rsi_rows(_MACD_CLOSES[:26]))
+    minimum = _call(db_session, symbol="MACD26", name="macd", period=9)
+    assert minimum["status"] == "partial"
+    assert minimum["observed_valid_closes"] == 26
+    assert [point["value"] for point in minimum["points"]] == list(_MACD_VALUES[:26])
+    assert [point["signal"] for point in minimum["points"]] == [None] * 26
+    assert [point["histogram"] for point in minimum["points"]] == [None] * 26
+
+    wide = _call(db_session, symbol="MACD26", name="macd", period=200)
+    assert wide["status"] == "partial"
+    assert wide["period"] == 200
+    assert wide["observed_valid_closes"] == 26
+    assert [point["value"] for point in wide["points"]] == list(_MACD_VALUES[:26])
+    assert [point["signal"] for point in wide["points"]] == [None] * 26
+    assert [point["histogram"] for point in wide["points"]] == [None] * 26
+
+
+def test_non_macd_points_omit_signal_and_histogram(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "SHAPE", zip(_DATES, _CLOSES))
+    for name in ("sma", "ema", "rsi"):
+        body = _call(db_session, symbol="SHAPE", name=name, period=3)
+        assert body["points"]
+        for point in body["points"]:
+            assert set(point) == {"session_date", "value"}
+
+
+def test_macd_accepts_same_period_bounds_as_sma(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "MACDBOUND", _rsi_rows(("50.000000",) * 3))
+    low = _call(db_session, symbol="MACDBOUND", name="macd", period=2)
+    assert low["period"] == 2
+    assert low["status"] == "insufficient"
+    assert [
+        (point["value"], point["signal"], point["histogram"]) for point in low["points"]
+    ] == [(None, None, None)] * 3
+    high = _call(db_session, symbol="MACDBOUND", name="macd", period=200)
+    assert high["period"] == 200
+    assert high["status"] == "insufficient"
+    assert len(high["points"]) == 3
+    text = _call(db_session, symbol="MACDBOUND", name="macd", period="9")
+    assert text["period"] == 9
     assert text["status"] == "insufficient"

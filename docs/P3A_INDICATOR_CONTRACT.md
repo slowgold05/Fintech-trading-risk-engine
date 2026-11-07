@@ -324,3 +324,88 @@ Status for `name=rsi` uses that warm-up length. `M == 0` is `unavailable` with `
 The frontend does not yet support `rsi`. The `IndicatorName` type and the indicator `<select>` in `DailyHistory.tsx` are unchanged by this unit. This is backend groundwork only, mirroring how the original SMA/EMA backend was its own accepted unit before the chart-integration unit that followed it.
 
 An exact RSI of `0` is a known, deferred frontend gap. Real inputs can produce it, not only the `100` and `50` cases above: a window whose gains are all zero and whose average loss is positive. `frontend/src/components/historyData.ts`'s `canonicalPrice` validator, reused for indicator point values, currently requires a strictly positive value. An eventual RSI frontend-integration unit will need to loosen that check for indicator values specifically. OHLC bar prices must stay strictly positive. This unit does not change that validator. The same integration will also have to treat RSI warm-up as `period` leading nulls; the overlay builder today expects the SMA/EMA warm-up of `period - 1`.
+
+## 14. MACD addendum (2026-11-07) — design, not yet implemented
+
+This section is written before any code change, the same way the original indicator proposal
+(sections 1-12) and the RSI addendum (section 13) were written before their implementations.
+MACD needs a real design decision this contract records explicitly, because it differs from
+SMA/EMA/RSI in two structural ways: it conventionally takes *three* periods (fast, slow, signal),
+not one, and it produces *three* numbers per bar (the MACD line, the signal line, and the
+histogram), not one.
+
+### 14.1 Query contract
+
+`name=macd` is a fourth accepted value, alongside `sma`, `ema`, `rsi`. The `name` error detail
+becomes `name must be sma, ema, rsi, or macd.` No router change and no new query parameter: the
+existing required `period` parameter (the same integer 2 through 200, same validation) is reused,
+but **for `macd` it means the signal period**, not a single moving-average window. The fast period
+is fixed at `12` and the slow period is fixed at `26` — the universal industry-standard MACD
+defaults, not configurable in this unit. A future unit could add `fast_period`/`slow_period`
+query parameters if customizing them is ever needed; this unit deliberately does not, to keep the
+query contract additive and unambiguous (reusing `period` for a different meaning per `name` is
+itself a compromise, accepted here only because every other option either requires a router change
+or a second required parameter most callers would never vary).
+
+### 14.2 Series definition
+
+Let `C[0..M-1]` be the same accepted closes SMA/EMA/RSI already use. Let `fast = 12`, `slow = 26`,
+`signal = period` (the request's `period`, renamed for clarity in this section only).
+
+1. Compute `emaFast[i]` and `emaSlow[i]` exactly as section 6.2 already defines EMA, independently,
+   each over the full `C` array with its own period (`12` and `26` respectively). Each stays an
+   unrounded `Decimal` internally (no change to the existing `_ema` helper's behavior — it is
+   reused twice, once per period, not reimplemented).
+2. `macd[i] = emaFast[i] - emaSlow[i]` wherever both are non-null (`i >= slow - 1`, since the
+   26-period EMA is the later-starting, more restrictive one — the 12-period EMA already has a
+   value by then). For `i < slow - 1`, `macd[i]` is `null` (exactly `slow - 1 = 25` leading nulls,
+   the EMA warm-up convention section 6.2 already defines, not RSI's `period`/`period+1` warm-up).
+3. Let `macdValues` be the non-null subsequence of `macd`. Compute `signalSeries` as the
+   `signal`-period EMA (section 6.2's same algorithm) over `macdValues` (a second, independent
+   application of the existing EMA helper, this time over computed MACD values rather than
+   observed closes). Map `signalSeries` back onto the full-length array: the first
+   `(slow - 1) + (signal - 1)` entries of the full-length `signal` array are `null`; the first real
+   `signal` value lands at index `slow + signal - 2`.
+4. `histogram[i] = macd[i] - signal[i]` wherever both are non-null; `null` otherwise (same index
+   range as `signal`).
+
+All three (`emaFast`, `emaSlow`, `macd`, `signalSeries`) stay unrounded `Decimal` throughout; only
+the final emitted text for `value`/`signal`/`histogram` at each point is quantized once with the
+existing six-place `ROUND_HALF_UP` convention (`_response_text`), the same single-quantization
+rule every other indicator already follows. The signal EMA must run on the *unrounded* `macd`
+values, not on the quantized text — reusing the exact precision philosophy RSI's addendum already
+established for its own averages.
+
+### 14.3 Response shape — additive only
+
+For `name != "macd"` (`sma`, `ema`, `rsi`), every point stays exactly
+`{"session_date": ..., "value": ...}` — byte-identical to today. No existing field, key, or
+behavior changes for those three names.
+
+For `name == "macd"`, each point gains two additional keys:
+`{"session_date": ..., "value": <MACD line text or null>, "signal": <signal text or null>, "histogram": <histogram text or null>}`.
+`value` continues to mean "the headline number for this indicator" (consistent with every other
+`name`), which for MACD is the MACD line itself. `signal`/`histogram` are present (not merely
+`null`) only on `macd` points; they are absent from `sma`/`ema`/`rsi` points, not present-and-null,
+so those three names' JSON shape is unchanged at the key-set level, not just at the value level.
+
+### 14.4 Status and warm-up
+
+`_closes_required(name, period)` (introduced in the RSI addendum) gets a third branch:
+`slow` (`26`) for `macd`, independent of the request's `period`/signal value — `unavailable`
+(`M == 0`), `insufficient` (`1 <= M < 26`, every point's `value`/`signal`/`histogram` all `null`),
+or `partial` (`M >= 26`) uses that threshold. Note that `partial` for MACD can still mean
+`signal`/`histogram` are `null` for a trailing stretch of the most recent points if
+`M < slow + signal - 1` — this mirrors how SMA/EMA/RSI's own `partial` responses already carry
+leading-null points inside an otherwise-"partial" series; it is not a new concept, just a second,
+independently-timed warm-up inside one response.
+
+### 14.5 What this unit does and does not do
+
+Backend only, mirroring how the RSI backend landed before its own chart-integration unit. The
+frontend `IndicatorName` type, the indicator `<select>`, and `historyData.ts`'s `indicatorOverlay`
+are unchanged by this unit — `signal`/`histogram` are not yet parsed or plotted anywhere in the
+frontend. A later MACD chart-integration unit will need its own design pass for how to render
+three series (MACD line, signal line as a second line on the same sub-scale, histogram as bars)
+in one panel, analogous to RSI's own dedicated price scale but with one more series than RSI
+needed.
