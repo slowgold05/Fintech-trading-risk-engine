@@ -217,7 +217,7 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         period.send_keys("20")
         _view(driver)
         h._wait(driver).until(lambda current: "Insufficient stored closes for this period." in _section(current).text)
-        _wait_prices(driver, ["Warm-up"] * 6, "SMA (20)")
+        _wait_prices(driver, ["Warm-up"] * 6, "EMA (20)")
         assert "0.000000" not in " ".join(_indicator_cells(driver))
         assert h._wait(driver).until(_chart)
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "insufficient.png")
