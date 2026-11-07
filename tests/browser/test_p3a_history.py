@@ -146,6 +146,7 @@ def test_cached_daily_chart(chart_api):
         Select(_section(driver).find_element(By.ID, "daily-history-range")).select_by_value("2y")
         harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))
         harness._wait(driver).until(lambda current: two_year_start.isoformat() in _section(current).text)
+        canvas = harness._wait(driver).until(_plot)
 
         desktop_width = canvas.rect["width"]
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})

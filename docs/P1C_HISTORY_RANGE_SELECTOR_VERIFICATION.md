@@ -58,6 +58,17 @@ new positional argument at existing call sites, no assertions weakened).
   helpers against the test's own captured clock, not a hardcoded date), then switches back to
   `2y` so the rest of the existing test's assumptions are undisturbed.
 
+## A real regression I introduced in my own browser-test addition
+
+CI caught a `StaleElementReferenceException` on the first head, at the `desktop_width =
+canvas.rect["width"]` line right after my new range-switch check. The `canvas` WebElement was
+captured before that check, which resubmits the form twice (switching to `1y` then back to
+`2y`) — each resubmission remounts the chart, so the DOM `<canvas>` node is recreated and the
+earlier reference goes stale. Fixed by re-fetching `canvas` fresh immediately after switching
+back to `2y`, before any later code reads `.rect` on it. Checked every other use of `canvas` in
+this test file to confirm each one already re-fetches fresh rather than reusing a reference
+across a remount.
+
 ## Verification run, 2026-11-07
 
 - `npx tsc -b --noEmit`: clean.
