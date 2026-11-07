@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyCandles } from "./historyData";
+import { historyCandles, historyVolume } from "./historyData";
 
 const READ_AT = "2026-11-06T12:00:00Z";
 const REQUESTED_START = "2024-11-06";
@@ -351,5 +351,54 @@ describe("historyCandles", () => {
     { excluded_row_count: -1 },
   ])("rejects an empty series with a malformed envelope %j", (overrides) => {
     expect(() => historyCandles(dailyPayload([], overrides))).toThrow();
+  });
+});
+
+describe("historyVolume", () => {
+  it("parses volume to a number, aligned with historyCandles, colored by that session's own open/close", () => {
+    const rows = barsWithGap();
+    const body = dailyPayload(rows);
+
+    const points = historyCandles(body);
+    const volume = historyVolume(body);
+
+    expect(volume).toEqual([
+      { time: "2024-11-06", value: 0, color: "rgba(52, 211, 153, 0.5)" },
+      { time: "2026-11-06", value: 2500, color: "rgba(52, 211, 153, 0.5)" },
+    ]);
+    expect(volume.map((point) => point.time)).toEqual(points.map((point) => point.time));
+    for (const point of volume) {
+      expect(typeof point.value).toBe("number");
+      expect(Number.isSafeInteger(point.value)).toBe(true);
+    }
+  });
+
+  it("colors a down session (close below open) differently from an up session", () => {
+    const rows = [
+      bar({ session_date: "2025-06-16", open: "105.000000", high: "105.500000", low: "99.500000", close: "100.000000", volume: "900" }),
+    ];
+
+    expect(historyVolume(dailyPayload(rows))).toEqual([
+      { time: "2025-06-16", value: 900, color: "rgba(251, 113, 133, 0.5)" },
+    ]);
+  });
+
+  it("returns no points for the known unavailable empty fixture", () => {
+    expect(historyVolume(dailyPayload([]))).toEqual([]);
+  });
+
+  it.each(["", "-1", "1.5", "01", "1e2", "NaN", null, undefined, 0])(
+    "rejects an invalid volume %j",
+    (volume) => {
+      expect(() => historyVolume(dailyPayload([bar({ volume })]))).toThrow();
+    },
+  );
+
+  it("rejects the whole series when a later bar's volume is invalid, same as historyCandles", () => {
+    const rows = barsWithGap();
+    rows[1] = { ...rows[1], volume: "-5" };
+
+    expect(() => historyVolume(dailyPayload(rows))).toThrow();
+    expect(() => historyCandles(dailyPayload(rows))).toThrow();
   });
 });

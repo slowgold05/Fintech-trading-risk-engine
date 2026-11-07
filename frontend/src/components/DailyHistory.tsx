@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import type { CandlestickData, LineData, Time, WhitespaceData } from "lightweight-charts";
+import type { CandlestickData, HistogramData, LineData, Time, WhitespaceData } from "lightweight-charts";
 import { Link } from "react-router-dom";
 import {
   type AdjustmentType,
@@ -12,7 +12,7 @@ import {
   fetchDailyHistory,
 } from "../api/history";
 import { fetchDailyIndicators, type IndicatorName } from "../api/indicators";
-import { historyCandles, indicatorOverlay, type IndicatorOverlay } from "./historyData";
+import { historyCandles, historyVolume, indicatorOverlay, type IndicatorOverlay } from "./historyData";
 
 type IndicatorChoice = "none" | IndicatorName;
 
@@ -42,7 +42,7 @@ type HistoryMeta = Pick<
   | "expected_session_count"
 >;
 
-type PriceRow = Pick<HistoryBar, "session_date" | "open" | "high" | "low" | "close">;
+type PriceRow = Pick<HistoryBar, "session_date" | "open" | "high" | "low" | "close" | "volume">;
 
 type IndicatorLine = (LineData<Time> | WhitespaceData<Time>)[];
 
@@ -59,6 +59,7 @@ type AcceptedHistory =
       state: "partial";
       meta: HistoryMeta;
       points: CandlestickData<Time>[];
+      volume: HistogramData<Time>[];
       rows: PriceRow[];
       overlay: IndicatorOverlay | null;
     };
@@ -102,6 +103,19 @@ function addLineSeries(chart: DailyChart, charts: LightweightChartsModule) {
 }
 
 type LineSeriesHandle = ReturnType<typeof addLineSeries>;
+
+function addVolumeSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  const series = chart.addSeries(charts.HistogramSeries, {
+    priceFormat: { type: "volume" },
+    priceScaleId: "daily-history-volume",
+    priceLineVisible: false,
+    lastValueVisible: false,
+  });
+  series.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  return series;
+}
+
+type VolumeSeriesHandle = ReturnType<typeof addVolumeSeries>;
 
 export function DailyHistory({
   value,
@@ -422,7 +436,7 @@ export function DailyHistory({
                 ) : null}
                 <HistoryFacts meta={accepted.meta} submitted={submitted} />
                 {accepted.overlay ? <IndicatorFacts overlay={accepted.overlay} /> : null}
-                <DailyHistoryCanvas line={accepted.overlay?.line ?? null} points={accepted.points} />
+                <DailyHistoryCanvas line={accepted.overlay?.line ?? null} points={accepted.points} volume={accepted.volume} />
                 <SessionPrices
                   indicatorLabel={accepted.overlay ? indicatorLabel(accepted.overlay) : null}
                   rows={accepted.rows}
@@ -559,7 +573,7 @@ function SessionPrices({
       <div className="table-shell mt-3 max-h-80 min-w-0 overflow-auto overscroll-contain">
         <table className="data-table">
           <caption className="sr-only">
-            Open, high, low, and close
+            Open, high, low, close, and volume
             {showIndicator ? ` and ${columnLabel}` : ""} for {submitted.symbol}, source {submitted.provider}, adjustment{" "}
             {submitted.adjustment_type}. Values are the cached decimal strings
             {showIndicator ? ", or Warm-up where the indicator has no value" : ""}.
@@ -581,6 +595,9 @@ function SessionPrices({
               <th className="text-right" scope="col">
                 Close
               </th>
+              <th className="text-right" scope="col">
+                Volume
+              </th>
               {showIndicator ? (
                 <th className="text-right" scope="col">
                   {columnLabel}
@@ -598,6 +615,7 @@ function SessionPrices({
                 <td className="text-right font-mono">{row.high}</td>
                 <td className="text-right font-mono">{row.low}</td>
                 <td className="text-right font-mono">{row.close}</td>
+                <td className="text-right font-mono">{row.volume}</td>
                 {showIndicator ? (
                   <td className="text-right font-mono">{values[index] ?? "Warm-up"}</td>
                 ) : null}
@@ -610,13 +628,23 @@ function SessionPrices({
   );
 }
 
-function DailyHistoryCanvas({ points, line }: { points: CandlestickData<Time>[]; line: IndicatorLine | null }) {
+function DailyHistoryCanvas({
+  points,
+  volume,
+  line,
+}: {
+  points: CandlestickData<Time>[];
+  volume: HistogramData<Time>[];
+  line: IndicatorLine | null;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<DailyChart | null>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
+  const volumeSeriesRef = useRef<VolumeSeriesHandle | null>(null);
   const lineSeriesRef = useRef<LineSeriesHandle | null>(null);
   const libraryRef = useRef<LightweightChartsModule | null>(null);
   const pointsRef = useRef(points);
+  const volumeRef = useRef(volume);
   const lineRef = useRef(line);
   const disposeRef = useRef<(() => void) | null>(null);
   const failedRef = useRef(false);
@@ -625,6 +653,7 @@ function DailyHistoryCanvas({ points, line }: { points: CandlestickData<Time>[];
 
   useEffect(() => {
     pointsRef.current = points;
+    volumeRef.current = volume;
     lineRef.current = line;
     if (failedRef.current) {
       failedRef.current = false;
@@ -639,13 +668,14 @@ function DailyHistoryCanvas({ points, line }: { points: CandlestickData<Time>[];
     }
     try {
       series.setData(points);
+      volumeSeriesRef.current?.setData(volume);
       syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, line);
     } catch {
       disposeRef.current?.();
       failedRef.current = true;
       setFailed(true);
     }
-  }, [points, line]);
+  }, [points, volume, line]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -665,6 +695,7 @@ function DailyHistoryCanvas({ points, line }: { points: CandlestickData<Time>[];
       active = null;
       chartRef.current = null;
       seriesRef.current = null;
+      volumeSeriesRef.current = null;
       lineSeriesRef.current = null;
       libraryRef.current = null;
     };
@@ -702,6 +733,9 @@ function DailyHistoryCanvas({ points, line }: { points: CandlestickData<Time>[];
           const series = addCandleSeries(created, charts);
           seriesRef.current = series;
           series.setData(pointsRef.current);
+          const volumeSeries = addVolumeSeries(created, charts);
+          volumeSeriesRef.current = volumeSeries;
+          volumeSeries.setData(volumeRef.current);
           syncIndicatorLine(created, charts, lineSeriesRef, lineRef.current);
           created.timeScale().fitContent();
         } catch {
@@ -787,6 +821,7 @@ function acceptHistory(bundle: HistoryBundle, request: SubmittedSeries): Accepte
   }
   try {
     const points = historyCandles(data);
+    const volume = historyVolume(data);
     const overlay = bundle.overlay;
     if (request.indicator === "none" || overlay === null) {
       if (overlay !== null || request.indicator !== "none") {
@@ -795,7 +830,7 @@ function acceptHistory(bundle: HistoryBundle, request: SubmittedSeries): Accepte
       if (points.length === 0) {
         return { state: "empty", meta: data };
       }
-      return { state: "partial", meta: data, points, rows: data.bars, overlay: null };
+      return { state: "partial", meta: data, points, volume, rows: data.bars, overlay: null };
     }
     if (
       overlay.name !== request.indicator ||
@@ -810,7 +845,7 @@ function acceptHistory(bundle: HistoryBundle, request: SubmittedSeries): Accepte
     if (points.length === 0) {
       return { state: "empty", meta: data };
     }
-    return { state: "partial", meta: data, points, rows: data.bars, overlay };
+    return { state: "partial", meta: data, points, volume, rows: data.bars, overlay };
   } catch {
     return { state: "invalid" };
   }

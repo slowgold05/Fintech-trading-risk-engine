@@ -1,4 +1,4 @@
-import type { CandlestickData, LineData, Time, WhitespaceData } from "lightweight-charts";
+import type { CandlestickData, HistogramData, LineData, Time, WhitespaceData } from "lightweight-charts";
 import type { IndicatorName } from "../api/indicators";
 import type { HistoryCoverageStatus, HistoryResponse } from "../api/history";
 
@@ -13,6 +13,8 @@ const COVERAGE_STATUSES: readonly HistoryCoverageStatus[] = [
 /** Server Numeric(18,6): up to 12 integer digits and exactly 6 decimal places. */
 const CANONICAL_PRICE = /^(?:0|[1-9]\d{0,11})\.\d{6}$/;
 const CANONICAL_VOLUME = /^(?:0|[1-9]\d*)$/;
+const VOLUME_UP_COLOR = "rgba(52, 211, 153, 0.5)";
+const VOLUME_DOWN_COLOR = "rgba(251, 113, 133, 0.5)";
 
 /**
  * Validated display points for one cached daily response.
@@ -21,6 +23,19 @@ const CANONICAL_VOLUME = /^(?:0|[1-9]\d*)$/;
  * Prices become numbers only in the returned points.
  */
 export function historyCandles(history: unknown): CandlestickData<Time>[] {
+  return parseBars(history).candles;
+}
+
+/**
+ * Validated volume histogram points for the same response historyCandles plots.
+ * Bars are colored by that session's own open/close, matching the candle colors.
+ * Throws under the exact same conditions as historyCandles (shared parsing).
+ */
+export function historyVolume(history: unknown): HistogramData<Time>[] {
+  return parseBars(history).volume;
+}
+
+function parseBars(history: unknown): { candles: CandlestickData<Time>[]; volume: HistogramData<Time>[] } {
   const body = record(history, "Daily history payload is invalid.");
   if (!Array.isArray(body.bars)) {
     throw new Error("Daily history bars are invalid.");
@@ -76,7 +91,7 @@ export function historyCandles(history: unknown): CandlestickData<Time>[] {
     if (body.available_start !== null || body.available_end !== null) {
       throw new Error("Available history window is invalid.");
     }
-    return [];
+    return { candles: [], volume: [] };
   }
 
   if (typeof body.available_start !== "string" || typeof body.available_end !== "string") {
@@ -91,6 +106,7 @@ export function historyCandles(history: unknown): CandlestickData<Time>[] {
     high: string;
     low: string;
     close: string;
+    volume: number;
   }[] = [];
   let previous: string | null = null;
   for (const entry of body.bars) {
@@ -111,7 +127,7 @@ export function historyCandles(history: unknown): CandlestickData<Time>[] {
     if (bar.quality_status !== "valid") {
       throw new Error("Bar quality is invalid.");
     }
-    volume(bar.volume);
+    const barVolume = parseVolume(bar.volume);
     fetchedAt(bar.fetched_at);
 
     const open = canonicalPrice(bar.open);
@@ -126,6 +142,7 @@ export function historyCandles(history: unknown): CandlestickData<Time>[] {
       high: high.text,
       low: low.text,
       close: close.text,
+      volume: barVolume,
     });
   }
 
@@ -140,13 +157,20 @@ export function historyCandles(history: unknown): CandlestickData<Time>[] {
     throw new Error("Available history window is invalid.");
   }
 
-  return validated.map((bar) => ({
-    time: bar.time,
-    open: chartNumber(bar.open),
-    high: chartNumber(bar.high),
-    low: chartNumber(bar.low),
-    close: chartNumber(bar.close),
-  }));
+  return {
+    candles: validated.map((bar) => ({
+      time: bar.time,
+      open: chartNumber(bar.open),
+      high: chartNumber(bar.high),
+      low: chartNumber(bar.low),
+      close: chartNumber(bar.close),
+    })),
+    volume: validated.map((bar) => ({
+      time: bar.time,
+      value: bar.volume,
+      color: chartNumber(bar.close) >= chartNumber(bar.open) ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR,
+    })),
+  };
 }
 
 function record(value: unknown, message: string): Record<string, unknown> {
@@ -212,10 +236,15 @@ function fetchedAt(value: unknown): void {
   }
 }
 
-function volume(value: unknown): void {
+function parseVolume(value: unknown): number {
   if (typeof value !== "string" || !CANONICAL_VOLUME.test(value)) {
     throw new Error("Volume is invalid.");
   }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error("Volume is invalid.");
+  }
+  return parsed;
 }
 
 function canonicalPrice(value: unknown): { text: string; scaled: bigint } {

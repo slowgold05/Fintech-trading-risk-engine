@@ -21,6 +21,7 @@ const chartApi = vi.hoisted(() => ({
   ColorType: { Solid: "solid" },
   CandlestickSeries: { type: "candlestick-sentinel" },
   LineSeries: { type: "line-sentinel" },
+  HistogramSeries: { type: "histogram-sentinel" },
 }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("../api/indicators", () => indicatorApi);
@@ -28,6 +29,7 @@ vi.mock("lightweight-charts", () => chartApi);
 
 type ChartMount = {
   candleSetData: ReturnType<typeof vi.fn>;
+  volumeSetData: ReturnType<typeof vi.fn>;
   lineSetData: ReturnType<typeof vi.fn>;
   fitContent: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
@@ -74,15 +76,19 @@ function indicatorPayload(name: "sma" | "ema", period: number, values: readonly 
 
 function mountChart() {
   const candleSetData = vi.fn();
+  const volumeSetData = vi.fn();
   const lineSetData = vi.fn();
   const fitContent = vi.fn();
   const remove = vi.fn();
   const addSeries = vi.fn((kind: unknown) => {
     if (kind === chartApi.LineSeries) return { setData: lineSetData };
     if (kind === chartApi.CandlestickSeries) return { setData: candleSetData };
+    if (kind === chartApi.HistogramSeries) {
+      return { setData: volumeSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
     throw new Error("Unexpected series.");
   });
-  mounts.push({ candleSetData, lineSetData, fitContent, remove, addSeries });
+  mounts.push({ candleSetData, volumeSetData, lineSetData, fitContent, remove, addSeries });
   return { addSeries, timeScale: () => ({ fitContent }), remove };
 }
 
@@ -179,7 +185,11 @@ describe("DailyIndicators", () => {
     if (chart === undefined) throw new Error("Missing chart.");
     expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "sma", 3]]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
-    expect(chart.addSeries.mock.calls.map((call) => call[0])).toEqual([chartApi.CandlestickSeries, chartApi.LineSeries]);
+    expect(chart.addSeries.mock.calls.map((call) => call[0])).toEqual([
+      chartApi.CandlestickSeries,
+      chartApi.HistogramSeries,
+      chartApi.LineSeries,
+    ]);
     const line = linePoints(chart);
     expect(line.slice(0, 2)).toEqual([{ time: DATES[0] }, { time: DATES[1] }]);
     expect(line[0]).not.toHaveProperty("value");
@@ -228,7 +238,7 @@ describe("DailyIndicators", () => {
     ]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
-    expect(chart.addSeries).toHaveBeenCalledTimes(2);
+    expect(chart.addSeries).toHaveBeenCalledTimes(3);
     expect(chart.candleSetData).toHaveBeenLastCalledWith(expect.arrayContaining([{ time: DATES[5], open: 7, high: 7, low: 7, close: 7 }]));
     expect(linePoints(chart).at(-1)).toEqual({ time: DATES[5], value: 6 });
     expect(chart.remove).not.toHaveBeenCalled();
@@ -312,7 +322,10 @@ describe("DailyIndicators", () => {
     const [previous, current] = mounts;
     if (previous === undefined || current === undefined) throw new Error("Missing charts.");
     expect(previous.remove).toHaveBeenCalledTimes(1);
-    expect(current.addSeries.mock.calls.map((call) => call[0])).toEqual([chartApi.CandlestickSeries]);
+    expect(current.addSeries.mock.calls.map((call) => call[0])).toEqual([
+      chartApi.CandlestickSeries,
+      chartApi.HistogramSeries,
+    ]);
     expect(current.lineSetData).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     const prices = screen.getByText("Session prices").closest("details");

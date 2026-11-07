@@ -20,12 +20,14 @@ const chartApi = vi.hoisted(() => ({
   createChart: vi.fn(),
   ColorType: { Solid: "solid" },
   CandlestickSeries: { type: "candlestick" },
+  HistogramSeries: { type: "histogram" },
 }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("lightweight-charts", () => chartApi);
 
 type ChartMount = {
   setData: ReturnType<typeof vi.fn>;
+  volumeSetData: ReturnType<typeof vi.fn>;
   fitContent: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
   addSeries: ReturnType<typeof vi.fn>;
@@ -67,10 +69,18 @@ function history(close = "108.500000"): HistoryResponse {
 
 function mountChart() {
   const setData = vi.fn();
+  const volumeSetData = vi.fn();
   const fitContent = vi.fn();
   const remove = vi.fn();
-  const addSeries = vi.fn(() => ({ setData }));
-  mounts.push({ setData, fitContent, remove, addSeries });
+  let calls = 0;
+  const addSeries = vi.fn(() => {
+    calls += 1;
+    if (calls === 2) {
+      return { setData: volumeSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
+    return { setData };
+  });
+  mounts.push({ setData, volumeSetData, fitContent, remove, addSeries });
   return { addSeries, timeScale: () => ({ fitContent }), remove };
 }
 
@@ -188,6 +198,13 @@ describe("DailyHistory", () => {
     expect(chart.addSeries.mock.calls[0]?.[0]).toBe(chartApi.CandlestickSeries);
     expect(chart.addSeries.mock.calls[0]?.[1]).toMatchObject({ priceFormat: { precision: 6 } });
     expect(chart.setData).toHaveBeenCalledTimes(1);
+    expect(chart.addSeries.mock.calls[1]?.[0]).toBe(chartApi.HistogramSeries);
+    expect(chart.addSeries.mock.calls[1]?.[1]).toMatchObject({ priceFormat: { type: "volume" } });
+    expect(chart.volumeSetData).toHaveBeenCalledWith([
+      { time: "2026-11-04", value: 0, color: "rgba(52, 211, 153, 0.5)" },
+      { time: "2026-11-05", value: 0, color: "rgba(52, 211, 153, 0.5)" },
+    ]);
+    expect(screen.getByRole("columnheader", { name: "Volume" })).toBeInTheDocument();
     expect(chart.fitContent).toHaveBeenCalledTimes(1);
     fireEvent.change(screen.getByRole("textbox", { name: "Symbol" }), { target: { value: "MSFT" } });
     await act(async () => { await Promise.resolve(); });
@@ -204,6 +221,10 @@ describe("DailyHistory", () => {
     expect(screen.queryByRole("cell", { name: "108.500000" })).not.toBeInTheDocument();
     expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw"], ["TEST", "fixture", "raw"]]);
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    expect(chart.volumeSetData).toHaveBeenLastCalledWith([
+      { time: "2026-11-04", value: 0, color: "rgba(52, 211, 153, 0.5)" },
+      { time: "2026-11-05", value: 0, color: "rgba(52, 211, 153, 0.5)" },
+    ]);
     expect(chart.setData).toHaveBeenLastCalledWith([
       { time: "2026-11-04", open: 101.25, high: 105.5, low: 99.5, close: 103.75 },
       { time: "2026-11-05", open: 103.75, high: 110, low: 100, close: 107.25 },

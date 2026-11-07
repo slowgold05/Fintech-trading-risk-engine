@@ -131,6 +131,8 @@ def test_cached_daily_chart(chart_api):
             assert session.isoformat() in text
         _open_prices(driver)
         harness._wait(driver).until(lambda current: "105.000000" in _section(current).find_element(By.CSS_SELECTOR, "details table").text)
+        table_text = _section(driver).find_element(By.CSS_SELECTOR, "details table").text
+        assert "Volume" in table_text
         _capture(driver, canvas, artifacts / "chart-desktop.png")
 
         desktop_width = canvas.rect["width"]
