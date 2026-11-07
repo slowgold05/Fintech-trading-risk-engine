@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +16,20 @@ const historyApi = vi.hoisted(() => ({
 vi.mock("../api/market", () => api);
 vi.mock("../api/history", () => historyApi);
 vi.mock("../context/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false }) }));
+vi.mock("../components/Watchlists", () => ({
+  Watchlists: ({
+    onUseInResearch,
+    onUseInChart,
+  }: {
+    onUseInResearch: (symbol: string) => void;
+    onUseInChart: (symbol: string) => void;
+  }) => (
+    <div>
+      <button type="button" onClick={() => onUseInResearch("MSFT")}>Use MSFT in research</button>
+      <button type="button" onClick={() => onUseInChart("MSFT")}>Use MSFT in chart</button>
+    </div>
+  ),
+}));
 
 function open() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -107,5 +121,49 @@ describe("public market data truth", () => {
     expect(within(zero).getByText("$10.00")).toBeInTheDocument();
     expect(within(zero).getByText("+0.00%")).toBeInTheDocument();
     expect(within(zero).getByText("0")).toBeInTheDocument();
+  });
+
+  it("prefills research and history from a watchlist without submitting either request", async () => {
+    const scrollIntoView = vi.fn();
+    const scrollDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    try {
+      historyApi.fetchCachedSeries.mockResolvedValue({
+        read_at: "2026-11-06T12:00:00Z", collection: "disabled",
+        coverage_status: "not_verified", expected_session_count: null,
+        canonical_history: { series: [{ provider: "fixture", adjustment_type: "raw" }] },
+      });
+      open();
+      expect(await screen.findByText("Market quotes unavailable")).toBeInTheDocument();
+      expect(api.fetchMarketResearch).toHaveBeenCalledTimes(1);
+      expect(api.fetchMarketResearch).toHaveBeenCalledWith("NVDA");
+      fireEvent.click(screen.getByRole("button", { name: "Use MSFT in research" }));
+      const research = document.getElementById("research-symbol");
+      expect(research).toHaveValue("MSFT");
+      expect(research).toHaveFocus();
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+      expect(api.fetchMarketResearch).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "Use MSFT in chart" }));
+      const history = document.getElementById("daily-history-symbol");
+      expect(history).toHaveValue("MSFT");
+      expect(history).toHaveFocus();
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+      const series = JSON.stringify(["fixture", "raw"]);
+      fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: series } });
+      fireEvent.click(screen.getByRole("button", { name: "Use MSFT in chart" }));
+      expect(document.getElementById("daily-history-symbol")).toHaveValue("MSFT");
+      expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveValue(series);
+      expect(scrollIntoView).toHaveBeenCalledTimes(3);
+      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+      const form = screen.getByRole("button", { name: "View history" }).closest("form");
+      if (!(form instanceof HTMLFormElement)) throw new Error("Missing history form.");
+      fireEvent.submit(form);
+      await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("MSFT", "fixture", "raw"));
+      expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
+    } finally {
+      if (scrollDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", scrollDescriptor);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
   });
 });

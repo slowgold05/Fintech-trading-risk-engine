@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryResponse, MarketDataStatus } from "../api/history";
@@ -295,5 +296,53 @@ describe("DailyHistory", () => {
     expect(ticketHrefs()).toEqual([]);
     refresh.resolve({ ...history(), symbol });
     await waitFor(() => expect(ticketHrefs()).toEqual([`/trades?symbol=${encodeURIComponent(symbol)}`]));
+  });
+
+  it("submits the visible controlled symbol and keeps the accepted series until the next view", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue({ ...history(), symbol: "AAPL" });
+    function ControlledHistory() {
+      const [value, setValue] = useState("");
+      return (
+        <>
+          <button type="button" onClick={() => setValue("AAPL")}>Prefill AAPL</button>
+          <button type="button" onClick={() => setValue("MSFT")}>Prefill MSFT</button>
+          <DailyHistory onValueChange={setValue} value={value} />
+        </>
+      );
+    }
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+        <MemoryRouter>
+          <ControlledHistory />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const input = await screen.findByRole("textbox", { name: "Symbol" });
+    fireEvent.change(input, { target: { value: "OLD" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prefill AAPL" }));
+    expect(input).toHaveValue("AAPL");
+    fireEvent.change(input, { target: { value: "EDITED" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prefill AAPL" }));
+    expect(input).toHaveValue("AAPL");
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: RAW_SERIES } });
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+    submitForm();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1));
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "fixture", "raw");
+    expect(await screen.findByText("Showing AAPL, source fixture, adjustment raw.")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveValue(RAW_SERIES);
+    expect(ticketHrefs()).toEqual(["/trades?symbol=AAPL"]);
+    fireEvent.change(input, { target: { value: "EDITED" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prefill MSFT" }));
+    fireEvent.click(screen.getByRole("button", { name: "Prefill MSFT" }));
+    expect(input).toHaveValue("MSFT");
+    expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveValue(RAW_SERIES);
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Showing AAPL, source fixture, adjustment raw.")).toBeInTheDocument();
+    expect(fact("Source")).toBe("fixture");
+    expect(ticketHrefs()).toEqual(["/trades?symbol=AAPL"]);
+    expect(screen.queryByText(/order preview|trade preview/i)).not.toBeInTheDocument();
   });
 });

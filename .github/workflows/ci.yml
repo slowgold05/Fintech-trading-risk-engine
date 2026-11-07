@@ -177,3 +177,4 @@ jobs:
             .local-tools/p3b-ticket/*.png
             .local-tools/p3b-lifecycle/*.png
             .local-tools/p3b-chart-ticket/*.png
+            .local-tools/p3b-watchlists-ui/*.png
