@@ -182,6 +182,22 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 35](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/35) landed on
+2026-11-07, after PR 34: MACD as a fourth cached daily indicator (`sma`, `ema`, `rsi`, `macd`),
+backend-only, ready with all 7 CI jobs green on the first attempt. Evidence:
+[P3A_MACD_INDICATOR_VERIFICATION.md](P3A_MACD_INDICATOR_VERIFICATION.md). Design was written
+first as its own contract section, [P3A_INDICATOR_CONTRACT.md](P3A_INDICATOR_CONTRACT.md)
+section 14, before any implementation — MACD genuinely differs in shape from `sma`/`ema`/`rsi`:
+it conventionally takes three periods (fast, slow, signal), not one, and produces three values
+per bar (the MACD line, signal line, histogram), not one. Fast (`12`) and slow (`26`) are fixed,
+not configurable, in this unit; the existing `period` query parameter means the signal period
+only when `name=macd`. The response shape stays additive-only: `signal`/`histogram` keys are
+genuinely absent (not `null`) on `sma`/`ema`/`rsi` points. Implemented by Grok's CLI against that
+contract and a 40-point reference table computed independently beforehand from the formula, not
+derived from the implementation; verified against that reference line by line before accepting.
+Frontend MACD chart integration (three series in one panel: MACD line, signal line, histogram
+bars) is a separate, later, bigger unit than RSI's own-panel work, and is not implemented here.
+
 [PR 34](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/34) landed on 2026-11-07,
 after the seven below, ready with all 7 CI jobs green: a Range selector (1 year / 2 years) on the
 daily chart form, frontend-only, exposing PR 33's backend `range=1y` support (default stays
