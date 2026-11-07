@@ -7,6 +7,7 @@ import {
   type AdjustmentType,
   type HistoryBar,
   type HistoryCoverageStatus,
+  type HistoryRange,
   type HistoryResponse,
   fetchCachedSeries,
   fetchDailyHistory,
@@ -20,6 +21,7 @@ type SubmittedSeries = {
   symbol: string;
   provider: string;
   adjustment_type: AdjustmentType;
+  range: HistoryRange;
   indicator: IndicatorChoice;
   period: number;
 };
@@ -149,6 +151,7 @@ export function DailyHistory({
     onValueChange?.(next);
   }
   const [seriesKey, setSeriesKey] = useState("");
+  const [rangeDraft, setRangeDraft] = useState<HistoryRange>("2y");
   const [indicatorDraft, setIndicatorDraft] = useState<IndicatorChoice>("none");
   const [periodDraft, setPeriodDraft] = useState(String(PERIOD_DEFAULT));
   const [submitted, setSubmitted] = useState<SubmittedSeries | null>(null);
@@ -166,7 +169,7 @@ export function DailyHistory({
       submitted?.provider ?? "",
       submitted?.adjustment_type ?? "",
       "1d",
-      "2y",
+      submitted?.range ?? "2y",
       submitted?.indicator ?? "none",
       submitted?.period ?? PERIOD_DEFAULT,
     ],
@@ -176,13 +179,19 @@ export function DailyHistory({
         throw new Error("No submitted series.");
       }
       if (request.indicator === "none") {
-        const history = await fetchDailyHistory(request.symbol, request.provider, request.adjustment_type);
+        const history = await fetchDailyHistory(
+          request.symbol,
+          request.provider,
+          request.adjustment_type,
+          request.range,
+        );
         return { history, overlay: null };
       }
       const payload = await fetchDailyIndicators(
         request.symbol,
         request.provider,
         request.adjustment_type,
+        request.range,
         request.indicator,
         request.period,
       );
@@ -212,6 +221,7 @@ export function DailyHistory({
     (draftSymbol !== submitted.symbol ||
       selected?.provider !== submitted.provider ||
       selected?.adjustment_type !== submitted.adjustment_type ||
+      rangeDraft !== submitted.range ||
       indicatorDraft !== submitted.indicator ||
       (indicatorActive && draftPeriod !== submitted.period));
 
@@ -236,6 +246,7 @@ export function DailyHistory({
       symbol,
       provider: selected.provider,
       adjustment_type: selected.adjustment_type,
+      range: rangeDraft,
       indicator: indicatorDraft,
       period,
     };
@@ -244,6 +255,7 @@ export function DailyHistory({
       submitted.symbol === next.symbol &&
       submitted.provider === next.provider &&
       submitted.adjustment_type === next.adjustment_type &&
+      submitted.range === next.range &&
       submitted.indicator === next.indicator &&
       submitted.period === next.period
     ) {
@@ -300,7 +312,7 @@ export function DailyHistory({
         ) : null}
         {showForm ? (
           <form className="space-y-3" onSubmit={handleSubmit}>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] sm:items-end">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,9rem)_auto] sm:items-end">
               <div className="min-w-0">
                 <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-symbol">
                   Symbol
@@ -334,6 +346,20 @@ export function DailyHistory({
                       {option.provider} · {option.adjustment_type}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div className="min-w-0">
+                <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-range">
+                  Range
+                </label>
+                <select
+                  className="field-control"
+                  id="daily-history-range"
+                  onChange={(event) => setRangeDraft(readHistoryRange(event.target.value))}
+                  value={rangeDraft}
+                >
+                  <option value="1y">1 year</option>
+                  <option value="2y">2 years</option>
                 </select>
               </div>
               <button className="primary-action sm:w-auto" type="submit">
@@ -938,6 +964,13 @@ function readIndicatorChoice(value: string): IndicatorChoice {
     return value;
   }
   return "none";
+}
+
+function readHistoryRange(value: string): HistoryRange {
+  if (value === "1y" || value === "2y") {
+    return value;
+  }
+  return "2y";
 }
 
 function readPeriod(value: string): number | null {

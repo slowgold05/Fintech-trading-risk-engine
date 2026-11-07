@@ -94,7 +94,7 @@ describe("fetchDailyHistory", () => {
     const bar = response.bars[0];
     get.mockResolvedValue({ data: response } as never);
 
-    const result = await fetchDailyHistory("BRK.B", "fixture", "split_adjusted");
+    const result = await fetchDailyHistory("BRK.B", "fixture", "split_adjusted", "2y");
 
     expect(get.mock.calls).toEqual([
       [
@@ -130,7 +130,7 @@ describe("fetchDailyHistory", () => {
     const failure = new Error("history failed");
     get.mockRejectedValue(failure);
 
-    await expect(fetchDailyHistory("BRK.B", "fixture", "split_adjusted")).rejects.toBe(failure);
+    await expect(fetchDailyHistory("BRK.B", "fixture", "split_adjusted", "2y")).rejects.toBe(failure);
     expect(get).toHaveBeenCalledTimes(1);
     expect(get.mock.calls).toEqual([
       [

@@ -1,10 +1,10 @@
 import { apiClient } from "./client";
+import type { HistoryRange } from "./history";
 
 /** Public indicator names for one daily snapshot. No default is applied. */
 export type IndicatorName = "sma" | "ema" | "rsi";
 
 const DAILY_INTERVAL = "1d";
-const DAILY_RANGE = "2y";
 
 /**
  * GET /market/symbols/{symbol}/indicators.
@@ -15,6 +15,7 @@ export async function fetchDailyIndicators(
   symbol: string,
   provider: string,
   adjustment_type: string,
+  range: HistoryRange,
   name: IndicatorName,
   period: number,
 ): Promise<unknown> {
@@ -23,7 +24,7 @@ export async function fetchDailyIndicators(
     {
       params: {
         interval: DAILY_INTERVAL,
-        range: DAILY_RANGE,
+        range,
         provider,
         adjustment_type,
         name,

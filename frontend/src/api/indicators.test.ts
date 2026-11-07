@@ -25,7 +25,7 @@ describe("fetchDailyIndicators", () => {
     };
     get.mockResolvedValue({ data: body, status: 200, headers: {} } as never);
 
-    const result = await fetchDailyIndicators(symbol, "fixture", "split_adjusted", "sma", 3);
+    const result = await fetchDailyIndicators(symbol, "fixture", "split_adjusted", "2y", "sma", 3);
 
     expect(get.mock.calls).toEqual([
       [
@@ -50,7 +50,7 @@ describe("fetchDailyIndicators", () => {
     get.mockRejectedValue(failure);
 
     await expect(
-      fetchDailyIndicators("BRK/B", "fixture", "raw", "ema", 20),
+      fetchDailyIndicators("BRK/B", "fixture", "raw", "2y", "ema", 20),
     ).rejects.toBe(failure);
     expect(get).toHaveBeenCalledTimes(1);
     expect(get.mock.calls).toEqual([

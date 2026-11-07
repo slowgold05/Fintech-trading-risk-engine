@@ -18,6 +18,7 @@ import test_p0b_acceptance as harness
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_symbol import MarketSymbol
 from app.services import exchange_calendar
+from app.services.market_history import one_calendar_year_before, two_calendar_years_before
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = harness.disposable_api
@@ -134,6 +135,17 @@ def test_cached_daily_chart(chart_api):
         header_text = _section(driver).find_element(By.CSS_SELECTOR, "details table thead").text
         assert "volume" in header_text.lower()
         _capture(driver, canvas, artifacts / "chart-desktop.png")
+
+        two_year_start = two_calendar_years_before(now.date())
+        one_year_start = one_calendar_year_before(now.date())
+        assert two_year_start.isoformat() in _section(driver).text
+        Select(_section(driver).find_element(By.ID, "daily-history-range")).select_by_value("1y")
+        harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))
+        harness._wait(driver).until(lambda current: one_year_start.isoformat() in _section(current).text)
+        assert two_year_start.isoformat() not in _section(driver).text
+        Select(_section(driver).find_element(By.ID, "daily-history-range")).select_by_value("2y")
+        harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))
+        harness._wait(driver).until(lambda current: two_year_start.isoformat() in _section(current).text)
 
         desktop_width = canvas.rect["width"]
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})

@@ -22,6 +22,9 @@ export type MarketDataStatus = {
 
 export type AdjustmentType = "raw" | "split_adjusted";
 
+/** Daily history window. The chart defaults to 2y and can request 1y. */
+export type HistoryRange = "1y" | "2y";
+
 /** One returned canonical bar. Prices stay fixed 6-decimal strings. Volume stays an integer string. */
 export type HistoryBar = {
   session_date: string;
@@ -56,7 +59,7 @@ export type HistoryCoverageStatus =
 export type HistoryResponse = {
   symbol: string;
   interval: "1d";
-  range: "2y";
+  range: HistoryRange;
   provider: string;
   adjustment_type: AdjustmentType;
   status: "unavailable" | "partial";
@@ -73,7 +76,6 @@ export type HistoryResponse = {
 };
 
 const DAILY_INTERVAL = "1d";
-const DAILY_RANGE = "2y";
 
 export async function fetchCachedSeries(): Promise<MarketDataStatus> {
   const response = await apiClient.get<MarketDataStatus>("/market/data-status");
@@ -84,13 +86,14 @@ export async function fetchDailyHistory(
   symbol: string,
   provider: string,
   adjustment_type: string,
+  range: HistoryRange,
 ): Promise<HistoryResponse> {
   const response = await apiClient.get<HistoryResponse>(
     `/market/symbols/${encodeURIComponent(symbol)}/history`,
     {
       params: {
         interval: DAILY_INTERVAL,
-        range: DAILY_RANGE,
+        range,
         provider,
         adjustment_type,
       },

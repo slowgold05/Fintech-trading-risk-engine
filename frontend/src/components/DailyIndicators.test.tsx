@@ -139,6 +139,10 @@ function chooseIndicator(name: "sma" | "ema" | "rsi" | "none", period?: string) 
   }
 }
 
+function chooseRange(range: "1y" | "2y") {
+  fireEvent.change(screen.getByRole("combobox", { name: "Range" }), { target: { value: range } });
+}
+
 async function ready() {
   historyApi.fetchCachedSeries.mockResolvedValue({
     read_at: READ_AT, collection: "disabled", coverage_status: "not_verified", expected_session_count: null,
@@ -219,7 +223,7 @@ describe("DailyIndicators", () => {
     await waitFor(() => expect(mounts).toHaveLength(1));
     const chart = mounts[0];
     if (chart === undefined) throw new Error("Missing chart.");
-    expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "sma", 3]]);
+    expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "2y", "sma", 3]]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chart.addSeries.mock.calls.map((call) => call[0])).toEqual([
       chartApi.CandlestickSeries,
@@ -270,8 +274,8 @@ describe("DailyIndicators", () => {
     if (prices instanceof HTMLDetailsElement && !prices.open) fireEvent.click(screen.getByText("Session prices"));
     await waitFor(() => expect(screen.getAllByRole("cell", { name: "7.000000" })).toHaveLength(4));
     expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([
-      ["TEST", "fixture", "raw", "sma", 3],
-      ["TEST", "fixture", "raw", "sma", 3],
+      ["TEST", "fixture", "raw", "2y", "sma", 3],
+      ["TEST", "fixture", "raw", "2y", "sma", 3],
     ]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
@@ -335,7 +339,7 @@ describe("DailyIndicators", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(chartApi.createChart).toHaveBeenCalledTimes(2));
     expect(indicatorApi.fetchDailyIndicators).toHaveBeenCalledTimes(4);
-    expect(indicatorApi.fetchDailyIndicators.mock.calls[3]).toEqual(["TEST", "fixture", "raw", "sma", 3]);
+    expect(indicatorApi.fetchDailyIndicators.mock.calls[3]).toEqual(["TEST", "fixture", "raw", "2y", "sma", 3]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     const prices = screen.getByText("Session prices").closest("details");
     if (prices instanceof HTMLDetailsElement && !prices.open) fireEvent.click(screen.getByText("Session prices"));
@@ -354,8 +358,8 @@ describe("DailyIndicators", () => {
     expect(screen.queryByRole("spinbutton", { name: "Period" })).not.toBeInTheDocument();
     submitForm();
     await waitFor(() => expect(mounts).toHaveLength(2));
-    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw"]]);
-    expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "sma", 7]]);
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", "2y"]]);
+    expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "2y", "sma", 7]]);
     const [previous, current] = mounts;
     if (previous === undefined || current === undefined) throw new Error("Missing charts.");
     expect(previous.remove).toHaveBeenCalledTimes(1);
@@ -423,7 +427,7 @@ describe("DailyIndicators", () => {
     await ready();
     chooseSeries();
     chooseIndicator("sma", "3");
-    indicatorApi.fetchDailyIndicators.mockImplementation((_symbol: unknown, _provider: unknown, _adjustment: unknown, name: unknown) => {
+    indicatorApi.fetchDailyIndicators.mockImplementation((_symbol: unknown, _provider: unknown, _adjustment: unknown, _range: unknown, name: unknown) => {
       if (name === "rsi") return Promise.resolve(indicatorPayload("rsi", 3, RSI3));
       return Promise.resolve(indicatorPayload("sma", 3, SMA3));
     });
@@ -463,5 +467,18 @@ describe("DailyIndicators", () => {
     expect(chart.rsiSetData).toHaveBeenLastCalledWith([]);
     expect(linePoints(chart).slice(2).map((point) => point.value)).toEqual(SMA3.slice(2).map(Number));
     expect(chart.remove).not.toHaveBeenCalled();
+  });
+
+  it("requests a one-year window when that range is selected with an indicator", async () => {
+    await ready();
+    chooseSeries();
+    chooseRange("1y");
+    chooseIndicator("sma", "3");
+    expect(screen.getByRole("combobox", { name: "Range" })).toHaveAttribute("id", "daily-history-range");
+    indicatorApi.fetchDailyIndicators.mockResolvedValue(indicatorPayload("sma", 3, SMA3));
+    submitForm();
+    await waitFor(() => expect(indicatorApi.fetchDailyIndicators).toHaveBeenCalledTimes(1));
+    expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "1y", "sma", 3]]);
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
   });
 });

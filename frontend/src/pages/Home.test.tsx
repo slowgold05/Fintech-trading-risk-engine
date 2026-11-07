@@ -159,7 +159,7 @@ describe("public market data truth", () => {
       const form = screen.getByRole("button", { name: "View history" }).closest("form");
       if (!(form instanceof HTMLFormElement)) throw new Error("Missing history form.");
       fireEvent.submit(form);
-      await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("MSFT", "fixture", "raw"));
+      await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y"));
       expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
     } finally {
       if (scrollDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", scrollDescriptor);

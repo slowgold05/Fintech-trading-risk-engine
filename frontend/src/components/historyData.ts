@@ -47,7 +47,7 @@ function parseBars(history: unknown): { candles: CandlestickData<Time>[]; volume
   if (body.interval !== "1d") {
     throw new Error("Invalid interval.");
   }
-  if (body.range !== "2y") {
+  if (body.range !== "1y" && body.range !== "2y") {
     throw new Error("Invalid range.");
   }
   if (body.bars.length === 0) {

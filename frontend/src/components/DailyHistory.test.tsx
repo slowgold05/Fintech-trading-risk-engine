@@ -115,6 +115,10 @@ function fillTest(symbol = "TEST") {
   fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: RAW_SERIES } });
 }
 
+function chooseRange(range: "1y" | "2y") {
+  fireEvent.change(screen.getByRole("combobox", { name: "Range" }), { target: { value: range } });
+}
+
 function submitForm() {
   const form = screen.getByRole("button", { name: "View history" }).closest("form");
   if (!(form instanceof HTMLFormElement)) throw new Error("Missing history form.");
@@ -175,7 +179,7 @@ describe("DailyHistory", () => {
     submitForm();
     await waitFor(() => expect(mounts).toHaveLength(1));
     const chart = onlyChart();
-    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw"]]);
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", "2y"]]);
     expect(screen.getByText(PARTIAL)).toBeInTheDocument();
     expect(screen.getByText(SHOWING)).toBeInTheDocument();
     expect([fact("Status"), fact("Source"), fact("Coverage"), fact("Expected sessions"), fact("Collection")]).toEqual([
@@ -221,7 +225,10 @@ describe("DailyHistory", () => {
     submitForm();
     await waitFor(() => expect(screen.getByRole("cell", { name: "107.250000" })).toBeInTheDocument());
     expect(screen.queryByRole("cell", { name: "108.500000" })).not.toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw"], ["TEST", "fixture", "raw"]]);
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([
+      ["TEST", "fixture", "raw", "2y"],
+      ["TEST", "fixture", "raw", "2y"],
+    ]);
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
     expect(chart.volumeSetData).toHaveBeenLastCalledWith([
       { time: "2026-11-04", value: 0, color: "rgba(52, 211, 153, 0.5)" },
@@ -370,7 +377,7 @@ describe("DailyHistory", () => {
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     submitForm();
     await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1));
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "fixture", "raw");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "fixture", "raw", "2y");
     expect(await screen.findByText("Showing AAPL, source fixture, adjustment raw.")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveValue(RAW_SERIES);
     expect(ticketHrefs()).toEqual(["/trades?symbol=AAPL"]);
@@ -384,5 +391,18 @@ describe("DailyHistory", () => {
     expect(fact("Source")).toBe("fixture");
     expect(ticketHrefs()).toEqual(["/trades?symbol=AAPL"]);
     expect(screen.queryByText(/order preview|trade preview/i)).not.toBeInTheDocument();
+  });
+
+  it("requests one year of daily history when that range is selected", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    renderHistory();
+    expect(await screen.findByRole("combobox", { name: "Range" })).toHaveAttribute("id", "daily-history-range");
+    expect(screen.getByRole("combobox", { name: "Range" })).toHaveValue("2y");
+    fillTest();
+    chooseRange("1y");
+    submitForm();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1));
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", "1y"]]);
   });
 });

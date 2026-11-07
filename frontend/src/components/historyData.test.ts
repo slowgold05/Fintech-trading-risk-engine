@@ -181,6 +181,15 @@ describe("historyCandles", () => {
     expect(() => historyCandles(dailyPayload(barsWithGap(), { bars: {} }))).toThrow();
   });
 
+  it("accepts range 1y and rejects an unsupported range", () => {
+    const rows = barsWithGap();
+
+    expect(historyCandles(dailyPayload(rows, { range: "1y" }))).toHaveLength(2);
+    expect(historyCandles(dailyPayload([], { range: "1y" }))).toEqual([]);
+    expect(() => historyCandles(dailyPayload(rows, { range: "6mo" }))).toThrow();
+    expect(() => historyCandles(dailyPayload([], { range: "6mo" }))).toThrow();
+  });
+
   it.each([
     ["open", ""],
     ["high", null],
@@ -304,7 +313,7 @@ describe("historyCandles", () => {
 
   it.each([
     { interval: "1w" },
-    { range: "1y" },
+    { range: "6mo" },
     { status: "complete" },
     { coverage_status: "verified" },
     { expected_session_count: 0 },
@@ -343,7 +352,7 @@ describe("historyCandles", () => {
 
   it.each([
     { interval: "1w" },
-    { range: "1y" },
+    { range: "6mo" },
     { status: "complete" },
     { coverage_status: "verified" },
     { expected_session_count: 0 },
