@@ -76,6 +76,7 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("GRANT INSERT (kind, summary, evidence_ref, created_at) ON expansion_alerts TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON detection_cursors TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON scheduler_locks TO fintech_app")
+            cursor.execute("GRANT INSERT, UPDATE, DELETE ON watchlists, watchlist_items TO fintech_app")
 
 
 def main() -> None:

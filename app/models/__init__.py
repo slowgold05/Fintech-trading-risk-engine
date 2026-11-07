@@ -26,3 +26,4 @@ from app.models.aml import AmlActivation, AmlCase, CashMovement, Incident, Sanct
 from app.models.sar import SarDraft
 from app.models.expansion import ExpansionAlert, Finding, RiskBrief, TradeIntent
 from app.models.ops_state import DetectionCursor, SchedulerLock
+from app.models.watchlist import Watchlist, WatchlistItem
