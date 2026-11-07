@@ -1,6 +1,6 @@
 # P3A — Cached daily SMA/EMA indicator contract
 
-**Status:** Proposed scope awaiting Codex review. This file is not an implementation, not an acceptance record, and not a claim that any route, test, or checkbox exists.
+**Status:** Scope reviewed by Codex. Implementation is under review, pending CI. This file is not an acceptance record and does not claim phase completion.
 
 **Authority:** `Sentinel_Markets_2_0_Roadmap.md` Phase 3 (advanced charting: SMA and EMA only, as the next backend slice) and the public reader `read_symbol_history` in `app/services/market_history.py`, exposed today as `GET /market/symbols/{symbol}/history`.
 
@@ -58,9 +58,9 @@ All of these are required. None of them default. On the route, a missing require
 | `provider` | Required query. Same nonempty, unpadded, max-length rule as history. |
 | `adjustment_type` | Required query. Only `raw` or `split_adjusted`. Any other supplied value is HTTP 422 `adjustment_type must be raw or split_adjusted.` |
 | `name` | Required query. Exact `sma` or `ema`. No default. Any other supplied token, including different case, is HTTP 422 with the indicator detail below. |
-| `period` | Required query. No default. An integer in the closed range 2 through 200. |
+| `period` | Required query. No default. An integer in the closed range 2 through 200. Supplied query text must be a canonical ASCII integer with no leading zeros. A direct service argument may be an `int` in that range. A `bool` is not accepted. |
 
-A supplied `period` is malformed, and therefore HTTP 422 with the indicator detail below, when it is empty, padded, a non-integer (`2.0`, `2e1`), a boolean, or an integer outside 2..200 (`0`, `1`, `201`, negatives).
+A supplied `period` is malformed, and therefore HTTP 422 with the indicator detail below, when it is empty, padded, not a canonical ASCII integer without leading zeros (`02`, `+2`), a non-integer (`2.0`, `2e1`), a boolean, or an integer outside 2..200 (`0`, `1`, `201`, negatives). A direct service call accepts an `int` in range and rejects a `bool`.
 
 Supplied invalid history values keep the existing history detail strings. The indicator service must call the same validation path history uses (by calling `read_symbol_history`, which validates before it reads). It must not replace those messages with weaker ones and must not accept a value history rejects.
 
@@ -288,4 +288,4 @@ The intended shape is a thin service, for example `read_symbol_indicators(...)`,
 
 It should import and call the public history function. Copying `_symbol_history`’s SQL, clock read, or eligibility would be a second snapshot and is outside this proposal.
 
-This document records scope only. Codex review can accept, narrow, or reject it. Until that review, no code, migration, test, or roadmap checkbox belongs to this slice.
+Scope was reviewed by Codex. The service, route, and tests are under review pending CI. This is not an acceptance record and does not claim phase completion.
