@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.market_history import read_data_status, read_symbol_history
+from app.services.market_indicators import read_symbol_indicators
 
 router = APIRouter()
 
@@ -30,4 +31,27 @@ def symbol_history(
         range_token=range_token,
         provider=provider,
         adjustment_type=adjustment_type,
+    )
+
+
+@router.get("/symbols/{symbol}/indicators")
+def symbol_indicators(
+    symbol: str,
+    interval: str = Query(...),
+    range_token: str = Query(..., alias="range"),
+    provider: str = Query(...),
+    adjustment_type: str = Query(...),
+    name: str = Query(...),
+    period: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    return read_symbol_indicators(
+        db,
+        symbol=symbol,
+        interval=interval,
+        range_token=range_token,
+        provider=provider,
+        adjustment_type=adjustment_type,
+        name=name,
+        period=period,
     )
