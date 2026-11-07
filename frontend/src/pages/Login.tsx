@@ -15,6 +15,36 @@ const features = [
 type AuthMode = "login" | "register";
 type Stage = "password" | "code" | "enroll";
 
+function hasControlOrBackslash(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 32 || code === 127 || value[index] === "\\") return true;
+  }
+  return false;
+}
+
+function safeAppFrom(state: unknown): string {
+  if (typeof state !== "object" || state === null) return "/dashboard";
+  const from = "from" in state ? state.from : undefined;
+  if (typeof from !== "object" || from === null) return "/dashboard";
+  const pathname = "pathname" in from ? from.pathname : undefined;
+  const search = "search" in from ? from.search : undefined;
+  if (typeof pathname !== "string") return "/dashboard";
+  if (
+    !pathname.startsWith("/") ||
+    pathname.startsWith("//") ||
+    pathname.includes("?") ||
+    pathname.includes("#") ||
+    hasControlOrBackslash(pathname)
+  ) {
+    return "/dashboard";
+  }
+  if (search === undefined || search === "") return pathname;
+  if (typeof search !== "string") return "/dashboard";
+  if (!search.startsWith("?") || hasControlOrBackslash(search)) return "/dashboard";
+  return `${pathname}${search}`;
+}
+
 function passwordStrength(password: string, username: string) {
   const categories = [
     /[a-z]/.test(password),
@@ -54,9 +84,7 @@ export function Login() {
   const { isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from =
-    (location.state as { from?: { pathname?: string } } | null)?.from
-      ?.pathname ?? "/dashboard";
+  const from = safeAppFrom(location.state);
 
   if (isAuthenticated) {
     return <Navigate to={from} replace />;

@@ -68,3 +68,10 @@ it.each(["/portfolio", "/trades", "/risk", "/compliance"])("keeps %s behind sign
   open(path);
   expect(screen.getByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
 });
+
+it("keeps an anonymous /trades?symbol=AAPL handoff on the sign-in form", () => {
+  open("/trades?symbol=AAPL");
+  expect(screen.getByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Trade symbol")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Preview order" })).not.toBeInTheDocument();
+});

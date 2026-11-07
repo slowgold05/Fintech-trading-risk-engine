@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import type { CandlestickData, Time } from "lightweight-charts";
+import { Link } from "react-router-dom";
 import {
   type AdjustmentType,
   type HistoryBar,
@@ -285,6 +286,17 @@ export function DailyHistory() {
                 <p className="text-sm text-slate-300">
                   Partial cached bars for the requested window. Missing sessions stay missing.
                 </p>
+                {!historyQuery.isFetching && !historyQuery.isError ? (
+                  <p>
+                    <Link
+                      className="text-sm text-emerald-300 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50"
+                      to={`/trades?symbol=${encodeURIComponent(submitted.symbol)}`}
+                    >
+                      Trade this symbol
+                    </Link>
+                    <span className="text-sm text-slate-400"> · paper trade</span>
+                  </p>
+                ) : null}
                 <HistoryFacts meta={accepted.meta} submitted={submitted} />
                 <DailyHistoryCanvas points={accepted.points} />
                 <SessionPrices rows={accepted.rows} submitted={submitted} />

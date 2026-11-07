@@ -176,3 +176,4 @@ jobs:
             .local-tools/p3a-history/*.png
             .local-tools/p3b-ticket/*.png
             .local-tools/p3b-lifecycle/*.png
+            .local-tools/p3b-chart-ticket/*.png
