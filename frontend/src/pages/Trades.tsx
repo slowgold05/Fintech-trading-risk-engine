@@ -1,7 +1,9 @@
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { fetchTrades } from "../api/trades";
 import { cancelOrder, fetchOrders } from "../api/orders";
+import { OrderDetails } from "../components/OrderDetails";
 import { OrderTicket } from "../components/OrderTicket";
 import { PageHeader } from "../components/PageHeader";
 import {
@@ -22,42 +24,131 @@ function getTradeStatus(trade: TradeResponse) {
   return trade.id ? "Executed" : "Pending";
 }
 
+type CancelNotice = {
+  orderId: number;
+  outcome: "canceled" | "conflict" | "unconfirmed" | "rejected";
+  message: string;
+};
+
+function cancelNoticeFor(orderId: number, error: unknown): CancelNotice {
+  if (isAxiosError(error)) {
+    const status = error.response?.status;
+    if (status === 409) {
+      return {
+        orderId,
+        outcome: "conflict",
+        message: `Order ${orderId}: cancellation conflict. The latest status changed.`,
+      };
+    }
+    if (error.response == null || (typeof status === "number" && status >= 500)) {
+      return {
+        orderId,
+        outcome: "unconfirmed",
+        message: `Order ${orderId}: cancellation could not be confirmed.`,
+      };
+    }
+    const detail = error.response.data?.detail;
+    return {
+      orderId,
+      outcome: "rejected",
+      message: typeof detail === "string" && detail.length > 0
+        ? `Order ${orderId}: ${detail}`
+        : `Order ${orderId}: cancellation was rejected.`,
+    };
+  }
+  return {
+    orderId,
+    outcome: "unconfirmed",
+    message: `Order ${orderId}: cancellation could not be confirmed.`,
+  };
+}
+
 export function Trades() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelNotice, setCancelNotice] = useState<CancelNotice | null>(null);
+  const [refreshIssue, setRefreshIssue] = useState(false);
+  const detailTriggers = useRef(new Map<number, HTMLButtonElement>());
+  const cancelLock = useRef(false);
 
   const tradesQuery = useQuery({
     queryKey: ["trades"],
     queryFn: fetchTrades,
   });
   const ordersQuery = useQuery({ queryKey: ["orders"], queryFn: fetchOrders });
+  const orders = ordersQuery.isSuccess ? ordersQuery.data.orders : null;
+  const selectedVisible =
+    selectedOrderId != null && orders != null && orders.some((order) => order.id === selectedOrderId);
 
-  const cancelMutation = useMutation({
-    mutationFn: cancelOrder,
-    onSuccess: async () => {
-      showToast("success", "Order canceled.");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["orders"] }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+  const cancelMutation = useMutation({ mutationFn: cancelOrder });
+
+  async function refreshAfterCancel(orderId: number): Promise<boolean> {
+    try {
+      const results = await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: ["orders"] }, { throwOnError: true }),
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }, { throwOnError: true }),
+        queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] }, { throwOnError: true }),
       ]);
-    },
-    onError: (error) => {
-      const detail = isAxiosError(error) && typeof error.response?.data?.detail === "string"
-        ? error.response.data.detail : "Order cancellation failed.";
-      showToast("error", detail);
-    },
-  });
+      return results.every((result) => result.status === "fulfilled");
+    } catch {
+      return false;
+    }
+  }
+
+  function notify(type: "success" | "error", message: string) {
+    try {
+      showToast(type, message);
+    } catch {
+      // A toast failure must not change the cancel outcome.
+    }
+  }
+
+  async function handleCancel(orderId: number) {
+    if (cancelLock.current) return;
+    cancelLock.current = true;
+    setCancelBusy(true);
+    setCancelNotice(null);
+    setRefreshIssue(false);
+    try {
+      await cancelMutation.mutateAsync(orderId);
+      setCancelNotice({
+        orderId,
+        outcome: "canceled",
+        message: `Order ${orderId} was canceled.`,
+      });
+      notify("success", "Order canceled.");
+    } catch (error) {
+      const notice = cancelNoticeFor(orderId, error);
+      setCancelNotice(notice);
+      notify("error", notice.message);
+    }
+    const loaded = await refreshAfterCancel(orderId);
+    setRefreshIssue(!loaded);
+    if (!loaded) notify("error", "Latest state could not be loaded.");
+    cancelLock.current = false;
+    setCancelBusy(false);
+  }
+
+  function closeDetails() {
+    const id = selectedOrderId;
+    setSelectedOrderId(null);
+    if (id == null) return;
+    queueMicrotask(() => detailTriggers.current.get(id)?.focus());
+  }
 
   const trades = tradesQuery.data?.trades ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <PageHeader
         title="Order Management"
         description="Submit orders and review execution history with risk-aware trade context."
       />
 
-      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="min-w-0">
         <DashboardCard
           action={
             <span className="font-mono text-xs text-slate-500">Ticket</span>
@@ -66,7 +157,9 @@ export function Trades() {
         >
           <OrderTicket />
         </DashboardCard>
+        </div>
 
+        <div className="min-w-0">
         <DashboardCard
           action={
             <span className="font-mono text-xs text-slate-500">
@@ -169,17 +262,37 @@ export function Trades() {
             </div>
           )}
         </DashboardCard>
+        </div>
       </div>
       <DashboardCard title="Your Orders">
+        {cancelNotice && (
+          <p className="mb-3 text-sm text-slate-200" role="status">{cancelNotice.message}</p>
+        )}
+        {refreshIssue && (
+          <p className="mb-3 text-sm text-rose-200" role="status">Latest state could not be loaded.</p>
+        )}
         {ordersQuery.isLoading ? <SkeletonBlock className="h-24" /> : ordersQuery.isError ? (
-          <p className="text-sm text-rose-300">Orders could not be loaded.</p>
+          <div>
+            <p className="text-sm text-rose-300">Orders could not be loaded.</p>
+            <button
+              type="button"
+              className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-emerald-300 hover:text-emerald-200 disabled:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+              disabled={ordersQuery.isFetching}
+              onClick={() => { void ordersQuery.refetch(); }}
+            >
+              Retry orders
+            </button>
+          </div>
         ) : !ordersQuery.data?.orders.length ? (
           <p className="text-sm text-slate-400">No orders yet.</p>
         ) : (
-          <div className="table-shell">
+          <>
+          <div className="table-shell min-w-0">
             <table className="data-table min-w-[650px]">
               <thead><tr><th className="text-left">Symbol</th><th className="text-left">Side</th><th className="text-left">Type</th><th className="text-right">Remaining</th><th className="text-right">Price</th><th className="text-left">Status</th><th className="text-right">Action</th></tr></thead>
-              <tbody>{ordersQuery.data.orders.map((order) => (
+              <tbody>{ordersQuery.data.orders.map((order) => {
+                const expanded = selectedVisible && selectedOrderId === order.id;
+                return (
                 <tr key={order.id}>
                   <td className="font-mono font-semibold">{order.symbol}</td>
                   <td className="capitalize">{order.side}</td>
@@ -187,13 +300,39 @@ export function Trades() {
                   <td className="text-right font-mono">{formatQuantity(order.remaining_quantity)}</td>
                   <td className="text-right font-mono">{order.limit_price === null ? "Market" : formatCurrency(order.limit_price)}</td>
                   <td className="capitalize">{order.status}</td>
-                  <td className="text-right">{order.status === "open" && (
-                    <button type="button" className="text-sm text-rose-300 hover:text-rose-200" disabled={cancelMutation.isPending} onClick={() => cancelMutation.mutate(order.id)} aria-label={`Cancel ${order.symbol} order ${order.id}`}>Cancel</button>
-                  )}</td>
+                  <td className="text-right">
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <button
+                        type="button"
+                        className="inline-flex min-h-11 items-center px-2 text-sm text-emerald-300 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                        aria-expanded={expanded}
+                        aria-controls="order-details-panel"
+                        aria-label={`Details for ${order.symbol} order ${order.id}`}
+                        ref={(node) => {
+                          if (node) detailTriggers.current.set(order.id, node);
+                          else detailTriggers.current.delete(order.id);
+                        }}
+                        onClick={() => {
+                          if (expanded) closeDetails();
+                          else setSelectedOrderId(order.id);
+                        }}
+                      >
+                        Details
+                      </button>
+                      {order.status === "open" && (
+                        <button type="button" className="inline-flex min-h-11 items-center px-2 text-sm text-rose-300 hover:text-rose-200 disabled:text-slate-600" disabled={cancelBusy} onClick={() => { void handleCancel(order.id); }} aria-label={`Cancel ${order.symbol} order ${order.id}`}>Cancel</button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
-              ))}</tbody>
+                );
+              })}</tbody>
             </table>
           </div>
+          {selectedVisible && selectedOrderId != null && (
+            <OrderDetails key={selectedOrderId} orderId={selectedOrderId} onClose={closeDetails} />
+          )}
+          </>
         )}
       </DashboardCard>
     </div>
