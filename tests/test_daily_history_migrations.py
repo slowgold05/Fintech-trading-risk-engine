@@ -92,6 +92,8 @@ def test_history_schema_preserves_legacy_data_and_scoped_grants(isolated_history
             db.add(MarketSymbol(symbol="P1B", company_name="Fixture", exchange="NASDAQ"))
             db.commit()
 
+    command.upgrade(config, "head")
+
     password = uuid4().hex
     configure(owner.render_as_string(hide_password=False), password)
     app_engine = create_engine(owner.set(username="fintech_app", password=password))
