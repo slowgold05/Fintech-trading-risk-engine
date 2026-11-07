@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
 import { DailyHistory } from "../components/DailyHistory";
+import { Watchlists } from "../components/Watchlists";
 import { FreshnessBadge } from "../components/FreshnessBadge";
 import type {
   MarketHeatmapItemResponse,
@@ -252,6 +253,7 @@ export function Home() {
   const { isAuthenticated } = useAuth();
   const [symbolInput, setSymbolInput] = useState("NVDA");
   const [researchSymbol, setResearchSymbol] = useState("NVDA");
+  const [historyDraft, setHistoryDraft] = useState("");
   const [heatmapScale, setHeatmapScale] =
     useState<HeatmapScale>("standard");
   const marketQuery = useQuery({
@@ -297,6 +299,25 @@ export function Home() {
     if (nextSymbol) {
       setResearchSymbol(nextSymbol);
     }
+  }
+
+  function focusField(id: string) {
+    const field = document.getElementById(id);
+    if (!(field instanceof HTMLElement)) {
+      return;
+    }
+    field.focus();
+    field.scrollIntoView({ block: "center" });
+  }
+
+  function useWatchlistInResearch(symbol: string) {
+    setSymbolInput(symbol);
+    focusField("research-symbol");
+  }
+
+  function useWatchlistInChart(symbol: string) {
+    setHistoryDraft(symbol);
+    focusField("daily-history-symbol");
   }
 
   return (
@@ -681,6 +702,8 @@ export function Home() {
           </div>
         </div>
 
+        <Watchlists onUseInChart={useWatchlistInChart} onUseInResearch={useWatchlistInResearch} />
+
         <div className="dashboard-card">
           <div className="dashboard-card-header">
             <div>
@@ -739,7 +762,7 @@ export function Home() {
             )}
           </div>
         </div>
-        <DailyHistory />
+        <DailyHistory onValueChange={setHistoryDraft} value={historyDraft} />
       </section>
     </main>
   );

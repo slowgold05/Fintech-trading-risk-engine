@@ -65,8 +65,22 @@ function addCandleSeries(chart: DailyChart, charts: LightweightChartsModule) {
 
 type CandleSeries = ReturnType<typeof addCandleSeries>;
 
-export function DailyHistory() {
+export function DailyHistory({
+  value,
+  onValueChange,
+}: {
+  value?: string;
+  onValueChange?: (value: string) => void;
+} = {}) {
   const [symbolDraft, setSymbolDraft] = useState("");
+  const draftValue = value ?? symbolDraft;
+
+  function updateSymbolDraft(next: string) {
+    if (value === undefined) {
+      setSymbolDraft(next);
+    }
+    onValueChange?.(next);
+  }
   const [seriesKey, setSeriesKey] = useState("");
   const [submitted, setSubmitted] = useState<SubmittedSeries | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -101,7 +115,7 @@ export function DailyHistory() {
   );
   const options = catalog?.ok ? catalog.options : [];
   const selected = options.find((option) => option.key === seriesKey) ?? null;
-  const draftSymbol = symbolDraft.trim().toUpperCase();
+  const draftSymbol = draftValue.trim().toUpperCase();
   const formDiffers =
     submitted !== null &&
     (draftSymbol !== submitted.symbol ||
@@ -110,7 +124,7 @@ export function DailyHistory() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const symbol = symbolDraft.trim().toUpperCase();
+    const symbol = draftValue.trim().toUpperCase();
     if (symbol.length === 0 || symbol.length > SYMBOL_MAX) {
       setFormError("Enter a symbol of at most 20 characters.");
       return;
@@ -196,9 +210,9 @@ export function DailyHistory() {
                   className="field-control"
                   id="daily-history-symbol"
                   maxLength={SYMBOL_MAX}
-                  onChange={(event) => setSymbolDraft(event.target.value)}
+                  onChange={(event) => updateSymbolDraft(event.target.value)}
                   spellCheck={false}
-                  value={symbolDraft}
+                  value={draftValue}
                 />
               </div>
               <div className="min-w-0">
