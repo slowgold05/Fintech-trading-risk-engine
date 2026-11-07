@@ -257,7 +257,7 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         h._wait(driver).until(lambda current: "SMA (3)" not in _section(current).text and "2.333333" not in _section(current).text)
         h._wait(driver).until(_chart)
         _open_prices(driver)
-        h._wait(driver).until(lambda current: _headers(current) == ["Session date", "Open", "High", "Low", "Close"])
+        h._wait(driver).until(lambda current: _headers(current) == ["Session date", "Open", "High", "Low", "Close", "Volume"])
         after_none = _starts(driver)
         assert after_none["history"] == none_draft["history"] + 1 and after_none["indicators"] == none_draft["indicators"]
 
