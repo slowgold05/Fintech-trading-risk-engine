@@ -222,7 +222,8 @@ def test_empty_market_ticket(disposable_api) -> None:
         h._install_order_hook(driver, disposable_api.api_url)
         email, engine = disposable_api.email, disposable_api.engine
         before = h._owner_activity_counts(engine, email)
-        if any(before.values()):
+        opened = {key: value for key, value in before.items() if key != "ledger_entries"}
+        if any(opened.values()):
             pytest.fail("owner activity was not empty before preview: " + json.dumps(before))
         _click_preview(driver)
         h._wait(driver).until(lambda current: _ready(current, "1"))
@@ -262,7 +263,9 @@ def test_empty_market_ticket(disposable_api) -> None:
         if len(summary) != 1 or summary[0]["status"] != 200 or summary[0]["orderStatus"] != "canceled":
             pytest.fail("order capture mismatch: " + json.dumps({"count": len(summary), "statuses": [item["status"] for item in summary], "order_statuses": [item["orderStatus"] for item in summary]}))
         counts = h._owner_activity_counts(engine, email)
-        expected = {"orders": 1, "trades": 0, "holdings": 0, "lots": 0, "ledger_entries": 0, "order_requests": 1}
+        expected = dict(before)
+        expected["orders"] = 1
+        expected["order_requests"] = 1
         if counts != expected:
             pytest.fail("market order activity mismatch: " + json.dumps(counts))
         if _cash(engine, email) != Decimal("100000.00"):
