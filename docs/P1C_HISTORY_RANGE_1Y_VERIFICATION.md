@@ -64,6 +64,30 @@ Independent verification I did myself:
 - `docs/P1C_DATA_CONTRACT.md`: the `range` query-rule row and window-description prose updated
   for both supported values.
 
+## Correction found during CI browser verification
+
+The first head's CI `browser` job failed `test_p3a_history.py::test_cached_daily_chart` three
+times in a row with the same `TimeoutException` waiting for the chart canvas. I initially
+misdiagnosed this as an environment flake (this stack had genuinely hit unrelated flakes
+earlier) and reran twice before stopping to actually investigate the identical repeated failure.
+The real cause: `tests/browser/isolated_api.py`'s `P3A_BAD_HISTORY_FIXTURE` monkeypatch wrapper
+(used only by this one test file, to inject a corrupt close price for one symbol) called
+`market_history._symbol_history` directly with the pre-this-unit keyword set
+(`symbol`/`interval`/`provider`/`adjustment_type`, no `range_token`). Once `_symbol_history`
+gained a required `range_token` keyword, every call through that wrapper raised `TypeError:
+missing 1 required keyword-only argument: 'range_token'`, 500ing the endpoint for every symbol in
+that test (not just the one the fixture is meant to corrupt) — which is why the frontend never
+got a chart to render and the Selenium wait timed out, deterministically, every time. Fixed by
+adding `range_token` to the wrapper's signature and forwarding it to the real function. Verified
+locally via a standalone script importing the patched module and confirming the call now
+proceeds past the previous `TypeError` point (an unrelated, expected failure further in from an
+intentionally minimal ad hoc DB setup) instead of failing there. This is scoping-review gap on my
+part — I should have grepped for every caller of a function before changing its signature, not
+just the router/service callers; `isolated_api.py`'s direct monkeypatch of a private function
+was outside what Grok's scoped task touched (it was never in its file list) and outside what my
+own pre-launch grep for `_symbol_history(` callers caught at the time, because I only grepped
+right before this doc section, not before writing the task.
+
 ## Verification run, 2026-11-07
 
 - `python -m pytest -q tests/test_market_history.py tests/test_market_indicators.py`:

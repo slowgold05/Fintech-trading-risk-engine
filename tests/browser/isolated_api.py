@@ -20,11 +20,12 @@ if os.environ.get("P3A_BAD_HISTORY_FIXTURE") == "1" and __name__ == "isolated_ap
 
     _original_symbol_history = market_history._symbol_history
 
-    def _symbol_history_bad_close(db, *, symbol, interval, provider, adjustment_type):
+    def _symbol_history_bad_close(db, *, symbol, interval, range_token, provider, adjustment_type):
         payload = _original_symbol_history(
             db,
             symbol=symbol,
             interval=interval,
+            range_token=range_token,
             provider=provider,
             adjustment_type=adjustment_type,
         )
