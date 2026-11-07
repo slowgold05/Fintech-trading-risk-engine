@@ -13,6 +13,12 @@ import { createOrder } from "../api/orders";
 import { useToast } from "../context/useToast";
 import { formatDateTime } from "../utils/format";
 import type { OrderResponse, TradeSide } from "../types/schemas";
+import {
+  clearPersistedOrderAttempt,
+  readPersistedOrderAttempt,
+  writePersistedOrderAttempt,
+  type PersistedAttempt,
+} from "../utils/orderAttemptStorage";
 
 type OrderType = OrderPreviewPayload["order_type"];
 
@@ -21,12 +27,6 @@ type FieldErrors = {
   quantity?: string;
   limitPrice?: string;
   stepUp?: string;
-};
-
-type CreateAttempt = {
-  fingerprint: string;
-  payload: OrderPreviewPayload;
-  key: string;
 };
 
 type DraftValues = {
@@ -201,20 +201,29 @@ function PreviewFact({
 
 export function OrderTicket() {
   const [searchParams] = useSearchParams();
-  const [side, setSide] = useState<TradeSide>("buy");
-  const [orderType, setOrderType] = useState<OrderType>("limit");
-  const [symbol, setSymbol] = useState(() => initialSymbolFromSearch(searchParams));
-  const [quantity, setQuantity] = useState("");
-  const [limitPrice, setLimitPrice] = useState("");
+  const persistedAttemptRef = useRef(readPersistedOrderAttempt());
+  const [side, setSide] = useState<TradeSide>(persistedAttemptRef.current?.preview.side ?? "buy");
+  const [orderType, setOrderType] = useState<OrderType>(
+    persistedAttemptRef.current?.preview.order_type ?? "limit",
+  );
+  const [symbol, setSymbol] = useState(
+    persistedAttemptRef.current?.preview.symbol ?? initialSymbolFromSearch(searchParams),
+  );
+  const [quantity, setQuantity] = useState(persistedAttemptRef.current?.preview.quantity ?? "");
+  const [limitPrice, setLimitPrice] = useState(
+    persistedAttemptRef.current?.preview.limit_price ?? "",
+  );
   const [stepUpCode, setStepUpCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [preview, setPreview] = useState<OrderPreviewResponse | null>(null);
+  const [preview, setPreview] = useState<OrderPreviewResponse | null>(
+    persistedAttemptRef.current?.preview ?? null,
+  );
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewPending, setPreviewPending] = useState(false);
   const [previewConfirmable, setPreviewConfirmable] = useState(false);
   const [confirmPending, setConfirmPending] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  const [outcomeUnknown, setOutcomeUnknown] = useState(persistedAttemptRef.current !== null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
@@ -224,8 +233,7 @@ export function OrderTicket() {
     retry: false,
   });
 
-  // shortcut: retry intent lives only while this ticket is mounted, when to upgrade: durable cross-reload recovery in a later release hardening
-  const attemptRef = useRef<CreateAttempt | null>(null);
+  const attemptRef = useRef<PersistedAttempt | null>(null);
   const previewRevisionRef = useRef(0);
   const confirmGenerationRef = useRef(0);
   const confirmLockRef = useRef(false);
@@ -248,6 +256,9 @@ export function OrderTicket() {
   previewConfirmableRef.current = previewConfirmable;
   outcomeUnknownRef.current = outcomeUnknown;
   stepUpCodeRef.current = stepUpCode;
+  if (persistedAttemptRef.current !== null) {
+    attemptRef.current = persistedAttemptRef.current.attempt;
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -373,11 +384,11 @@ export function OrderTicket() {
     }
   }
 
-  function ensureAttempt(payload: OrderPreviewPayload): CreateAttempt {
+  function ensureAttempt(payload: OrderPreviewPayload): PersistedAttempt {
     const fingerprint = attemptFingerprint(payload);
     const current = attemptRef.current;
     if (current && current.fingerprint === fingerprint) return current;
-    const created: CreateAttempt = {
+    const created: PersistedAttempt = {
       fingerprint,
       payload,
       key: crypto.randomUUID(),
@@ -450,11 +461,14 @@ export function OrderTicket() {
           setOutcomeUnknown(true);
           setPreviewConfirmable(false);
           setSuccessMessage(null);
+          writePersistedOrderAttempt({ attempt, preview: accepted });
           return;
         }
         attemptRef.current = null;
+        persistedAttemptRef.current = null;
         outcomeUnknownRef.current = false;
         previewConfirmableRef.current = false;
+        clearPersistedOrderAttempt();
         setOutcomeUnknown(false);
         setPreviewConfirmable(false);
         setSuccessMessage(null);
@@ -464,9 +478,11 @@ export function OrderTicket() {
 
       if (!mountedRef.current || generation !== confirmGenerationRef.current) return;
       attemptRef.current = null;
+      persistedAttemptRef.current = null;
       stepUpCodeRef.current = "";
       outcomeUnknownRef.current = false;
       previewConfirmableRef.current = false;
+      clearPersistedOrderAttempt();
       setStepUpCode("");
       setOutcomeUnknown(false);
       setPreviewConfirmable(false);

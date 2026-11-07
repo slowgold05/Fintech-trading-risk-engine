@@ -3,11 +3,20 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as authApi from "../api/auth";
+import * as apiClient from "../api/client";
 import {
   normalizeOrderDecimal,
   type OrderPreviewPayload,
   type OrderPreviewResponse,
 } from "../api/orderPreview";
+import { AuthProvider } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
+import {
+  readPersistedOrderAttempt,
+  writePersistedOrderAttempt,
+  type PersistedOrderAttempt,
+} from "../utils/orderAttemptStorage";
 import { OrderTicket } from "./OrderTicket";
 
 const { createOrder, previewOrder, showToast, toast } = vi.hoisted(() => {
@@ -44,7 +53,7 @@ function open(search = "") {
     navigateRef.current = useNavigate();
     return null;
   }
-  render(
+  const view = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[{ pathname: "/trades", search }]}>
         <QueryProbe />
@@ -62,6 +71,7 @@ function open(search = "") {
         navigate({ pathname: "/trades", search: nextSearch });
       });
     },
+    unmount: view.unmount,
   });
 }
 
@@ -234,6 +244,7 @@ describe("OrderTicket", () => {
     previewOrder.mockReset();
     createOrder.mockReset();
     showToast.mockReset();
+    sessionStorage.clear();
   });
 
   afterEach(() => {
@@ -846,4 +857,182 @@ describe("OrderTicket", () => {
     await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2));
     expect(createOrder.mock.calls[1][0]).toEqual(first);
   });
+
+  it("restores an unknown attempt across unmount and retries with the same key", async () => {
+    const ticket = open();
+    draft();
+    await previewDraft();
+    createOrder.mockRejectedValueOnce(networkFailure());
+    clickButton("Confirm paper order");
+
+    await waitFor(() => expect(screen.getByText(leafText(/The outcome of this order is unknown/))).toBeInTheDocument());
+    expect(createOrder).toHaveBeenCalledTimes(1);
+    const first = createOrder.mock.calls[0][0];
+    expect(first.idempotencyKey).toMatch(UUID);
+    for (const label of ["Trade symbol", "Trade quantity", "Limit price", "Order type"]) {
+      expect(screen.getByLabelText(label)).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "Buy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sell" })).toBeDisabled();
+
+    ticket.unmount();
+    open();
+
+    expect(screen.getByText(leafText(/The outcome of this order is unknown/))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry same order" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Confirm paper order" })).not.toBeInTheDocument();
+    for (const label of ["Trade symbol", "Trade quantity", "Limit price", "Order type"]) {
+      expect(screen.getByLabelText(label)).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "Buy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sell" })).toBeDisabled();
+    expect(createOrder).toHaveBeenCalledTimes(1);
+
+    createOrder.mockResolvedValueOnce(placedOrder());
+    clickButton("Retry same order");
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2));
+    expect(createOrder.mock.calls[1][0]).toEqual(first);
+  });
+
+  it("clears a restored attempt after it resolves so a reload starts empty", async () => {
+    const firstTicket = open();
+    draft();
+    await previewDraft();
+    createOrder.mockRejectedValueOnce(networkFailure());
+    clickButton("Confirm paper order");
+    await waitFor(() => expect(screen.getByText(leafText(/The outcome of this order is unknown/))).toBeInTheDocument());
+    const first = createOrder.mock.calls[0][0];
+
+    firstTicket.unmount();
+    const restored = open();
+    expect(createOrder).toHaveBeenCalledTimes(1);
+    createOrder.mockResolvedValueOnce(placedOrder());
+    clickButton("Retry same order");
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2));
+    expect(createOrder.mock.calls[1][0]).toEqual(first);
+    await waitFor(() => {
+      expect(screen.queryByText(leafText(/The outcome of this order is unknown/))).not.toBeInTheDocument();
+    });
+
+    restored.unmount();
+    open();
+    expect(screen.queryByText(leafText(/The outcome of this order is unknown/))).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry same order" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Order preview" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("");
+    expect(screen.getByLabelText("Trade quantity")).toHaveValue("");
+    expect(screen.getByLabelText("Limit price")).toHaveValue("");
+    expect(screen.getByLabelText("Trade symbol")).toBeEnabled();
+    expect(createOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears a persisted attempt after a definitive rejection on retry", async () => {
+    const firstTicket = open();
+    draft();
+    await previewDraft();
+    createOrder.mockRejectedValueOnce(networkFailure());
+    clickButton("Confirm paper order");
+    await waitFor(() => expect(screen.getByText(leafText(/The outcome of this order is unknown/))).toBeInTheDocument());
+    const first = createOrder.mock.calls[0][0];
+    const detail = "Price is outside the allowed band";
+    createOrder.mockRejectedValueOnce(httpRejection(400, detail));
+    clickButton("Retry same order");
+    await waitFor(() => {
+      expect(screen.getByText(leafText(new RegExp(detail)))).toBeInTheDocument();
+    });
+    expect(createOrder.mock.calls[1][0]).toEqual(first);
+    expect(screen.queryByText(leafText(/The outcome of this order is unknown/))).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry same order" })).not.toBeInTheDocument();
+
+    firstTicket.unmount();
+    open();
+    expect(screen.queryByText(leafText(/The outcome of this order is unknown/))).not.toBeInTheDocument();
+    expect(screen.queryByText(leafText(new RegExp(detail)))).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry same order" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Order preview" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("");
+    expect(screen.getByLabelText("Trade symbol")).toBeEnabled();
+    expect(createOrder).toHaveBeenCalledTimes(2);
+  });
 });
+
+function samplePersistedAttempt(): PersistedOrderAttempt {
+  const preview = validPreview();
+  return {
+    attempt: {
+      fingerprint: JSON.stringify({
+        symbol: preview.symbol,
+        side: preview.side,
+        order_type: preview.order_type,
+        quantity: preview.quantity,
+        limit_price: preview.limit_price,
+      }),
+      payload: {
+        symbol: preview.symbol,
+        side: preview.side,
+        order_type: preview.order_type,
+        quantity: preview.quantity,
+        ...(preview.limit_price !== null ? { limit_price: preview.limit_price } : {}),
+      },
+      key: "sample-persisted-attempt-fixture",
+    },
+    preview,
+  };
+}
+
+function SignOutProbe() {
+  const { signOut } = useAuth();
+  return (
+    <button type="button" onClick={signOut}>
+      Sign out
+    </button>
+  );
+}
+
+describe("AuthProvider pending-attempt cleanup", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.spyOn(authApi, "logout").mockResolvedValue(undefined);
+    vi.spyOn(authApi, "refreshSession").mockRejectedValue(new Error("no session"));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+  });
+
+  it("clears a persisted attempt on sign-out", () => {
+    writePersistedOrderAttempt(samplePersistedAttempt());
+    expect(readPersistedOrderAttempt()).not.toBeNull();
+
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(readPersistedOrderAttempt()).toBeNull();
+  });
+
+  it("clears a persisted attempt when the session is unauthorized", async () => {
+    let onUnauthorized: (() => void) | null = null;
+    vi.spyOn(apiClient, "setUnauthorizedHandler").mockImplementation((handler) => {
+      onUnauthorized = handler;
+    });
+    writePersistedOrderAttempt(samplePersistedAttempt());
+    expect(readPersistedOrderAttempt()).not.toBeNull();
+
+    render(
+      <AuthProvider>
+        <div>child</div>
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(onUnauthorized).toEqual(expect.any(Function)));
+    act(() => {
+      onUnauthorized?.();
+    });
+    expect(readPersistedOrderAttempt()).toBeNull();
+  });
+});
+
