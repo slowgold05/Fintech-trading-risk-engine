@@ -1,7 +1,7 @@
 import { AxiosError } from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./client";
-import { createOrder } from "./orders";
+import { cancelOrder, createOrder } from "./orders";
 
 vi.mock("./client", () => ({
   apiClient: { post: vi.fn() },
@@ -172,5 +172,48 @@ describe("createOrder", () => {
     vi.mocked(apiClient.post).mockRejectedValueOnce(axiosError);
 
     await expect(createOrder(LIMIT_REQUEST)).rejects.toBe(axiosError);
+  });
+});
+
+describe("cancelOrder", () => {
+  beforeEach(() => {
+    vi.mocked(apiClient.post).mockReset();
+  });
+
+  it("accepts a same-id canceled acknowledgement unchanged", async () => {
+    const ack = limitAck({ status: "canceled", remaining_quantity: 0 });
+    respond(ack);
+
+    await expect(cancelOrder(42)).resolves.toBe(ack);
+    expect(apiClient.post).toHaveBeenCalledWith("/orders/42/cancel");
+  });
+
+  it("rejects a malformed, wrong-id, or non-canceled 200", async () => {
+    const cases: Array<[string, unknown]> = [
+      ["malformed", { id: 42, status: "canceled" }],
+      ["blank symbol", limitAck({ status: "canceled", symbol: " " })],
+      ["wrong id", limitAck({ id: 9, status: "canceled" })],
+      ["open", limitAck({ status: "open" })],
+      ["filled", limitAck({ status: "filled", remaining_quantity: 0 })],
+    ];
+
+    for (const [label, data] of cases) {
+      vi.mocked(apiClient.post).mockReset();
+      respond(data);
+      const caught = await cancelOrder(42).then(
+        (order) => order,
+        (error: unknown) => error,
+      );
+      expect(caught, label).toBeInstanceOf(Error);
+      if (!(caught instanceof Error)) continue;
+      expect(caught.constructor, label).toBe(Error);
+      expect(caught.message, label).toBe("Cancellation result could not be verified");
+    }
+  });
+
+  it("propagates the original Axios error unchanged", async () => {
+    const axiosError = new AxiosError("Request failed with status code 409");
+    vi.mocked(apiClient.post).mockRejectedValueOnce(axiosError);
+    await expect(cancelOrder(42)).rejects.toBe(axiosError);
   });
 });
