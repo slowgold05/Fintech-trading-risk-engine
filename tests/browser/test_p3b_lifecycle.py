@@ -13,6 +13,7 @@ import pytest
 
 pytest.importorskip("selenium")
 
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from sqlalchemy import func, select, text
@@ -156,6 +157,72 @@ def _page_fits(driver) -> bool:
     ))
 
 
+def _fail_mobile(driver, order_id: int) -> None:
+    path = ARTIFACTS / "mobile-failure.png"
+    saved = False
+    try:
+        driver.save_screenshot(str(path))
+        saved = True
+    except Exception:
+        saved = False
+    geometry: dict = {"shot": path.name if saved else None}
+    try:
+        found = driver.execute_script(
+            """
+            const label = arguments[0];
+            const root = document.documentElement;
+            const main = document.querySelector("main");
+            const region = document.querySelector(`[aria-label="${label}"]`);
+            let filled = null;
+            if (region) {
+              const own = (node) => Array.from(node.childNodes)
+                .filter((child) => child.nodeType === Node.TEXT_NODE)
+                .map((child) => child.textContent)
+                .join(" ")
+                .replace(/\\s+/g, " ")
+                .trim();
+              for (const dt of region.querySelectorAll("dt")) {
+                if (own(dt) !== "Filled") { continue; }
+                const dd = dt.nextElementSibling;
+                filled = dd && dd.tagName === "DD" ? (dd.textContent || "").replace(/\\s+/g, " ").trim() : null;
+                break;
+              }
+            }
+            const overflow = [];
+            for (const node of document.querySelectorAll("*")) {
+              if (overflow.length >= 8) { break; }
+              const box = node.getBoundingClientRect();
+              if (node.scrollWidth > node.clientWidth || box.right > window.innerWidth || box.left < 0) {
+                overflow.push({
+                  tag: node.tagName,
+                  id: node.id || "",
+                  className: String(node.className || "").slice(0, 120),
+                  clientWidth: node.clientWidth,
+                  scrollWidth: node.scrollWidth,
+                  width: box.width,
+                  left: box.left,
+                  right: box.right,
+                });
+              }
+            }
+            return {
+              viewport: {width: window.innerWidth, height: window.innerHeight},
+              root: {clientWidth: root.clientWidth, scrollWidth: root.scrollWidth},
+              main: main ? {clientWidth: main.clientWidth, scrollWidth: main.scrollWidth} : null,
+              region: Boolean(region),
+              filledEquals52: filled === "52.000000",
+              overflow: overflow,
+            };
+            """,
+            f"Order {order_id} details",
+        )
+        if isinstance(found, dict):
+            geometry.update(found)
+    except Exception:
+        geometry["geometry"] = "unavailable"
+    pytest.fail("mobile details wait failed: " + json.dumps(geometry, sort_keys=True))
+
+
 def _open_details(driver, symbol: str, order_id: int) -> None:
     label = f"Details for {symbol} order {order_id}"
     button = h._wait(driver).until(lambda current: next((
@@ -276,7 +343,10 @@ def test_partial_fill_lifecycle(disposable_api) -> None:
         _shot_heading(driver, order_id, "h3", f"Order {order_id}", ARTIFACTS / "details-desktop.png")
         _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "fills-desktop.png")
         mobile = t._css_viewport(driver, 390, 844, True)
-        h._wait(driver).until(lambda current: _page_fits(current) and (_region_state(current, order_id) or {}).get("fields", {}).get("Filled") == "52.000000")
+        try:
+            h._wait(driver).until(lambda current: _page_fits(current) and (_region_state(current, order_id) or {}).get("fields", {}).get("Filled") == "52.000000")
+        except TimeoutException:
+            _fail_mobile(driver, order_id)
         _shot_heading(driver, order_id, "h3", f"Order {order_id}", ARTIFACTS / "details-mobile.png")
         _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "fills-mobile.png")
         t._css_viewport(driver, 1280, 800, False)

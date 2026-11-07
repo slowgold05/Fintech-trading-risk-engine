@@ -141,13 +141,14 @@ export function Trades() {
   const trades = tradesQuery.data?.trades ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <PageHeader
         title="Order Management"
         description="Submit orders and review execution history with risk-aware trade context."
       />
 
-      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="min-w-0">
         <DashboardCard
           action={
             <span className="font-mono text-xs text-slate-500">Ticket</span>
@@ -156,7 +157,9 @@ export function Trades() {
         >
           <OrderTicket />
         </DashboardCard>
+        </div>
 
+        <div className="min-w-0">
         <DashboardCard
           action={
             <span className="font-mono text-xs text-slate-500">
@@ -259,6 +262,7 @@ export function Trades() {
             </div>
           )}
         </DashboardCard>
+        </div>
       </div>
       <DashboardCard title="Your Orders">
         {cancelNotice && (
