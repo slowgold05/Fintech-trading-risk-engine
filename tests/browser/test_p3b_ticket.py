@@ -23,13 +23,15 @@ from app.models.market_symbol import MarketSymbol
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = h.disposable_api
 SYMBOL, ARTIFACTS = "P3BTICKET", h.REPO_ROOT / ".local-tools" / "p3b-ticket"
-_PLACE = """
-const offset = Array.from(document.querySelectorAll('header, [class*="sticky"]')).reduce((max, bar) => {
-  const style = getComputedStyle(bar), box = bar.getBoundingClientRect();
-  const pinned = (style.position === 'sticky' || style.position === 'fixed') && box.bottom > 0 && box.top <= 0;
+_HEADER_OFFSET = """
+const offset = Array.from(document.querySelectorAll('header')).reduce((max, bar) => {
+  if (bar.closest('aside, nav, thead')) { return max; }
+  const style = getComputedStyle(bar);
+  const box = bar.getBoundingClientRect();
+  const pinned = (style.position === 'sticky' || style.position === 'fixed')
+    && box.width > 0 && box.height > 0 && box.bottom > 0 && box.top <= 0;
   return pinned ? Math.max(max, box.bottom) : max;
 }, 0);
-const box = arguments[0].getBoundingClientRect();
 """
 
 
@@ -95,12 +97,60 @@ def _click_preview(driver) -> None:
     h._click(driver, buttons[0])
 
 
+def _shot_geometry(driver, element) -> dict:
+    try:
+        geometry = driver.execute_script(
+            _HEADER_OFFSET + """
+            const box = arguments[0].getBoundingClientRect();
+            const main = document.querySelector('main');
+            return {
+              offset: offset, innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+              width: box.width, height: box.height, top: box.top, right: box.right, bottom: box.bottom, left: box.left,
+              mainClientHeight: main ? main.clientHeight : null, mainScrollTop: main ? main.scrollTop : null,
+            };
+            """,
+            element,
+        )
+    except Exception:
+        return {"geometry": "unavailable"}
+    return geometry if isinstance(geometry, dict) else {"geometry": "unavailable"}
+
+
 def _shot(driver, element, path) -> None:
-    driver.execute_script(_PLACE + "if (box.top < offset || box.bottom > innerHeight) window.scrollTo(0, Math.max(0, box.top + scrollY - offset - 8));", element)
-    h._wait(driver).until(lambda current: current.execute_script(
-        _PLACE + "return box.width > 0 && box.height > 0 && box.top >= offset - 1 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth;",
+    driver.execute_script(
+        """
+        arguments[0].scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'});
+        """ + _HEADER_OFFSET + """
+        const box = arguments[0].getBoundingClientRect();
+        if (box.top < offset) {
+          const main = document.querySelector('main');
+          const delta = box.top - offset - 8;
+          if (main && main.scrollHeight > main.clientHeight) { main.scrollBy(0, delta); }
+          else { window.scrollBy(0, delta); }
+        }
+        """,
         element,
-    ))
+    )
+    try:
+        h._wait(driver).until(lambda current: current.execute_script(
+            _HEADER_OFFSET + """
+            const box = arguments[0].getBoundingClientRect();
+            return box.width > 0 && box.height > 0 && box.top >= offset - 1 && box.bottom <= innerHeight
+              && box.left >= 0 && box.right <= innerWidth;
+            """,
+            element,
+        ))
+    except Exception:
+        fail_path = path.with_name(path.stem + "-fail.png")
+        try:
+            driver.save_screenshot(str(fail_path))
+        except Exception:
+            fail_path = None
+        pytest.fail("shot target was not fully visible: " + json.dumps({
+            "shot": path.name,
+            "failure_shot": None if fail_path is None else fail_path.name,
+            "geometry": _shot_geometry(driver, element),
+        }))
     driver.save_screenshot(str(path))
 
 
@@ -278,22 +328,23 @@ def test_empty_market_ticket(disposable_api) -> None:
             node for node in current.find_elements(By.CSS_SELECTOR, "button[aria-label='Sell']") if node.is_displayed()
         ), False))
         h._click(driver, sell)
-        driver.execute_script("window.scrollTo(0, 0);")
-        h._wait(driver).until(lambda current: current.execute_script("""
+        driver.execute_script("window.scrollTo(0, 0); const main = document.querySelector('main'); if (main) { main.scrollTo(0, 0); }")
+        h._wait(driver).until(lambda current: current.execute_script(
+            _HEADER_OFFSET + """
             const sell = document.querySelector("button[aria-label='Sell']");
             if (!sell) { return false; }
-            const offset = Array.from(document.querySelectorAll('header, [class*="sticky"]')).reduce((max, bar) => {
-              const style = getComputedStyle(bar), box = bar.getBoundingClientRect();
-              const pinned = (style.position === 'sticky' || style.position === 'fixed') && box.bottom > 0 && box.top <= 0;
-              return pinned ? Math.max(max, box.bottom) : max;
-            }, 0);
             const box = sell.getBoundingClientRect();
             if (box.top < offset || box.bottom > innerHeight) {
-              window.scrollTo(0, Math.max(0, box.top + window.scrollY - offset - 8));
+              const main = document.querySelector('main');
+              const delta = box.top < offset ? box.top - offset - 8 : box.bottom - innerHeight + 8;
+              if (main && main.scrollHeight > main.clientHeight) { main.scrollBy(0, delta); }
+              else { window.scrollBy(0, delta); }
             }
             const placed = sell.getBoundingClientRect();
-            return placed.width > 0 && placed.height > 0 && placed.top >= offset - 1 && placed.bottom <= innerHeight;
-        """))
+            return placed.width > 0 && placed.height > 0 && placed.top >= offset - 1 && placed.bottom <= innerHeight
+              && placed.left >= 0 && placed.right <= innerWidth;
+            """
+        ))
         driver.save_screenshot(str(ARTIFACTS / "ticket-sell-form-mobile.png"))
         prior_previews = len(_preview_http(driver))
         _click_preview(driver)
