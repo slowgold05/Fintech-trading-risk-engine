@@ -318,6 +318,7 @@ def test_provider_and_adjustment_stay_separate_and_read_only(client, db_session,
 
 def test_one_history_read_and_stub_session_issues_no_sql(monkeypatch):
     calls = []
+    returned_histories = []
 
     def fake_history(db, **kwargs):
         calls.append((db, kwargs))
@@ -328,7 +329,7 @@ def test_one_history_read_and_stub_session_issues_no_sql(monkeypatch):
                 "session_date": day.isoformat(), "open": text, "high": text,
                 "low": text, "close": text, "volume": "1",
             })
-        return {
+        returned = {
             "symbol": "NVDA", "interval": "1d", "range": "2y", "provider": "fixture",
             "adjustment_type": "raw", "coverage_status": "not_verified",
             "expected_session_count": None, "collection": "disabled",
@@ -337,6 +338,8 @@ def test_one_history_read_and_stub_session_issues_no_sql(monkeypatch):
             "available_start": bars[0]["session_date"], "available_end": bars[-1]["session_date"],
             "excluded_row_count": 4, "bars": bars,
         }
+        returned_histories.append(returned)
+        return returned
 
     class _FailSQL:
         def execute(self, *_args, **_kwargs):
@@ -359,10 +362,17 @@ def test_one_history_read_and_stub_session_issues_no_sql(monkeypatch):
     assert [point["value"] for point in body["points"]] == list(_EMA)
     assert body["excluded_row_count"] == 4 and body["read_at"] == "2026-06-15T16:00:01.250000Z"
     assert "bars" not in body
-    read_symbol_indicators(
+    assert body["history"] is returned_histories[0]
+    for key in _META:
+        assert body[key] == body["history"][key]
+    assert [point["session_date"] for point in body["points"]] == [
+        bar["session_date"] for bar in body["history"]["bars"]
+    ]
+    second = read_symbol_indicators(
         _FailSQL(), symbol="NVDA", interval="1d", range_token="2y", provider="fixture",
         adjustment_type="raw", name="sma", period=3,
     )
+    assert second["history"] is returned_histories[1]
     assert len(calls) == 2
 
 

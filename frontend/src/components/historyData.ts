@@ -1,4 +1,6 @@
-import type { CandlestickData, Time } from "lightweight-charts";
+import type { CandlestickData, LineData, Time, WhitespaceData } from "lightweight-charts";
+import type { IndicatorName } from "../api/indicators";
+import type { HistoryResponse } from "../api/history";
 
 const SESSION_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 /** Server Numeric(18,6): up to 12 integer digits and exactly 6 decimal places. */
@@ -226,4 +228,151 @@ function assertBounds(open: bigint, high: bigint, low: bigint, close: bigint): v
   if (low > lower || upper > high) {
     throw new Error("Invalid OHLC bounds.");
   }
+}
+
+/** One validated SMA/EMA line over the nested history snapshot. Status is never "complete". */
+export type IndicatorOverlay = {
+  history: HistoryResponse;
+  candles: CandlestickData<Time>[];
+  line: (LineData<Time> | WhitespaceData<Time>)[];
+  values: (string | null)[];
+  name: IndicatorName;
+  period: number;
+  status: "unavailable" | "insufficient" | "partial";
+};
+
+const INDICATOR_META = [
+  "symbol",
+  "interval",
+  "range",
+  "provider",
+  "adjustment_type",
+  "coverage_status",
+  "expected_session_count",
+  "collection",
+  "read_at",
+  "requested_start",
+  "requested_end",
+  "available_start",
+  "available_end",
+  "excluded_row_count",
+] as const;
+
+/**
+ * Validate one indicators payload against the caller's request.
+ * Nested history is the original public history body and is checked only through historyCandles.
+ * Any mismatch throws. Warm-up nulls become whitespace points with time only.
+ */
+export function indicatorOverlay(
+  payload: unknown,
+  request: {
+    symbol: string;
+    provider: string;
+    adjustment_type: string;
+    name: IndicatorName;
+    period: number;
+  },
+): IndicatorOverlay {
+  const body = record(payload, "Indicator payload is invalid.");
+  const history = record(body.history, "Indicator history is invalid.");
+  const candles = historyCandles(history);
+
+  for (const key of INDICATOR_META) {
+    if (body[key] !== history[key]) {
+      throw new Error("Indicator metadata does not match history.");
+    }
+  }
+  if (
+    body.symbol !== request.symbol ||
+    history.symbol !== request.symbol ||
+    body.provider !== request.provider ||
+    history.provider !== request.provider ||
+    body.adjustment_type !== request.adjustment_type ||
+    history.adjustment_type !== request.adjustment_type
+  ) {
+    throw new Error("Indicator request identity does not match.");
+  }
+  if (body.name !== "sma" && body.name !== "ema") {
+    throw new Error("Indicator name is invalid.");
+  }
+  if (body.name !== request.name) {
+    throw new Error("Indicator name does not match the request.");
+  }
+  const period = body.period;
+  if (
+    typeof period !== "number" ||
+    !Number.isSafeInteger(period) ||
+    period < 2 ||
+    period > 200
+  ) {
+    throw new Error("Indicator period is invalid.");
+  }
+  if (period !== request.period) {
+    throw new Error("Indicator period does not match the request.");
+  }
+  if (body.source !== "observed_valid_closes") {
+    throw new Error("Indicator source is invalid.");
+  }
+  if (body.session_basis !== "not_exchange_sessions") {
+    throw new Error("Indicator session basis is invalid.");
+  }
+  if (!Array.isArray(history.bars) || history.bars.length !== candles.length) {
+    throw new Error("Indicator history bars are invalid.");
+  }
+  const count = candles.length;
+  if (
+    typeof body.observed_valid_closes !== "number" ||
+    !Number.isSafeInteger(body.observed_valid_closes) ||
+    body.observed_valid_closes !== count
+  ) {
+    throw new Error("Observed valid closes do not match history.");
+  }
+  if (!Array.isArray(body.points) || body.points.length !== count) {
+    throw new Error("Indicator points are invalid.");
+  }
+
+  let status: IndicatorOverlay["status"];
+  if (count === 0) {
+    status = "unavailable";
+  } else if (count < period) {
+    status = "insufficient";
+  } else {
+    status = "partial";
+  }
+  if (body.status !== status) {
+    throw new Error("Indicator status is invalid.");
+  }
+
+  const warmup = Math.min(period - 1, count);
+  const values: (string | null)[] = [];
+  const line: (LineData<Time> | WhitespaceData<Time>)[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const point = record(body.points[index], "Indicator point is invalid.");
+    const candle = candles[index];
+    if (candle === undefined || point.session_date !== candle.time) {
+      throw new Error("Indicator point date does not match history.");
+    }
+    const time = candle.time;
+    if (index < warmup) {
+      if (point.value !== null) {
+        throw new Error("Indicator warmup value is invalid.");
+      }
+      values.push(null);
+      line.push({ time });
+      continue;
+    }
+    const price = canonicalPrice(point.value);
+    values.push(price.text);
+    line.push({ time, value: chartNumber(price.text) });
+  }
+
+  return {
+    history: history as HistoryResponse,
+    candles,
+    line,
+    values,
+    name: body.name,
+    period,
+    status,
+  };
 }
