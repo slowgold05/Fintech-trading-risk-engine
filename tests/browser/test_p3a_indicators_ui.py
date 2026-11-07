@@ -34,6 +34,8 @@ OFFSETS = (0, 2, 5, 10, 18, 25)
 CLOSES = (Decimal("1"), Decimal("4"), Decimal("2"), Decimal("8"), Decimal("3"), Decimal("9"))
 SMA3 = ["Warm-up", "Warm-up", "2.333333", "4.666667", "4.333333", "6.666667"]
 EMA3 = ["Warm-up", "Warm-up", "2.333333", "5.166667", "4.083333", "6.541667"]
+# RSI needs period+1 closes to seed, one more warm-up bar than SMA/EMA's period.
+RSI3 = ["Warm-up", "Warm-up", "Warm-up", "81.818182", "48.648649", "70.312500"]
 SERIES = json.dumps([PROVIDER, "raw"], separators=(",", ":"))
 
 
@@ -260,6 +262,18 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         h._wait(driver).until(lambda current: _headers(current) == ["Session date", "Open", "High", "Low", "Close", "Volume"])
         after_none = _starts(driver)
         assert after_none["history"] == none_draft["history"] + 1 and after_none["indicators"] == none_draft["indicators"]
+
+        Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value("rsi")
+        period = _section(driver).find_element(By.ID, "daily-history-period")
+        period.clear()
+        period.send_keys("3")
+        rsi_draft = _starts(driver)
+        _view(driver)
+        _wait_prices(driver, RSI3, "RSI (3)")
+        rsi = _starts(driver)
+        assert rsi["history"] == after_none["history"] and rsi["indicators"] == rsi_draft["indicators"] + 1
+        assert "Warm-up: the first 3 observed stored closes have no indicator value." in _section(driver).text
+        t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "rsi-desktop.png")
 
         _fill(driver, MISSING, "none", None)
         _view(driver)

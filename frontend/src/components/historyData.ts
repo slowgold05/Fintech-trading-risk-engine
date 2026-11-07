@@ -266,6 +266,27 @@ function chartNumber(value: string): number {
   return number;
 }
 
+/** Same canonical text as a price, but exactly zero is a real RSI reading. */
+function canonicalIndicatorValue(value: unknown): { text: string; scaled: bigint } {
+  if (typeof value !== "string" || !CANONICAL_PRICE.test(value)) {
+    throw new Error("Price is invalid.");
+  }
+  const scaled = BigInt(value.replace(".", ""));
+  if (scaled < 0n) {
+    throw new Error("Price is invalid.");
+  }
+  return { text: value, scaled };
+}
+
+/** Same chart number as a price, but exactly zero is a real RSI reading. */
+function chartIndicatorNumber(value: string): number {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error("Price is invalid.");
+  }
+  return number;
+}
+
 function assertBounds(open: bigint, high: bigint, low: bigint, close: bigint): void {
   // 999999999999.000001 and 999999999999.000000 collapse under IEEE rounding.
   const lower = open <= close ? open : close;
@@ -275,7 +296,7 @@ function assertBounds(open: bigint, high: bigint, low: bigint, close: bigint): v
   }
 }
 
-/** One validated SMA/EMA line over the nested history snapshot. Status is never "complete". */
+/** One validated SMA, EMA, or RSI line over the nested history snapshot. Status is never "complete". */
 export type IndicatorOverlay = {
   history: HistoryResponse;
   candles: CandlestickData<Time>[];
@@ -337,7 +358,7 @@ export function indicatorOverlay(
   ) {
     throw new Error("Indicator request identity does not match.");
   }
-  if (body.name !== "sma" && body.name !== "ema") {
+  if (body.name !== "sma" && body.name !== "ema" && body.name !== "rsi") {
     throw new Error("Indicator name is invalid.");
   }
   if (body.name !== request.name) {
@@ -376,10 +397,12 @@ export function indicatorOverlay(
     throw new Error("Indicator points are invalid.");
   }
 
+  // RSI's first value needs `period` diffs, so it lands one close later than SMA/EMA.
+  const closesRequired = body.name === "rsi" ? period + 1 : period;
   let status: IndicatorOverlay["status"];
   if (count === 0) {
     status = "unavailable";
-  } else if (count < period) {
+  } else if (count < closesRequired) {
     status = "insufficient";
   } else {
     status = "partial";
@@ -388,7 +411,8 @@ export function indicatorOverlay(
     throw new Error("Indicator status is invalid.");
   }
 
-  const warmup = Math.min(period - 1, count);
+  const warmupLength = body.name === "rsi" ? period : period - 1;
+  const warmup = Math.min(warmupLength, count);
   const values: (string | null)[] = [];
   const line: (LineData<Time> | WhitespaceData<Time>)[] = [];
   for (let index = 0; index < count; index += 1) {
@@ -406,9 +430,14 @@ export function indicatorOverlay(
       line.push({ time });
       continue;
     }
-    const price = canonicalPrice(point.value);
-    values.push(price.text);
-    line.push({ time, value: chartNumber(price.text) });
+    // SMA and EMA stay strictly positive so the existing zero-rejection tests keep holding.
+    // RSI uses its own helpers because an all-down window is the real value "0.000000".
+    const indicatorPoint = body.name === "rsi" ? canonicalIndicatorValue(point.value) : canonicalPrice(point.value);
+    values.push(indicatorPoint.text);
+    line.push({
+      time,
+      value: body.name === "rsi" ? chartIndicatorNumber(indicatorPoint.text) : chartNumber(indicatorPoint.text),
+    });
   }
 
   return {

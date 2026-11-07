@@ -104,6 +104,21 @@ function addLineSeries(chart: DailyChart, charts: LightweightChartsModule) {
 
 type LineSeriesHandle = ReturnType<typeof addLineSeries>;
 
+function addRsiSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  const series = chart.addSeries(charts.LineSeries, {
+    color: "#fbbf24",
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    priceScaleId: "daily-history-rsi",
+    priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+  });
+  series.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.68 } });
+  return series;
+}
+
+type RsiSeriesHandle = ReturnType<typeof addRsiSeries>;
+
 function addVolumeSeries(chart: DailyChart, charts: LightweightChartsModule) {
   const series = chart.addSeries(charts.HistogramSeries, {
     priceFormat: { type: "volume" },
@@ -339,6 +354,7 @@ export function DailyHistory({
                   <option value="none">None</option>
                   <option value="sma">SMA</option>
                   <option value="ema">EMA</option>
+                  <option value="rsi">RSI</option>
                 </select>
               </div>
               {indicatorDraft !== "none" ? (
@@ -436,7 +452,14 @@ export function DailyHistory({
                 ) : null}
                 <HistoryFacts meta={accepted.meta} submitted={submitted} />
                 {accepted.overlay ? <IndicatorFacts overlay={accepted.overlay} /> : null}
-                <DailyHistoryCanvas line={accepted.overlay?.line ?? null} points={accepted.points} volume={accepted.volume} />
+                <DailyHistoryCanvas
+                  points={accepted.points}
+                  priceScaleLine={
+                    accepted.overlay !== null && accepted.overlay.name !== "rsi" ? accepted.overlay.line : null
+                  }
+                  rsiLine={accepted.overlay !== null && accepted.overlay.name === "rsi" ? accepted.overlay.line : null}
+                  volume={accepted.volume}
+                />
                 <SessionPrices
                   indicatorLabel={accepted.overlay ? indicatorLabel(accepted.overlay) : null}
                   rows={accepted.rows}
@@ -535,6 +558,7 @@ function HistoryFacts({ meta, submitted }: { meta: HistoryMeta; submitted: Submi
 
 function IndicatorFacts({ overlay }: { overlay: IndicatorOverlay }) {
   const label = indicatorLabel(overlay);
+  const warmupCount = overlay.name === "rsi" ? overlay.period : overlay.period - 1;
   return (
     <div className="min-w-0 space-y-1">
       <p className="text-sm text-slate-200">{label} on observed stored closes.</p>
@@ -546,7 +570,7 @@ function IndicatorFacts({ overlay }: { overlay: IndicatorOverlay }) {
       ) : null}
       {overlay.status === "partial" || overlay.status === "insufficient" ? (
         <p className="text-sm text-slate-300">
-          Warm-up: the first {overlay.period - 1} observed stored closes have no indicator value.
+          Warm-up: the first {warmupCount} observed stored closes have no indicator value.
         </p>
       ) : null}
     </div>
@@ -631,21 +655,25 @@ function SessionPrices({
 function DailyHistoryCanvas({
   points,
   volume,
-  line,
+  priceScaleLine,
+  rsiLine,
 }: {
   points: CandlestickData<Time>[];
   volume: HistogramData<Time>[];
-  line: IndicatorLine | null;
+  priceScaleLine: IndicatorLine | null;
+  rsiLine: IndicatorLine | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<DailyChart | null>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
   const volumeSeriesRef = useRef<VolumeSeriesHandle | null>(null);
   const lineSeriesRef = useRef<LineSeriesHandle | null>(null);
+  const rsiSeriesRef = useRef<RsiSeriesHandle | null>(null);
   const libraryRef = useRef<LightweightChartsModule | null>(null);
   const pointsRef = useRef(points);
   const volumeRef = useRef(volume);
-  const lineRef = useRef(line);
+  const priceScaleLineRef = useRef(priceScaleLine);
+  const rsiLineRef = useRef(rsiLine);
   const disposeRef = useRef<(() => void) | null>(null);
   const failedRef = useRef(false);
   const [attempt, setAttempt] = useState(0);
@@ -654,7 +682,8 @@ function DailyHistoryCanvas({
   useEffect(() => {
     pointsRef.current = points;
     volumeRef.current = volume;
-    lineRef.current = line;
+    priceScaleLineRef.current = priceScaleLine;
+    rsiLineRef.current = rsiLine;
     if (failedRef.current) {
       failedRef.current = false;
       setFailed(false);
@@ -669,13 +698,14 @@ function DailyHistoryCanvas({
     try {
       series.setData(points);
       volumeSeriesRef.current?.setData(volume);
-      syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, line);
+      syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, priceScaleLine);
+      rsiSeriesRef.current?.setData(rsiLine ?? []);
     } catch {
       disposeRef.current?.();
       failedRef.current = true;
       setFailed(true);
     }
-  }, [points, volume, line]);
+  }, [points, volume, priceScaleLine, rsiLine]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -697,6 +727,7 @@ function DailyHistoryCanvas({
       seriesRef.current = null;
       volumeSeriesRef.current = null;
       lineSeriesRef.current = null;
+      rsiSeriesRef.current = null;
       libraryRef.current = null;
     };
     disposeRef.current = dispose;
@@ -736,7 +767,10 @@ function DailyHistoryCanvas({
           const volumeSeries = addVolumeSeries(created, charts);
           volumeSeriesRef.current = volumeSeries;
           volumeSeries.setData(volumeRef.current);
-          syncIndicatorLine(created, charts, lineSeriesRef, lineRef.current);
+          const rsiSeries = addRsiSeries(created, charts);
+          rsiSeriesRef.current = rsiSeries;
+          rsiSeries.setData(rsiLineRef.current ?? []);
+          syncIndicatorLine(created, charts, lineSeriesRef, priceScaleLineRef.current);
           created.timeScale().fitContent();
         } catch {
           failedRef.current = true;
@@ -895,12 +929,12 @@ function coverageStatusLabel(status: HistoryCoverageStatus): string {
 }
 
 function indicatorLabel(overlay: IndicatorOverlay): string {
-  const name = overlay.name === "sma" ? "SMA" : "EMA";
+  const name = overlay.name === "sma" ? "SMA" : overlay.name === "ema" ? "EMA" : "RSI";
   return `${name} (${overlay.period})`;
 }
 
 function readIndicatorChoice(value: string): IndicatorChoice {
-  if (value === "sma" || value === "ema") {
+  if (value === "sma" || value === "ema" || value === "rsi") {
     return value;
   }
   return "none";

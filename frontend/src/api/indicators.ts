@@ -1,7 +1,7 @@
 import { apiClient } from "./client";
 
 /** Public indicator names for one daily snapshot. No default is applied. */
-export type IndicatorName = "sma" | "ema";
+export type IndicatorName = "sma" | "ema" | "rsi";
 
 const DAILY_INTERVAL = "1d";
 const DAILY_RANGE = "2y";

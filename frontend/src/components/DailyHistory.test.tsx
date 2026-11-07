@@ -21,6 +21,7 @@ const chartApi = vi.hoisted(() => ({
   ColorType: { Solid: "solid" },
   CandlestickSeries: { type: "candlestick" },
   HistogramSeries: { type: "histogram" },
+  LineSeries: { type: "line" },
 }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("lightweight-charts", () => chartApi);
@@ -72,11 +73,12 @@ function mountChart() {
   const volumeSetData = vi.fn();
   const fitContent = vi.fn();
   const remove = vi.fn();
-  let calls = 0;
-  const addSeries = vi.fn(() => {
-    calls += 1;
-    if (calls === 2) {
+  const addSeries = vi.fn((_kind: unknown, options?: { priceScaleId?: string }) => {
+    if (options?.priceScaleId === "daily-history-volume") {
       return { setData: volumeSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
+    if (options?.priceScaleId === "daily-history-rsi") {
+      return { setData: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     return { setData };
   });

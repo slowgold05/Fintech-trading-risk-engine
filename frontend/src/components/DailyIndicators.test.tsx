@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryResponse } from "../api/history";
 import { DailyHistory } from "./DailyHistory";
+import { indicatorOverlay } from "./historyData";
 
 const READ_AT = "2026-11-06T12:00:00Z";
 const FETCHED_AT = "2026-11-06T11:00:00Z";
@@ -12,6 +13,7 @@ const RAW_SERIES = JSON.stringify(["fixture", "raw"]);
 const DATES = ["2026-01-02", "2026-01-06", "2026-01-09", "2026-01-13", "2026-01-16", "2026-01-21"] as const;
 const CLOSES = ["1.000000", "4.000000", "2.000000", "8.000000", "3.000000", "9.000000"] as const;
 const SMA3 = [null, null, "2.333333", "4.666667", "4.333333", "6.666667"] as const;
+const RSI3 = [null, null, null, "57.915021", "40.000000", "60.000000"] as const;
 const PERIOD_ERROR = "Enter a whole period from 2 to 200.";
 
 const historyApi = vi.hoisted(() => ({ fetchCachedSeries: vi.fn(), fetchDailyHistory: vi.fn() }));
@@ -31,6 +33,7 @@ type ChartMount = {
   candleSetData: ReturnType<typeof vi.fn>;
   volumeSetData: ReturnType<typeof vi.fn>;
   lineSetData: ReturnType<typeof vi.fn>;
+  rsiSetData: ReturnType<typeof vi.fn>;
   fitContent: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
   addSeries: ReturnType<typeof vi.fn>;
@@ -57,10 +60,16 @@ function history(closes: readonly string[] = CLOSES): HistoryResponse {
   };
 }
 
-function indicatorPayload(name: "sma" | "ema", period: number, values: readonly PointValue[], closes: readonly string[] = CLOSES) {
+function indicatorPayload(
+  name: "sma" | "ema" | "rsi",
+  period: number,
+  values: readonly PointValue[],
+  closes: readonly string[] = CLOSES,
+) {
   const nested = history(closes);
   const count = nested.bars.length;
-  const status = count < period ? "insufficient" : "partial";
+  const required = name === "rsi" ? period + 1 : period;
+  const status = count < required ? "insufficient" : "partial";
   return {
     ...nested,
     name,
@@ -78,9 +87,13 @@ function mountChart() {
   const candleSetData = vi.fn();
   const volumeSetData = vi.fn();
   const lineSetData = vi.fn();
+  const rsiSetData = vi.fn();
   const fitContent = vi.fn();
   const remove = vi.fn();
-  const addSeries = vi.fn((kind: unknown) => {
+  const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string }) => {
+    if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-rsi") {
+      return { setData: rsiSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
     if (kind === chartApi.LineSeries) return { setData: lineSetData };
     if (kind === chartApi.CandlestickSeries) return { setData: candleSetData };
     if (kind === chartApi.HistogramSeries) {
@@ -88,7 +101,7 @@ function mountChart() {
     }
     throw new Error("Unexpected series.");
   });
-  mounts.push({ candleSetData, volumeSetData, lineSetData, fitContent, remove, addSeries });
+  mounts.push({ candleSetData, volumeSetData, lineSetData, rsiSetData, fitContent, remove, addSeries });
   return { addSeries, timeScale: () => ({ fitContent }), remove };
 }
 
@@ -119,7 +132,7 @@ function chooseSeries(symbol = "test") {
   fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: RAW_SERIES } });
 }
 
-function chooseIndicator(name: "sma" | "ema" | "none", period?: string) {
+function chooseIndicator(name: "sma" | "ema" | "rsi" | "none", period?: string) {
   fireEvent.change(screen.getByRole("combobox", { name: "Indicator" }), { target: { value: name } });
   if (period !== undefined) {
     fireEvent.change(screen.getByRole("spinbutton", { name: "Period" }), { target: { value: period } });
@@ -148,6 +161,29 @@ function linePoints(chart: ChartMount) {
   const points = chart.lineSetData.mock.calls.at(-1)?.[0];
   if (!Array.isArray(points)) throw new Error("Missing line data.");
   return points as { time: string; value?: number }[];
+}
+
+function rsiPoints(chart: ChartMount) {
+  const points = chart.rsiSetData.mock.calls.at(-1)?.[0];
+  if (!Array.isArray(points)) throw new Error("Missing RSI data.");
+  return points as { time: string; value?: number }[];
+}
+
+function openSessionPrices() {
+  const prices = screen.getByText("Session prices").closest("details");
+  if (prices instanceof HTMLDetailsElement && !prices.open) fireEvent.click(screen.getByText("Session prices"));
+}
+
+function cachedBundle(name: "sma" | "ema" | "rsi", period: number, values: readonly PointValue[]) {
+  const payload = indicatorPayload(name, period, values);
+  const overlay = indicatorOverlay(payload, {
+    symbol: "TEST",
+    provider: "fixture",
+    adjustment_type: "raw",
+    name,
+    period,
+  });
+  return { history: overlay.history, overlay };
 }
 
 describe("DailyIndicators", () => {
@@ -188,6 +224,7 @@ describe("DailyIndicators", () => {
     expect(chart.addSeries.mock.calls.map((call) => call[0])).toEqual([
       chartApi.CandlestickSeries,
       chartApi.HistogramSeries,
+      chartApi.LineSeries,
       chartApi.LineSeries,
     ]);
     const line = linePoints(chart);
@@ -238,7 +275,7 @@ describe("DailyIndicators", () => {
     ]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
-    expect(chart.addSeries).toHaveBeenCalledTimes(3);
+    expect(chart.addSeries).toHaveBeenCalledTimes(4);
     expect(chart.candleSetData).toHaveBeenLastCalledWith(expect.arrayContaining([{ time: DATES[5], open: 7, high: 7, low: 7, close: 7 }]));
     expect(linePoints(chart).at(-1)).toEqual({ time: DATES[5], value: 6 });
     expect(chart.remove).not.toHaveBeenCalled();
@@ -325,7 +362,9 @@ describe("DailyIndicators", () => {
     expect(current.addSeries.mock.calls.map((call) => call[0])).toEqual([
       chartApi.CandlestickSeries,
       chartApi.HistogramSeries,
+      chartApi.LineSeries,
     ]);
+    expect(current.addSeries.mock.calls[2]?.[1]).toMatchObject({ priceScaleId: "daily-history-rsi" });
     expect(current.lineSetData).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     const prices = screen.getByText("Session prices").closest("details");
@@ -353,5 +392,76 @@ describe("DailyIndicators", () => {
       expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
       expect(chartApi.createChart).not.toHaveBeenCalled();
     }
+  });
+
+  it("plots RSI on its own price scale and labels the session column", async () => {
+    await ready();
+    chooseSeries();
+    chooseIndicator("rsi", "3");
+    indicatorApi.fetchDailyIndicators.mockResolvedValue(indicatorPayload("rsi", 3, RSI3));
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = mounts[0];
+    if (chart === undefined) throw new Error("Missing chart.");
+    const rsiSeries = chart.addSeries.mock.calls.filter((call) => call[1]?.priceScaleId === "daily-history-rsi");
+    expect(rsiSeries).toHaveLength(1);
+    expect(rsiSeries[0]?.[0]).toBe(chartApi.LineSeries);
+    expect(chart.lineSetData).not.toHaveBeenCalled();
+    const line = rsiPoints(chart);
+    expect(line.slice(0, 3)).toEqual(DATES.slice(0, 3).map((time) => ({ time })));
+    expect(line.slice(0, 3).every((point) => !Object.hasOwn(point, "value"))).toBe(true);
+    expect(line.slice(3).map((point) => point.value)).toEqual(RSI3.slice(3).map(Number));
+    expect(screen.getByText("Warm-up: the first 3 observed stored closes have no indicator value.")).toBeInTheDocument();
+    openSessionPrices();
+    expect(screen.getByRole("columnheader", { name: "RSI (3)" })).toBeInTheDocument();
+    expect(screen.getAllByRole("cell", { name: "Warm-up" })).toHaveLength(3);
+    expect(screen.getByRole("cell", { name: "57.915021" })).toBeInTheDocument();
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+  });
+
+  it("clears the inactive series when SMA and RSI swap on the same chart", async () => {
+    await ready();
+    chooseSeries();
+    chooseIndicator("sma", "3");
+    indicatorApi.fetchDailyIndicators.mockImplementation((_symbol: unknown, _provider: unknown, _adjustment: unknown, name: unknown) => {
+      if (name === "rsi") return Promise.resolve(indicatorPayload("rsi", 3, RSI3));
+      return Promise.resolve(indicatorPayload("sma", 3, SMA3));
+    });
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = mounts[0];
+    if (chart === undefined) throw new Error("Missing chart.");
+    expect(linePoints(chart).slice(2).map((point) => point.value)).toEqual(SMA3.slice(2).map(Number));
+    expect(rsiPoints(chart)).toEqual([]);
+    const client = clients[0];
+    if (client === undefined) throw new Error("Missing query client.");
+    // The next indicator is already cached, so the chart stays mounted instead of
+    // unmounting while a cold query is pending. That is the in-place swap.
+    client.setQueryData(
+      ["market", "history", "TEST", "fixture", "raw", "1d", "2y", "rsi", 3],
+      cachedBundle("rsi", 3, RSI3),
+    );
+    chooseIndicator("rsi", "3");
+    submitForm();
+    openSessionPrices();
+    await waitFor(() => expect(screen.getByRole("columnheader", { name: "RSI (3)" })).toBeInTheDocument());
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    expect(mounts).toHaveLength(1);
+    expect(chart.lineSetData).toHaveBeenLastCalledWith([]);
+    const rsiLine = rsiPoints(chart);
+    expect(rsiLine.slice(3).map((point) => point.value)).toEqual(RSI3.slice(3).map(Number));
+    expect(screen.queryByRole("columnheader", { name: "SMA (3)" })).not.toBeInTheDocument();
+    client.setQueryData(
+      ["market", "history", "TEST", "fixture", "raw", "1d", "2y", "sma", 3],
+      cachedBundle("sma", 3, SMA3),
+    );
+    chooseIndicator("sma", "3");
+    submitForm();
+    await waitFor(() => expect(screen.getByRole("columnheader", { name: "SMA (3)" })).toBeInTheDocument());
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    expect(mounts).toHaveLength(1);
+    expect(chart.rsiSetData).toHaveBeenLastCalledWith([]);
+    expect(linePoints(chart).slice(2).map((point) => point.value)).toEqual(SMA3.slice(2).map(Number));
+    expect(chart.remove).not.toHaveBeenCalled();
   });
 });

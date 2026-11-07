@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyCandles, historyVolume } from "./historyData";
+import { historyCandles, historyVolume, indicatorOverlay } from "./historyData";
 
 const READ_AT = "2026-11-06T12:00:00Z";
 const REQUESTED_START = "2024-11-06";
@@ -400,5 +400,90 @@ describe("historyVolume", () => {
 
     expect(() => historyVolume(dailyPayload(rows))).toThrow();
     expect(() => historyCandles(dailyPayload(rows))).toThrow();
+  });
+});
+
+function indicatorSessions(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => {
+    const utc = new Date(Date.UTC(2025, 5, 2 + index));
+    return utc.toISOString().slice(0, 10);
+  });
+}
+
+function indicatorBody(
+  name: string,
+  period: number,
+  values: (string | null)[],
+  status: "unavailable" | "insufficient" | "partial",
+) {
+  const dates = indicatorSessions(values.length);
+  const bars = dates.map((session_date) => bar({ session_date }));
+  const history = dailyPayload(bars);
+  const flat: Record<string, unknown> = { ...history };
+  delete flat.bars;
+  return {
+    ...flat,
+    history,
+    name,
+    period,
+    source: "observed_valid_closes",
+    session_basis: "not_exchange_sessions",
+    observed_valid_closes: values.length,
+    status,
+    points: dates.map((session_date, index) => ({
+      session_date,
+      value: values[index] ?? null,
+    })),
+  };
+}
+
+const RSI_REQUEST = {
+  symbol: "TEST",
+  provider: "fixture",
+  adjustment_type: "raw" as const,
+  name: "rsi" as const,
+  period: 14,
+};
+
+describe("indicatorOverlay RSI", () => {
+  it("keeps period leading nulls and parses one positive RSI value", () => {
+    const dates = indicatorSessions(15);
+    const values = Array.from({ length: 15 }, (_, index) => (index < 14 ? null : "57.915021"));
+    const result = indicatorOverlay(indicatorBody("rsi", 14, values, "partial"), RSI_REQUEST);
+
+    expect(result.name).toBe("rsi");
+    expect(result.period).toBe(14);
+    expect(result.status).toBe("partial");
+    expect(result.values).toEqual(values);
+    expect(result.line).toHaveLength(15);
+    expect(result.line.slice(0, 14)).toEqual(dates.slice(0, 14).map((time) => ({ time })));
+    expect(result.line.slice(0, 14).every((point) => !Object.hasOwn(point, "value"))).toBe(true);
+    expect(result.line[14]).toEqual({ time: dates[14], value: Number("57.915021") });
+  });
+
+  it("parses an RSI value of exactly 0 and still rejects a zero OHLC price", () => {
+    const dates = indicatorSessions(15);
+    const values = Array.from({ length: 15 }, (_, index) => (index < 14 ? null : "0.000000"));
+    const result = indicatorOverlay(indicatorBody("rsi", 14, values, "partial"), RSI_REQUEST);
+
+    expect(result.values[14]).toBe("0.000000");
+    expect(result.line[14]).toEqual({ time: dates[14], value: 0 });
+    expect(() => historyCandles(dailyPayload([bar({ close: "0.000000" })]))).toThrow("Price is invalid.");
+  });
+
+  it("treats period stored closes as insufficient because RSI needs one more close than the period", () => {
+    const values = Array.from({ length: 14 }, () => null);
+    const result = indicatorOverlay(indicatorBody("rsi", 14, values, "insufficient"), RSI_REQUEST);
+
+    expect(result.status).toBe("insufficient");
+    expect(result.values).toEqual(values);
+    expect(result.line.every((point) => !Object.hasOwn(point, "value"))).toBe(true);
+  });
+
+  it("rejects an indicator name other than sma, ema, or rsi", () => {
+    const values = Array.from({ length: 15 }, (_, index) => (index < 14 ? null : "57.915021"));
+    const body = indicatorBody("macd", 14, values, "partial");
+
+    expect(() => indicatorOverlay(body, RSI_REQUEST)).toThrow("Indicator name is invalid.");
   });
 });
