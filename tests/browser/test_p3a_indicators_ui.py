@@ -155,7 +155,7 @@ def _indicator_cells(driver) -> list[str]:
 
 
 def _headers(driver) -> list[str]:
-    return [node.text.strip() for node in _section(driver).find_elements(By.CSS_SELECTOR, "details table thead th")]
+    return [(node.get_attribute("textContent") or "").strip() for node in _section(driver).find_elements(By.CSS_SELECTOR, "details table thead th")]
 
 
 def _wait_prices(driver, expected: list[str], header: str) -> None:
