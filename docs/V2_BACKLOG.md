@@ -182,6 +182,19 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 34](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/34) landed on 2026-11-07,
+after the seven below, ready with all 7 CI jobs green: a Range selector (1 year / 2 years) on the
+daily chart form, frontend-only, exposing PR 33's backend `range=1y` support (default stays
+`2y`). Evidence: [P1C_HISTORY_RANGE_SELECTOR_VERIFICATION.md](P1C_HISTORY_RANGE_SELECTOR_VERIFICATION.md).
+Implemented by Grok's CLI; the background process was killed partway by a host memory-pressure
+reap (not a task failure — the harness instructs not to restart that automatically), and review
+showed the 7 scoped files already complete and correct. Two real gaps surfaced afterward, both
+mine: 3 files outside my own scoped list also needed the new function argument (caught via
+`tsc` and one test timeout), and a `StaleElementReferenceException` in a browser-test check I
+added myself (a stale chart-canvas reference after the test's own range switch remounted the
+chart) that CI caught and I fixed on the same branch. This does not add a selector for any
+interval other than `1d`, and does not close P3-A.
+
 Three more stacked PRs landed on 2026-11-07, after the four below, each ready with all 7 CI jobs
 green: [PR 31](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/31) (per-series
 `coverage_status`/`expected_session_count` on `GET /market/data-status`'s
