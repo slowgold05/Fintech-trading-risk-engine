@@ -1,4 +1,4 @@
-"""SMA and EMA over one cached daily history snapshot.
+"""SMA, EMA, and Wilder RSI over one cached daily history snapshot.
 
 The window is the last N observed valid stored closes. Missing dates stay
 missing: nothing fills a calendar, resets the carry, or reads a second clock.
@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from app.services.market_history import PRICE_QUANTUM, read_symbol_history
 
-_NAMES = frozenset({"sma", "ema"})
+_NAMES = frozenset({"sma", "ema", "rsi"})
 _PERIOD_MIN = 2
 _PERIOD_MAX = 200
 # Digit text longer than this cannot be inside 2..200. Reject before int().
@@ -46,7 +46,7 @@ def read_symbol_indicators(
 
 def _validate_indicator(name, period) -> tuple[str, int]:
     if not isinstance(name, str) or name not in _NAMES:
-        raise HTTPException(status_code=422, detail="name must be sma or ema.")
+        raise HTTPException(status_code=422, detail="name must be sma, ema, or rsi.")
     if isinstance(period, bool) or isinstance(period, str) and (
         len(period) > _PERIOD_TEXT_MAX
         or not period.isascii()
@@ -88,19 +88,28 @@ def _finite_positive(value: object) -> Decimal:
     return number
 
 
+def _closes_required(name: str, period: int) -> int:
+    # The first RSI needs `period` diffs, so it lands on close index `period`.
+    if name == "rsi":
+        return period + 1
+    return period
+
+
 def _points(closes: list[Decimal], bars: list[dict], indicator: tuple[str, int]) -> list[dict]:
     name, period = indicator
     count = len(closes)
     if count == 0:
         return []
-    if count < period:
+    if count < _closes_required(name, period):
         return [{"session_date": bar["session_date"], "value": None} for bar in bars]
 
     with localcontext(Context(prec=50)):
         if name == "sma":
             values = _sma(closes, period)
-        else:
+        elif name == "ema":
             values = _ema(closes, period)
+        else:
+            values = _rsi(closes, period)
     return [
         {"session_date": bar["session_date"], "value": value}
         for bar, value in zip(bars, values, strict=True)
@@ -135,6 +144,32 @@ def _ema(closes: list[Decimal], period: int) -> list:
     return values
 
 
+def _rsi(closes: list[Decimal], period: int) -> list:
+    diffs = [closes[index] - closes[index - 1] for index in range(1, len(closes))]
+    gains = [diff if diff > 0 else Decimal(0) for diff in diffs]
+    losses = [(-diff if diff < 0 else Decimal(0)) for diff in diffs]
+    divisor = Decimal(period)
+    retained = Decimal(period - 1)
+    avg_gain = sum(gains[:period], Decimal(0)) / divisor
+    avg_loss = sum(losses[:period], Decimal(0)) / divisor
+    values: list = [None] * period
+    values.append(_response_text(_rsi_from_averages(avg_gain, avg_loss)))
+    for index in range(period + 1, len(closes)):
+        avg_gain = (avg_gain * retained + gains[index - 1]) / divisor
+        avg_loss = (avg_loss * retained + losses[index - 1]) / divisor
+        values.append(_response_text(_rsi_from_averages(avg_gain, avg_loss)))
+    return values
+
+
+def _rsi_from_averages(avg_gain: Decimal, avg_loss: Decimal) -> Decimal:
+    if avg_loss == 0 and avg_gain > 0:
+        return Decimal(100)
+    if avg_loss == 0 and avg_gain == 0:
+        return Decimal(50)
+    rs = avg_gain / avg_loss
+    return Decimal(100) - Decimal(100) / (Decimal(1) + rs)
+
+
 def _response_text(number: Decimal) -> str:
     return format(number.quantize(PRICE_QUANTUM, rounding=ROUND_HALF_UP), "f")
 
@@ -144,7 +179,7 @@ def _response(history: dict, indicator: tuple[str, int], points: list[dict]) -> 
     count = len(points)
     if count == 0:
         status = "unavailable"
-    elif count < period:
+    elif count < _closes_required(name, period):
         status = "insufficient"
     else:
         status = "partial"

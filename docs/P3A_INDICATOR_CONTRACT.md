@@ -290,3 +290,37 @@ The intended shape is a thin service, for example `read_symbol_indicators(...)`,
 It should import and call the public history function. Copying `_symbol_history`’s SQL, clock read, or eligibility would be a second snapshot and is outside this proposal.
 
 Backend code at `770ced43a7ab27c993ed266b72ddc9768061ce5f` is accepted. Evidence: [P3A_INDICATOR_VERIFICATION.md](P3A_INDICATOR_VERIFICATION.md). This contract is not a phase-completion record. Chart integration and other indicators stay open.
+
+## 13. RSI addendum (2026-11-07)
+
+RSI is Wilder's Relative Strength Index, added as a third `name` value alongside `sma` and `ema`. It uses the same route, `GET /market/symbols/{symbol}/indicators`, the same `read_symbol_indicators` entry point, and the same response shape. `period` is the same integer from 2 through 200. A supplied `name` other than `sma`, `ema`, or `rsi` is HTTP 422 `name must be sma, ema, or rsi.` That detail supersedes the `name` sentence in section 4 for this added value. Sections 1–12 are otherwise unchanged.
+
+The series uses the same accepted closes `C[0..M-1]` as SMA and EMA. Arithmetic runs in the same local `Context(prec=50)`. Each emitted number is quantized once with the same six-place `ROUND_HALF_UP` text. There is no second close-extraction path.
+
+The 0-based lists `diffs`, `gains`, and `losses` each have length `M - 1`. `diffs[k] = C[k+1] - C[k]`. `gains[k]` is `diffs[k]` when that diff is positive, and `0` otherwise. `losses[k]` is `-diffs[k]` when that diff is negative, and `0` otherwise.
+
+Warm-up is `period + 1` closes, not `period`. The seed needs `period` diffs, and a diff needs two closes, so the first RSI attaches to the bar at index `period` (the `(period + 1)`-th close). Indexes `0 .. period-1` are `null`: exactly `period` leading nulls.
+
+Seed averages use the first `period` diffs, which span `C[0 .. period]`:
+
+- `avg_gain = sum(gains[0:period]) / period`
+- `avg_loss = sum(losses[0:period]) / period`
+
+The bar at index `period` takes its RSI from that seed pair. For each later index `i`, the averages roll forward with Wilder's smoothing on the diff that ends at that bar (`gains[i-1]` and `losses[i-1]`):
+
+- `avg_gain = (avg_gain * (period - 1) + gains[i-1]) / period`
+- `avg_loss = (avg_loss * (period - 1) + losses[i-1]) / period`
+
+The averages stay unrounded `Decimal` values. An average is not quantized before the next bar.
+
+RSI from one `avg_gain` / `avg_loss` pair:
+
+- If `avg_loss == 0` and `avg_gain > 0`, RSI is `100`.
+- If `avg_loss == 0` and `avg_gain == 0` (flat prices: no movement in the window), RSI is `50`. Relative strength is undefined at `0/0`. `50` is a documented convention — the neutral value on RSI's 0–100 scale — not a value derived from the ratio.
+- Otherwise `rs = avg_gain / avg_loss` and RSI is `100 - 100 / (1 + rs)`.
+
+Status for `name=rsi` uses that warm-up length. `M == 0` is `unavailable` with `points: []`. `1 <= M < period + 1` is `insufficient`, and every value is `null`. `M >= period + 1` is `partial`. SMA and EMA keep the thresholds in section 8.
+
+The frontend does not yet support `rsi`. The `IndicatorName` type and the indicator `<select>` in `DailyHistory.tsx` are unchanged by this unit. This is backend groundwork only, mirroring how the original SMA/EMA backend was its own accepted unit before the chart-integration unit that followed it.
+
+An exact RSI of `0` is a known, deferred frontend gap. Real inputs can produce it, not only the `100` and `50` cases above: a window whose gains are all zero and whose average loss is positive. `frontend/src/components/historyData.ts`'s `canonicalPrice` validator, reused for indicator point values, currently requires a strictly positive value. An eventual RSI frontend-integration unit will need to loosen that check for indicator values specifically. OHLC bar prices must stay strictly positive. This unit does not change that validator. The same integration will also have to treat RSI warm-up as `period` leading nulls; the overlay builder today expects the SMA/EMA warm-up of `period - 1`.

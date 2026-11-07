@@ -29,7 +29,7 @@ _DATES = (
 _CLOSES = (1, 4, 2, 8, 3, 9)
 _SMA = (None, None, "2.333333", "4.666667", "4.333333", "6.666667")
 _EMA = (None, None, "2.333333", "5.166667", "4.083333", "6.541667")
-_NAME_DETAIL = "name must be sma or ema."
+_NAME_DETAIL = "name must be sma, ema, or rsi."
 _PERIOD_DETAIL = "period must be an integer from 2 through 200."
 _OHLC_DETAIL = "Accepted bar prices are not usable."
 _META = (
@@ -178,6 +178,18 @@ def test_exact_half_quantizes_half_up(db_session, monkeypatch):
         ("sma", 1, _PERIOD_DETAIL),
         ("sma", 201, _PERIOD_DETAIL),
         ("ema", "201", _PERIOD_DETAIL),
+        ("RSI", 14, _NAME_DETAIL),
+        ("roi", 14, _NAME_DETAIL),
+        ("rsi", True, _PERIOD_DETAIL),
+        ("rsi", False, _PERIOD_DETAIL),
+        ("rsi", 2.0, _PERIOD_DETAIL),
+        ("rsi", "2.0", _PERIOD_DETAIL),
+        ("rsi", "2e1", _PERIOD_DETAIL),
+        ("rsi", " 2", _PERIOD_DETAIL),
+        ("rsi", "02", _PERIOD_DETAIL),
+        ("rsi", 1, _PERIOD_DETAIL),
+        ("rsi", 201, _PERIOD_DETAIL),
+        ("rsi", "201", _PERIOD_DETAIL),
     ],
 )
 def test_service_rejects_name_and_noninteger_period(name, period, detail):
@@ -426,3 +438,84 @@ def test_corrupt_accepted_ohlc_fails_entire_response(client, db_session, monkeyp
     untouched = client.get("/market/symbols/NVDA/history", params=_history_params())
     assert untouched.status_code == 200
     assert untouched.json()["bars"][0]["close"] == "5.000000"
+
+
+_RSI_CLOSES = (
+    "44.34", "44.09", "44.15", "43.61", "44.33", "44.83", "45.10", "45.42",
+    "45.84", "46.08", "45.89", "46.03", "45.61", "46.28", "46.28", "46.00",
+    "46.03", "46.41", "46.22", "45.64",
+)
+_RSI_VALUES = (
+    None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+    "70.464135", "66.249619", "66.480942", "69.346853", "66.294713", "57.915021",
+)
+
+
+def _rsi_rows(closes):
+    start = date(2026, 1, 2)
+    return [(start + timedelta(days=offset), close) for offset, close in enumerate(closes)]
+
+
+def test_rsi_wilder_reference_vector(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "RSIREF", _rsi_rows(_RSI_CLOSES))
+    body = _call(db_session, symbol="RSIREF", name="rsi", period=14)
+    assert body["status"] == "partial"
+    assert body["observed_valid_closes"] == 20
+    assert [point["value"] for point in body["points"]] == list(_RSI_VALUES)
+    assert body["name"] == "rsi" and body["period"] == 14
+
+
+def test_rsi_insufficient_until_period_plus_one_closes(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "RSI14", _rsi_rows(_RSI_CLOSES[:14]))
+    short = _call(db_session, symbol="RSI14", name="rsi", period=14)
+    assert short["status"] == "insufficient"
+    assert short["observed_valid_closes"] == 14
+    assert [point["value"] for point in short["points"]] == [None] * 14
+
+    _seed(db_session, "RSI15", _rsi_rows(_RSI_CLOSES[:15]))
+    minimum = _call(db_session, symbol="RSI15", name="rsi", period=14)
+    assert minimum["status"] == "partial"
+    assert minimum["observed_valid_closes"] == 15
+    assert [point["value"] for point in minimum["points"]] == [None] * 14 + [_RSI_VALUES[14]]
+
+
+def test_rsi_unavailable_when_no_closes(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "RSIEMPTY", [])
+    body = _call(db_session, symbol="RSIEMPTY", name="rsi", period=14)
+    assert body["status"] == "unavailable"
+    assert body["points"] == []
+    assert body["observed_valid_closes"] == 0
+
+
+def test_rsi_flat_prices_are_neutral_fifty(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "RSIFLAT", _rsi_rows(("50.000000",) * 16))
+    body = _call(db_session, symbol="RSIFLAT", name="rsi", period=14)
+    assert [point["value"] for point in body["points"][:15]] == [None] * 14 + ["50.000000"]
+
+
+def test_rsi_all_gains_is_one_hundred(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    closes = tuple(str(value) for value in range(1, 17))
+    _seed(db_session, "RSIGAIN", _rsi_rows(closes))
+    body = _call(db_session, symbol="RSIGAIN", name="rsi", period=14)
+    assert [point["value"] for point in body["points"][:15]] == [None] * 14 + ["100.000000"]
+
+
+def test_rsi_accepts_same_period_bounds_as_sma(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "RSIBOUND", _rsi_rows(("50.000000",) * 3))
+    low = _call(db_session, symbol="RSIBOUND", name="rsi", period=2)
+    assert low["period"] == 2
+    assert low["status"] == "partial"
+    assert [point["value"] for point in low["points"]] == [None, None, "50.000000"]
+    high = _call(db_session, symbol="RSIBOUND", name="rsi", period=200)
+    assert high["period"] == 200
+    assert high["status"] == "insufficient"
+    assert [point["value"] for point in high["points"]] == [None, None, None]
+    text = _call(db_session, symbol="RSIBOUND", name="rsi", period="14")
+    assert text["period"] == 14
+    assert text["status"] == "insufficient"
