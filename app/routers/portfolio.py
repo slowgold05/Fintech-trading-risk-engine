@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -11,6 +11,7 @@ from app.models.holding import Holding
 from app.models.lot import Lot
 from app.models.order import Order
 from app.services.ledger_service import append_reset, ensure_opening
+from app.services.performance_service import build_performance_response
 from app.services.portfolio_valuation import build_portfolio_response
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -25,6 +26,18 @@ def get_portfolio(
     user_id = current_user.id
     email = current_user.email
     return build_portfolio_response(db, user_id, email)
+
+
+@router.get("/performance")
+def get_portfolio_performance(
+    range_token: str = Query(..., alias="range"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Copy identity before the performance read rolls the session back to a snapshot.
+    user_id = current_user.id
+    email = current_user.email
+    return build_performance_response(db, user_id, email, range_token)
 
 
 @router.post("/reset")
