@@ -19,6 +19,7 @@ from app.models.price_history_daily import PriceHistoryDaily
 from app.models.user import User
 from app.services import exchange_calendar
 from app.services.market_history import (
+    one_calendar_year_before,
     read_data_status,
     read_symbol_history,
     two_calendar_years_before,
@@ -412,7 +413,10 @@ def test_query_validation_and_unknown_symbol(client, db_session):
         {"interval": "1h", "range": "2y", "provider": "fixture", "adjustment_type": "raw"},
         {"interval": "1D", "range": "2y", "provider": "fixture", "adjustment_type": "raw"},
         {"interval": "1d", "range": "5y", "provider": "fixture", "adjustment_type": "raw"},
-        {"interval": "1d", "range": "1y", "provider": "fixture", "adjustment_type": "raw"},
+        {"interval": "1d", "range": "6mo", "provider": "fixture", "adjustment_type": "raw"},
+        {"interval": "1d", "range": "3y", "provider": "fixture", "adjustment_type": "raw"},
+        {"interval": "1d", "range": "1Y", "provider": "fixture", "adjustment_type": "raw"},
+        {"interval": "1d", "range": "", "provider": "fixture", "adjustment_type": "raw"},
         {"interval": "1d", "range": "2Y", "provider": "fixture", "adjustment_type": "raw"},
         {"interval": "1d", "range": "2y", "provider": "fixture", "adjustment_type": "adjusted"},
         {"interval": "1d", "range": "2y", "provider": " fixture", "adjustment_type": "raw"},
@@ -447,11 +451,36 @@ def test_query_validation_and_unknown_symbol(client, db_session):
     assert known_empty.json()["bars"] == []
 
 
+def test_unsupported_range_is_rejected_at_the_route_and_service(client, db_session):
+    _symbol(db_session, "NVDA")
+    db_session.commit()
+    detail = "range must be 1y or 2y."
+    for token in ("6mo", "3y", "1Y", ""):
+        response = client.get("/market/symbols/NVDA/history", params=_history_params(range=token))
+        assert response.status_code == 422, token
+        assert response.json()["detail"] == detail
+        with pytest.raises(HTTPException) as caught:
+            read_symbol_history(
+                db_session,
+                symbol="NVDA",
+                interval="1d",
+                range_token=token,
+                provider="fixture",
+                adjustment_type="raw",
+            )
+        assert caught.value.status_code == 422
+        assert caught.value.detail == detail
+
+
 def test_leap_day_bounds_and_requested_window(client, db_session, monkeypatch):
     assert two_calendar_years_before(date(2024, 2, 29)) == date(2022, 2, 28)
     assert two_calendar_years_before(date(2028, 2, 29)) == date(2026, 2, 28)
     assert two_calendar_years_before(date(2026, 11, 5)) == date(2024, 11, 5)
     assert two_calendar_years_before(date(2024, 3, 1)) == date(2022, 3, 1)
+    assert one_calendar_year_before(date(2024, 2, 29)) == date(2023, 2, 28)
+    assert one_calendar_year_before(date(2028, 2, 29)) == date(2027, 2, 28)
+    assert one_calendar_year_before(date(2026, 11, 5)) == date(2025, 11, 5)
+    assert one_calendar_year_before(date(2024, 3, 1)) == date(2023, 3, 1)
 
     clock = datetime(2024, 2, 29, 15, 0)
     _pin_clock(monkeypatch, clock)
@@ -494,6 +523,40 @@ def test_leap_day_bounds_and_requested_window(client, db_session, monkeypatch):
     assert body["coverage_status"] == "gaps"
     assert body["expected_session_count"] == exchange_calendar.expected_session_count(start, end)
     assert body["status"] == "partial"
+
+
+def test_one_year_range_shrinks_the_window_and_reports_the_request(client, db_session, monkeypatch):
+    clock = datetime(2026, 11, 5, 18, 27, 2)
+    _pin_clock(monkeypatch, clock)
+    end = clock.date()
+    one_start = one_calendar_year_before(end)
+    two_start = two_calendar_years_before(end)
+    just_outside = one_start - timedelta(days=1)
+    assert two_start <= just_outside < one_start
+    fetched = _aware(clock - timedelta(hours=1))
+    _symbol(db_session, "NVDA")
+    _bar(db_session, "NVDA", just_outside, fetched_at=fetched, close_price=Decimal("4.000000"))
+    _bar(db_session, "NVDA", one_start, fetched_at=fetched, close_price=Decimal("5.000000"))
+    _bar(db_session, "NVDA", end, fetched_at=fetched, close_price=Decimal("6.000000"))
+    db_session.commit()
+
+    body = client.get("/market/symbols/NVDA/history", params=_history_params(range="1y")).json()
+    assert body["range"] == "1y"
+    assert body["requested_start"] == one_start.isoformat()
+    assert body["requested_start"] != two_start.isoformat()
+    assert body["requested_end"] == end.isoformat()
+    assert [bar["session_date"] for bar in body["bars"]] == [one_start.isoformat(), end.isoformat()]
+    assert just_outside.isoformat() not in {bar["session_date"] for bar in body["bars"]}
+    assert "4.000000" not in json.dumps(body["bars"])
+
+    longer = client.get("/market/symbols/NVDA/history", params=_history_params()).json()
+    assert longer["requested_start"] == two_start.isoformat()
+    assert longer["requested_end"] == end.isoformat()
+    assert [bar["session_date"] for bar in longer["bars"]] == [
+        just_outside.isoformat(),
+        one_start.isoformat(),
+        end.isoformat(),
+    ]
 
 
 def test_coverage_status_complete_when_every_expected_session_is_present(client, db_session, monkeypatch):

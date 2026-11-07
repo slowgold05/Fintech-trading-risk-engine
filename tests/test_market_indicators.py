@@ -234,7 +234,7 @@ def test_route_text_bounds_missing_keys_and_history_detail(client, db_session, m
     with pytest.raises(HTTPException) as caught:
         _call(db_session, range_token="5y")
     assert caught.value.status_code == 422
-    assert caught.value.detail == "range must be 2y."
+    assert caught.value.detail == "range must be 1y or 2y."
 
 
 def test_warmup_empty_unknown_and_excluded_do_not_leak(client, db_session, monkeypatch):

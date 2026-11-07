@@ -28,13 +28,21 @@ SYMBOL_MAX_LENGTH = 20
 PROVIDER_MAX_LENGTH = 32
 QUOTE_CENSUS_BATCH = 500
 SUPPORTED_INTERVALS = frozenset({"1d"})
-SUPPORTED_RANGES = frozenset({"2y"})
+SUPPORTED_RANGES = frozenset({"1y", "2y"})
 SUPPORTED_ADJUSTMENTS = frozenset({"raw", "split_adjusted"})
 FRESHNESS_STATUSES = ("live-ish", "delayed", "cached", "stale")
 QUALITY_STATUSES = ("valid", "flagged", "rejected")
 # Canonical-history ingestion is off. This does not describe quote refresh.
 COLLECTION = "disabled"
 COVERAGE_STATUS = "not_verified"
+
+
+def one_calendar_year_before(day: date) -> date:
+    """Inclusive start of a one-calendar-year window. 29 February falls back to 28 February."""
+    try:
+        return day.replace(year=day.year - 1)
+    except ValueError:
+        return date(day.year - 1, 2, 28)
 
 
 def two_calendar_years_before(day: date) -> date:
@@ -71,6 +79,7 @@ def read_symbol_history(
             db,
             symbol=symbol,
             interval=interval,
+            range_token=range_token,
             provider=provider,
             adjustment_type=adjustment_type,
         )
@@ -89,7 +98,7 @@ def _validate_history_query(
     if interval not in SUPPORTED_INTERVALS:
         raise HTTPException(status_code=422, detail="interval must be 1d.")
     if range_token not in SUPPORTED_RANGES:
-        raise HTTPException(status_code=422, detail="range must be 2y.")
+        raise HTTPException(status_code=422, detail="range must be 1y or 2y.")
     if adjustment_type not in SUPPORTED_ADJUSTMENTS:
         raise HTTPException(status_code=422, detail="adjustment_type must be raw or split_adjusted.")
 
@@ -291,6 +300,7 @@ def _symbol_history(
     *,
     symbol: str,
     interval: str,
+    range_token: str,
     provider: str,
     adjustment_type: str,
 ) -> dict:
@@ -302,7 +312,7 @@ def _symbol_history(
         raise HTTPException(status_code=404, detail="Unknown symbol.")
 
     end = clock.date()
-    start = two_calendar_years_before(end)
+    start = one_calendar_year_before(end) if range_token == "1y" else two_calendar_years_before(end)
     # Inclusive session bounds stay in SQL. The primary key already makes a
     # session unique for this symbol, provider, and adjustment.
     rows = db.execute(
@@ -355,7 +365,7 @@ def _symbol_history(
     return {
         "symbol": symbol,
         "interval": interval,
-        "range": "2y",
+        "range": range_token,
         "provider": provider,
         "adjustment_type": adjustment_type,
         "status": "partial" if bars else "unavailable",
@@ -389,8 +399,8 @@ def _coverage(start: date, end: date, bars: list[dict]) -> tuple[str, int | None
 
     Read-only reporting: never filters or alters `bars`. Falls back to the prior
     "not_verified"/None pair when the window falls outside the calendar's supported range,
-    which should not happen in practice since the window is always "today minus two years"
-    to "today", but the guard stays honest rather than assuming that can't change.
+    which should not happen in practice since the window is always "today minus one or two
+    calendar years" to "today", but the guard stays honest rather than assuming that can't change.
     """
     try:
         expected_dates = set(exchange_calendar.expected_session_dates(start, end))

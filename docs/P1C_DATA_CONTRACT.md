@@ -78,7 +78,7 @@ Query rules, all required:
 | Query | Accepted | Otherwise |
 | --- | --- | --- |
 | `interval` | `1d` only | 422 |
-| `range` | `2y` only | 422 |
+| `range` | `1y` or `2y` | 422 |
 | `provider` | Nonempty, no leading or trailing space, at most 32 characters. Not trimmed into another name | 422 |
 | `adjustment_type` | `raw` or `split_adjusted` | 422 |
 | symbol path | Nonempty, no leading or trailing space, at most 20 characters | 422 |
@@ -87,7 +87,7 @@ A symbol that passes validation and is absent from `market_symbols` is 404. A kn
 
 The read never falls back to `price_history_daily` or `market_quote_cache`. It returns rows for the requested provider and adjustment only.
 
-The window end is the snapshot date. The window start is the same month and day two calendar years earlier. 29 February moves back to 28 February when that earlier year has no 29 February. The query itself includes only `session_date >= requested_start` and `session_date <= requested_end`. Rows outside that window are not transferred into the app and are not counted. There is no `outside_range_count`. Missing days inside the window are not filled.
+The window end is the snapshot date. For `range=1y` the window start is the same month and day one calendar year earlier. For `range=2y` it is the same month and day two calendar years earlier. 29 February moves back to 28 February when that earlier year has no 29 February. The response `range` field is the value that was requested and served (`1y` or `2y`). Before this unit the response always reported the literal `2y` after validation. The query itself includes only `session_date >= requested_start` and `session_date <= requested_end`. Rows outside that window are not transferred into the app and are not counted. There is no `outside_range_count`. Missing days inside the window are not filled.
 
 `excluded_row_count` counts rows inside that window that are not returned:
 
@@ -107,7 +107,7 @@ local NYSE trading-day calendar (`app/services/exchange_calendar.py`; see
 is one of `"not_verified"`, `"complete"`, `"gaps"`, `"unexpected_sessions"`, or
 `"gaps_and_unexpected_sessions"`, and `expected_session_count` is a real integer except when
 `coverage_status` is `"not_verified"` (the requested window fell outside the calendar's
-1990-2035 supported range, which does not happen for the normal "today minus two years" window).
+1990-2035 supported range, which does not happen for a normal today-minus-one-year or today-minus-two-years window).
 The calendar models the standard annual NYSE holiday schedule only; it does not know about ad
 hoc closures such as September 11, 2001, or weather/system outages, so a `"complete"` result is
 a calendar-schedule comparison, not a claim of total historical accuracy.
