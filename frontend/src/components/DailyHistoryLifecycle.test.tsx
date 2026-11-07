@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { fetchCachedSeries, fetchDailyHistory } from "../api/history";
 import { DailyHistory } from "./DailyHistory";
@@ -89,7 +90,9 @@ it("never constructs a chart when unmounted before the chart import resolves", a
   const user = userEvent.setup();
   const view = render(
     <QueryClientProvider client={client}>
-      <DailyHistory />
+      <MemoryRouter>
+        <DailyHistory />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 

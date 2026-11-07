@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryResponse, MarketDataStatus } from "../api/history";
 import { DailyHistory } from "./DailyHistory";
@@ -75,7 +76,19 @@ function mountChart() {
 function renderHistory() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   clients.push(client);
-  return render(<QueryClientProvider client={client}><DailyHistory /></QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <DailyHistory />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function ticketHrefs() {
+  return screen.queryAllByRole("link")
+    .map((link) => link.getAttribute("href"))
+    .filter((href): href is string => href !== null && href.startsWith("/trades"));
 }
 
 function fact(label: string) {
@@ -99,6 +112,14 @@ function onlyChart() {
   const chart = mounts[0];
   if (chart === undefined || mounts.length !== 1) throw new Error("Expected one chart.");
   return chart;
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 describe("DailyHistory", () => {
@@ -126,6 +147,7 @@ describe("DailyHistory", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chartApi.createChart).not.toHaveBeenCalled();
+    expect(ticketHrefs()).toEqual([]);
   });
 
   it("views one explicit series, ignores unsent edits, refreshes in place, and removes on unmount", async () => {
@@ -206,6 +228,7 @@ describe("DailyHistory", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Cached daily history could not be loaded.");
     expect(screen.queryByText(PARTIAL)).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(ticketHrefs()).toEqual([]);
     await waitFor(() => expect(chart.remove).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(chartApi.createChart).toHaveBeenCalledTimes(2));
@@ -239,5 +262,38 @@ describe("DailyHistory", () => {
     expect(chartApi.createChart).not.toHaveBeenCalled();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByText(PARTIAL)).not.toBeInTheDocument();
+    expect(ticketHrefs()).toEqual([]);
+  });
+
+  it("links only the viewed canonical symbol after a settled matching history", async () => {
+    const symbol = "AT&T";
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    const pending = deferred<HistoryResponse>();
+    historyApi.fetchDailyHistory.mockImplementationOnce(() => pending.promise);
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest(symbol);
+    submitForm();
+    expect(await screen.findByText("Loading cached daily history.")).toBeInTheDocument();
+    expect(ticketHrefs()).toEqual([]);
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
+
+    const refresh = deferred<HistoryResponse>();
+    historyApi.fetchDailyHistory.mockImplementationOnce(() => refresh.promise);
+    pending.resolve({ ...history(), symbol });
+    await waitFor(() => expect(ticketHrefs()).toEqual([`/trades?symbol=${encodeURIComponent(symbol)}`]));
+    expect(screen.getByText(`Showing ${symbol}, source fixture, adjustment raw.`)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Symbol" }), { target: { value: "MSFT" } });
+    expect(screen.getByText("The form has unsent changes. Prices below stay on the last viewed series.")).toBeInTheDocument();
+    expect(ticketHrefs()).toEqual([`/trades?symbol=${encodeURIComponent(symbol)}`]);
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
+
+    fillTest(symbol);
+    submitForm();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(2));
+    expect(ticketHrefs()).toEqual([]);
+    refresh.resolve({ ...history(), symbol });
+    await waitFor(() => expect(ticketHrefs()).toEqual([`/trades?symbol=${encodeURIComponent(symbol)}`]));
   });
 });

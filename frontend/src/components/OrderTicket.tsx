@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import { useSearchParams } from "react-router-dom";
 import {
   normalizeOrderDecimal,
   previewOrder,
@@ -143,6 +144,14 @@ function readDetail(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function initialSymbolFromSearch(search: URLSearchParams): string {
+  const values = search.getAll("symbol");
+  if (values.length !== 1) return "";
+  const next = values[0].trim().toUpperCase();
+  if (next.length < 1 || next.length > 20) return "";
+  return next;
+}
+
 function readPreviewError(error: unknown): string {
   if (error instanceof Error && error.message === "Invalid order preview request") {
     return "The ticket could not be previewed. Check the symbol, quantity, and limit price.";
@@ -191,9 +200,10 @@ function PreviewFact({
 }
 
 export function OrderTicket() {
+  const [searchParams] = useSearchParams();
   const [side, setSide] = useState<TradeSide>("buy");
   const [orderType, setOrderType] = useState<OrderType>("limit");
-  const [symbol, setSymbol] = useState("");
+  const [symbol, setSymbol] = useState(() => initialSymbolFromSearch(searchParams));
   const [quantity, setQuantity] = useState("");
   const [limitPrice, setLimitPrice] = useState("");
   const [stepUpCode, setStepUpCode] = useState("");

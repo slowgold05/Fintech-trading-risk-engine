@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   normalizeOrderDecimal,
@@ -29,7 +30,7 @@ vi.mock("../context/useToast", () => ({ useToast: () => toast }));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const clients: QueryClient[] = [];
 
-function open() {
+function open(search = "") {
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Infinity, gcTime: 0 },
@@ -38,12 +39,30 @@ function open() {
   });
   clients.push(client);
   const invalidate = vi.spyOn(client, "invalidateQueries");
+  const navigateRef: { current: ReturnType<typeof useNavigate> | null } = { current: null };
+  function QueryProbe() {
+    navigateRef.current = useNavigate();
+    return null;
+  }
   render(
     <QueryClientProvider client={client}>
-      <OrderTicket />
+      <MemoryRouter initialEntries={[{ pathname: "/trades", search }]}>
+        <QueryProbe />
+        <Routes>
+          <Route path="/trades" element={<OrderTicket />} />
+        </Routes>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
-  return invalidate;
+  return Object.assign(invalidate, {
+    navigate(nextSearch: string) {
+      const navigate = navigateRef.current;
+      if (navigate === null) throw new Error("Ticket router is not mounted.");
+      act(() => {
+        navigate({ pathname: "/trades", search: nextSearch });
+      });
+    },
+  });
 }
 
 function validPreview(patch: Partial<OrderPreviewResponse> = {}): OrderPreviewResponse {
@@ -739,5 +758,92 @@ describe("OrderTicket", () => {
     expect(screen.queryByText(leafText(/The outcome of this order is unknown/))).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry same order" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm paper order" })).not.toBeInTheDocument();
+  });
+
+  it("seeds one trimmed symbol and does not fill quantity, price, or call order APIs", () => {
+    open("?symbol=%20aapl%20");
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("AAPL");
+    expect(screen.getByLabelText("Trade quantity")).toHaveValue("");
+    expect(screen.getByLabelText("Limit price")).toHaveValue("");
+    expect(screen.queryByRole("heading", { name: "Order preview" })).not.toBeInTheDocument();
+    expect(previewOrder).not.toHaveBeenCalled();
+    expect(createOrder).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", ""],
+    ["empty", "?symbol="],
+    ["blank", "?symbol=%20%20"],
+    ["too long", `?symbol=${"A".repeat(21)}`],
+    ["duplicate", "?symbol=AAPL&symbol=MSFT"],
+  ])("leaves the symbol blank for a %s query", (_label, search) => {
+    open(search);
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("");
+    expect(screen.getByLabelText("Trade quantity")).toHaveValue("");
+    expect(screen.getByLabelText("Limit price")).toHaveValue("");
+    expect(previewOrder).not.toHaveBeenCalled();
+    expect(createOrder).not.toHaveBeenCalled();
+  });
+
+  it("keeps an edited draft when the mounted query changes", () => {
+    const ticket = open("?symbol=AAPL");
+    setValue("Trade symbol", "MSFT");
+    setValue("Trade quantity", "2");
+    setValue("Limit price", "50");
+    ticket.navigate("?symbol=IBM");
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("MSFT");
+    expect(screen.getByLabelText("Trade quantity")).toHaveValue("2");
+    expect(screen.getByLabelText("Limit price")).toHaveValue("50");
+    expect(previewOrder).not.toHaveBeenCalled();
+    expect(createOrder).not.toHaveBeenCalled();
+  });
+
+  it("keeps a ready preview when the mounted query changes", async () => {
+    const ticket = open("?symbol=AAPL");
+    draft("1", "100", "AAPL");
+    await previewDraft();
+    ticket.navigate("?symbol=MSFT");
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("AAPL");
+    expect(screen.getByLabelText("Trade quantity")).toHaveValue("1");
+    expect(screen.getByLabelText("Limit price")).toHaveValue("100");
+    expect(screen.getByText(leafText("Preview ready"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
+    expect(previewOrder).toHaveBeenCalledTimes(1);
+    expect(createOrder).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pending confirm across a query change and retries that same request", async () => {
+    const ticket = open("?symbol=AAPL");
+    draft("1", "100", "AAPL");
+    await previewDraft();
+    let rejectOrder: (reason: unknown) => void = () => undefined;
+    createOrder.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectOrder = reject;
+    }));
+    clickButton("Confirm paper order");
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(1));
+    const first = createOrder.mock.calls[0][0];
+    expect(first.idempotencyKey).toMatch(UUID);
+    expect(screen.getByRole("button", { name: "Confirm paper order" })).toBeDisabled();
+    ticket.navigate("?symbol=MSFT");
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("AAPL");
+    expect(screen.getByRole("heading", { name: "Order preview" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry same order" })).not.toBeInTheDocument();
+    expect(createOrder).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      rejectOrder(networkFailure());
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry same order" })).toBeEnabled());
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("AAPL");
+    expect(screen.getByRole("heading", { name: "Order preview" })).toBeInTheDocument();
+    ticket.navigate("?symbol=IBM");
+    expect(screen.getByLabelText("Trade symbol")).toHaveValue("AAPL");
+    expect(screen.getByRole("button", { name: "Retry same order" })).toBeEnabled();
+
+    createOrder.mockResolvedValueOnce(placedOrder());
+    clickButton("Retry same order");
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2));
+    expect(createOrder.mock.calls[1][0]).toEqual(first);
   });
 });
