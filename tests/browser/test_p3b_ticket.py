@@ -285,11 +285,13 @@ def test_empty_market_ticket(disposable_api) -> None:
             pytest.fail("owner activity changed before an order: " + json.dumps({"before": before, "after": after}))
         assert driver.execute_script("const root=document.documentElement,main=document.querySelector('main');return !!main&&root.scrollWidth<=root.clientWidth&&main.scrollWidth<=main.clientWidth;")
         _shot(driver, driver.find_element(By.XPATH, "//h3[normalize-space()='Order preview']"), ARTIFACTS / "ticket-preview-desktop.png")
+        _shot(driver, driver.find_element(By.CSS_SELECTOR, "button[aria-label='Confirm paper order']"), ARTIFACTS / "ticket-confirm-desktop.png")
         mobile = _css_viewport(driver, 390, 844, True)
         h._wait(driver).until(lambda current: not current.find_elements(By.CSS_SELECTOR, "input[aria-label='Limit price']") and _ready(current, "1") and current.execute_script(
             "const root=document.documentElement,main=document.querySelector('main');return !!main&&root.scrollWidth<=root.clientWidth&&main.scrollWidth<=main.clientWidth;"
         ))
         _shot(driver, driver.find_element(By.XPATH, "//h3[normalize-space()='Order preview']"), ARTIFACTS / "ticket-preview-mobile.png")
+        _shot(driver, driver.find_element(By.CSS_SELECTOR, "button[aria-label='Confirm paper order']"), ARTIFACTS / "ticket-confirm-mobile.png")
         _css_viewport(driver, 1280, 800, False)
         quantity = driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']")
         quantity.clear()
@@ -321,6 +323,9 @@ def test_empty_market_ticket(disposable_api) -> None:
         if _cash(engine, email) != Decimal("100000.00"):
             pytest.fail("cash balance changed")
         _shot(driver, surface, ARTIFACTS / "ticket-market-canceled.png")
+        h._wait(driver).until(lambda current: not any(
+            node.is_displayed() for node in current.find_elements(By.CSS_SELECTOR, "div[aria-label='Notifications'] .toast-item")
+        ))
         mobile = _css_viewport(driver, 390, 844, True)
         if driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").get_attribute("value") != "2":
             pytest.fail("sell preview quantity was not the blocked market quantity")
