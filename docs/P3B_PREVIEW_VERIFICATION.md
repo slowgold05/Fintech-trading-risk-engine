@@ -1,6 +1,6 @@
 # P3-B preview verification
 
-The first backend preview unit is accepted locally and in CI as of 2026-11-06 14:25 EST. Full P3-B is not done. The preview/confirm ticket, lifecycle, and watchlists stay later. No preview UI is built. Fields: [P3B_ORDER_PREVIEW_CONTRACT.md](P3B_ORDER_PREVIEW_CONTRACT.md).
+The first backend preview unit is accepted locally and in CI as of 2026-11-06 14:25 EST. Full P3-B is not done. At this backend revision there was no preview UI. The ticket is now accepted in [P3B_TICKET_VERIFICATION.md](P3B_TICKET_VERIFICATION.md). Lifecycle and watchlists stay later. Fields: [P3B_ORDER_PREVIEW_CONTRACT.md](P3B_ORDER_PREVIEW_CONTRACT.md).
 
 ## Accepted revision
 

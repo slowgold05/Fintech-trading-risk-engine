@@ -1,6 +1,6 @@
 # P3-B contract: POST /orders/preview
 
-The first backend preview unit is accepted locally and in CI. Evidence: [P3B_PREVIEW_VERIFICATION.md](P3B_PREVIEW_VERIFICATION.md). Full P3-B is not done: the preview/confirm ticket, lifecycle, and watchlists stay later. Indicative, non-binding read-only preview. It is not an MFA authorization. `POST /orders/` revalidates. Preview reserves nothing and is not an execution guarantee. `eligible` does not authorize step-up.
+The first backend preview unit is accepted locally and in CI. Evidence: [P3B_PREVIEW_VERIFICATION.md](P3B_PREVIEW_VERIFICATION.md). At that backend revision there was no preview UI. The ticket is now accepted in [P3B_TICKET_VERIFICATION.md](P3B_TICKET_VERIFICATION.md). Full P3-B is not done: lifecycle and watchlists stay later. Indicative, non-binding read-only preview. It is not an MFA authorization. `POST /orders/` revalidates. Preview reserves nothing and is not an execution guarantee. `eligible` does not authorize step-up.
 
 ## Route and snapshot
 

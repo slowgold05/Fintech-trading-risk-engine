@@ -167,9 +167,9 @@ export interface OrderResponse {
 export interface CreateOrderPayload {
   symbol: string;
   side: TradeSide;
-  quantity: number;
+  quantity: number | string;
   order_type: "limit" | "market";
-  limit_price?: number;
+  limit_price?: number | string;
 }
 
 export type ValuationStatus = "complete" | "incomplete";

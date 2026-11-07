@@ -174,3 +174,4 @@ jobs:
             .local-tools/p2-shell/*.png
             .local-tools/p2-overview/*.png
             .local-tools/p3a-history/*.png
+            .local-tools/p3b-ticket/*.png
