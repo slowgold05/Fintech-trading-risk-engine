@@ -184,13 +184,20 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 The reviewed NYSE exchange calendar for per-symbol history is accepted and is not the next
 task. Evidence: [P1C_EXCHANGE_CALENDAR_VERIFICATION.md](P1C_EXCHANGE_CALENDAR_VERIFICATION.md).
-Accepted code `5e110ec` on `codex/v2-exchange-calendar-20261107`, stacked on ready PR 26 at
+Accepted code `5bc6d60` on `codex/v2-exchange-calendar-20261107`, stacked on ready PR 26 at
 `9682ae450674ac3ca2012d468feefbb534dd3303`. [PR 27](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/27)
-carries this unit. Final [CI 42395345592](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42395345592)
-succeeded on all 7 jobs: backend 318 passed/7 skipped (+15 over PR 26's 303, matching the 11
-new `tests/test_exchange_calendar.py` cases plus 4 new `coverage_status` cases in
-`tests/test_market_history.py` exactly), frontend 300 tests in 26 files unchanged, browser 10
-passed/1 hosted excluded unchanged (no browser test touched this unit). `GET /market/symbols/{symbol}/history`
+carries this unit. The first implementation head's own CI caught two real issues this unit then
+fixed on the same branch: the chart card's Coverage row hardcoded "Not verified" regardless of
+the real value, and a browser-test fixture asserted a now-stale literal — see the verification
+note's "Corrections found during browser verification" section. Final
+[CI 42397343431](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42397343431)
+succeeded on all 7 jobs cleanly: backend 318 passed/7 skipped (+15 over PR 26's 303, matching
+the 11 new `tests/test_exchange_calendar.py` cases plus 4 new `coverage_status` cases in
+`tests/test_market_history.py` exactly), frontend 301 tests in 26 files (+1 for the Coverage-display
+fix), browser 10 passed/1 hosted excluded (unchanged count — one existing test corrected, none
+added or removed). An earlier intermediate head's browser job failed once on
+`test_p3b_watchlists_ui.py` with a `StaleElementReferenceException`; a rerun with no source
+change passed clean, confirming an unrelated pre-existing flake. `GET /market/symbols/{symbol}/history`
 now reports a real `coverage_status` (`complete`, `gaps`, `unexpected_sessions`,
 `gaps_and_unexpected_sessions`, or `not_verified` only when the window is outside the
 calendar's 1990-2035 range) and a real `expected_session_count`, computed from a local,
