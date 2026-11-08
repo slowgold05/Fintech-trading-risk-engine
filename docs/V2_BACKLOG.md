@@ -182,6 +182,31 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 72](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/72) is ready
+with all CI checks green: the user's explicit choice to use a **local, cost-free model
+via Ollama** (`qwen3:14b`, already installed and running on this machine) instead of a
+paid API or the TradingAgents framework itself, to fill in the `bull_case`/`bear_case`/
+`synthesis`/`risks`/`model_version`/`prompt_version` fields PR #71's worker always left
+`null`. Gated behind a new `research_synthesis_enabled` setting, default `false`, so CI
+(no Ollama there) and every pre-existing test stay completely unaffected — one test
+explicitly proves the local model is never called while the flag is at its default. A
+failed or skipped synthesis call never fails the job, same resilience philosophy as the
+two existing data sources (SEC fundamentals/filings) — a `local_llm` entry just records
+`"unavailable"` in `sources` instead. `_parse_sections` (plain-text section splitting,
+not JSON — small local models aren't reliable JSON producers) was independently
+verified against four hand-built reference vectors before implementation: well-formed,
+a missing marker, markers out of the instructed order, and no markers at all — all four
+matched. No schema change, no new migration. Evidence:
+[P5D_RESEARCH_SYNTHESIS_VERIFICATION.md](P5D_RESEARCH_SYNTHESIS_VERIFICATION.md);
+design: [P5D_RESEARCH_SYNTHESIS_CONTRACT.md](P5D_RESEARCH_SYNTHESIS_CONTRACT.md). **This
+closes out the currently-scoped slice of Phase 5** — every job created via `POST
+/research/jobs` now, once an operator turns the new flag on locally with Ollama
+running, produces a real (if basic) equity research note end to end: data gathering →
+local-model synthesis → a readable report via `GET /research/reports`. Still fully open
+for a future pass: the actual TradingAgents multi-agent framework (this unit is a
+single direct model call, not that), personalized daily briefs, and
+`/research/briefs/*`.
+
 [PR 71](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/71) is ready
 with all CI checks green: the bounded worker that actually drains the job queue PR #70
 built intake for. **No TradingAgents or LLM integration** — the report produced only
