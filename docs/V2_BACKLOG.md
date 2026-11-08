@@ -182,6 +182,33 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 66](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/66) is ready with all
+CI checks green: trade execution markers and open-order price lines added to the daily history
+chart, closing the roadmap's "Trade execution markers on historical charts," "Price levels for
+open limit orders," and "Plot fills and active orders on charts" lines. Evidence:
+[P3_CHART_TRADE_MARKERS_VERIFICATION.md](P3_CHART_TRADE_MARKERS_VERIFICATION.md). Design:
+`docs/P3_CHART_TRADE_MARKERS_DESIGN.md`. No new backend endpoint — reuses the existing
+`fetchTrades`/`fetchOrders`, filtered client-side to the shown symbol. Both overlays are
+duplicated across all three price series (candlestick/line/area, PR #62) as a deliberate hedge
+against an unverified library assumption about whether hiding a series also hides its own
+decorations. Overlay updates sit in their own effects, separate from the candle `setData` path,
+so a trade/order refresh never replots prices — a genuine improvement over what I asked for.
+Worth recording: Grok caught and self-corrected a real risk in my own task wording before
+writing any code — I described `createSeriesMarkers` as "a top-level function import," which
+would have conflicted with this file's existing lazy `dynamic import("lightweight-charts")`
+pattern that `DailyHistoryLifecycle.test.tsx` depends on staying gated; Grok used the
+already-dynamically-imported module object instead, matching how every other chart-type
+constant in this file is already referenced. A trade's UTC date is matched directly against
+loaded candle dates (not exchange-calendar-aware) — a documented, deliberate simplification for
+a visual overlay, not a financial calculation; a non-matching trade is silently skipped, tested
+explicitly. **With this PR, every item on the roadmap's Phase 3 "Core chart features" list
+(section 3.1) and "Order lifecycle and chart integration" (section 3.3, the charting half) is
+closed except user-configurable indicator parameters beyond period/signal-period** (already
+largely satisfied — period is configurable for every indicator that has one; MACD's fast/slow
+and Bollinger's band width are deliberately fixed, documented design choices from their own
+original contracts, not gaps). No manual browser/visual check was performed, disclosed
+explicitly.
+
 [PR 65](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/65) is ready with all
 CI checks green: the daily history chart's range/indicator/period/chart-type now persist in
 `localStorage`, closing the roadmap's "Persisted chart preferences" line. Evidence:
