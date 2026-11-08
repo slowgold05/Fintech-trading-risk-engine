@@ -269,6 +269,28 @@ export interface AttributionResponse {
   sectors: AttributionSector[] | null;
 }
 
+export interface RiskMetricsResponse {
+  user: { id: number; email: string };
+  range: "1y" | "2y";
+  requested_start: string;
+  requested_end: string;
+  read_at: string;
+  status: "complete" | "incomplete";
+  observed_periods: number;
+  return_count: number;
+  historical_volatility_pct: string | null;
+  max_drawdown_pct: string | null;
+  beta_pair_count: number;
+  portfolio_beta: string | null;
+  historical_var_95_pct: string | null;
+  historical_var_99_pct: string | null;
+  expected_shortfall_95_pct: string | null;
+  expected_shortfall_99_pct: string | null;
+  correlations: unknown[] | null;
+  stress_scenarios: unknown[] | null;
+  risk_contributions: unknown[] | null;
+}
+
 export interface RiskAlertResponse {
   rule_code: string;
   severity: string;

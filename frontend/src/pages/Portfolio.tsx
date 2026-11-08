@@ -6,6 +6,7 @@ import { createCashMovement } from "../api/cash";
 import { fetchAllocation } from "../api/allocation";
 import { fetchAttribution } from "../api/attribution";
 import { fetchPortfolio } from "../api/portfolio";
+import { fetchRiskMetrics } from "../api/riskMetrics";
 import { useToast } from "../context/useToast";
 import { PageHeader } from "../components/PageHeader";
 import {
@@ -158,6 +159,10 @@ export function Portfolio() {
   const attributionQuery = useQuery({
     queryKey: ["portfolio", "attribution"],
     queryFn: fetchAttribution,
+  });
+  const riskMetricsQuery = useQuery({
+    queryKey: ["portfolio", "risk-metrics", "1y"],
+    queryFn: () => fetchRiskMetrics("1y"),
   });
 
   const portfolio = portfolioQuery.data;
@@ -579,6 +584,32 @@ export function Portfolio() {
               />
             )}
           </DashboardCard>
+
+          <DashboardCard title="Risk metrics (1y)">
+            {riskMetricsQuery.isLoading ? (
+              <div className="space-y-3">
+                {[0, 1, 2, 3, 4, 5, 6].map((item) => (
+                  <SkeletonBlock className="h-10" key={item} />
+                ))}
+              </div>
+            ) : riskMetricsQuery.isError ? (
+              <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
+                Risk metrics could not be loaded.
+              </div>
+            ) : riskMetricsQuery.data == null ? (
+              <p className="text-sm text-slate-300">Risk metrics unavailable</p>
+            ) : (
+              <RiskMetricsStats
+                historicalVolatilityPct={riskMetricsQuery.data.historical_volatility_pct}
+                maxDrawdownPct={riskMetricsQuery.data.max_drawdown_pct}
+                portfolioBeta={riskMetricsQuery.data.portfolio_beta}
+                historicalVar95Pct={riskMetricsQuery.data.historical_var_95_pct}
+                historicalVar99Pct={riskMetricsQuery.data.historical_var_99_pct}
+                expectedShortfall95Pct={riskMetricsQuery.data.expected_shortfall_95_pct}
+                expectedShortfall99Pct={riskMetricsQuery.data.expected_shortfall_99_pct}
+              />
+            )}
+          </DashboardCard>
         </div>
       </div>
     </div>
@@ -737,6 +768,63 @@ function PnlAttributionTables({
           message="No sector attribution."
         />
       ) : null}
+    </div>
+  );
+}
+
+function formatRiskPercent(value: string | null) {
+  if (value == null) {
+    return <span className="text-slate-400">Unavailable</span>;
+  }
+  return formatPercent(Number(value));
+}
+
+function formatBeta(value: string | null) {
+  if (value == null) {
+    return <span className="text-slate-400">Unavailable</span>;
+  }
+  return Number(value).toFixed(4);
+}
+
+function RiskMetricsStats({
+  historicalVolatilityPct,
+  maxDrawdownPct,
+  portfolioBeta,
+  historicalVar95Pct,
+  historicalVar99Pct,
+  expectedShortfall95Pct,
+  expectedShortfall99Pct,
+}: {
+  historicalVolatilityPct: string | null;
+  maxDrawdownPct: string | null;
+  portfolioBeta: string | null;
+  historicalVar95Pct: string | null;
+  historicalVar99Pct: string | null;
+  expectedShortfall95Pct: string | null;
+  expectedShortfall99Pct: string | null;
+}) {
+  const rows = [
+    { label: "Historical volatility", value: formatRiskPercent(historicalVolatilityPct) },
+    { label: "Max drawdown", value: formatRiskPercent(maxDrawdownPct) },
+    { label: "Beta", value: formatBeta(portfolioBeta) },
+    { label: "95% VaR", value: formatRiskPercent(historicalVar95Pct) },
+    { label: "99% VaR", value: formatRiskPercent(historicalVar99Pct) },
+    { label: "95% Expected Shortfall", value: formatRiskPercent(expectedShortfall95Pct) },
+    { label: "99% Expected Shortfall", value: formatRiskPercent(expectedShortfall99Pct) },
+  ];
+
+  return (
+    <div className="space-y-2">
+      {rows.map((row) => (
+        <div className="flex items-center justify-between gap-3" key={row.label}>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+            {row.label}
+          </div>
+          <div className="font-mono text-sm tabular-nums text-slate-100">
+            {row.value}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AllocationResponse, AttributionResponse, OrderResponse, PortfolioResponse } from "../types/schemas";
+import type { AllocationResponse, AttributionResponse, OrderResponse, PortfolioResponse, RiskMetricsResponse } from "../types/schemas";
 import { ToastProvider } from "../context/ToastProvider";
 import { Dashboard } from "./Dashboard";
 import { Portfolio } from "./Portfolio";
@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   fetchPortfolioPnl: vi.fn(),
   fetchAllocation: vi.fn(),
   fetchAttribution: vi.fn(),
+  fetchRiskMetrics: vi.fn(),
   fetchTrades: vi.fn(),
   fetchRisk: vi.fn(),
   fetchOrders: vi.fn(),
@@ -34,6 +35,10 @@ vi.mock("../api/allocation", () => ({
 
 vi.mock("../api/attribution", () => ({
   fetchAttribution: api.fetchAttribution,
+}));
+
+vi.mock("../api/riskMetrics", () => ({
+  fetchRiskMetrics: api.fetchRiskMetrics,
 }));
 
 vi.mock("../api/trades", () => ({
@@ -86,6 +91,31 @@ function attribution(status: "complete" | "incomplete"): AttributionResponse {
     sectors: complete
       ? [{ sector: "Technology", total_pnl: "147.99", pnl_contribution_pct: "100.0000" }]
       : null,
+  };
+}
+
+function riskMetrics(overrides: Partial<RiskMetricsResponse> = {}): RiskMetricsResponse {
+  return {
+    user: { id: 1, email: "trader@example.com" },
+    range: "1y",
+    requested_start: "2025-11-05",
+    requested_end: "2026-11-05",
+    read_at: "2026-11-05T15:00:00Z",
+    status: "complete",
+    observed_periods: 252,
+    return_count: 251,
+    historical_volatility_pct: null,
+    max_drawdown_pct: null,
+    beta_pair_count: 0,
+    portfolio_beta: null,
+    historical_var_95_pct: null,
+    historical_var_99_pct: null,
+    expected_shortfall_95_pct: null,
+    expected_shortfall_99_pct: null,
+    correlations: null,
+    stress_scenarios: null,
+    risk_contributions: null,
+    ...overrides,
   };
 }
 
@@ -250,6 +280,7 @@ describe("valuation display", () => {
     api.fetchOrders.mockResolvedValue({ orders: [] });
     api.fetchAllocation.mockResolvedValue(allocation("incomplete"));
     api.fetchAttribution.mockResolvedValue(attribution("incomplete"));
+    api.fetchRiskMetrics.mockResolvedValue(riskMetrics());
   });
 
   afterEach(() => {
@@ -836,5 +867,65 @@ describe("valuation display", () => {
     expect(within(card).queryByText("+130.31%")).not.toBeInTheDocument();
     expect(within(card).queryByText("-30.31%")).not.toBeInTheDocument();
     expect(within(card).queryByText("AAPL")).not.toBeInTheDocument();
+  });
+
+  it("test_risk_metrics_card_renders_available_and_unavailable_fields_independently", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchRiskMetrics.mockResolvedValue(
+      riskMetrics({
+        status: "complete",
+        historical_volatility_pct: "5.8847",
+        max_drawdown_pct: "8.1200",
+        portfolio_beta: "1.2500",
+        historical_var_95_pct: "2.2300",
+        historical_var_99_pct: null,
+        expected_shortfall_95_pct: "3.4500",
+        expected_shortfall_99_pct: null,
+      }),
+    );
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    const scoped = within(card);
+    expect(await scoped.findByText("5.88%")).toBeInTheDocument();
+
+    expect(scoped.getByText("Historical volatility").parentElement).toHaveTextContent("5.88%");
+    expect(scoped.getByText("Max drawdown").parentElement).toHaveTextContent("8.12%");
+    expect(scoped.getByText("Beta").parentElement).toHaveTextContent("1.2500");
+    expect(scoped.getByText("95% VaR").parentElement).toHaveTextContent("2.23%");
+    expect(scoped.getByText("99% VaR").parentElement).toHaveTextContent("Unavailable");
+    expect(scoped.getByText("95% Expected Shortfall").parentElement).toHaveTextContent("3.45%");
+    expect(scoped.getByText("99% Expected Shortfall").parentElement).toHaveTextContent("Unavailable");
+    expect(scoped.queryByText("1.25%")).not.toBeInTheDocument();
+  });
+
+  it("test_risk_metrics_card_renders_beta_as_a_plain_ratio_not_a_percent", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchRiskMetrics.mockResolvedValue(
+      riskMetrics({
+        status: "complete",
+        historical_volatility_pct: "5.8847",
+        portfolio_beta: "1.2500",
+        historical_var_95_pct: "2.2300",
+        historical_var_99_pct: null,
+        expected_shortfall_99_pct: null,
+      }),
+    );
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    expect(await within(card).findByText("1.2500")).toBeInTheDocument();
+    const betaRow = within(card).getByText("Beta").parentElement as HTMLElement;
+    expect(within(betaRow).getByText("1.2500")).toBeInTheDocument();
+    expect(within(betaRow).queryByText(/%/)).not.toBeInTheDocument();
+    expect(betaRow.textContent ?? "").not.toMatch(/%/);
   });
 });
