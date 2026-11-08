@@ -182,6 +182,32 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 69](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/69) is ready with all
+CI checks green: the first unit of roadmap Phase 5 (AI Research Desk), redirected into by the
+user after PR #68 closed out Phase 4 and the Phase 3 core chart checklist. SEC EDGAR
+*fundamentals* (XBRL company facts) already shipped in an earlier phase via
+`get_sec_company_fundamentals`, feeding `GET /market/research/{symbol}` — this PR adds the
+genuinely missing piece, the **filings index** (10-K/10-Q/8-K, dates, accession numbers, a
+direct document link), a different SEC endpoint (`submissions/CIK{cik}.json`, not
+`companyfacts`). New `app/services/sec_service.get_sec_company_filings`, a new
+`market_filings_cache` table + migration, and the first route under a new `/research` prefix
+(`GET /research/filings/{symbol}`) — the prefix the rest of Phase 5's API surface
+(jobs/reports/briefs) will use later. Evidence:
+[P5A_SEC_FILINGS_VERIFICATION.md](P5A_SEC_FILINGS_VERIFICATION.md); design:
+[P5A_SEC_FILINGS_CONTRACT.md](P5A_SEC_FILINGS_CONTRACT.md), with hand-built reference vectors
+re-derived independently before implementation. **CI caught two real cross-file consequences
+the scoped unit's own tests couldn't**, both only visible against the real disposable
+Postgres CI spins up (skipped locally without `AUDIT_DATABASE_URL`): three tests hardcoded the
+previous Alembic head (`b73e2d9f6a10`) and needed updating to the new one
+(`e1a7c3b5d820`); and `test_watchlist_migration_preserves_baseline_and_app_grants` conflated
+"the watchlist migration's own revision" with "whatever the current head is" — true only
+because the watchlist migration happened to be the tip when that test was written. Fixed by
+pinning that proof to the watchlist migration's own revision instead of `head`, since that is
+what the test actually proves. Still fully open for Phase 5: the async job queue, the bounded
+TradingAgents worker, report synthesis, personalized daily briefs, and every other named
+`/research/*` route (`jobs`, `reports`, `briefs`) — this unit is pure data-source groundwork,
+nothing more.
+
 [PR 68](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/68) is ready with all
 CI checks green: a new "Custom risk scenarios" card on `/portfolio`, calling
 `POST /risk/scenarios` (PR #67) on form submit. Evidence:
