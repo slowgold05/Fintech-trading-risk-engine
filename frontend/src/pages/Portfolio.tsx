@@ -27,6 +27,7 @@ import type { AllocationSector, PortfolioPositionResponse } from "../types/schem
 import type {
   AttributionSector,
   AttributionSecurity,
+  RiskContribution,
   RiskCorrelation,
   StressScenario,
 } from "../types/schemas";
@@ -626,6 +627,11 @@ export function Portfolio() {
                 ) : (
                   <CorrelationTable correlations={riskMetricsQuery.data.correlations} />
                 )}
+                {riskMetricsQuery.data.risk_contributions == null ? (
+                  <p className="mt-4 text-sm text-slate-300">Risk contributions unavailable</p>
+                ) : (
+                  <RiskContributionTable contributions={riskMetricsQuery.data.risk_contributions} />
+                )}
               </>
             )}
           </DashboardCard>
@@ -889,6 +895,35 @@ function CorrelationTable({ correlations }: { correlations: RiskCorrelation[] })
               </tr>
             );
           })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RiskContributionTable({ contributions }: { contributions: RiskContribution[] }) {
+  return (
+    <div className="table-shell mt-4">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th className="text-left">Symbol</th>
+            <th className="text-right">Weight</th>
+            <th className="text-right">Risk contribution</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contributions.map((entry) => (
+            <tr key={entry.symbol}>
+              <td className="font-mono text-sm font-semibold text-slate-100">{entry.symbol}</td>
+              <td className="text-right font-mono tabular-nums">
+                {formatPercent(Number(entry.weight_pct))}
+              </td>
+              <td className="text-right font-mono tabular-nums">
+                {formatPercent(Number(entry.risk_contribution_pct))}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

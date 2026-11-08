@@ -286,6 +286,12 @@ export interface RiskCorrelation {
   correlation: string | null;
 }
 
+export interface RiskContribution {
+  symbol: string;
+  weight_pct: string;
+  risk_contribution_pct: string;
+}
+
 export interface RiskMetricsResponse {
   user: { id: number; email: string };
   range: "1y" | "2y";
@@ -305,7 +311,7 @@ export interface RiskMetricsResponse {
   expected_shortfall_99_pct: string | null;
   correlations: RiskCorrelation[] | null;
   stress_scenarios: StressScenario[] | null;
-  risk_contributions: unknown[] | null;
+  risk_contributions: RiskContribution[] | null;
 }
 
 export interface RiskAlertResponse {

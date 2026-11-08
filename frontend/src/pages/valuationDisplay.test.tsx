@@ -1060,4 +1060,54 @@ describe("valuation display", () => {
     expect(scoped.queryByRole("columnheader", { name: "Pair" })).not.toBeInTheDocument();
     expect(scoped.queryByRole("columnheader", { name: "Correlation" })).not.toBeInTheDocument();
   });
+
+  it("test_risk_contribution_table_renders_rows_and_sums_to_one_hundred_percent", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchRiskMetrics.mockResolvedValue(
+      riskMetrics({
+        risk_contributions: [
+          { symbol: "AAA", weight_pct: "60.0000", risk_contribution_pct: "38.7968" },
+          { symbol: "BBB", weight_pct: "40.0000", risk_contribution_pct: "61.2032" },
+        ],
+      }),
+    );
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    const scoped = within(card);
+
+    expect(await scoped.findByText("AAA")).toBeInTheDocument();
+    expect(scoped.getByText("BBB")).toBeInTheDocument();
+    expect(scoped.queryByText("Risk contributions unavailable")).not.toBeInTheDocument();
+
+    const aaa = scoped.getByText("AAA").closest("tr") as HTMLElement;
+    expect(within(aaa).getByText("60.00%")).toBeInTheDocument();
+    expect(within(aaa).getByText("38.80%")).toBeInTheDocument();
+
+    const bbb = scoped.getByText("BBB").closest("tr") as HTMLElement;
+    expect(within(bbb).getByText("40.00%")).toBeInTheDocument();
+    expect(within(bbb).getByText("61.20%")).toBeInTheDocument();
+  });
+
+  it("test_risk_contribution_table_shows_unavailable_when_null", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchRiskMetrics.mockResolvedValue(riskMetrics({ risk_contributions: null }));
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    const scoped = within(card);
+    expect(await scoped.findByText("Risk contributions unavailable")).toBeInTheDocument();
+    expect(scoped.queryByText("AAA")).not.toBeInTheDocument();
+    expect(scoped.queryByText("BBB")).not.toBeInTheDocument();
+    expect(scoped.queryByRole("columnheader", { name: "Weight" })).not.toBeInTheDocument();
+    expect(scoped.queryByRole("columnheader", { name: "Risk contribution" })).not.toBeInTheDocument();
+  });
 });
