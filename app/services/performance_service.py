@@ -24,7 +24,18 @@ once the series resumes, rather than polluting the next available day's
 return or forcing that day unavailable just because a deposit happened to
 land when a price was missing. ``account_value`` itself is unaffected by this
 exclusion — it already correctly reflects deposited/withdrawn cash as a real
-snapshot of account worth; only the *return ratio* needs the flow removed.
+snapshot of account worth. The return ratio and ``daily_pnl`` both remove
+that flow; ``account_value`` does not.
+
+``daily_pnl`` is that same excluded-flow change, in dollars:
+
+    daily_pnl(d) = account_value(d) - flow(d) - account_value(last_available)
+
+quantized to cents (``CENT``), ``ROUND_HALF_UP``, as decimal text. It reuses
+the ``flow`` already computed for ``twr_index`` in the same loop, so the two
+fields cannot disagree about what counts as external cash. The first available
+day has no prior value to diff, so ``daily_pnl`` is null there. A gap day is
+null too. ``"0.00"`` is a measured flat day, not a stand-in for "unknown."
 
 ``drawdown_pct`` is the decline from the running peak ``account_value``
 among available days only:
@@ -129,14 +140,19 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
                 "unavailable_symbols": missing,
                 "twr_index": None,
                 "drawdown_pct": None,
+                "daily_pnl": None,
             })
             continue
         account = Decimal(_account_text(raw_value))
         if last_value is None:
             index = Decimal("1.000000")
+            # No prior available day yet, so there is nothing to diff.
+            daily_pnl = None
         else:
             flow = _flow_since(flows, last_available_date, session_day)
             index = (last_index * (account - flow) / last_value).quantize(TWR_UNIT, rounding=ROUND_HALF_UP)
+            # Same flow and still-unupdated last_value as the index above.
+            daily_pnl = (account - flow - last_value).quantize(CENT, rounding=ROUND_HALF_UP)
         last_value = account
         last_available_date = session_day
         last_index = index
@@ -149,6 +165,7 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
             "unavailable_symbols": [],
             "twr_index": format(index, "f"),
             "drawdown_pct": format(drawdown, "f"),
+            "daily_pnl": None if daily_pnl is None else format(daily_pnl, "f"),
         })
 
     status = "complete" if all(point["status"] == "available" for point in series) else "incomplete"

@@ -294,3 +294,57 @@ Does not add a top-level "maximum drawdown" summary field, a drawdown-duration f
 frontend/chart rendering — those remain open, separate, later units if wanted. Does not change
 any existing field's meaning or the response's top-level shape beyond one new key per series
 point.
+
+## 11. Daily dollar P&L addendum (2026-11-07) — a third slice on the same route
+
+Written before implementation, appended after sections 1-10. Adds `daily_pnl` to each series
+point — the dollar change in `account_value` from the last available day to this one, excluding
+any cash deposit/withdrawal in between (the same exclusion section 5's `twr_index` already
+applies, reused here so the two fields can never disagree about what counts as a flow). No new
+query, no new data source: reuses the existing `_flow_since`/`last_value`/`last_available_date`
+machinery the TWR calculation already maintains in the same loop.
+
+### Formula
+
+For an available day `d` with a prior available day (`last_available` is not `None`):
+
+```
+daily_pnl(d) = account_value(d) - flow(d) - account_value(last_available)
+```
+
+using the exact same `flow(d)` (`_flow_since(flows, last_available, d)`) section 5 already
+computes for `twr_index`. Quantized to cents, `ROUND_HALF_UP`, as decimal text — the same
+money convention every other dollar field in this response already uses. The series' first
+available day (no prior day to diff against) has `daily_pnl == null`, not zero — there is no
+"previous day" to have changed from, which is a different fact from "the account didn't move,"
+and this project's convention is that `null` means unknown/inapplicable while `0.00` means a
+real, measured zero. A day with `account_value == null` (a gap) also has `daily_pnl == null`.
+
+### Reference (continuing the same 10-day worked scenario)
+
+```
+D0  null          (first available day, nothing to diff against)
+D1  "20.00"        (1020.00 - 0 - 1000.00)
+D2  "20.00"        (1040.00 - 0 - 1020.00)
+D3  "10.00"        (1050.00 - 0 - 1040.00)
+D4  null           (gap)
+D5  "25.00"        (1075.00 - 0 - 1050.00, chains across the D4 gap)
+D6  "0.00"         (1175.00 - 100.00 deposit - 1075.00 — the $100 is excluded, true P&L is flat)
+D7  "0.00"         (1125.00 - (-50.00) withdrawal - 1175.00 — excluded, flat)
+D8  null           (gap)
+D9  "0.00"         (1145.00 - 20.00 (the D8 deposit, carried forward) - 1125.00 — flat)
+```
+
+Verified independently in a separate Decimal script before implementation, not derived from the
+code under test. Every day where `twr_index` stayed flat (`1.075000` → `1.075000`) has
+`daily_pnl == "0.00"`, and every day where it moved has the matching nonzero dollar figure — the
+two fields are two views of the same excluded-flow logic and must never contradict each other
+for the same day; a test should assert this cross-check explicitly (a day's `daily_pnl == "0.00"`
+if and only if `twr_index` is unchanged from the prior available day, for at least the four
+flow-bearing days in this reference), not just assert each field's own number in isolation.
+
+### What this addendum does not do
+
+Does not add a top-level cumulative-P&L-since-inception summary field (that needs a second,
+inception-anchored running total, not just a day-over-day diff — a separate, later addendum if
+wanted). Does not change any existing field's meaning. Does not add frontend rendering.
