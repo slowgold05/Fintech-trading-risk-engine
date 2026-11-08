@@ -182,6 +182,22 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 42](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/42) is ready with all
+CI checks green: `realized_pnl` and `total_pnl` fields on each entry in `GET /portfolio/`'s
+`positions` list — a per-asset breakdown of the account-wide `summary.total_realized_pnl`
+(grouped with the exact same latest-reset inception boundary, via a shared
+`_realized_sell_scope` helper so the two queries can never disagree) plus a combined
+realized-and-unrealized total per position. Evidence:
+[P4B_POSITION_PERFORMANCE_VERIFICATION.md](P4B_POSITION_PERFORMANCE_VERIFICATION.md). This is
+the roadmap's "performance by position/asset" item, on `GET /portfolio/` rather than the
+`/performance` series route. Design written first as
+[P4B_POSITION_PERFORMANCE_CONTRACT.md](P4B_POSITION_PERFORMANCE_CONTRACT.md), reusing two
+already-shipped fixtures' own numbers as the reference, plus a new dedicated reset-boundary
+test that exercises the real `append_trade`/`append_reset` ledger path. A never-sold position
+reports `realized_pnl = "0.00"` (a measured zero, not null); `total_pnl` is null exactly when
+the position's price is unavailable. Money-weighted return, sector allocation, and a relative
+account-vs-benchmark field remain open, separate Phase 4.1 units.
+
 [PR 41](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/41) is ready with all
 CI checks green: a `benchmark_index` field on each point of `GET /portfolio/performance`'s
 daily series — a chained time-weighted price-return index for a fixed benchmark symbol,
