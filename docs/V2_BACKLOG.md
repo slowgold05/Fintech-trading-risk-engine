@@ -182,6 +182,24 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 55](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/55) is ready with all
+CI checks green: a new "Sector allocation" card on the `/portfolio` page, rendering
+`GET /portfolio/allocation` (PR #45) — cash plus each sector's dollar value and weight
+percentage. Evidence:
+[P4C_PORTFOLIO_ALLOCATION_FRONTEND_VERIFICATION.md](P4C_PORTFOLIO_ALLOCATION_FRONTEND_VERIFICATION.md).
+This is the first frontend rendering of any of this session's Phase 4 analytics work —
+allocation, `GET /portfolio/risk-metrics` (nine metrics), `GET /portfolio/attribution`, and
+`POST /portfolio/trade-impact` all had zero UI before this PR. New types correctly model the
+backend's decimal-text convention (`string | null`, not the older `PortfolioResponse`'s plain
+numbers), converted with `Number(text)` immediately before display — the right level of rigor
+for a read-only table, not `historyData.ts`'s stricter chart-precision validation. Distinguishes
+loading, `status === "incomplete"` (an explicit unavailable message, no percentage rendered),
+and a complete-but-zero-sectors case (cash row still shown, a distinct "no sector exposure"
+note) rather than conflating "unavailable" with "genuinely zero." Additive only — no existing
+section of the Portfolio page was touched. Still open: rendering risk-metrics, attribution, and
+trade-impact, each its own future frontend slice; no manual browser/visual check was performed,
+disclosed explicitly.
+
 [PR 54](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/54) is ready with all
 CI checks green: `POST /portfolio/trade-impact`, the first slice of Phase 4.3's "signature
 feature," Trade Impact Preview. Evidence:
