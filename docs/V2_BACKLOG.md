@@ -182,6 +182,24 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 50](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/50) is ready with all
+CI checks green: `correlations`, the fourth slice added to `GET /portfolio/risk-metrics`
+(additive on top of PRs #47-#49). Evidence:
+[P4D_PORTFOLIO_CORRELATION_VERIFICATION.md](P4D_PORTFOLIO_CORRELATION_VERIFICATION.md). Design:
+`docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md` section 4. The first metric in this response not
+derivable from `build_performance_response` alone: a second black-box call,
+`build_portfolio_response`, reads the account's current non-zero holdings, and one new small
+`MarketBarDaily` query reproduces (not imports) `performance_service.py`'s own multi-provider
+ambiguity rule — a `(symbol, date)` with exactly one raw provider row is usable, otherwise that
+day is excluded for that symbol. Sample Pearson correlation of simple price returns over the
+common usable days for every held pair; `null` with fewer than 2 held symbols, or a pair's own
+correlation `null` with fewer than 2 common returns or zero variance in either security. The
+reference test seeds real `MarketBarDaily` rows with a genuine two-provider ambiguous day,
+proving the exclusion rule against the real query rather than a mock. Seven of the roadmap's
+nine Phase 4.2 metrics are now closed (concentration, volatility, max drawdown, beta, historical
+VaR, Expected Shortfall, correlation); risk contribution and stress-test loss remain open — the
+latter is being picked up next, in progress now.
+
 [PR 49](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/49) is ready with all
 CI checks green: `historical_var_95_pct`/`historical_var_99_pct`/`expected_shortfall_95_pct`/
 `expected_shortfall_99_pct`, the third slice added to `GET /portfolio/risk-metrics` (additive on
