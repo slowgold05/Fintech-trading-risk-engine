@@ -182,6 +182,40 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 74](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/74) is ready
+with all CI checks green: TradingAgents (`TauricResearch/TradingAgents`, Apache-2.0,
+pinned `v0.7.1`) added as a second, **optional, heavier** synthesis backend alongside
+PR #72's single-call one. User explicitly chose to proceed with the real multi-agent
+framework after discussing cost/quality trade-offs, rather than stop at PR #72's
+simpler backend. Default backend stays `"simple"` — this unit changes no existing
+behavior unless an operator sets `research_synthesis_backend = "tradingagents"`. The
+field mapping (`bull_case`/`bear_case`/`synthesis`/`risks`/`backend_detail`) uses the
+exact `final_state` keys read directly from TradingAgents' own `trading_graph.py`
+source, not guessed. Pointed at the same local Ollama model (`qwen3:14b`) via its
+native `ollama` provider support — stays fully cost-free. The heavy dependency
+(LangGraph + every provider SDK it supports) lives only in a new, separate
+`requirements-research.txt`, never `requirements.txt`; the service module does a lazy
+import, confirmed to succeed in this environment where the real package is genuinely
+not installed. No trade-execution risk — `propagate()`'s return value is only ever
+read and stored, never passed to any order-placement path; there is no such path to
+disable in how this integration calls the library. Evidence:
+[P5F_TRADINGAGENTS_VERIFICATION.md](P5F_TRADINGAGENTS_VERIFICATION.md); design:
+[P5F_TRADINGAGENTS_CONTRACT.md](P5F_TRADINGAGENTS_CONTRACT.md). **Explicitly deferred
+and disclosed**: point-in-time data adaptation (still uses TradingAgents' own default
+Yahoo/SEC EDGAR/FRED vendors, not Sentinel's cached data — a separate, larger
+integration), and isolating long-running research jobs onto their own scheduled cycle
+(a job on this backend can delay the rest of a cycle behind it — operators enabling it
+should set `scheduled_research_job_limit` very low, e.g. `1`). A real end-to-end
+`propagate()` call against local Ollama was not run as part of verification — plausibly
+tens of minutes per job; verification relied on the package's own source plus a fully
+mocked test suite. Full suite hit a transient Windows pytest-temp-dir
+`PermissionError` unrelated to this code (same class as `test_watchlists.py`'s two
+long-documented errors); a fresh `--basetemp` cleared it, incidentally clearing those
+two as well. **This closes the currently-scoped Phase 5 pass** — PRs #69 through #74,
+six stacked, independently-CI-green, none merged. Still open: point-in-time data
+adaptation for TradingAgents, personalized-brief automatic refresh, and a frontend for
+any of Phase 5's six new routes.
+
 [PR 73](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/73) is ready
 with all CI checks green: `GET /research/briefs`/`GET /research/briefs/{brief_id}`,
 closing out every named route in roadmap Phase 5 section 5.4
