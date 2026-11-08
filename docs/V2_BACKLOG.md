@@ -182,6 +182,23 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 68](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/68) is ready with all
+CI checks green: a new "Custom risk scenarios" card on `/portfolio`, calling
+`POST /risk/scenarios` (PR #67) on form submit. Evidence:
+[P4G_RISK_SCENARIOS_FRONTEND_VERIFICATION.md](P4G_RISK_SCENARIOS_FRONTEND_VERIFICATION.md).
+The first **dynamic-list** form on this page — the user adds/removes 1-20 shock rows before
+submitting, clamped at both bounds to match the backend's own limits. Mutation-on-submit only,
+mirroring the "Trade impact preview" pattern (PR #61) — never fetches automatically. Reuses the
+existing `impactMoney`/`impactWeightChange` helpers rather than duplicating them, so `loss_pct`
+correctly renders a gain's negative-loss sign via `formatSignedPercent`. `shock_pct` is sent as
+the raw string the user typed, not re-parsed and reformatted — asserted directly against the
+exact request payload. **With this PR, every backend endpoint shipped this session now has
+some frontend surface, including the full Phase 4.4 Risk Lab custom-shock flow.** Still open:
+interest-rate shock assumptions and historical crisis-style scenarios (each needs its own
+model, not built here), and a broad-market/"all" target type (already covered by the existing
+fixed `broad_market_selloff` scenario). No manual browser/visual check was performed, disclosed
+explicitly.
+
 [PR 67](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/67) is ready with all
 CI checks green: `POST /risk/scenarios`, the custom security/sector shock builder named in
 roadmap Phase 4.4's Risk Lab ("Custom simultaneous security or sector shocks") and section
