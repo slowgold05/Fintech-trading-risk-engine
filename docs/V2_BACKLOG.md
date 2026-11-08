@@ -182,6 +182,23 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 58](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/58) is ready with all
+CI checks green: a `stress_scenarios` table added inside the existing "Risk metrics (1y)" card
+(no new card), rendering the fixed three-scenario list from `GET /portfolio/risk-metrics` (PR
+#51). Evidence:
+[P4D_STRESS_SCENARIOS_FRONTEND_VERIFICATION.md](P4D_STRESS_SCENARIOS_FRONTEND_VERIFICATION.md).
+`stress_scenarios`' type widened from the deliberately-loose placeholder `unknown[] | null` to
+a proper `StressScenario[] | null`; `correlations`/`risk_contributions` stay as planned future
+slices. `shock_pct` renders as a plain literal (never run through `formatPercent` — it's an
+input constant, not a computed magnitude); `loss_pct` reuses the existing non-negative
+`formatRiskPercent` helper; `affected_symbol` appears only on the
+`single_security_worst_holding` row, tested explicitly against leaking into the other two.
+Second of three list-shaped risk-metrics fields now wired (`correlations`/`risk_contributions`
+remain open), alongside `POST /portfolio/trade-impact`'s own still-unwired UI. One `browser` CI
+flake hit on this PR's own first run — the same already-documented
+`test_p3b_watchlists_ui.py` `StaleElementReferenceException`, confirmed via the actual log,
+unrelated, reran clean. No manual browser/visual check was performed, disclosed explicitly.
+
 [PR 57](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/57) is ready with all
 CI checks green: a new "Risk metrics (1y)" card on `/portfolio`, additive on top of PRs #55/#56,
 rendering the seven **scalar** fields of `GET /portfolio/risk-metrics` (historical volatility,
