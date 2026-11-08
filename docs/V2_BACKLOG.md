@@ -182,6 +182,23 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 44](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/44) is ready with all
+CI checks green: `bollinger` as a fifth `name` value on
+`GET /market/symbols/{symbol}/indicators` — this closes the Phase 3 roadmap's "SMA, EMA,
+Bollinger Bands, RSI, and MACD" indicator line item (the one value on that line still open after
+SMA/EMA/RSI/MACD, PRs #30-35). Evidence:
+[P3A_BOLLINGER_VERIFICATION.md](P3A_BOLLINGER_VERIFICATION.md). `period` is reused as the
+moving-average window; the band-width multiplier is fixed at `2`, not configurable. The middle
+band is byte-identical to the existing `sma` output (reuses that function, not a second
+independent mean). Design written first as contract section 15, following the exact pattern
+RSI and MACD's own addenda used. One `browser` CI run hit the already-known
+`test_p3b_watchlists_ui.py` flake, unrelated to this backend-only change; reran clean. Backend
+only — the frontend indicator `<select>` and overlay builder are unchanged; `upper`/`lower` are
+not yet parsed or plotted. User-configurable indicator parameters beyond period/signal,
+persisted chart preferences, and every other open Phase 3 chart item (chart modes beyond
+candlestick, timeframes beyond 1y/2y, trade execution markers, price levels for open orders)
+remain open.
+
 [PR 43](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/43) is ready with all
 CI checks green: a top-level `money_weighted_return_pct` field on `GET /portfolio/performance`'s
 response (a sibling of `status`, not a per-day series field) — a single Modified Dietz figure
