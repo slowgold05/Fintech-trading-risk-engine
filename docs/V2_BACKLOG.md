@@ -182,6 +182,18 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 40](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/40) landed on
+2026-11-07, after PR 39, ready with all 7 CI jobs green on the first attempt: a
+`cumulative_pnl` field on each point of `GET /portfolio/performance`'s daily series — total
+dollar gain/loss since the series' base day, excluding deposits/withdrawals since then.
+Evidence: [P4A_PERFORMANCE_CUMULATIVE_PNL_VERIFICATION.md](P4A_PERFORMANCE_CUMULATIVE_PNL_VERIFICATION.md).
+No new query or data source; a second `_flow_since` call anchored at the series' base day
+instead of the previous available day. Design written first as contract section 12, with an
+independently computed reference continuing the same 10-day scenario sections 5/8/10/11 already
+use; a telescoping-sum test proves `cumulative_pnl` agrees with the sum of every `daily_pnl`
+since the base day. Money-weighted return, benchmark comparison, performance by position/asset,
+and sector allocation remain open, separate Phase 4.1 units.
+
 [PR 39](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/39) landed on
 2026-11-07, after PR 38, ready with all 7 CI jobs green on the first attempt: a `daily_pnl`
 field on each point of `GET /portfolio/performance`'s daily series — the dollar change in
