@@ -182,6 +182,25 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 45](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/45) is ready with all
+CI checks green: a new `GET /portfolio/allocation` route — the exact route the roadmap's own
+section 4.5 API list names ("Security/sector weights and cash"). This closes the last
+explicitly-named Phase 4.1 checklist item, "Portfolio allocation by security and sector."
+Evidence: [P4C_PORTFOLIO_ALLOCATION_VERIFICATION.md](P4C_PORTFOLIO_ALLOCATION_VERIFICATION.md).
+Correction worth recording: an earlier note in this file (and said to the user) assumed sector
+allocation was blocked on "a sector-taxonomy decision" — that was wrong.
+`app/services/sector_classifier.py` already existed (a ~500-symbol S&P 500 static map plus a
+keyword fallback, already used by `GET /market/symbols`); this unit reuses it, a new
+`app/services/portfolio_allocation.py` module calling the existing `build_portfolio_response`
+once as a black box plus one small `MarketSymbol` lookup query. Every weight is `null` when the
+underlying valuation is incomplete, so no partial set of percentages that doesn't sum to 100%
+is ever returned. With this PR, every explicitly-named item on the Phase 4.1 roadmap checklist
+is closed: daily valuation, TWR, drawdown, daily/cumulative P&L, FIFO realized gain/loss
+(already existed), performance by position/asset, SPY benchmark comparison, money-weighted
+return, and now security/sector allocation. `GET /portfolio/attribution` and
+`GET /portfolio/risk-metrics` (Phase 4.2, named in the same roadmap API list) remain open,
+separate, larger units — not started.
+
 [PR 44](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/44) is ready with all
 CI checks green: `bollinger` as a fifth `name` value on
 `GET /market/symbols/{symbol}/indicators` — this closes the Phase 3 roadmap's "SMA, EMA,
