@@ -9,6 +9,7 @@ from app.models.price_history_daily import PriceHistoryDaily
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.lot import Lot
 from app.models.market_fundamentals_cache import MarketFundamentalsCache
+from app.models.market_filings_cache import MarketFilingsCache
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.refresh_token import RefreshToken
