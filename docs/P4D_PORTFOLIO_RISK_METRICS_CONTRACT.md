@@ -228,3 +228,82 @@ Does not add VaR, Expected Shortfall, correlation, risk contribution, or stress-
 not annualize beta (it is already scale-invariant between covariance and variance over the same
 period length, so no annualization question arises the way it does for volatility). Does not
 change `performance_service.py` — still a pure consumer of its already-published fields.
+
+## 3. Historical VaR and Expected Shortfall addendum (2026-11-08) — design, not yet implemented
+
+Written before any code change, same pattern as sections 1 and 2. Adds four fields —
+`historical_var_95_pct`, `historical_var_99_pct`, `expected_shortfall_95_pct`,
+`expected_shortfall_99_pct` — to the same `GET /portfolio/risk-metrics` response, additive
+only. Still no change to `performance_service.py`: this reuses the exact same per-period
+`twr_index` returns section 1's volatility calculation already derives (not the
+benchmark-paired returns section 2 introduced).
+
+### 3.1 Method — nearest-rank empirical quantile
+
+Let `return[1..N-1]` be the same period-over-period `twr_index` ratios section 1 already
+computes (`N` = `observed_periods`, so there are `return_count = N - 1` returns). Sort them
+ascending: `sorted_return[0]` is the worst (most negative) period return.
+
+For confidence level `c` (`0.95` or `0.99`), the nearest-rank index is
+`rank(c) = ceil((1 - c) * return_count)`, clamped to at least `1`. `historical_var_<c>_pct` is
+`-sorted_return[rank(c) - 1]`, expressed as a positive percentage (a positive number means a
+loss of that percentage; the method reports the magnitude of a loss, not a signed return) —
+`"2.2300"` means a 95% one-period VaR of 2.23% of portfolio value. `expected_shortfall_<c>_pct`
+is the mean of the worst `rank(c)` returns (`sorted_return[0 .. rank(c)-1]`), also negated to a
+positive loss percentage — by construction, Expected Shortfall is always `>=` the VaR at the
+same confidence level, since it averages in everything at or beyond the VaR cutoff rather than
+reading off a single point.
+
+Both quantized to 4 decimal places, `ROUND_HALF_UP`, same as every other `_pct` field in this
+response. Arithmetic inside the same `Context(prec=50)` `localcontext()` the rest of this
+module already uses.
+
+### 3.2 Minimum sample size — an explicit, documented limitation
+
+The nearest-rank method degenerates badly on a short sample: with `return_count < 20`, `rank(c)`
+is `1` for *both* `c = 0.95` and `c = 0.99`, which would silently make the 95% and 99% figures
+identical — not because the portfolio's tail risk is actually the same at both confidence
+levels, but purely because there are not enough observations to tell them apart. Rather than
+publish that misleading coincidence, this unit sets an explicit floor, directly serving the
+roadmap's own acceptance criterion ("Missing or insufficient market history produces an explicit
+unavailable result rather than a misleading estimate"):
+
+- `return_count < 20`: all four fields are `null`.
+- `20 <= return_count < 100`: `historical_var_95_pct`/`expected_shortfall_95_pct` are computed;
+  `historical_var_99_pct`/`expected_shortfall_99_pct` stay `null` (fewer than 100 observations
+  cannot meaningfully separate the top 1% tail from the top 5% tail under nearest-rank — `rank(0.99)`
+  would still equal `1` for any `return_count` from 20 to 99, identical to `rank(0.95)`'s
+  behavior at the smallest sizes in that range, which is exactly the coincidence being guarded
+  against).
+- `return_count >= 100`: all four fields are computed.
+
+These thresholds (20, 100) are a documented policy choice, not a law of statistics — they are
+deliberately conservative so this unit never reports a number implying more precision than a
+short paper-trading history actually supports. A future unit could revisit them.
+
+### 3.3 Worked reference (independently verified, not derived from the implementation)
+
+121 available days (`twr_index` values, `T[0]=1.000000` through `T[120]`), generated with a
+fixed-seed synthetic random walk and verified with a standalone `Decimal`/`Context(prec=50)`
+script — not hand-picked to produce a convenient answer. `return_count = 120`.
+
+```
+rank(0.95) = ceil(0.05 * 120) = 6   → historical_var_95_pct      = "2.2300"
+rank(0.99) = ceil(0.01 * 120) = 2   → historical_var_99_pct      = "2.3872"
+expected_shortfall_95_pct (mean of the worst 6 returns)  = "2.3300"
+expected_shortfall_99_pct (mean of the worst 2 returns)  = "2.4333"
+```
+
+Confirms the expected ES >= VaR relationship at both confidence levels (`2.3300 >= 2.2300`,
+`2.4333 >= 2.3872`). The exact 121-value `twr_index` sequence used to derive these four numbers
+is given to the implementer directly (see the task file), not reconstructed from this contract
+alone, to avoid a transcription error between the contract and the test fixture.
+
+### 3.4 What this addendum does not do
+
+Does not add correlation, risk contribution, or stress-test loss. Does not use a parametric
+(variance-covariance) or Monte Carlo VaR method — nearest-rank empirical quantile only. Does not
+scale VaR/ES by actual portfolio dollar value (these are percentages of portfolio value, not
+dollar amounts — a caller multiplies by `total_account_value` from another response if a dollar
+figure is needed). Does not change `performance_service.py` or either of the two existing risk
+fields from sections 1-2.

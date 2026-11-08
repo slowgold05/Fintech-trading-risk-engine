@@ -1,6 +1,6 @@
-"""Historical volatility, maximum drawdown, and portfolio beta.
+"""Historical volatility, maximum drawdown, portfolio beta, and tail loss.
 
-All three numbers come from a single ``build_performance_response`` read.
+These numbers come from a single ``build_performance_response`` read.
 Volatility is the sample standard deviation of period-over-period
 ``twr_index`` returns, as a percentage at four decimal places,
 ``ROUND_HALF_UP``. It is per period, not annualized: an unavailable day is
@@ -10,9 +10,14 @@ an available day, unchanged at its existing four places. Portfolio beta is
 the sample covariance of paired account and benchmark returns divided by the
 sample variance of those benchmark returns, at the same four places. A day
 pairs only when the account day is available and ``benchmark_index`` is set.
+Historical VaR and Expected Shortfall are nearest-rank loss percentages on
+the same per-period returns volatility uses, not the benchmark pairs. Below
+20 returns every tail field is null. From 20 through 99 returns only the
+95% fields are published, so a short sample never reports the same number
+for both confidence levels.
 """
 
-from decimal import ROUND_HALF_UP, Context, Decimal, localcontext
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Context, Decimal, localcontext
 
 from sqlalchemy.orm import Session
 
@@ -90,6 +95,51 @@ def _beta(paired_twr: list[Decimal], paired_benchmark: list[Decimal]) -> tuple[i
         return pair_count, format(beta, "f")
 
 
+def _historical_var_and_es(returns: list[Decimal]) -> dict[str, str | None]:
+    """Nearest-rank empirical VaR and Expected Shortfall, as loss percentages.
+
+    ``returns`` is the list ``_volatility_from_twr`` already computed. Sort
+    ascending and take ``rank = ceil((1 - confidence) * count)``, at least 1.
+    VaR is that single return, negated. Expected Shortfall is the mean of the
+    worst ``rank`` returns, negated. Both are percentages at four places.
+
+    Fewer than 20 returns leaves every field null: both confidence levels
+    would otherwise read the same worst day. From 20 through 99 returns only
+    the 95% fields are published. Under 100 observations the 99% rank cannot
+    describe a distinct tail.
+    """
+    result: dict[str, str | None] = {
+        "historical_var_95_pct": None,
+        "historical_var_99_pct": None,
+        "expected_shortfall_95_pct": None,
+        "expected_shortfall_99_pct": None,
+    }
+    count = len(returns)
+    if count < 20:
+        return result
+    with localcontext(Context(prec=50)):
+        ordered = sorted(returns)
+
+        def level(confidence: Decimal) -> tuple[str, str]:
+            tail_mass = (Decimal(1) - confidence) * count
+            rank = max(1, int(tail_mass.to_integral_value(rounding=ROUND_CEILING)))
+            worst = ordered[:rank]
+            var_value = (-worst[-1] * 100).quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
+            es_value = (-(sum(worst, Decimal(0)) / rank) * 100).quantize(
+                FOUR_PLACES, rounding=ROUND_HALF_UP
+            )
+            return format(var_value, "f"), format(es_value, "f")
+
+        var95, es95 = level(Decimal("0.95"))
+        result["historical_var_95_pct"] = var95
+        result["expected_shortfall_95_pct"] = es95
+        if count >= 100:
+            var99, es99 = level(Decimal("0.99"))
+            result["historical_var_99_pct"] = var99
+            result["expected_shortfall_99_pct"] = es99
+    return result
+
+
 def build_risk_metrics_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
     performance = build_performance_response(db, user_id, email, range_token)
     available = [point for point in performance["series"] if point["status"] == "available"]
@@ -114,6 +164,8 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
     return_count = max(observed_periods - 1, 0)
     if len(returns) != return_count:
         raise AssertionError("return_count does not match the twr_index ratios")
+    # Same per-period twr returns as volatility, not the benchmark pairs beta uses.
+    tail = _historical_var_and_es(returns)
     return {
         "user": performance["user"],
         "range": performance["range"],
@@ -127,4 +179,8 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
         "max_drawdown_pct": _max_drawdown_pct(drawdown_values),
         "beta_pair_count": beta_pair_count,
         "portfolio_beta": portfolio_beta,
+        "historical_var_95_pct": tail["historical_var_95_pct"],
+        "historical_var_99_pct": tail["historical_var_99_pct"],
+        "expected_shortfall_95_pct": tail["expected_shortfall_95_pct"],
+        "expected_shortfall_99_pct": tail["expected_shortfall_99_pct"],
     }

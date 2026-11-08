@@ -1,4 +1,4 @@
-"""GET /portfolio/risk-metrics volatility, drawdown, and portfolio beta.
+"""GET /portfolio/risk-metrics volatility, drawdown, beta, and tail loss.
 
 The reference digits are the contract's independently computed values
 (docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md). They are not derived from
@@ -54,6 +54,44 @@ def _assert_decimal_text(value):
     assert isinstance(value, str)
     assert value != ""
     Decimal(value)
+
+
+def _available_chain(twr_values):
+    return [
+        {
+            "status": "available",
+            "twr_index": twr,
+            "drawdown_pct": "0.0000",
+            "benchmark_index": None,
+        }
+        for twr in twr_values
+    ]
+
+
+_TAIL_FIELDS = (
+    "historical_var_95_pct",
+    "historical_var_99_pct",
+    "expected_shortfall_95_pct",
+    "expected_shortfall_99_pct",
+)
+
+
+# 121 available twr_index values. Section 3's reference is 120 returns.
+_VAR_REFERENCE_TWR = (
+    "1.000000,0.991192,0.973888,0.981238,0.960261,0.961984,0.955523,0.934406,0.934754,0.913138,"
+    "0.910108,0.890534,0.872310,0.869018,0.883220,0.866607,0.854615,0.860061,0.879313,0.882703,"
+    "0.878143,0.899054,0.878672,0.894420,0.885011,0.869269,0.852657,0.844492,0.857840,0.844145,"
+    "0.847589,0.853476,0.848031,0.850055,0.831472,0.813163,0.801208,0.808435,0.805508,0.798022,"
+    "0.801436,0.799560,0.791555,0.803206,0.811198,0.800819,0.803799,0.804812,0.819908,0.829314,"
+    "0.820521,0.840221,0.824175,0.820801,0.831354,0.816888,0.816437,0.797626,0.804335,0.814976,"
+    "0.817951,0.833307,0.825546,0.833607,0.837540,0.840886,0.839044,0.853306,0.872278,0.871148,"
+    "0.878298,0.859004,0.867658,0.874040,0.895589,0.910004,0.900203,0.895063,0.902611,0.881064,"
+    "0.879377,0.864781,0.848225,0.829520,0.840646,0.825066,0.814654,0.810212,0.825258,0.807952,"
+    "0.805899,0.807891,0.823377,0.836521,0.851745,0.842309,0.838742,0.832820,0.848818,0.868245,"
+    "0.853091,0.839280,0.828032,0.816992,0.816378,0.820016,0.810288,0.790197,0.786994,0.781849,"
+    "0.784442,0.802214,0.809855,0.810483,0.815249,0.822431,0.804091,0.820154,0.831635,0.847208,"
+    "0.859826"
+).split(",")
 
 
 def test_reference_vector_matches_the_contract(monkeypatch):
@@ -182,6 +220,53 @@ def test_beta_is_null_when_benchmark_has_no_variation(monkeypatch):
     assert body["max_drawdown_pct"] == "4.8077"
 
 
+def test_var_and_es_reference_vector_matches_the_contract(monkeypatch):
+    assert len(_VAR_REFERENCE_TWR) == 121
+    _install_series(monkeypatch, _available_chain(_VAR_REFERENCE_TWR))
+    body = _read()
+
+    assert body["return_count"] == 120
+    assert body["historical_var_95_pct"] == "2.2300"
+    assert body["historical_var_99_pct"] == "2.3872"
+    assert body["expected_shortfall_95_pct"] == "2.3300"
+    assert body["expected_shortfall_99_pct"] == "2.4333"
+    assert Decimal(body["expected_shortfall_95_pct"]) >= Decimal(body["historical_var_95_pct"])
+    assert Decimal(body["expected_shortfall_99_pct"]) >= Decimal(body["historical_var_99_pct"])
+
+
+def test_var_and_es_are_null_below_twenty_returns(monkeypatch):
+    # Ten available days: nine returns. Volatility's own gate is two returns.
+    twr_values = [format(Decimal("1.000000") + Decimal("0.003000") * index, "f") for index in range(10)]
+    _install_series(monkeypatch, _available_chain(twr_values))
+    body = _read()
+
+    assert body["observed_periods"] == 10
+    assert body["return_count"] == 9
+    for field in _TAIL_FIELDS:
+        assert body[field] is None
+    _assert_decimal_text(body["historical_volatility_pct"])
+    assert body["max_drawdown_pct"] == "0.0000"
+
+
+def test_var_99_is_null_below_one_hundred_returns(monkeypatch):
+    # Fifty available days: 49 returns, inside [20, 99]. 95% is published; 99% is not.
+    twr_values = []
+    level = Decimal("1.000000")
+    for index in range(50):
+        twr_values.append(format(level, "f"))
+        change = Decimal("-0.012000") if index % 3 == 0 else Decimal("0.004000")
+        level = (level * (Decimal(1) + change)).quantize(Decimal("0.000001"))
+    _install_series(monkeypatch, _available_chain(twr_values))
+    body = _read()
+
+    assert body["observed_periods"] == 50
+    assert 20 <= body["return_count"] <= 99
+    _assert_decimal_text(body["historical_var_95_pct"])
+    _assert_decimal_text(body["expected_shortfall_95_pct"])
+    assert body["historical_var_99_pct"] is None
+    assert body["expected_shortfall_99_pct"] is None
+
+
 def test_route_requires_authentication_and_rejects_an_invalid_range(client, auth_headers):
     anonymous = client.get("/portfolio/risk-metrics", params={"range": "1y"})
     assert anonymous.status_code == 401
@@ -227,3 +312,7 @@ def test_route_end_to_end_with_a_real_seeded_account(client, auth_headers, db_se
     assert body["beta_pair_count"] >= 0
     if body["portfolio_beta"] is not None:
         _assert_decimal_text(body["portfolio_beta"])
+    for field in _TAIL_FIELDS:
+        value = body[field]
+        if value is not None:
+            _assert_decimal_text(value)
