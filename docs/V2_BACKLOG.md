@@ -182,6 +182,30 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 46](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/46) is ready with all
+CI checks green: wires the already-shipped, backend-only Bollinger Bands indicator (PR #44) into
+the daily history chart. Plots middle/upper/lower as three overlay lines on the chart's main
+price scale per contract section 15.6 — not a sub-panel, since the bands overlay directly on
+price, unlike RSI/MACD. Evidence:
+[P3A_BOLLINGER_FRONTEND_VERIFICATION.md](P3A_BOLLINGER_FRONTEND_VERIFICATION.md). The middle
+band reuses the existing `priceScaleLine` prop path `sma`/`ema` already use; `upper`/`lower` are
+parsed with the same `signedSeriesPoint` helper MACD already uses (a zero or negative band
+reading is accepted even though real equity data should never produce one), plus a new
+invariant check that `upper`/`lower` are `null` on exactly the same indices the middle value is.
+With this PR, all five indicators named on the Phase 3 roadmap line ("SMA, EMA, Bollinger Bands,
+RSI, and MACD") are selectable and plotted in the chart — the frontend half of that checklist
+item is now closed alongside the backend half PR #44 closed. One tooling failure on my end,
+disclosed in the verification doc: a stray trailing `&` double-backgrounded the first Grok
+launch, killing it before it ran; caught via `git status --short` showing zero changes, fixed on
+relaunch. No manual browser/visual check was performed for this unit — verified via the
+automated component test and production build only; disclosed explicitly. Still open: chart
+modes beyond candlestick, timeframes beyond 1y/2y, volume-only toggle, trade execution markers,
+price levels for open orders, persisted chart preferences, user-configurable indicator
+parameters beyond period/signal-period, and a shaded fill between the bands (deliberately out of
+scope — lightweight-charts has no first-class two-line-fill primitive without an added plugin).
+Phase 4.2 (`GET /portfolio/attribution`, `GET /portfolio/risk-metrics`) also remains open and
+unstarted.
+
 [PR 45](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/45) is ready with all
 CI checks green: a new `GET /portfolio/allocation` route — the exact route the roadmap's own
 section 4.5 API list names ("Security/sector weights and cash"). This closes the last
