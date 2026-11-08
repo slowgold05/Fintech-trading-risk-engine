@@ -182,6 +182,30 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 54](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/54) is ready with all
+CI checks green: `POST /portfolio/trade-impact`, the first slice of Phase 4.3's "signature
+feature," Trade Impact Preview. Evidence:
+[P4F_TRADE_IMPACT_PREVIEW_VERIFICATION.md](P4F_TRADE_IMPACT_PREVIEW_VERIFICATION.md). Design:
+`docs/P4F_TRADE_IMPACT_PREVIEW_CONTRACT.md`. Cash, position-value, and weight before/after only
+for one hypothetical trade; portfolio-volatility impact, VaR impact, and sector-exposure
+before/after (all named in the roadmap's own illustrative table) remain separate, later slices.
+Never writes to the database — no `Order`/`Trade`/`Holding`/`LedgerEntry` row is created or
+mutated, verified by a test-level book fingerprint before/after the call. Warnings
+(`insufficient_buying_power`/`insufficient_shares`) never short-circuit the computation — the
+preview always returns the real, unclamped numbers, including a negative cash balance or a
+weight over 100%, consistent with the roadmap's own "non-binding" framing. Worth recording: I
+caught and corrected **three** real inconsistencies in my own contract's computation rules,
+across two rounds with Grok, before any implementation code existed for the third — a wrong
+account-total formula missing an offsetting leg, a stray clamp note contradicting the
+contract's own no-clamping design, and an incomplete-case nulling rule stricter than the
+`GET /portfolio/allocation` precedent it claimed to follow; Grok's first attempt caught all
+three by actually computing the numbers rather than trusting the written formulas, flagged
+each one explicitly instead of guessing, and the second (corrected) attempt implemented
+cleanly. With this PR, every roadmap route named in section 4.5 is shipped at least a first
+slice, except `POST /risk/scenarios` (Phase 4.4's full custom-shock Risk Lab, distinct from the
+fixed three-scenario `stress_scenarios` already in `GET /portfolio/risk-metrics`), which
+remains open and unstarted.
+
 [PR 53](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/53) is ready with all
 CI checks green: a new `GET /portfolio/attribution` route — the last remaining named route from
 the roadmap's section 4.5 API list (`/performance`, `/allocation`, `/risk-metrics` were all
