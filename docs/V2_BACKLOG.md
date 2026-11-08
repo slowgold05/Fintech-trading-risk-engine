@@ -182,6 +182,25 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 57](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/57) is ready with all
+CI checks green: a new "Risk metrics (1y)" card on `/portfolio`, additive on top of PRs #55/#56,
+rendering the seven **scalar** fields of `GET /portfolio/risk-metrics` (historical volatility,
+max drawdown, beta, 95/99% VaR, 95/99% Expected Shortfall). Evidence:
+[P4D_PORTFOLIO_RISK_METRICS_FRONTEND_VERIFICATION.md](P4D_PORTFOLIO_RISK_METRICS_FRONTEND_VERIFICATION.md).
+Each field's visibility is keyed off its own `null` value independently, **not** the
+response's overall `status` — unlike allocation/attribution's all-or-nothing `status`,
+risk-metrics' scalar fields each carry their own independent null-gating threshold on the
+backend (e.g. volatility needs 2 returns, 99% VaR needs 100), so a real account commonly has
+some fields present and others `null` at once; proven directly by a test with a mixed response.
+`portfolio_beta` renders as a plain ratio, never passed through a percent formatter (tested
+explicitly — the other six fields are genuine non-negative loss percentages, so they do use
+`formatPercent`). The three list-shaped fields (`correlations`, `stress_scenarios`,
+`risk_contributions`) remain separate, later frontend slices, as does any range selector
+(hardcoded to `1y` here) and `POST /portfolio/trade-impact`'s own UI. No manual browser/visual
+check was performed, disclosed explicitly. (One `browser` CI flake hit on PR #56's own doc-only
+commit — the same already-documented `test_p3b_watchlists_ui.py` `StaleElementReferenceException`
+— confirmed via the actual log, unrelated, reran clean.)
+
 [PR 56](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/56) is ready with all
 CI checks green: a new "P&L attribution" card on `/portfolio`, additive on top of PR #55's
 Sector allocation card, rendering `GET /portfolio/attribution` (PR #53) — realized/unrealized/
