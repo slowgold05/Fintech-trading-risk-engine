@@ -77,7 +77,13 @@ def _iso_z(value: object) -> str | None:
     return naive.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _realized_subquery(user_id: int):
+def _realized_sell_scope(user_id: int):
+    """Sell rows that count toward realized P&L.
+
+    ``latest_reset_id`` / ``trades_after_reset`` are the account inception
+    boundary. With no reset, every sell counts. With a reset, only sells
+    posted on a trade ledger row after that reset count.
+    """
     latest_reset_id = (
         select(func.max(LedgerEntry.id))
         .where(LedgerEntry.user_id == user_id, LedgerEntry.event_kind == "reset")
@@ -89,14 +95,28 @@ def _realized_subquery(user_id: int):
         LedgerEntry.id > latest_reset_id,
     )
     return (
+        Trade.user_id == user_id,
+        Trade.side == "sell",
+        or_(latest_reset_id.is_(None), Trade.id.in_(trades_after_reset)),
+    )
+
+
+def _realized_subquery(user_id: int):
+    return (
         select(func.coalesce(func.sum(Trade.realized_pnl), 0))
-        .where(
-            Trade.user_id == user_id,
-            Trade.side == "sell",
-            or_(latest_reset_id.is_(None), Trade.id.in_(trades_after_reset)),
-        )
+        .where(*_realized_sell_scope(user_id))
         .scalar_subquery()
     )
+
+
+def _realized_by_asset(db: Session, user_id: int) -> dict[int, Decimal]:
+    """One grouped read of realized P&L for every asset, same boundary as the account total."""
+    rows = db.execute(
+        select(Trade.asset_id, func.coalesce(func.sum(Trade.realized_pnl), 0))
+        .where(*_realized_sell_scope(user_id))
+        .group_by(Trade.asset_id)
+    ).all()
+    return {int(asset_id): _decimal(total) for asset_id, total in rows}
 
 
 def _reserved_cash(db: Session, user_id: int) -> Decimal:
@@ -191,6 +211,7 @@ def _value_portfolio(db: Session, user_id: int, email: str) -> dict:
     snapshot_stmt = (
         select(
             User.cash_balance,
+            Holding.asset_id,
             Holding.quantity,
             Holding.avg_cost,
             Asset.symbol,
@@ -216,6 +237,8 @@ def _value_portfolio(db: Session, user_id: int, email: str) -> dict:
 
     cash_balance = _decimal(rows[0].cash_balance)
     realized = _decimal(rows[0].realized_pnl)
+    # Same snapshot transaction as the account total. Assets with no sells are absent.
+    realized_by_asset = _realized_by_asset(db, user_id)
     # Reservations use the same snapshot transaction as the position read.
     reserved = _reserved_cash(db, user_id)
 
@@ -233,12 +256,16 @@ def _value_portfolio(db: Session, user_id: int, email: str) -> dict:
         cost_basis = quantity * avg_cost
         cost_total += cost_basis
         quote = _quote_state(row, snapshot)
+        # Never sold is a measured zero, not an unknown. Quantize before adding to unrealized.
+        realized_cents = realized_by_asset.get(row.asset_id, Decimal(0)).quantize(CENT, rounding=ROUND_HALF_UP)
+        realized_pnl = _money(realized_cents)
         if quote["price_status"] != "available":
             complete = False
             current_price = None
             position_value = None
             unrealized = None
             unrealized_pct = None
+            total_pnl = None
         else:
             price = quote["price"]
             raw_value = quantity * price
@@ -248,6 +275,7 @@ def _value_portfolio(db: Session, user_id: int, email: str) -> dict:
             position_value = _money(raw_value)
             unrealized = _money(raw_unrealized)
             unrealized_pct = _money((raw_unrealized / cost_basis * 100) if cost_basis > 0 else Decimal(0))
+            total_pnl = _money(realized_cents + raw_unrealized.quantize(CENT, rounding=ROUND_HALF_UP))
         positions.append({
             "symbol": row.symbol,
             "asset_type": row.asset_type,
@@ -258,6 +286,8 @@ def _value_portfolio(db: Session, user_id: int, email: str) -> dict:
             "cost_basis": _money(cost_basis),
             "unrealized_pnl": unrealized,
             "unrealized_pnl_pct": unrealized_pct,
+            "realized_pnl": realized_pnl,
+            "total_pnl": total_pnl,
             "price_status": quote["price_status"],
             "unavailable_reason": quote["unavailable_reason"],
             "source": quote["source"],

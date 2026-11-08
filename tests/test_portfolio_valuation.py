@@ -20,6 +20,7 @@ from app.models.market_symbol import MarketSymbol
 from app.models.order import Order
 from app.models.trade import Trade
 from app.models.user import User
+from app.services.ledger_service import append_reset, append_trade
 from app.services.portfolio_valuation import build_portfolio_response
 
 
@@ -159,12 +160,16 @@ def test_complete_two_position_marks_and_empty_book(client, auth_headers, db_ses
     assert apple_position["position_value"] == float(Decimal("200.50"))
     assert apple_position["cost_basis"] == float(Decimal("20.00"))
     assert apple_position["unrealized_pnl"] == float(Decimal("180.50"))
+    assert apple_position["realized_pnl"] == float(Decimal("12.34"))
+    assert apple_position["total_pnl"] == float(Decimal("192.84"))
     assert apple_position["price_status"] == "available"
     assert apple_position["unavailable_reason"] is None
     assert apple_position["source"] == "yahoo"
     assert microsoft["position_value"] == float(Decimal("15.15"))
     assert microsoft["cost_basis"] == float(Decimal("60.00"))
     assert microsoft["unrealized_pnl"] == float(Decimal("-44.85"))
+    assert microsoft["realized_pnl"] == float(Decimal("0.00"))
+    assert microsoft["total_pnl"] == float(Decimal("-44.85"))
 
     summary = body["summary"]
     assert summary["cash_balance"] == float(Decimal("1000.00"))
@@ -253,6 +258,8 @@ def test_missing_price_is_200_compatibility_change(client, auth_headers, db_sess
     assert positions["AAPL"]["price_status"] == "available"
     assert positions["AAPL"]["current_price"] == float(Decimal("100.25"))
     assert positions["AAPL"]["position_value"] == float(Decimal("200.50"))
+    assert positions["AAPL"]["realized_pnl"] == float(Decimal("12.34"))
+    assert positions["AAPL"]["total_pnl"] == float(Decimal("192.84"))
 
     missing = positions["MISS"]
     assert missing["price_status"] == "unavailable"
@@ -280,6 +287,9 @@ def test_missing_price_is_200_compatibility_change(client, auth_headers, db_sess
         assert position["fetched_at"] is not None
 
     assert positions["BTC"]["quote_at"] != body["snapshot_read_at"]
+    for symbol in ("MISS", "BAD", "NEG", "OLD", "BTC"):
+        assert positions[symbol]["realized_pnl"] == float(Decimal("0.00"))
+        assert positions[symbol]["total_pnl"] is None
     assert body["unavailable_symbols"] == ["BAD", "BTC", "MISS", "NEG", "OLD"]
     summary = body["summary"]
     assert summary["cash_balance"] == float(Decimal("5000.00"))
@@ -722,6 +732,48 @@ def test_portfolio_clock_sample_keeps_the_prewrite_quote(monkeypatch):
         finally:
             writer.close()
             engine.dispose()
+
+
+def test_position_realized_pnl_reuses_the_reset_boundary(client, auth_headers, db_session, monkeypatch):
+    """A sell posted before the latest reset does not count toward that position."""
+    _forbid_providers(monkeypatch)
+    headers = auth_headers("reset-xyz@example.com")
+    user = db_session.query(User).one()
+    asset = _add_position(db_session, user, "XYZ", "stock", Decimal("10"), Decimal("50"))
+    _add_symbol(db_session, "XYZ")
+    _add_quote(db_session, "XYZ", Decimal("60"))
+
+    # The boundary reads ledger trade ids, not Trade row order. Post each sell.
+    pre_reset = Trade(
+        user_id=user.id,
+        asset_id=asset.id,
+        side="sell",
+        quantity=Decimal("1"),
+        price_at_execution=Decimal("50"),
+        realized_pnl=Decimal("999.00"),
+    )
+    db_session.add(pre_reset)
+    db_session.flush()
+    append_trade(db_session, user.id, pre_reset.id, asset.id, "sell", Decimal("1"), Decimal("50"))
+    append_reset(db_session, user, user.cash_balance)
+
+    post_reset = Trade(
+        user_id=user.id,
+        asset_id=asset.id,
+        side="sell",
+        quantity=Decimal("1"),
+        price_at_execution=Decimal("50"),
+        realized_pnl=Decimal("25.00"),
+    )
+    db_session.add(post_reset)
+    db_session.flush()
+    append_trade(db_session, user.id, post_reset.id, asset.id, "sell", Decimal("1"), Decimal("50"))
+    db_session.commit()
+
+    response = client.get("/portfolio/", headers=headers)
+    assert response.status_code == 200
+    positions = {position["symbol"]: position for position in response.json()["positions"]}
+    assert positions["XYZ"]["realized_pnl"] == float(Decimal("25.00"))
 
 
 def _portfolio_iso(value: datetime) -> str:
