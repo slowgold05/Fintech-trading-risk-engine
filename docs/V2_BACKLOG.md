@@ -182,6 +182,20 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 43](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/43) is ready with all
+CI checks green: a top-level `money_weighted_return_pct` field on `GET /portfolio/performance`'s
+response (a sibling of `status`, not a per-day series field) — a single Modified Dietz figure
+for the whole requested window. Evidence:
+[P4A_PERFORMANCE_MWR_VERIFICATION.md](P4A_PERFORMANCE_MWR_VERIFICATION.md). Null on two
+distinct, separately tested guards: fewer than 2 available days, or zero cash
+deposit/withdrawal flows in the window — the roadmap's own "money-weighted returns (where
+cash-flow history permits)" wording taken literally, since a flow-free window's Modified Dietz
+figure would just duplicate the already-reported `twr_index`. Design written first as contract
+section 14, independently verified with exact fraction arithmetic (not floats) before
+implementation. This closes out every explicitly-named Phase 4.1 roadmap item except sector
+allocation, which needs a sector-taxonomy decision first (the `Asset` model has no sector field
+today) and is deferred as its own, separate unit.
+
 [PR 42](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/42) is ready with all
 CI checks green: `realized_pnl` and `total_pnl` fields on each entry in `GET /portfolio/`'s
 `positions` list — a per-asset breakdown of the account-wide `summary.total_realized_pnl`
