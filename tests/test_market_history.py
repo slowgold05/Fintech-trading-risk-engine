@@ -20,8 +20,11 @@ from app.models.user import User
 from app.services import exchange_calendar
 from app.services.market_history import (
     one_calendar_year_before,
+    one_month_before,
     read_data_status,
     read_symbol_history,
+    six_months_before,
+    three_months_before,
     two_calendar_years_before,
 )
 
@@ -454,8 +457,8 @@ def test_query_validation_and_unknown_symbol(client, db_session):
 def test_unsupported_range_is_rejected_at_the_route_and_service(client, db_session):
     _symbol(db_session, "NVDA")
     db_session.commit()
-    detail = "range must be 1y or 2y."
-    for token in ("6mo", "3y", "1Y", ""):
+    detail = "range must be 1m, 3m, 6m, 1y, 2y, or all."
+    for token in ("6mo", "3y", "5y", "1Y", ""):
         response = client.get("/market/symbols/NVDA/history", params=_history_params(range=token))
         assert response.status_code == 422, token
         assert response.json()["detail"] == detail
@@ -470,6 +473,43 @@ def test_unsupported_range_is_rejected_at_the_route_and_service(client, db_sessi
             )
         assert caught.value.status_code == 422
         assert caught.value.detail == detail
+
+
+def test_calendar_month_bounds_clamp_the_day():
+    assert one_month_before(date(2026, 3, 31)) == date(2026, 2, 28)
+    assert three_months_before(date(2026, 3, 31)) == date(2025, 12, 31)
+    assert six_months_before(date(2026, 3, 31)) == date(2025, 9, 30)
+
+
+def test_month_ranges_are_accepted_and_report_the_helper_start(client, db_session, monkeypatch):
+    clock = datetime(2026, 3, 31, 16, 0)
+    _pin_clock(monkeypatch, clock)
+    end = clock.date()
+    _symbol(db_session, "NVDA")
+    db_session.commit()
+    expected = {
+        "1m": one_month_before(end),
+        "3m": three_months_before(end),
+        "6m": six_months_before(end),
+    }
+    for token, start in expected.items():
+        response = client.get("/market/symbols/NVDA/history", params=_history_params(range=token))
+        assert response.status_code == 200, token
+        body = response.json()
+        assert body["range"] == token
+        assert body["requested_start"] == start.isoformat()
+        assert body["requested_end"] == end.isoformat()
+
+
+def test_all_range_uses_the_1900_sentinel_and_skips_calendar_coverage(client, db_session):
+    _symbol(db_session, "NVDA")
+    db_session.commit()
+    response = client.get("/market/symbols/NVDA/history", params=_history_params(range="all"))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requested_start"] == date(1900, 1, 1).isoformat()
+    assert body["coverage_status"] == "not_verified"
+    assert body["expected_session_count"] is None
 
 
 def test_leap_day_bounds_and_requested_window(client, db_session, monkeypatch):

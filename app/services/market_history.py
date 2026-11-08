@@ -7,6 +7,7 @@ Each canonical series compares its own stored span with the local NYSE
 calendar. That comparison is not a claim that two years of sessions exist.
 """
 
+import calendar
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from types import SimpleNamespace
@@ -28,13 +29,38 @@ SYMBOL_MAX_LENGTH = 20
 PROVIDER_MAX_LENGTH = 32
 QUOTE_CENSUS_BATCH = 500
 SUPPORTED_INTERVALS = frozenset({"1d"})
-SUPPORTED_RANGES = frozenset({"1y", "2y"})
+SUPPORTED_RANGES = frozenset({"1m", "3m", "6m", "1y", "2y", "all"})
+EARLIEST_SUPPORTED_DATE = date(1900, 1, 1)
 SUPPORTED_ADJUSTMENTS = frozenset({"raw", "split_adjusted"})
 FRESHNESS_STATUSES = ("live-ish", "delayed", "cached", "stale")
 QUALITY_STATUSES = ("valid", "flagged", "rejected")
 # Canonical-history ingestion is off. This does not describe quote refresh.
 COLLECTION = "disabled"
 COVERAGE_STATUS = "not_verified"
+
+
+def _months_before(day: date, months: int) -> date:
+    """Inclusive start of a calendar-month window, day clamped to the target month's length."""
+    total = day.year * 12 + (day.month - 1) - months
+    year, month = divmod(total, 12)
+    month += 1
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(day.day, last_day))
+
+
+def one_month_before(day: date) -> date:
+    """Inclusive start of a one-calendar-month window. Day-of-month clamps to the shorter month."""
+    return _months_before(day, 1)
+
+
+def three_months_before(day: date) -> date:
+    """Inclusive start of a three-calendar-month window. Day-of-month clamps to the shorter month."""
+    return _months_before(day, 3)
+
+
+def six_months_before(day: date) -> date:
+    """Inclusive start of a six-calendar-month window. Day-of-month clamps to the shorter month."""
+    return _months_before(day, 6)
 
 
 def one_calendar_year_before(day: date) -> date:
@@ -51,6 +77,16 @@ def two_calendar_years_before(day: date) -> date:
         return day.replace(year=day.year - 2)
     except ValueError:
         return date(day.year - 2, 2, 28)
+
+
+_RANGE_START = {
+    "1m": one_month_before,
+    "3m": three_months_before,
+    "6m": six_months_before,
+    "1y": one_calendar_year_before,
+    "2y": two_calendar_years_before,
+    "all": lambda _end: EARLIEST_SUPPORTED_DATE,
+}
 
 
 def read_data_status(db: Session) -> dict:
@@ -98,7 +134,7 @@ def _validate_history_query(
     if interval not in SUPPORTED_INTERVALS:
         raise HTTPException(status_code=422, detail="interval must be 1d.")
     if range_token not in SUPPORTED_RANGES:
-        raise HTTPException(status_code=422, detail="range must be 1y or 2y.")
+        raise HTTPException(status_code=422, detail="range must be 1m, 3m, 6m, 1y, 2y, or all.")
     if adjustment_type not in SUPPORTED_ADJUSTMENTS:
         raise HTTPException(status_code=422, detail="adjustment_type must be raw or split_adjusted.")
 
@@ -312,7 +348,7 @@ def _symbol_history(
         raise HTTPException(status_code=404, detail="Unknown symbol.")
 
     end = clock.date()
-    start = one_calendar_year_before(end) if range_token == "1y" else two_calendar_years_before(end)
+    start = _RANGE_START[range_token](end)
     # Inclusive session bounds stay in SQL. The primary key already makes a
     # session unique for this symbol, provider, and adjustment.
     rows = db.execute(
