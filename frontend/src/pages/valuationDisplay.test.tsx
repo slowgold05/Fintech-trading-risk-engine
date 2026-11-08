@@ -928,4 +928,84 @@ describe("valuation display", () => {
     expect(within(betaRow).queryByText(/%/)).not.toBeInTheDocument();
     expect(betaRow.textContent ?? "").not.toMatch(/%/);
   });
+
+  it("test_stress_scenario_table_renders_three_fixed_scenarios", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchRiskMetrics.mockResolvedValue(
+      riskMetrics({
+        stress_scenarios: [
+          {
+            scenario: "broad_market_selloff",
+            shock_pct: "-10.0000",
+            loss: "60.00",
+            loss_pct: "3.7500",
+          },
+          {
+            scenario: "technology_sector_selloff",
+            shock_pct: "-25.0000",
+            loss: "75.00",
+            loss_pct: "4.6875",
+          },
+          {
+            scenario: "single_security_worst_holding",
+            shock_pct: "-30.0000",
+            affected_symbol: "AAPL",
+            loss: "90.00",
+            loss_pct: "5.6250",
+          },
+        ],
+      }),
+    );
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    const scoped = within(card);
+
+    expect(await scoped.findByText("Broad market selloff")).toBeInTheDocument();
+    expect(scoped.getByText("Technology sector selloff")).toBeInTheDocument();
+    expect(scoped.getByText("Largest holding shock")).toBeInTheDocument();
+    expect(scoped.queryByText("Stress scenarios unavailable")).not.toBeInTheDocument();
+
+    const broad = scoped.getByText("Broad market selloff").closest("tr") as HTMLElement;
+    expect(within(broad).getByText("-10.00%")).toBeInTheDocument();
+    expect(within(broad).getByText("$60")).toBeInTheDocument();
+    expect(within(broad).getByText("3.75%")).toBeInTheDocument();
+    expect(within(broad).queryByText("AAPL")).not.toBeInTheDocument();
+
+    const technology = scoped.getByText("Technology sector selloff").closest("tr") as HTMLElement;
+    expect(within(technology).getByText("-25.00%")).toBeInTheDocument();
+    expect(within(technology).getByText("$75")).toBeInTheDocument();
+    expect(within(technology).getByText("4.69%")).toBeInTheDocument();
+    expect(within(technology).queryByText("AAPL")).not.toBeInTheDocument();
+
+    const worst = scoped.getByText("Largest holding shock").closest("tr") as HTMLElement;
+    expect(within(worst).getByText("-30.00%")).toBeInTheDocument();
+    expect(within(worst).getByText("$90")).toBeInTheDocument();
+    expect(within(worst).getByText("5.63%")).toBeInTheDocument();
+    expect(within(worst).getByText("AAPL")).toBeInTheDocument();
+  });
+
+  it("test_stress_scenario_table_shows_unavailable_when_null", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    const scoped = within(card);
+    expect(await scoped.findByText("Stress scenarios unavailable")).toBeInTheDocument();
+    expect(scoped.queryByText("Broad market selloff")).not.toBeInTheDocument();
+    expect(scoped.queryByText("Technology sector selloff")).not.toBeInTheDocument();
+    expect(scoped.queryByText("Largest holding shock")).not.toBeInTheDocument();
+    expect(scoped.queryByText("$60")).not.toBeInTheDocument();
+    expect(scoped.queryByText("$75")).not.toBeInTheDocument();
+    expect(scoped.queryByText("$90")).not.toBeInTheDocument();
+    expect(card.textContent ?? "").not.toMatch(/\$/);
+  });
 });

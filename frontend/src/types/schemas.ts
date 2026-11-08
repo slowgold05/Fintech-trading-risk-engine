@@ -269,6 +269,17 @@ export interface AttributionResponse {
   sectors: AttributionSector[] | null;
 }
 
+export interface StressScenario {
+  scenario:
+    | "broad_market_selloff"
+    | "technology_sector_selloff"
+    | "single_security_worst_holding";
+  shock_pct: string;
+  loss: string | null;
+  loss_pct: string | null;
+  affected_symbol?: string | null;
+}
+
 export interface RiskMetricsResponse {
   user: { id: number; email: string };
   range: "1y" | "2y";
@@ -287,7 +298,7 @@ export interface RiskMetricsResponse {
   expected_shortfall_95_pct: string | null;
   expected_shortfall_99_pct: string | null;
   correlations: unknown[] | null;
-  stress_scenarios: unknown[] | null;
+  stress_scenarios: StressScenario[] | null;
   risk_contributions: unknown[] | null;
 }
 

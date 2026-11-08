@@ -24,7 +24,7 @@ import {
   formatSignedPercent,
 } from "../utils/format";
 import type { AllocationSector, PortfolioPositionResponse } from "../types/schemas";
-import type { AttributionSector, AttributionSecurity } from "../types/schemas";
+import type { AttributionSector, AttributionSecurity, StressScenario } from "../types/schemas";
 
 function getExposurePercent(positionValue: number | null, totalValue: number | null) {
   if (positionValue == null || totalValue == null) {
@@ -599,15 +599,22 @@ export function Portfolio() {
             ) : riskMetricsQuery.data == null ? (
               <p className="text-sm text-slate-300">Risk metrics unavailable</p>
             ) : (
-              <RiskMetricsStats
-                historicalVolatilityPct={riskMetricsQuery.data.historical_volatility_pct}
-                maxDrawdownPct={riskMetricsQuery.data.max_drawdown_pct}
-                portfolioBeta={riskMetricsQuery.data.portfolio_beta}
-                historicalVar95Pct={riskMetricsQuery.data.historical_var_95_pct}
-                historicalVar99Pct={riskMetricsQuery.data.historical_var_99_pct}
-                expectedShortfall95Pct={riskMetricsQuery.data.expected_shortfall_95_pct}
-                expectedShortfall99Pct={riskMetricsQuery.data.expected_shortfall_99_pct}
-              />
+              <>
+                <RiskMetricsStats
+                  historicalVolatilityPct={riskMetricsQuery.data.historical_volatility_pct}
+                  maxDrawdownPct={riskMetricsQuery.data.max_drawdown_pct}
+                  portfolioBeta={riskMetricsQuery.data.portfolio_beta}
+                  historicalVar95Pct={riskMetricsQuery.data.historical_var_95_pct}
+                  historicalVar99Pct={riskMetricsQuery.data.historical_var_99_pct}
+                  expectedShortfall95Pct={riskMetricsQuery.data.expected_shortfall_95_pct}
+                  expectedShortfall99Pct={riskMetricsQuery.data.expected_shortfall_99_pct}
+                />
+                {riskMetricsQuery.data.stress_scenarios == null ? (
+                  <p className="mt-4 text-sm text-slate-300">Stress scenarios unavailable</p>
+                ) : (
+                  <StressScenarioTable scenarios={riskMetricsQuery.data.stress_scenarios} />
+                )}
+              </>
             )}
           </DashboardCard>
         </div>
@@ -784,6 +791,58 @@ function formatBeta(value: string | null) {
     return <span className="text-slate-400">Unavailable</span>;
   }
   return Number(value).toFixed(4);
+}
+
+const SCENARIO_LABELS: Record<StressScenario["scenario"], string> = {
+  broad_market_selloff: "Broad market selloff",
+  technology_sector_selloff: "Technology sector selloff",
+  single_security_worst_holding: "Largest holding shock",
+};
+
+function stressLossAmount(value: string | null) {
+  if (value == null) {
+    return <span className="text-slate-400">Unavailable</span>;
+  }
+  // Compact dollars, same as the allocation and attribution tables on this page.
+  return formatCurrency(Number(value), false);
+}
+
+function affectedSymbolCell(scenario: StressScenario) {
+  if (scenario.scenario !== "single_security_worst_holding") {
+    return null;
+  }
+  return scenario.affected_symbol ?? "--";
+}
+
+function StressScenarioTable({ scenarios }: { scenarios: StressScenario[] }) {
+  return (
+    <div className="table-shell mt-4">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th className="text-left">Scenario</th>
+            <th className="text-right">Shock</th>
+            <th className="text-right">Loss</th>
+            <th className="text-right">Loss %</th>
+            <th className="text-left">Symbol</th>
+          </tr>
+        </thead>
+        <tbody>
+          {scenarios.map((scenario) => (
+            <tr key={scenario.scenario}>
+              <td className="text-sm text-slate-100">{SCENARIO_LABELS[scenario.scenario]}</td>
+              <td className="text-right font-mono tabular-nums">
+                {`${Number(scenario.shock_pct).toFixed(2)}%`}
+              </td>
+              <td className="text-right font-mono tabular-nums">{stressLossAmount(scenario.loss)}</td>
+              <td className="text-right font-mono tabular-nums">{formatRiskPercent(scenario.loss_pct)}</td>
+              <td className="font-mono text-sm text-slate-100">{affectedSymbolCell(scenario)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function RiskMetricsStats({
