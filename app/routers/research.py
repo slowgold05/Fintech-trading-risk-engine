@@ -10,6 +10,7 @@ from app.core.security import get_current_user
 from app.models.market_symbol import MarketSymbol
 from app.models.research_job import ResearchJob
 from app.models.research_report import ResearchReport
+from app.models.research_brief import ResearchBrief
 from app.models.user import User
 from app.schemas.research_job import ResearchJobCreate
 from app.services.sec_service import get_sec_company_filings
@@ -192,4 +193,44 @@ def get_research_report(
     if report is None:
         raise HTTPException(status_code=404, detail="Research report not found")
     return _report_out(report)
+
+
+def _brief_out(brief: ResearchBrief) -> dict:
+    return {
+        "id": brief.id,
+        "brief_date": brief.brief_date.isoformat(),
+        "created_at": _iso_z(brief.created_at),
+        "entries": brief.entries,
+    }
+
+
+@router.get("/briefs")
+def list_research_briefs(
+    limit: int = Query(default=30, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = db.execute(
+        select(ResearchBrief)
+        .where(ResearchBrief.user_id == current_user.id)
+        .order_by(ResearchBrief.brief_date.desc(), ResearchBrief.id.desc())
+        .limit(limit)
+    ).scalars().all()
+    return {"briefs": [_brief_out(brief) for brief in rows]}
+
+
+@router.get("/briefs/{brief_id}")
+def get_research_brief(
+    brief_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    brief = db.execute(
+        select(ResearchBrief).where(
+            ResearchBrief.id == brief_id, ResearchBrief.user_id == current_user.id
+        )
+    ).scalar_one_or_none()
+    if brief is None:
+        raise HTTPException(status_code=404, detail="Research brief not found")
+    return _brief_out(brief)
 

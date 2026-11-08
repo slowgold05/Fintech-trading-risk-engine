@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     research_llm_model: str = "qwen3:14b"
     research_llm_timeout_seconds: float = Field(default=120, gt=0, le=600)
     research_prompt_version: str = "v1"
+    scheduled_daily_brief_limit: int = Field(default=20, ge=0, le=200)
     max_stock_concentration_pct: Decimal = Field(default=Decimal("50"), gt=0, le=100)
     max_stock_position_notional: Decimal = Field(default=Decimal("50000"), gt=0)
 
