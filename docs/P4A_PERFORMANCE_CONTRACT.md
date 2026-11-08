@@ -238,3 +238,59 @@ chart/UI for this data are all separate, later units. No migration (reads existi
 Deposit/withdrawal **exclusion from the return ratio** is in scope and required (section 5) —
 only a new deposit/withdrawal *event kind* or UI is out of scope (the existing one is reused
 read-only). No merge or deploy is claimed by implementing this contract.
+
+## 10. Historical drawdown addendum (2026-11-07) — a second slice on the same route
+
+Written before implementation, appended to the same contract after section 1-9's first slice
+(`GET /portfolio/performance`) shipped. This adds `drawdown_pct` to each series point — the
+percentage decline from the running peak `account_value` (among available days only, from the
+series' own base day through that day) to that day's value. No new query, no new data source:
+purely derived from the `account_value` sequence the route already computes.
+
+### Formula
+
+For each available day `d`, `peak(d) = max(account_value(day) for every available day from the
+series' first available day through d, inclusive)`. Then:
+
+```
+drawdown_pct(d) = ((peak(d) - account_value(d)) / peak(d)) * 100
+```
+
+quantized to 4 decimal places, `ROUND_HALF_UP`, rendered as decimal text — the same precision
+`trade_execution.py`'s `realized_pnl_pct` already uses for a percentage field in this codebase,
+reused for consistency rather than inventing a new one. A new all-time-high day has
+`drawdown_pct == "0.0000"` (not null, not omitted — zero is a real, correct value, same
+"null means unknown, zero means a real zero" rule every other money/percentage field in this
+project already follows). A day with `account_value == null` (a gap) also has
+`drawdown_pct == null` — the peak itself is carried forward across a gap unchanged (a gap day
+cannot set a new peak, since it has no value), the same way `last_available`/`twr_index` already
+carry forward across a gap in section 5.
+
+### Reference (continuing the same worked scenario from sections 8 and 5)
+
+Peak tracked across the whole 10-day scenario (`D0` through `D9`, including the extended
+deposit/withdrawal days):
+
+```
+D0  1000.00  peak 1000.00  drawdown_pct "0.0000"
+D1  1020.00  peak 1020.00  drawdown_pct "0.0000"
+D2  1040.00  peak 1040.00  drawdown_pct "0.0000"
+D3  1050.00  peak 1050.00  drawdown_pct "0.0000"
+D4  (gap)    peak unchanged (1050.00)  drawdown_pct null
+D5  1075.00  peak 1075.00  drawdown_pct "0.0000"
+D6  1175.00  peak 1175.00  drawdown_pct "0.0000"
+D7  1125.00  peak 1175.00 (unchanged — 1125 < 1175)  drawdown_pct "4.2553"
+D8  (gap)    peak unchanged (1175.00)  drawdown_pct null
+D9  1145.00  peak 1175.00 (unchanged — 1145 < 1175)  drawdown_pct "2.5532"
+```
+
+(`D7`: `(1175.00 - 1125.00) / 1175.00 * 100 = 4.255319...` → `4.2553`. `D9`:
+`(1175.00 - 1145.00) / 1175.00 * 100 = 2.553191...` → `2.5532`. Verified independently in a
+separate Decimal script before implementation, not derived from the code under test.)
+
+### What this addendum does not do
+
+Does not add a top-level "maximum drawdown" summary field, a drawdown-duration figure, or any
+frontend/chart rendering — those remain open, separate, later units if wanted. Does not change
+any existing field's meaning or the response's top-level shape beyond one new key per series
+point.

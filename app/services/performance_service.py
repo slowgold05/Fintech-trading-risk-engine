@@ -26,6 +26,14 @@ land when a price was missing. ``account_value`` itself is unaffected by this
 exclusion — it already correctly reflects deposited/withdrawn cash as a real
 snapshot of account worth; only the *return ratio* needs the flow removed.
 
+``drawdown_pct`` is the decline from the running peak ``account_value``
+among available days only:
+
+    drawdown_pct(d) = ((peak(d) - account_value(d)) / peak(d)) * 100
+
+quantized to 4 decimal places, ``ROUND_HALF_UP``, as decimal text. A new
+high is ``"0.0000"``. A gap day is null and does not move the peak.
+
 ``opening_snapshot`` and ``reset`` are inception boundaries, not flows inside
 a sub-period. The series starts at the latest ``reset``, or at
 ``opening_snapshot`` when the account has never been reset — the same latest-
@@ -59,6 +67,7 @@ from app.services.market_history import (
 from app.services.portfolio_valuation import _decimal, _iso_z, _money, _naive_utc, _value_portfolio
 
 TWR_UNIT = Decimal("0.000001")
+DRAWDOWN_UNIT = Decimal("0.0001")
 CENT = Decimal("0.01")
 
 
@@ -104,19 +113,22 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
     last_value: Decimal | None = None
     last_index: Decimal | None = None
     last_available_date: date | None = None
+    peak: Decimal | None = None
     for session_day in series_days:
         cash, quantities = _state_as_of(states, session_day)
         raw_value, missing = _account_value(cash, quantities, symbols, closes, session_day)
         if missing:
-            # A gap does not move the base. The next available day chains from
-            # the last day that actually had a value, carrying any flow that
-            # landed during the gap forward (see _flow_since).
+            # A gap does not move the base or the running peak. The next
+            # available day chains from the last day that actually had a
+            # value, carrying any flow that landed during the gap forward
+            # (see _flow_since).
             series.append({
                 "session_date": session_day.isoformat(),
                 "status": "unavailable",
                 "account_value": None,
                 "unavailable_symbols": missing,
                 "twr_index": None,
+                "drawdown_pct": None,
             })
             continue
         account = Decimal(_account_text(raw_value))
@@ -128,12 +140,15 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
         last_value = account
         last_available_date = session_day
         last_index = index
+        peak = account if peak is None else max(peak, account)
+        drawdown = ((peak - account) / peak * 100).quantize(DRAWDOWN_UNIT, rounding=ROUND_HALF_UP)
         series.append({
             "session_date": session_day.isoformat(),
             "status": "available",
             "account_value": format(account, "f"),
             "unavailable_symbols": [],
             "twr_index": format(index, "f"),
+            "drawdown_pct": format(drawdown, "f"),
         })
 
     status = "complete" if all(point["status"] == "available" for point in series) else "incomplete"
