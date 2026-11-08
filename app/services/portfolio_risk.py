@@ -1,27 +1,39 @@
-"""Historical volatility, maximum drawdown, portfolio beta, and tail loss.
+"""Historical volatility, maximum drawdown, portfolio beta, tail loss, and correlation.
 
-These numbers come from a single ``build_performance_response`` read.
-Volatility is the sample standard deviation of period-over-period
-``twr_index`` returns, as a percentage at four decimal places,
-``ROUND_HALF_UP``. It is per period, not annualized: an unavailable day is
-skipped, so the calendar gap between two available points is not one trading
-day. Maximum drawdown is the largest ``drawdown_pct`` already published on
-an available day, unchanged at its existing four places. Portfolio beta is
-the sample covariance of paired account and benchmark returns divided by the
-sample variance of those benchmark returns, at the same four places. A day
-pairs only when the account day is available and ``benchmark_index`` is set.
-Historical VaR and Expected Shortfall are nearest-rank loss percentages on
-the same per-period returns volatility uses, not the benchmark pairs. Below
-20 returns every tail field is null. From 20 through 99 returns only the
-95% fields are published, so a short sample never reports the same number
-for both confidence levels.
+Volatility, drawdown, beta, and tail loss come from a single
+``build_performance_response`` read. Volatility is the sample standard
+deviation of period-over-period ``twr_index`` returns, as a percentage at
+four decimal places, ``ROUND_HALF_UP``. It is per period, not annualized:
+an unavailable day is skipped, so the calendar gap between two available
+points is not one trading day. Maximum drawdown is the largest
+``drawdown_pct`` already published on an available day, unchanged at its
+existing four places. Portfolio beta is the sample covariance of paired
+account and benchmark returns divided by the sample variance of those
+benchmark returns, at the same four places. A day pairs only when the
+account day is available and ``benchmark_index`` is set. Historical VaR and
+Expected Shortfall are nearest-rank loss percentages on the same per-period
+returns volatility uses, not the benchmark pairs. Below 20 returns every
+tail field is null. From 20 through 99 returns only the 95% fields are
+published, so a short sample never reports the same number for both
+confidence levels.
+
+Pairwise correlation is separate. It reads current non-zero holdings from
+``build_portfolio_response`` and one raw-close query. A ``(symbol, date)``
+with exactly one raw provider row is usable. Fewer than two holdings leaves
+``correlations`` null.
 """
 
+from collections import defaultdict
+from datetime import date
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Context, Decimal, localcontext
+from itertools import combinations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.market_bar_daily import MarketBarDaily
 from app.services.performance_service import build_performance_response
+from app.services.portfolio_valuation import build_portfolio_response
 
 FOUR_PLACES = Decimal("0.0001")
 
@@ -140,6 +152,106 @@ def _historical_var_and_es(returns: list[Decimal]) -> dict[str, str | None]:
     return result
 
 
+def _single_provider_closes(
+    db: Session, symbols: list[str], start: date, end: date
+) -> dict[str, dict[date, Decimal]]:
+    """One close per (symbol, date) where exactly one raw provider row exists.
+
+    Same ambiguity rule performance_service.py's _account_value already
+    enforces elsewhere in this codebase, reproduced here rather than
+    imported, since that function is private to its own module.
+    """
+    result: dict[str, dict[date, Decimal]] = {symbol: {} for symbol in symbols}
+    if not symbols:
+        return result
+    rows = db.execute(
+        select(MarketBarDaily.symbol, MarketBarDaily.session_date, MarketBarDaily.close).where(
+            MarketBarDaily.symbol.in_(symbols),
+            MarketBarDaily.adjustment_type == "raw",
+            MarketBarDaily.session_date >= start,
+            MarketBarDaily.session_date <= end,
+        )
+    ).all()
+    grouped: dict[tuple[str, date], list[Decimal]] = defaultdict(list)
+    for row in rows:
+        grouped[(row.symbol, row.session_date)].append(Decimal(str(row.close)))
+    for (symbol, day), values in grouped.items():
+        if len(values) == 1:
+            result[symbol][day] = values[0]
+    return result
+
+
+def _pairwise_correlation(
+    closes_a: dict[date, Decimal], closes_b: dict[date, Decimal]
+) -> tuple[int, str | None]:
+    """Sample Pearson correlation of simple returns over the common usable days.
+
+    These are plain consecutive price ratios, not a chained TWR-style index -
+    there is no flow concept for a single security's own price. Fewer than
+    two common returns, or a security with zero variance across them, leaves
+    correlation undetermined.
+    """
+    common_days = sorted(set(closes_a) & set(closes_b))
+    prices_a = [closes_a[day] for day in common_days]
+    prices_b = [closes_b[day] for day in common_days]
+    with localcontext(Context(prec=50)):
+        returns_a = [prices_a[i] / prices_a[i - 1] - 1 for i in range(1, len(prices_a))]
+        returns_b = [prices_b[i] / prices_b[i - 1] - 1 for i in range(1, len(prices_b))]
+        pair_return_count = len(returns_a)
+        if pair_return_count < 2:
+            return pair_return_count, None
+        mean_a = sum(returns_a, Decimal(0)) / pair_return_count
+        mean_b = sum(returns_b, Decimal(0)) / pair_return_count
+        covariance = sum(
+            (
+                (returns_a[index] - mean_a) * (returns_b[index] - mean_b)
+                for index in range(pair_return_count)
+            ),
+            Decimal(0),
+        ) / (pair_return_count - 1)
+        variance_a = sum(
+            ((item - mean_a) ** 2 for item in returns_a), Decimal(0)
+        ) / (pair_return_count - 1)
+        variance_b = sum(
+            ((item - mean_b) ** 2 for item in returns_b), Decimal(0)
+        ) / (pair_return_count - 1)
+        if variance_a == 0 or variance_b == 0:
+            return pair_return_count, None
+        correlation = covariance / (variance_a * variance_b).sqrt()
+        pct = correlation.quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
+        return pair_return_count, format(pct, "f")
+
+
+def _held_correlations(
+    db: Session, user_id: int, email: str, requested_start: str, requested_end: str
+) -> list[dict] | None:
+    """One entry per held pair, or null when fewer than two symbols are held."""
+    portfolio = build_portfolio_response(db, user_id, email)
+    held_symbols = sorted({position["symbol"] for position in portfolio["positions"]})
+    if len(held_symbols) < 2:
+        return None
+    closes_by_symbol = _single_provider_closes(
+        db,
+        held_symbols,
+        date.fromisoformat(requested_start),
+        date.fromisoformat(requested_end),
+    )
+    correlations = []
+    # `held_symbols` is sorted, so combinations already emits each pair in
+    # ascending order. The sort below keeps that contract order explicit.
+    for symbol_a, symbol_b in combinations(held_symbols, 2):
+        pair_return_count, correlation = _pairwise_correlation(
+            closes_by_symbol[symbol_a], closes_by_symbol[symbol_b]
+        )
+        correlations.append({
+            "symbols": [symbol_a, symbol_b],
+            "return_count": pair_return_count,
+            "correlation": correlation,
+        })
+    correlations.sort(key=lambda item: item["symbols"])
+    return correlations
+
+
 def build_risk_metrics_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
     performance = build_performance_response(db, user_id, email, range_token)
     available = [point for point in performance["series"] if point["status"] == "available"]
@@ -166,6 +278,13 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
         raise AssertionError("return_count does not match the twr_index ratios")
     # Same per-period twr returns as volatility, not the benchmark pairs beta uses.
     tail = _historical_var_and_es(returns)
+    correlations = _held_correlations(
+        db,
+        user_id,
+        email,
+        performance["requested_start"],
+        performance["requested_end"],
+    )
     return {
         "user": performance["user"],
         "range": performance["range"],
@@ -183,4 +302,5 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
         "historical_var_99_pct": tail["historical_var_99_pct"],
         "expected_shortfall_95_pct": tail["expected_shortfall_95_pct"],
         "expected_shortfall_99_pct": tail["expected_shortfall_99_pct"],
+        "correlations": correlations,
     }

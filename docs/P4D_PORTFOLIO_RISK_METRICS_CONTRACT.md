@@ -307,3 +307,122 @@ scale VaR/ES by actual portfolio dollar value (these are percentages of portfoli
 dollar amounts — a caller multiplies by `total_account_value` from another response if a dollar
 figure is needed). Does not change `performance_service.py` or either of the two existing risk
 fields from sections 1-2.
+
+## 4. Pairwise correlation addendum (2026-11-08) — design, not yet implemented
+
+Written before any code change, same pattern as sections 1-3. Adds `correlations` to the same
+`GET /portfolio/risk-metrics` response, additive only. Unlike sections 1-3, this is the first
+metric in this response that is **not** derivable purely from `build_performance_response`'s
+already-published fields — correlation needs each currently-held security's own historical
+closes, not just the portfolio-level `twr_index` chain. This unit therefore makes a second
+black-box call, `build_portfolio_response(db, user_id, email)` (the same function
+`portfolio_allocation.py` already reuses), purely to read its `positions` list — the current,
+non-zero holdings — and one new, small, self-contained query against `MarketBarDaily` for those
+symbols' raw closes over the response's existing `requested_start`/`requested_end` window. No
+private helper from `performance_service.py` is imported (this unit does not reach into another
+module's underscore-prefixed functions); the ambiguity rule below is a small, intentional
+duplication of the one rule `performance_service.py`'s own `_account_value` already enforces,
+not a shared import, to keep this module's only cross-module dependency on
+`performance_service.py` the two existing public black-box calls.
+
+### 4.1 Symbol universe and price source
+
+`held_symbols = sorted({position["symbol"] for position in portfolio["positions"]})` — the
+current non-zero holdings only (not every symbol ever traded). If `len(held_symbols) < 2`, no
+pair is possible: `correlations` is `null` (not an empty list — there is nothing to compute, the
+same "insufficient information" distinction the rest of this contract already draws).
+
+For each held symbol, one query reads every `MarketBarDaily` row with `adjustment_type ==
+"raw"` in `[requested_start, requested_end]` for that symbol's set, grouped by `(symbol,
+session_date)`. **Same multi-provider ambiguity rule `performance_service.py`'s
+`_account_value` already enforces:** a `(symbol, date)` with exactly one raw close row is
+usable; zero or two-or-more rows for that same `(symbol, date)` makes that day unusable for that
+symbol (not an error — simply excluded from that symbol's own close series).
+
+### 4.2 Pairwise return correlation
+
+For each pair `(symbol_a, symbol_b)` with `symbol_a < symbol_b` (lexicographic, so the pair list
+has no duplicate reversed entries and a stable order): `common_days` is the sorted intersection
+of both symbols' own usable-day sets. Period-over-period simple returns over `common_days`'
+closes (same `price[i]/price[i-1] - 1` shape as every other return calculation in this module —
+note these are **not** chained TWR-style indices like sections 1-2 use; they are plain
+consecutive raw-price ratios, since there is no flow/cash-contribution concept for a single
+security's own price). `return_count = len(common_days) - 1` (`0` if `len(common_days) == 0`).
+
+With `return_count < 2`, that pair's `correlation` is `null` (a sample correlation needs at
+least 2 observations, same threshold section 2's beta already uses for the same reason).
+Otherwise, inside the same `Context(prec=50)` `localcontext()`:
+
+```
+mean_a = mean(a_returns), mean_b = mean(b_returns)
+covariance = sum((a_returns[i] - mean_a) * (b_returns[i] - mean_b)) / (return_count - 1)
+variance_a = sum((a_returns[i] - mean_a) ** 2) / (return_count - 1)
+variance_b = sum((b_returns[i] - mean_b) ** 2) / (return_count - 1)
+correlation = covariance / sqrt(variance_a * variance_b)
+```
+
+If either `variance_a == 0` or `variance_b == 0` (one security showed zero price movement
+across the common days — a guard, not expected with real market data), `correlation` is `null`.
+Otherwise quantized to 4 decimal places, `ROUND_HALF_UP`, same as every other field in this
+response. A correlation coefficient is dimensionless (always in `[-1, 1]` by construction when
+defined), so this is the one field in this response that is not itself a dollar amount or a
+percentage despite sharing the same decimal-text convention.
+
+### 4.3 Response shape addition
+
+```
+"correlations": [
+  {"symbols": ["AAPL", "JPM"], "return_count": 5, "correlation": "0.8893" | null},
+  ...
+] | null
+```
+
+One entry for every one of the `C(len(held_symbols), 2)` pairs when `len(held_symbols) >= 2`,
+ordered by `symbols` ascending (first by `symbols[0]`, then `symbols[1]`) — every pair is always
+listed, even one whose `correlation` turns out `null`, so a caller can see *which* pair lacked
+enough overlapping price history, the same transparency principle `GET /portfolio/allocation`'s
+always-present `securities` list (even for an unpriced holding) already established.
+
+### 4.4 Worked reference (independently verified, not derived from the implementation)
+
+Two symbols, seven calendar days of raw closes. Symbol A: a single unambiguous close every day.
+Symbol B: a single unambiguous close on every day except day 4, where **two** raw close rows
+exist for that same `(symbol, date)` — making day 4 unusable for B (and therefore for the pair,
+since the day is only usable when both symbols have a usable close):
+
+```
+Day:       1       2       3       4 (B ambiguous)  5       6       7
+A close:   100.000000  102.000000  101.000000  104.000000  103.000000  105.000000  107.000000
+B close:   50.000000   51.000000   49.000000   (excluded)  52.000000   54.000000   55.000000
+```
+
+`common_days = [1, 2, 3, 5, 6, 7]` (day 4 excluded) → `return_count = 5`:
+
+```
+a_returns = [0.02, -0.00980392156862745098039215686274509803921568627451,
+             0.0198019801980198019801980198019801980198019801980,
+             0.0194174757281553398058252427184466019417475728155,
+             0.0190476190476190476190476190476190476190476190476]
+b_returns = [0.02, -0.03921568627450980392156862745098039215686274509804,
+             0.0612244897959183673469387755102040816326530612245,
+             0.0384615384615384615384615384615384615384615384615,
+             0.0185185185185185185185185185185185185185185185185]
+covariance = 0.0004352438535740983612261656249775837309240840909822
+variance_a = 0.00017266119452185244984350376253074614116717932830619
+variance_b = 0.0013871936922561708854880149110690569535114319917560
+correlation = covariance / sqrt(variance_a * variance_b)
+            = 0.88933774225296502921577912385261715621948278828407
+            → quantized = "0.8893"
+```
+
+Independently verified with a standalone `Decimal`/`Context(prec=50)` script before
+implementation, not derived from the code under test.
+
+### 4.5 What this addendum does not do
+
+Does not add risk contribution or stress-test loss. Does not compute correlation against the
+SPY benchmark (that is beta's job, already shipped in section 2) — this is security-to-security
+only. Does not build a full correlation matrix data structure keyed by symbol-symbol lookup; the
+flat pair-list shape in 4.3 is deliberately simpler to serialize and test. Does not change
+`performance_service.py` or `portfolio_allocation.py` — this is the module's second black-box
+call to `build_portfolio_response`, reading only `positions`, nothing else from that response.

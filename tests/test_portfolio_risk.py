@@ -1,21 +1,23 @@
-"""GET /portfolio/risk-metrics volatility, drawdown, beta, and tail loss.
+"""GET /portfolio/risk-metrics volatility, drawdown, beta, tail loss, and correlation.
 
 The reference digits are the contract's independently computed values
 (docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md). They are not derived from
 the service under test.
 """
 
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from app.models.user import User
 from app.services.portfolio_risk import build_risk_metrics_response
 from tests.test_portfolio_performance import (
+    _bar,
     _forbid_providers,
     _pin_clock,
     _reference_sessions,
     _seed_reference,
 )
+from tests.test_portfolio_valuation import _add_position, _add_symbol
 
 _PASSTHROUGH = {
     "user": {"id": 7, "email": "risk@example.com"},
@@ -36,13 +38,19 @@ _REFERENCE_SERIES = [
 ]
 
 
-def _install_series(monkeypatch, series):
+def _install_series(monkeypatch, series, positions=None):
+    """Stub both black-box reads. An empty book yields ``correlations: None``."""
     payload = {**_PASSTHROUGH, "series": series}
+    held = [] if positions is None else positions
 
-    def fake(_db, _user_id, _email, _range_token):
+    def fake_performance(_db, _user_id, _email, _range_token):
         return payload
 
-    monkeypatch.setattr("app.services.portfolio_risk.build_performance_response", fake)
+    def fake_portfolio(_db, _user_id, _email):
+        return {"positions": held}
+
+    monkeypatch.setattr("app.services.portfolio_risk.build_performance_response", fake_performance)
+    monkeypatch.setattr("app.services.portfolio_risk.build_portfolio_response", fake_portfolio)
     return payload
 
 
@@ -102,6 +110,7 @@ def test_reference_vector_matches_the_contract(monkeypatch):
     assert body["return_count"] == 4
     assert body["max_drawdown_pct"] == "6.6667"
     assert body["historical_volatility_pct"] == "5.8847"
+    assert body["correlations"] is None
     for key in ("user", "range", "requested_start", "requested_end", "read_at", "status"):
         assert body[key] == payload[key]
 
@@ -316,3 +325,128 @@ def test_route_end_to_end_with_a_real_seeded_account(client, auth_headers, db_se
         value = body[field]
         if value is not None:
             _assert_decimal_text(value)
+    # The seeded book holds only XYZ, so no pair exists.
+    assert body["correlations"] is None
+
+
+def test_correlation_reference_vector_matches_the_contract(db_session, monkeypatch):
+    """Section 4.4: day 4 has two raw BBB closes, so the pair has five returns."""
+    start = date(2026, 3, 2)
+    days = [start + timedelta(days=offset) for offset in range(7)]
+    fetched = datetime(2026, 3, 8, 18, 0, tzinfo=timezone.utc)
+    aaa_closes = [
+        Decimal("100.000000"),
+        Decimal("102.000000"),
+        Decimal("101.000000"),
+        Decimal("104.000000"),
+        Decimal("103.000000"),
+        Decimal("105.000000"),
+        Decimal("107.000000"),
+    ]
+    bbb_closes = [
+        Decimal("50.000000"),
+        Decimal("51.000000"),
+        Decimal("49.000000"),
+        None,
+        Decimal("52.000000"),
+        Decimal("54.000000"),
+        Decimal("55.000000"),
+    ]
+    user = User(
+        email="correlation@example.com",
+        password_hash="not-a-login",
+        role="trader",
+        cash_balance=Decimal("1000.00"),
+    )
+    db_session.add(user)
+    db_session.flush()
+    _add_symbol(db_session, "AAA")
+    _add_symbol(db_session, "BBB")
+    _add_position(db_session, user, "AAA", "stock", Decimal("1"), Decimal("100"))
+    _add_position(db_session, user, "BBB", "stock", Decimal("2"), Decimal("50"))
+    for session_day, close_price in zip(days, aaa_closes):
+        _bar(db_session, "AAA", session_day, fetched_at=fetched, close_price=close_price)
+    for session_day, close_price in zip(days, bbb_closes):
+        if close_price is None:
+            # Primary key is (symbol, session_date, provider, adjustment_type).
+            # Both rows stay raw, so the providers have to differ or the second
+            # insert collides and the day would no longer be ambiguous.
+            _bar(
+                db_session, "BBB", session_day, provider="alpha",
+                fetched_at=fetched, close_price=Decimal("53.000000"),
+            )
+            _bar(
+                db_session, "BBB", session_day, provider="bravo",
+                fetched_at=fetched, close_price=Decimal("53.500000"),
+            )
+            continue
+        _bar(db_session, "BBB", session_day, fetched_at=fetched, close_price=close_price)
+    db_session.commit()
+
+    payload = {
+        **_PASSTHROUGH,
+        "requested_start": days[0].isoformat(),
+        "requested_end": days[-1].isoformat(),
+        "series": _REFERENCE_SERIES,
+        "user": {"id": user.id, "email": user.email},
+    }
+
+    def fake_performance(_db, _user_id, _email, _range_token):
+        return payload
+
+    monkeypatch.setattr("app.services.portfolio_risk.build_performance_response", fake_performance)
+    body = build_risk_metrics_response(db_session, user.id, user.email, "1y")
+
+    assert body["return_count"] == 4
+    assert body["correlations"] == [
+        {"symbols": ["AAA", "BBB"], "return_count": 5, "correlation": "0.8893"},
+    ]
+
+
+def test_correlation_is_null_with_fewer_than_two_held_symbols(monkeypatch):
+    _install_series(monkeypatch, _REFERENCE_SERIES, positions=[])
+    empty_book = _read()
+    assert empty_book["correlations"] is None
+    assert empty_book["historical_volatility_pct"] == "5.8847"
+
+    _install_series(monkeypatch, _REFERENCE_SERIES, positions=[{"symbol": "AAA"}])
+    one_symbol = _read()
+    assert one_symbol["correlations"] is None
+    assert one_symbol["return_count"] == 4
+
+
+def test_correlation_pair_is_null_below_two_common_returns(monkeypatch):
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        positions=[{"symbol": "BBB"}, {"symbol": "AAA"}],
+    )
+
+    def one_shared_day(_db, _symbols, _start, _end):
+        shared = date(2026, 3, 2)
+        only_aaa = date(2026, 3, 3)
+        return {
+            "AAA": {shared: Decimal("100"), only_aaa: Decimal("101")},
+            "BBB": {shared: Decimal("50")},
+        }
+
+    monkeypatch.setattr("app.services.portfolio_risk._single_provider_closes", one_shared_day)
+    one_day = _read()
+    assert one_day["correlations"] == [
+        {"symbols": ["AAA", "BBB"], "return_count": 0, "correlation": None},
+    ]
+
+    def two_shared_days(_db, _symbols, _start, _end):
+        first = date(2026, 3, 2)
+        second = date(2026, 3, 3)
+        return {
+            "AAA": {first: Decimal("100"), second: Decimal("102")},
+            "BBB": {first: Decimal("50"), second: Decimal("51")},
+        }
+
+    monkeypatch.setattr("app.services.portfolio_risk._single_provider_closes", two_shared_days)
+    one_return = _read()
+    assert one_return["correlations"] == [
+        {"symbols": ["AAA", "BBB"], "return_count": 1, "correlation": None},
+    ]
+    assert one_return["return_count"] == 4
