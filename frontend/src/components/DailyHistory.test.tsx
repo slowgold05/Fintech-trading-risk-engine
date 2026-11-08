@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HistoryBar, HistoryResponse, MarketDataStatus } from "../api/history";
+import type { HistoryBar, HistoryRange, HistoryResponse, MarketDataStatus } from "../api/history";
 import { DailyHistory } from "./DailyHistory";
 
 const READ_AT = "2026-11-06T12:00:00Z";
@@ -151,7 +151,7 @@ function fillTest(symbol = "TEST") {
   fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: RAW_SERIES } });
 }
 
-function chooseRange(range: "1y" | "2y") {
+function chooseRange(range: HistoryRange) {
   fireEvent.change(screen.getByRole("combobox", { name: "Range" }), { target: { value: range } });
 }
 
@@ -441,6 +441,25 @@ describe("DailyHistory", () => {
     submitForm();
     await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1));
     expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", "1y"]]);
+  });
+
+  it.each([
+    ["1m", "1 month"],
+    ["3m", "3 months"],
+    ["6m", "6 months"],
+    ["all", "All"],
+  ] as const)("requests daily history for the %s range when that option is selected", async (range, label) => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    renderHistory();
+    expect(await screen.findByRole("combobox", { name: "Range" })).toHaveAttribute("id", "daily-history-range");
+    expect(screen.getByRole("combobox", { name: "Range" })).toHaveValue("2y");
+    expect(screen.getByRole("option", { name: label })).toHaveValue(range);
+    fillTest();
+    chooseRange(range);
+    submitForm();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1));
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", range]]);
   });
 
   it("defaults to candlestick and leaves that price series visible", async () => {

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HistoryBar, HistoryResponse } from "../api/history";
+import type { HistoryBar, HistoryRange, HistoryResponse } from "../api/history";
 import { DailyHistory } from "./DailyHistory";
 import { indicatorOverlay } from "./historyData";
 
@@ -182,7 +182,7 @@ function chooseIndicator(name: "sma" | "ema" | "rsi" | "macd" | "bollinger" | "n
   }
 }
 
-function chooseRange(range: "1y" | "2y") {
+function chooseRange(range: HistoryRange) {
   fireEvent.change(screen.getByRole("combobox", { name: "Range" }), { target: { value: range } });
 }
 
@@ -623,6 +623,20 @@ describe("DailyIndicators", () => {
     submitForm();
     await waitFor(() => expect(indicatorApi.fetchDailyIndicators).toHaveBeenCalledTimes(1));
     expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "1y", "sma", 3]]);
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+  });
+
+  it("requests a six-month window when that range is selected with an indicator", async () => {
+    await ready();
+    chooseSeries();
+    chooseRange("6m");
+    chooseIndicator("sma", "3");
+    expect(screen.getByRole("combobox", { name: "Range" })).toHaveAttribute("id", "daily-history-range");
+    expect(screen.getByRole("option", { name: "6 months" })).toHaveValue("6m");
+    indicatorApi.fetchDailyIndicators.mockResolvedValue(indicatorPayload("sma", 3, SMA3));
+    submitForm();
+    await waitFor(() => expect(indicatorApi.fetchDailyIndicators).toHaveBeenCalledTimes(1));
+    expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "6m", "sma", 3]]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
   });
 

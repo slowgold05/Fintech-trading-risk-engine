@@ -490,8 +490,12 @@ export function DailyHistory({
                   onChange={(event) => setRangeDraft(readHistoryRange(event.target.value))}
                   value={rangeDraft}
                 >
+                  <option value="1m">1 month</option>
+                  <option value="3m">3 months</option>
+                  <option value="6m">6 months</option>
                   <option value="1y">1 year</option>
                   <option value="2y">2 years</option>
+                  <option value="all">All</option>
                 </select>
               </div>
               <button className="primary-action sm:w-auto" type="submit">
@@ -1287,7 +1291,7 @@ function readChartType(value: string): "candlestick" | "line" | "area" {
 }
 
 function readHistoryRange(value: string): HistoryRange {
-  if (value === "1y" || value === "2y") {
+  if (value === "1m" || value === "3m" || value === "6m" || value === "1y" || value === "2y" || value === "all") {
     return value;
   }
   return "2y";

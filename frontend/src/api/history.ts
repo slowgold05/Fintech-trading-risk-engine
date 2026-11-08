@@ -22,8 +22,8 @@ export type MarketDataStatus = {
 
 export type AdjustmentType = "raw" | "split_adjusted";
 
-/** Daily history window. The chart defaults to 2y and can request 1y. */
-export type HistoryRange = "1y" | "2y";
+/** Daily history window. The chart defaults to 2y and can request 1m, 3m, 6m, 1y, 2y, or all. */
+export type HistoryRange = "1m" | "3m" | "6m" | "1y" | "2y" | "all";
 
 /** One returned canonical bar. Prices stay fixed 6-decimal strings. Volume stays an integer string. */
 export type HistoryBar = {
