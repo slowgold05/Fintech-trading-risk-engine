@@ -245,6 +245,30 @@ export interface AllocationResponse {
   sectors: AllocationSector[] | null;
 }
 
+export interface AttributionSecurity {
+  symbol: string;
+  sector: string;
+  realized_pnl: string;
+  unrealized_pnl: string | null;
+  total_pnl: string | null;
+  pnl_contribution_pct: string | null;
+}
+
+export interface AttributionSector {
+  sector: string;
+  total_pnl: string;
+  pnl_contribution_pct: string | null;
+}
+
+export interface AttributionResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  total_pnl: string | null;
+  securities: AttributionSecurity[];
+  sectors: AttributionSector[] | null;
+}
+
 export interface RiskAlertResponse {
   rule_code: string;
   severity: string;

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AllocationResponse, OrderResponse, PortfolioResponse } from "../types/schemas";
+import type { AllocationResponse, AttributionResponse, OrderResponse, PortfolioResponse } from "../types/schemas";
 import { ToastProvider } from "../context/ToastProvider";
 import { Dashboard } from "./Dashboard";
 import { Portfolio } from "./Portfolio";
@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   fetchPortfolio: vi.fn(),
   fetchPortfolioPnl: vi.fn(),
   fetchAllocation: vi.fn(),
+  fetchAttribution: vi.fn(),
   fetchTrades: vi.fn(),
   fetchRisk: vi.fn(),
   fetchOrders: vi.fn(),
@@ -29,6 +30,10 @@ vi.mock("../api/portfolio", () => ({
 
 vi.mock("../api/allocation", () => ({
   fetchAllocation: api.fetchAllocation,
+}));
+
+vi.mock("../api/attribution", () => ({
+  fetchAttribution: api.fetchAttribution,
 }));
 
 vi.mock("../api/trades", () => ({
@@ -52,6 +57,37 @@ vi.mock("../api/auth", () => ({
 vi.mock("../api/cash", () => ({
   createCashMovement: api.createCashMovement,
 }));
+
+function attribution(status: "complete" | "incomplete"): AttributionResponse {
+  const complete = status === "complete";
+  return {
+    user: { id: 1, email: "trader@example.com" },
+    read_at: "2026-11-05T15:00:00Z",
+    status,
+    total_pnl: complete ? "147.99" : null,
+    securities: [
+      {
+        symbol: "AAPL",
+        sector: "Technology",
+        realized_pnl: "12.34",
+        unrealized_pnl: complete ? "180.50" : null,
+        total_pnl: complete ? "192.84" : null,
+        pnl_contribution_pct: complete ? "130.3061" : null,
+      },
+      {
+        symbol: "MSFT",
+        sector: "Technology",
+        realized_pnl: "0.00",
+        unrealized_pnl: complete ? "-44.85" : null,
+        total_pnl: complete ? "-44.85" : null,
+        pnl_contribution_pct: complete ? "-30.3061" : null,
+      },
+    ],
+    sectors: complete
+      ? [{ sector: "Technology", total_pnl: "147.99", pnl_contribution_pct: "100.0000" }]
+      : null,
+  };
+}
 
 function allocation(status: "complete" | "incomplete"): AllocationResponse {
   const complete = status === "complete";
@@ -213,6 +249,7 @@ describe("valuation display", () => {
   beforeEach(() => {
     api.fetchOrders.mockResolvedValue({ orders: [] });
     api.fetchAllocation.mockResolvedValue(allocation("incomplete"));
+    api.fetchAttribution.mockResolvedValue(attribution("incomplete"));
   });
 
   afterEach(() => {
@@ -758,5 +795,46 @@ describe("valuation display", () => {
     expect(within(card).queryByText("$1,000")).not.toBeInTheDocument();
     expect(within(card).queryByText("62.50%")).not.toBeInTheDocument();
     expect(within(card).queryByText("Technology")).not.toBeInTheDocument();
+  });
+
+  it("renders securities and a negative contribution on the P&L attribution card", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchAttribution.mockResolvedValue(attribution("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "P&L attribution" })).closest("section") as HTMLElement;
+    expect(await within(card).findByText("+130.31%")).toBeInTheDocument();
+    expect(within(card).getByText("-30.31%")).toBeInTheDocument();
+    expect(within(card).getByText("+100.00%")).toBeInTheDocument();
+    expect(within(card).getByText("Total P&L")).toBeInTheDocument();
+    expect(within(card).getAllByText("$148").length).toBeGreaterThan(0);
+
+    const apple = within(card).getByText("AAPL").closest("tr") as HTMLElement;
+    expect(within(apple).getByText("+130.31%")).toBeInTheDocument();
+    expect(within(apple).getByText("Technology")).toBeInTheDocument();
+    expect(within(apple).getByText("$193")).toBeInTheDocument();
+
+    const microsoft = within(card).getByText("MSFT").closest("tr") as HTMLElement;
+    expect(within(microsoft).getByText("-30.31%")).toBeInTheDocument();
+    expect(within(microsoft).getAllByText("-$45").length).toBeGreaterThan(0);
+    expect(within(card).queryByText("P&L attribution unavailable")).not.toBeInTheDocument();
+  });
+
+  it("shows the P&L attribution card as unavailable when attribution is incomplete", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("incomplete"));
+    api.fetchAttribution.mockResolvedValue(attribution("incomplete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "P&L attribution" })).closest("section") as HTMLElement;
+    expect(await within(card).findByText("P&L attribution unavailable")).toBeInTheDocument();
+    expect(within(card).getByText(/holding is unpriced/i)).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/%/);
+    expect(within(card).queryByText("+130.31%")).not.toBeInTheDocument();
+    expect(within(card).queryByText("-30.31%")).not.toBeInTheDocument();
+    expect(within(card).queryByText("AAPL")).not.toBeInTheDocument();
   });
 });

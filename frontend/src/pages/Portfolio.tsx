@@ -4,6 +4,7 @@ import { isAxiosError } from "axios";
 import { fetchMe, setLegalName } from "../api/auth";
 import { createCashMovement } from "../api/cash";
 import { fetchAllocation } from "../api/allocation";
+import { fetchAttribution } from "../api/attribution";
 import { fetchPortfolio } from "../api/portfolio";
 import { useToast } from "../context/useToast";
 import { PageHeader } from "../components/PageHeader";
@@ -22,6 +23,7 @@ import {
   formatSignedPercent,
 } from "../utils/format";
 import type { AllocationSector, PortfolioPositionResponse } from "../types/schemas";
+import type { AttributionSector, AttributionSecurity } from "../types/schemas";
 
 function getExposurePercent(positionValue: number | null, totalValue: number | null) {
   if (positionValue == null || totalValue == null) {
@@ -152,6 +154,10 @@ export function Portfolio() {
   const allocationQuery = useQuery({
     queryKey: ["portfolio", "allocation"],
     queryFn: fetchAllocation,
+  });
+  const attributionQuery = useQuery({
+    queryKey: ["portfolio", "attribution"],
+    queryFn: fetchAttribution,
   });
 
   const portfolio = portfolioQuery.data;
@@ -546,6 +552,33 @@ export function Portfolio() {
               />
             )}
           </DashboardCard>
+
+          <DashboardCard title="P&L attribution">
+            {attributionQuery.isLoading ? (
+              <div className="space-y-3">
+                {[0, 1, 2].map((item) => (
+                  <SkeletonBlock className="h-10" key={item} />
+                ))}
+              </div>
+            ) : attributionQuery.isError ? (
+              <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
+                P&L attribution could not be loaded.
+              </div>
+            ) : attributionQuery.data == null ? (
+              <p className="text-sm text-slate-300">P&L attribution unavailable</p>
+            ) : attributionQuery.data.status === "incomplete" ? (
+              <EmptyState
+                detail="A holding is unpriced, so P&L attribution cannot be shown."
+                message="P&L attribution unavailable"
+              />
+            ) : (
+              <PnlAttributionTables
+                securities={attributionQuery.data.securities}
+                sectors={attributionQuery.data.sectors ?? []}
+                totalPnl={attributionQuery.data.total_pnl}
+              />
+            )}
+          </DashboardCard>
         </div>
       </div>
     </div>
@@ -600,6 +633,108 @@ function SectorAllocationTable({
         <EmptyState
           detail="Sector weights appear once priced holdings exist."
           message="No sector exposure."
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function attributionMoney(value: string | null) {
+  if (value == null) {
+    return <span className="text-slate-400">Unavailable</span>;
+  }
+  return formatCurrency(Number(value), false);
+}
+
+function attributionContribution(value: string | null) {
+  // Contribution is signed and unbounded: a loss is negative, and one gain can exceed 100%.
+  if (value == null) {
+    return <span className="text-slate-400">Unavailable</span>;
+  }
+  return formatSignedPercent(Number(value));
+}
+
+function PnlAttributionTables({
+  securities,
+  sectors,
+  totalPnl,
+}: {
+  securities: AttributionSecurity[];
+  sectors: AttributionSector[];
+  totalPnl: string | null;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+          Total P&L
+        </div>
+        <div className="font-mono text-sm font-semibold tabular-nums text-slate-100">
+          {attributionMoney(totalPnl)}
+        </div>
+      </div>
+      <div className="table-shell">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="text-left">Symbol</th>
+              <th className="text-left">Sector</th>
+              <th className="text-right">Realized</th>
+              <th className="text-right">Unrealized</th>
+              <th className="text-right">Total</th>
+              <th className="text-right">Contribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {securities.map((security) => (
+              <tr key={security.symbol}>
+                <td className="font-mono text-sm font-semibold text-slate-100">{security.symbol}</td>
+                <td className="text-sm text-slate-300">{security.sector}</td>
+                <td className="text-right font-mono tabular-nums">
+                  {formatCurrency(Number(security.realized_pnl), false)}
+                </td>
+                <td className="text-right font-mono tabular-nums">
+                  {attributionMoney(security.unrealized_pnl)}
+                </td>
+                <td className="text-right font-mono tabular-nums">
+                  {attributionMoney(security.total_pnl)}
+                </td>
+                <td className="text-right font-mono tabular-nums">
+                  {attributionContribution(security.pnl_contribution_pct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="table-shell">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="text-left">Sector</th>
+              <th className="text-right">Total</th>
+              <th className="text-right">Contribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sectors.map((sector) => (
+              <tr key={sector.sector}>
+                <td className="font-mono text-sm font-semibold text-slate-100">{sector.sector}</td>
+                <td className="text-right font-mono tabular-nums">
+                  {formatCurrency(Number(sector.total_pnl), false)}
+                </td>
+                <td className="text-right font-mono tabular-nums">
+                  {attributionContribution(sector.pnl_contribution_pct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {sectors.length === 0 ? (
+        <EmptyState
+          detail="Sector P&L appears once priced holdings exist."
+          message="No sector attribution."
         />
       ) : null}
     </div>
