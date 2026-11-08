@@ -182,6 +182,26 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 37](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/37) landed on
+2026-11-07, after PR 36, ready with all 7 CI jobs green on the first attempt: the first slice of
+Phase 4.1 ("Portfolio performance engine") — `GET /portfolio/performance?range=1y|2y`, a daily
+account-value time series and time-weighted-return index reconstructed from the ledger,
+reconciled against today's live `/portfolio/` valuation. Design written first as its own
+contract, [P4A_PERFORMANCE_CONTRACT.md](P4A_PERFORMANCE_CONTRACT.md), with an independently
+computed reference scenario. Evidence:
+[P4A_PERFORMANCE_VERIFICATION.md](P4A_PERFORMANCE_VERIFICATION.md). Core engine implemented by
+Grok's CLI; **a real correctness bug in the contract itself was found and fixed before shipping**:
+the first contract draft wrongly claimed no deposit/withdrawal feature exists, missing that
+`app/services/cash_movements.py` already posts real `cash_deposit`/`cash_withdrawal` ledger
+events via a live route. Without excluding those flows, a deposit would inflate (or a withdrawal
+deflate) the reported return — exactly what the roadmap's own acceptance criteria warn against
+("Cash deposits are not investment return"). The corrected formula (excluding cumulative
+deposits/withdrawals since the last available day, carrying a flow across a data gap correctly)
+was implemented directly, not re-delegated, and independently verified against a second
+hand-computed reference scenario before shipping. This does not implement money-weighted return,
+benchmark comparison, drawdowns, performance by position/asset, or sector allocation — all
+remain open, separate, later Phase 4.1 units. No migration. No merge or deploy.
+
 [PR 36](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/36) landed on
 2026-11-07, after PR 35, ready with all 7 CI jobs green on the first attempt: MACD as a
 selectable chart indicator (MACD line, signal line, histogram, three series sharing one price
