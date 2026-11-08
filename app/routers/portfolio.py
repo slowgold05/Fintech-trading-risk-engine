@@ -10,12 +10,14 @@ from app.models.user import User
 from app.models.holding import Holding
 from app.models.lot import Lot
 from app.models.order import Order
+from app.schemas.trade_impact import TradeImpactRequest
 from app.services.ledger_service import append_reset, ensure_opening
 from app.services.performance_service import build_performance_response
 from app.services.portfolio_allocation import build_allocation_response
 from app.services.portfolio_attribution import build_attribution_response
 from app.services.portfolio_risk import build_risk_metrics_response
 from app.services.portfolio_valuation import build_portfolio_response
+from app.services.trade_impact import build_trade_impact_response
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -75,6 +77,18 @@ def get_portfolio_risk_metrics(
     user_id = current_user.id
     email = current_user.email
     return build_risk_metrics_response(db, user_id, email, range_token)
+
+
+@router.post("/trade-impact")
+def post_trade_impact(
+    payload: TradeImpactRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Copy identity before the valuation read rolls the session back to a snapshot.
+    user_id = current_user.id
+    email = current_user.email
+    return build_trade_impact_response(db, user_id, email, payload)
 
 
 @router.post("/reset")
