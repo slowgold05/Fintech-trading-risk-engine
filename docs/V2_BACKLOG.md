@@ -182,6 +182,21 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 59](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/59) is ready with all
+CI checks green: a `correlations` table added inside the existing "Risk metrics (1y)" card (no
+new card), rendering the per-pair correlation list from `GET /portfolio/risk-metrics` (PR #50).
+Evidence:
+[P4D_CORRELATIONS_FRONTEND_VERIFICATION.md](P4D_CORRELATIONS_FRONTEND_VERIFICATION.md).
+`correlations`' type widened from the placeholder `unknown[] | null` to a proper
+`RiskCorrelation[] | null`; `risk_contributions` is now the **only** remaining untouched
+placeholder field. `correlation` renders as a plain decimal ratio (same convention as
+`portfolio_beta`), never run through a percent formatter — tested explicitly. A pair-level
+`null` (insufficient common price history for that specific pair) is handled independently of
+the whole-field `null` (fewer than two held symbols), both exercised in one response/test.
+Three of four list-shaped risk-metrics fields now wired; only `risk_contributions` remains,
+alongside `POST /portfolio/trade-impact`'s own still-unwired UI. No manual browser/visual check
+was performed, disclosed explicitly.
+
 [PR 58](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/58) is ready with all
 CI checks green: a `stress_scenarios` table added inside the existing "Risk metrics (1y)" card
 (no new card), rendering the fixed three-scenario list from `GET /portfolio/risk-metrics` (PR
