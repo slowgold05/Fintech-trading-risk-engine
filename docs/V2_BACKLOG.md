@@ -182,6 +182,25 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 47](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/47) is ready with all
+CI checks green: `GET /portfolio/risk-metrics`, the first slice of Phase 4.2's "Quantitative
+risk engine" — historical volatility and maximum drawdown only, of the nine metrics the
+roadmap's section 4.2 table lists. Evidence:
+[P4D_PORTFOLIO_RISK_METRICS_VERIFICATION.md](P4D_PORTFOLIO_RISK_METRICS_VERIFICATION.md). A new,
+isolated `app/services/portfolio_risk.py` reuses the existing `build_performance_response` once
+as a black box — no change to `performance_service.py`. Both numbers derive purely from fields
+that response already publishes: `max_drawdown_pct` is the existing `drawdown_pct` field's own
+maximum across available days (no new arithmetic), and `historical_volatility_pct` is the
+sample standard deviation (`ddof=1`) of period-over-period `twr_index` ratios, computed inside
+the same `Decimal` `Context(prec=50)`/`.sqrt()` idiom `market_indicators.py`'s Bollinger Bands
+code already established. Volatility is explicitly documented as per-period, not annualized —
+gaps in the series mean the calendar spacing between two available points is not guaranteed to
+be exactly one trading day, so a `sqrt(252)` annualization would misstate the figure.
+"Concentration," also on the roadmap's 4.2 metric table, is already closed by the existing
+`GET /portfolio/allocation` (PR #45) under a different name — not duplicated here. Still open,
+each a separate future unit: beta, historical VaR, Expected Shortfall, correlation, risk
+contribution, stress-test loss, and `GET /portfolio/attribution`.
+
 [PR 46](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/46) is ready with all
 CI checks green: wires the already-shipped, backend-only Bollinger Bands indicator (PR #44) into
 the daily history chart. Plots middle/upper/lower as three overlay lines on the chart's main
