@@ -1,7 +1,7 @@
-"""GET /portfolio/performance daily value, time-weighted return, drawdown, daily dollar P&L, and cumulative dollar P&L.
+"""GET /portfolio/performance daily value, time-weighted return, drawdown, daily dollar P&L, cumulative dollar P&L, and the SPY benchmark index.
 
 The series numbers are the contract's independently computed reference
-(docs/P4A_PERFORMANCE_CONTRACT.md sections 8, 5, 10, 11, and 12). They are not
+(docs/P4A_PERFORMANCE_CONTRACT.md sections 8, 5, 10, 11, 12, and 13). They are not
 derived from the service under test.
 """
 
@@ -198,6 +198,7 @@ REFERENCE_SERIES = [
         "drawdown_pct": "0.0000",
         "daily_pnl": None,
         "cumulative_pnl": "0.00",
+        "benchmark_index": None,
     },
     {
         "session_date": "2026-03-09",
@@ -208,6 +209,7 @@ REFERENCE_SERIES = [
         "drawdown_pct": "0.0000",
         "daily_pnl": "20.00",
         "cumulative_pnl": "20.00",
+        "benchmark_index": None,
     },
     {
         "session_date": "2026-03-10",
@@ -218,6 +220,7 @@ REFERENCE_SERIES = [
         "drawdown_pct": "0.0000",
         "daily_pnl": "20.00",
         "cumulative_pnl": "40.00",
+        "benchmark_index": None,
     },
     {
         "session_date": "2026-03-11",
@@ -228,6 +231,7 @@ REFERENCE_SERIES = [
         "drawdown_pct": "0.0000",
         "daily_pnl": "10.00",
         "cumulative_pnl": "50.00",
+        "benchmark_index": None,
     },
     {
         "session_date": "2026-03-12",
@@ -238,6 +242,7 @@ REFERENCE_SERIES = [
         "drawdown_pct": None,
         "daily_pnl": None,
         "cumulative_pnl": None,
+        "benchmark_index": None,
     },
     {
         "session_date": "2026-03-13",
@@ -248,6 +253,7 @@ REFERENCE_SERIES = [
         "drawdown_pct": "0.0000",
         "daily_pnl": "25.00",
         "cumulative_pnl": "75.00",
+        "benchmark_index": None,
     },
 ]
 
@@ -325,6 +331,7 @@ def test_reconciliation_is_null_when_today_is_unavailable(client, auth_headers, 
         "drawdown_pct": None,
         "daily_pnl": None,
         "cumulative_pnl": None,
+        "benchmark_index": None,
     }
     assert body["status"] == "incomplete"
     assert body["reconciliation"] is None
@@ -451,6 +458,7 @@ def test_reset_is_the_same_inception_boundary_as_realized_pnl(client, auth_heade
     assert body["series"][0]["drawdown_pct"] == "0.0000"
     assert body["series"][0]["daily_pnl"] is None
     assert body["series"][0]["cumulative_pnl"] == "0.00"
+    assert body["series"][0]["benchmark_index"] is None
     assert body["series"][0]["unavailable_symbols"] == []
     assert body["series"][1] == {
         "session_date": "2026-04-10",
@@ -461,6 +469,7 @@ def test_reset_is_the_same_inception_boundary_as_realized_pnl(client, auth_heade
         "drawdown_pct": "0.0000",
         "daily_pnl": "7.00",
         "cumulative_pnl": "7.00",
+        "benchmark_index": None,
     }
     assert body["status"] == "complete"
     assert body["reconciliation"]["matches"] is True
@@ -502,6 +511,7 @@ def test_ambiguous_raw_providers_make_the_day_unavailable(client, auth_headers, 
     assert body["series"][0]["drawdown_pct"] == "0.0000"
     assert body["series"][0]["daily_pnl"] is None
     assert body["series"][0]["cumulative_pnl"] == "0.00"
+    assert body["series"][0]["benchmark_index"] is None
     assert body["series"][1] == {
         "session_date": priced.isoformat(),
         "status": "unavailable",
@@ -511,6 +521,7 @@ def test_ambiguous_raw_providers_make_the_day_unavailable(client, auth_headers, 
         "drawdown_pct": None,
         "daily_pnl": None,
         "cumulative_pnl": None,
+        "benchmark_index": None,
     }
     assert body["status"] == "incomplete"
     assert "1020.00" not in {point["account_value"] for point in body["series"]}
@@ -571,6 +582,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "drawdown_pct": "0.0000",
         "daily_pnl": "0.00",
         "cumulative_pnl": "75.00",
+        "benchmark_index": None,
     }
     # Proves the exclusion actually fired, not merely that some number came out.
     assert by_date[day6.isoformat()]["twr_index"] != "1.175000"
@@ -584,6 +596,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "drawdown_pct": "4.2553",
         "daily_pnl": "0.00",
         "cumulative_pnl": "75.00",
+        "benchmark_index": None,
     }
 
     assert by_date[day8.isoformat()] == {
@@ -595,6 +608,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "drawdown_pct": None,
         "daily_pnl": None,
         "cumulative_pnl": None,
+        "benchmark_index": None,
     }
 
     assert by_date[day9.isoformat()] == {
@@ -606,6 +620,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "drawdown_pct": "2.5532",
         "daily_pnl": "0.00",
         "cumulative_pnl": "75.00",
+        "benchmark_index": None,
     }
 
     # Same excluded-flow logic, two fields: flat dollars iff the index did not move.
@@ -652,6 +667,114 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
     assert body["status"] == "incomplete"
     assert body["reconciliation"]["matches"] is True
     assert body["reconciliation"]["current_total_account_value"] == "1145.00"
+
+
+def test_spy_benchmark_index_is_independent_of_the_account_chain(client, auth_headers, db_session, monkeypatch):
+    """Contract section 13. SPY closes over the same ten sessions as the flow fixture.
+
+    The account still gaps on day 4 (no raw XYZ close) and is fully valued on
+    day 7. SPY is known on day 4 and missing on days 7 and 8. Day 9's index is
+    the day-6 chain continued across that SPY gap: 1.050000 * 424/420 = 1.060000.
+    A reset on the resume day would be 1.000000.
+    """
+    _forbid_providers(monkeypatch)
+    days = exchange_calendar.expected_session_dates(date(2026, 3, 6), date(2026, 3, 20))
+    assert days[:6] == _reference_sessions()
+    assert [day.isoformat() for day in days[6:10]] == [
+        "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19",
+    ]
+    window = days[:10]
+    day6, day7, day8, day9 = window[6:10]
+    clock = datetime.combine(day9, time(18, 0))
+    _pin_clock(monkeypatch, clock)
+    headers = auth_headers("perf-benchmark@example.com")
+    user = db_session.query(User).one()
+    _seed_reference(db_session, user, window[:6], include_last_bar=True)
+    fetched = datetime(2026, 3, 19, 12, 0, tzinfo=timezone.utc)
+
+    before = _max_ledger_id(db_session)
+    post_movement(db_session, user, "deposit", Decimal("100.00"), None)
+    _stamp_after(db_session, user.id, before, datetime.combine(day6, time(10, 0)))
+
+    before = _max_ledger_id(db_session)
+    post_movement(db_session, user, "withdrawal", Decimal("50.00"), None)
+    _stamp_after(db_session, user.id, before, datetime.combine(day7, time(10, 0)))
+
+    before = _max_ledger_id(db_session)
+    post_movement(db_session, user, "deposit", Decimal("20.00"), None)
+    _stamp_after(db_session, user.id, before, datetime.combine(day8, time(10, 0)))
+
+    _bar(db_session, "XYZ", day6, fetched_at=fetched, close_price=Decimal("60.00"))
+    _bar(db_session, "XYZ", day7, fetched_at=fetched, close_price=Decimal("60.00"))
+    _bar(db_session, "XYZ", day9, fetched_at=fetched, close_price=Decimal("60.00"))
+
+    # Section 13 table. Days 7 and 8 have no SPY close at all.
+    spy_closes = [
+        Decimal("400.00"),
+        Decimal("404.00"),
+        Decimal("408.00"),
+        Decimal("404.00"),
+        Decimal("412.00"),
+        Decimal("416.00"),
+        Decimal("420.00"),
+        None,
+        None,
+        Decimal("424.00"),
+    ]
+    _add_symbol(db_session, "SPY")
+    for session_day, close_price in zip(window, spy_closes, strict=True):
+        if close_price is None:
+            continue
+        _bar(db_session, "SPY", session_day, fetched_at=fetched, close_price=close_price)
+    db_session.commit()
+
+    body = client.get("/portfolio/performance", headers=headers, params={"range": "1y"}).json()
+    assert [point["session_date"] for point in body["series"]] == [day.isoformat() for day in window]
+    assert [point["benchmark_index"] for point in body["series"]] == [
+        "1.000000",
+        "1.010000",
+        "1.020000",
+        "1.010000",
+        "1.030000",
+        "1.040000",
+        "1.050000",
+        None,
+        None,
+        "1.060000",
+    ]
+
+    # Day 4 is an account gap. SPY's own chain still has a value.
+    assert body["series"][4] == {
+        "session_date": window[4].isoformat(),
+        "status": "unavailable",
+        "account_value": None,
+        "unavailable_symbols": ["XYZ"],
+        "twr_index": None,
+        "drawdown_pct": None,
+        "daily_pnl": None,
+        "cumulative_pnl": None,
+        "benchmark_index": "1.030000",
+    }
+
+    # Day 7 is a full account day. SPY itself is the gap.
+    by_date = {point["session_date"]: point for point in body["series"]}
+    assert by_date[day7.isoformat()] == {
+        "session_date": day7.isoformat(),
+        "status": "available",
+        "account_value": "1125.00",
+        "unavailable_symbols": [],
+        "twr_index": "1.075000",
+        "drawdown_pct": "4.2553",
+        "daily_pnl": "0.00",
+        "cumulative_pnl": "75.00",
+        "benchmark_index": None,
+    }
+
+    # Day 9 chains from day 6 (420.00, "1.050000") across the two null days.
+    assert by_date[day6.isoformat()]["benchmark_index"] == "1.050000"
+    assert by_date[day8.isoformat()]["benchmark_index"] is None
+    assert by_date[day9.isoformat()]["benchmark_index"] == "1.060000"
+    assert by_date[day9.isoformat()]["benchmark_index"] != "1.000000"
 
 
 def test_drawdown_peak_survives_a_gap_day(client, auth_headers, db_session, monkeypatch):
@@ -754,6 +877,10 @@ def test_query_count_does_not_grow_with_trading_days(client, auth_headers, db_se
     fetched = datetime(2026, 11, 5, 12, 0, tzinfo=timezone.utc)
     for session_day in sessions:
         _bar(db_session, "HELD", session_day, fetched_at=fetched, close_price=Decimal("10.00"))
+    # One SPY bar inside both the 1y and 2y windows, so the benchmark query
+    # returns a row and the chain's base case actually runs.
+    _add_symbol(db_session, "SPY")
+    _bar(db_session, "SPY", end, fetched_at=fetched, close_price=Decimal("400.00"))
     db_session.commit()
 
     engine = db_session.get_bind()
@@ -779,8 +906,15 @@ def test_query_count_does_not_grow_with_trading_days(client, auth_headers, db_se
     two_bars = _mentions(two_statements, "market_bars_daily")
     one_ledger = _mentions(one_statements, "ledger_entries")
     two_ledger = _mentions(two_statements, "ledger_entries")
-    assert len(one_bars) == 1
-    assert len(two_bars) == 1
+    # Held-asset closes, plus one SPY query for the whole window. Neither grows
+    # with the number of trading days.
+    assert len(one_bars) == 2
+    assert len(two_bars) == 2
+    assert one_body["series"][0]["benchmark_index"] is None
+    assert two_body["series"][0]["benchmark_index"] is None
+    assert one_body["series"][-1]["session_date"] == end.isoformat()
+    assert one_body["series"][-1]["benchmark_index"] == "1.000000"
+    assert two_body["series"][-1]["benchmark_index"] == "1.000000"
     assert len(one_ledger) == len(two_ledger)
     assert len(one_ledger) < len(one_year)
     assert len(one_statements) == len(two_statements)

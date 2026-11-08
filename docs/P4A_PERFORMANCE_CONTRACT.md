@@ -406,3 +406,75 @@ nothing but cash moved.
 Does not add a top-level summary field outside the per-day series (the last point's
 `cumulative_pnl` already is that total — a dedicated top-level duplicate is not needed). Does
 not add money-weighted return or benchmark comparison. Does not add frontend rendering.
+
+## 13. Benchmark comparison addendum (2026-11-07) — a fifth slice on the same route
+
+Written before implementation, appended after sections 1-12. Adds `benchmark_index` to each
+series point — a time-weighted-return index for a fixed benchmark symbol, `"SPY"`, computed the
+same way the account's own `twr_index` is (chained sub-period price ratios, base `1.000000` on
+the series' first day it has data), but **independently** of the account's own availability or
+cash flows. `"SPY"` is hardcoded in this unit, not configurable — "a fixed benchmark now, a
+choice of benchmark later" is the explicit, documented scope boundary (the roadmap itself says
+"SPY or another benchmark," naming SPY first).
+
+### Why independent of the account's own day-availability
+
+The account's `twr_index`/`account_value`/etc. are null on a day the account has a missing
+asset price (section 4), and the TWR formula excludes deposits/withdrawals (section 5). None of
+that applies to a benchmark index — it is just SPY's own price history, chained the same way,
+using only SPY's own close availability. A day can have an available account value and an
+unavailable `benchmark_index` (SPY itself has a data gap that day), or vice versa — the two
+fields are not required to agree on which days are known. This is deliberately simpler than the
+account's own chain: no flow exclusion term, because a benchmark price return has no deposits.
+
+### Formula
+
+Let `C_SPY(d)` be the single stored `MarketBarDaily` row for `("SPY", d, adjustment_type="raw")`
+— the same ambiguity rule section 4 already defines (more than one provider row for the same
+date is treated as missing, not silently resolved) applies here too, independently. For the
+first trading day in the series that has an unambiguous `C_SPY`, `benchmark_index = 1.000000`.
+For each later day `d` with an unambiguous `C_SPY(d)`:
+
+```
+benchmark_index(d) = benchmark_index(last_spy_available) * C_SPY(d) / C_SPY(last_spy_available)
+```
+
+where `last_spy_available` is the most recent earlier day in the series that itself had an
+unambiguous SPY close (chaining across a SPY-only gap, exactly the way section 5 already chains
+the account's own index across an account-side gap — same technique, independent tracking
+variable). A day with no unambiguous SPY close has `benchmark_index == null`, and does not move
+`last_spy_available` forward.
+
+This needs one additional query for the window's SPY raw closes (reuse the existing
+`_raw_closes` query shape, just for the fixed symbol `"SPY"` instead of the held symbols) — still
+one query for the whole window, not one per day, so the existing query-count-does-not-grow test
+must still hold with this added.
+
+### Reference (a new, independent SPY close sequence over the same 10 trading days)
+
+```
+day   SPY close   benchmark_index
+D0    400.00      "1.000000"
+D1    404.00      "1.010000"
+D2    408.00      "1.020000"
+D3    404.00      "1.010000"
+D4    412.00      "1.030000"   (SPY has data here even though the account's own day is a gap —
+                                 proves the two fields are independent)
+D5    416.00      "1.040000"
+D6    420.00      "1.050000"
+D7    (no close)  null          (SPY itself has a gap on a day the account is fully available —
+                                 proves independence the other direction)
+D8    (no close)  null
+D9    424.00      "1.060000"   (chains from D6 across the two-day SPY gap, skipping D7/D8)
+```
+
+Verified independently in a separate Decimal script before implementation, not derived from the
+code under test. Note this SPY close sequence is intentionally unrelated to XYZ's own gap days
+(D4 for XYZ, D8 for SPY-vs-account in the existing scenario) specifically to prove the two
+chains never need to agree on which days are known.
+
+### What this addendum does not do
+
+Does not add a configurable benchmark symbol, a relative-performance field (e.g.
+`account_minus_benchmark`), or any frontend rendering — those are separate, later units if
+wanted. Does not change any existing field's meaning.

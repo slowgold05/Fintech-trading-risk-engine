@@ -58,6 +58,19 @@ among available days only:
 quantized to 4 decimal places, ``ROUND_HALF_UP``, as decimal text. A new
 high is ``"0.0000"``. A gap day is null and does not move the peak.
 
+``benchmark_index`` is a fixed ``"SPY"`` price-return chain. It uses the same
+sub-period ratio and ``TWR_UNIT`` rounding as ``twr_index``, and no flow term,
+because a benchmark close has no deposits:
+
+    benchmark_index(d) = benchmark_index(last_spy_available)
+                         * C_SPY(d) / C_SPY(last_spy_available)
+
+The first series day with exactly one raw SPY close is ``1.000000``. Zero
+closes, or more than one provider row, is null and does not move
+``last_spy_available``. The chain does not look at the account's own
+availability, so SPY can be known on an account gap and the account can be
+known on a SPY gap.
+
 ``opening_snapshot`` and ``reset`` are inception boundaries, not flows inside
 a sub-period. The series starts at the latest ``reset``, or at
 ``opening_snapshot`` when the account has never been reset — the same latest-
@@ -93,6 +106,8 @@ from app.services.portfolio_valuation import _decimal, _iso_z, _money, _naive_ut
 TWR_UNIT = Decimal("0.000001")
 DRAWDOWN_UNIT = Decimal("0.0001")
 CENT = Decimal("0.01")
+# Fixed for this unit. A choice of benchmark is a later change.
+BENCHMARK_SYMBOL = "SPY"
 
 
 def build_performance_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
@@ -131,6 +146,10 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
     states = _states_by_date(entries)
     symbols = _asset_symbols(db, entries)
     closes = _raw_closes(db, symbols, series_days)
+    # Own chain, own query. Not folded into `closes`: SPY is reported even
+    # when the account does not hold it, and a missing account value does not
+    # skip a SPY close.
+    benchmark_by_date = _benchmark_index_by_date(db, series_days)
     flows = _cash_flows(entries)
 
     series = []
@@ -143,6 +162,9 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
     for session_day in series_days:
         cash, quantities = _state_as_of(states, session_day)
         raw_value, missing = _account_value(cash, quantities, symbols, closes, session_day)
+        # Absence in the precomputed map is null. This lookup is not gated on
+        # `missing`: the account chain and the SPY chain skip different days.
+        benchmark_index = benchmark_by_date.get(session_day)
         if missing:
             # A gap does not move the base or the running peak. The next
             # available day chains from the last day that actually had a
@@ -157,6 +179,7 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
                 "drawdown_pct": None,
                 "daily_pnl": None,
                 "cumulative_pnl": None,
+                "benchmark_index": benchmark_index,
             })
             continue
         account = Decimal(_account_text(raw_value))
@@ -192,6 +215,7 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
             "drawdown_pct": format(drawdown, "f"),
             "daily_pnl": None if daily_pnl is None else format(daily_pnl, "f"),
             "cumulative_pnl": format(cumulative_pnl, "f"),
+            "benchmark_index": benchmark_index,
         })
 
     status = "complete" if all(point["status"] == "available" for point in series) else "incomplete"
@@ -339,6 +363,38 @@ def _raw_closes(
             continue
         grouped[(row.symbol, session_day)].append(_decimal(row.close))
     return grouped
+
+
+def _benchmark_index_by_date(db: Session, series_days: list[date]) -> dict[date, str]:
+    """SPY raw-close chain for series days that have exactly one raw close.
+
+    Same ratio and ``TWR_UNIT`` rounding as ``twr_index``, with no flow
+    exclusion. ``last_spy_value`` / ``last_spy_index`` are local to this walk.
+    A day with no unambiguous close is left out of the map (callers ``.get``
+    it and treat absence as null) and does not move the chain forward. More
+    than one provider row is missing, the same rule as ``_account_value``.
+    """
+    if not series_days:
+        return {}
+    # Reuse the held-asset query. The map key is not an asset id; only the
+    # symbol value is read.
+    closes = _raw_closes(db, {-1: BENCHMARK_SYMBOL}, series_days)
+    indexed: dict[date, str] = {}
+    last_spy_value: Decimal | None = None
+    last_spy_index: Decimal | None = None
+    for session_day in series_days:
+        matches = closes.get((BENCHMARK_SYMBOL, session_day), [])
+        if len(matches) != 1:
+            continue
+        close = matches[0]
+        if last_spy_value is None:
+            index = Decimal("1.000000")
+        else:
+            index = (last_spy_index * close / last_spy_value).quantize(TWR_UNIT, rounding=ROUND_HALF_UP)
+        last_spy_value = close
+        last_spy_index = index
+        indexed[session_day] = format(index, "f")
+    return indexed
 
 
 def _account_value(
