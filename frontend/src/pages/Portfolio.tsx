@@ -34,6 +34,8 @@ import type {
 import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { previewTradeImpact } from "../api/tradeImpact";
 import type { TradeImpactRequestBody, TradeImpactResponse } from "../types/schemas";
+import { previewRiskScenarios } from "../api/riskScenarios";
+import type { RiskScenarioShock, RiskScenariosResponse } from "../types/schemas";
 
 function getExposurePercent(positionValue: number | null, totalValue: number | null) {
   if (positionValue == null || totalValue == null) {
@@ -639,6 +641,7 @@ export function Portfolio() {
             )}
           </DashboardCard>
           <TradeImpactPreview />
+          <CustomRiskScenarios />
         </div>
       </div>
     </div>
@@ -1271,6 +1274,238 @@ function TradeImpactPreview() {
         </div>
       ) : null}
       {impactMutation.data ? <TradeImpactResult result={impactMutation.data} /> : null}
+    </DashboardCard>
+  );
+}
+
+const MAX_RISK_SHOCKS = 20;
+
+type RiskShockDraft = {
+  targetType: "symbol" | "sector";
+  target: string;
+  shockPct: string;
+};
+
+function emptyShock(): RiskShockDraft {
+  return { targetType: "symbol", target: "", shockPct: "" };
+}
+
+function shockLine(shock: RiskScenarioShock) {
+  const magnitude = `${shock.shock_pct}%`;
+  if (shock.target_type === "sector") {
+    return `${shock.target} sector ${magnitude}`;
+  }
+  return `${shock.target} ${magnitude}`;
+}
+
+function CustomRiskScenariosResult({ result }: { result: RiskScenariosResponse }) {
+  return (
+    <div className="mt-4 space-y-3">
+      <ul className="space-y-1 font-mono text-sm text-slate-100">
+        {result.shocks.map((shock, index) => (
+          <li key={`${shock.target_type}-${shock.target}-${shock.shock_pct}-${index}`}>
+            {shockLine(shock)}
+          </li>
+        ))}
+      </ul>
+      <div className="table-shell">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="text-left">Metric</th>
+              <th className="text-right">Before</th>
+              <th className="text-right">After</th>
+              <th className="text-right">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="text-sm text-slate-100">Total account value</td>
+              <td className="text-right font-mono tabular-nums">
+                {impactMoney(result.total_account_value_before)}
+              </td>
+              <td className="text-right font-mono tabular-nums">
+                {impactMoney(result.total_account_value_after)}
+              </td>
+              <td />
+            </tr>
+            <tr>
+              <td className="text-sm text-slate-100">Loss</td>
+              <td />
+              <td />
+              <td className="text-right font-mono tabular-nums">{impactMoney(result.loss)}</td>
+            </tr>
+            <tr>
+              <td className="text-sm text-slate-100">Loss %</td>
+              <td />
+              <td />
+              <td className="text-right font-mono tabular-nums">
+                {impactWeightChange(result.loss_pct)}
+              </td>
+            </tr>
+            {result.securities.map((security) => (
+              <tr key={security.symbol}>
+                <td className="text-sm text-slate-100">
+                  <div className="font-mono text-sm font-semibold text-slate-100">
+                    {security.symbol}
+                  </div>
+                  <div className="text-slate-400">{security.sector}</div>
+                </td>
+                <td className="text-right font-mono tabular-nums">
+                  {impactMoney(security.position_value_before)}
+                </td>
+                <td className="text-right font-mono tabular-nums">
+                  {impactMoney(security.position_value_after)}
+                </td>
+                <td />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CustomRiskScenarios() {
+  const [rows, setRows] = useState<RiskShockDraft[]>([emptyShock()]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const scenarioMutation = useMutation({
+    mutationFn: (shocks: RiskScenarioShock[]) => previewRiskScenarios(shocks),
+    onSuccess: () => {
+      setErrorMessage(null);
+    },
+    onError: (error) => {
+      setErrorMessage(
+        isAxiosError(error)
+          ? String(error.response?.data?.detail ?? "Risk scenarios could not be previewed.")
+          : "Risk scenarios could not be previewed.",
+      );
+    },
+  });
+
+  function updateRow(index: number, patch: Partial<RiskShockDraft>) {
+    setRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+    );
+  }
+
+  function addRow() {
+    setRows((current) =>
+      current.length >= MAX_RISK_SHOCKS ? current : [...current, emptyShock()],
+    );
+  }
+
+  function removeRow(index: number) {
+    setRows((current) =>
+      current.length <= 1 ? current : current.filter((_, rowIndex) => rowIndex !== index),
+    );
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const shocks: RiskScenarioShock[] = rows.map((row) => ({
+      target_type: row.targetType,
+      target: row.target.trim(),
+      shock_pct: row.shockPct.trim(),
+    }));
+    if (shocks.some((shock) => shock.target.length === 0 || shock.shock_pct.length === 0)) {
+      return;
+    }
+    setErrorMessage(null);
+    scenarioMutation.mutate(shocks);
+  }
+
+  return (
+    <DashboardCard title="Custom risk scenarios">
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div className="space-y-3">
+          {rows.map((row, index) => (
+            <div
+              className="grid gap-3 rounded border border-slate-800 bg-slate-900/60 p-3"
+              key={index}
+            >
+              <label className="block">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Target type
+                </span>
+                <select
+                  aria-label={`Target type ${index + 1}`}
+                  className="field-control"
+                  onChange={(event) =>
+                    updateRow(index, {
+                      targetType: event.target.value === "sector" ? "sector" : "symbol",
+                    })
+                  }
+                  value={row.targetType}
+                >
+                  <option value="symbol">Symbol</option>
+                  <option value="sector">Sector</option>
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Target
+                  </span>
+                  <input
+                    aria-label={`Target ${index + 1}`}
+                    className="field-control font-mono"
+                    onChange={(event) => updateRow(index, { target: event.target.value })}
+                    required
+                    type="text"
+                    value={row.target}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Shock %
+                  </span>
+                  <input
+                    aria-label={`Shock percent ${index + 1}`}
+                    className="field-control text-right font-mono"
+                    inputMode="decimal"
+                    onChange={(event) => updateRow(index, { shockPct: event.target.value })}
+                    required
+                    step="any"
+                    type="number"
+                    value={row.shockPct}
+                  />
+                </label>
+              </div>
+              <button
+                className="rounded border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-50"
+                disabled={rows.length === 1}
+                onClick={() => removeRow(index)}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          className="rounded border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-50"
+          disabled={rows.length >= MAX_RISK_SHOCKS}
+          onClick={addRow}
+          type="button"
+        >
+          Add shock
+        </button>
+        <p className="text-xs text-slate-500">Preview only. This does not change holdings.</p>
+        <button className="primary-action" disabled={scenarioMutation.isPending} type="submit">
+          {scenarioMutation.isPending ? "Previewing..." : "Preview scenarios"}
+        </button>
+      </form>
+      {errorMessage ? (
+        <div
+          className="mt-4 rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200"
+          role="alert"
+        >
+          {errorMessage}
+        </div>
+      ) : null}
+      {scenarioMutation.data ? <CustomRiskScenariosResult result={scenarioMutation.data} /> : null}
     </DashboardCard>
   );
 }

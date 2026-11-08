@@ -481,3 +481,28 @@ export interface TradeImpactRequestBody {
   reference_price: string;
   order_type: "market" | "limit";
 }
+
+export interface RiskScenarioShock {
+  target_type: "symbol" | "sector";
+  target: string;
+  shock_pct: string;
+}
+
+export interface RiskScenarioSecurity {
+  symbol: string;
+  sector: string;
+  position_value_before: string;
+  position_value_after: string;
+}
+
+export interface RiskScenariosResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  shocks: RiskScenarioShock[];
+  total_account_value_before: string | null;
+  total_account_value_after: string | null;
+  loss: string | null;
+  loss_pct: string | null;
+  securities: RiskScenarioSecurity[];
+}

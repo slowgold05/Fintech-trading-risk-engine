@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AllocationResponse, AttributionResponse, OrderResponse, PortfolioResponse, RiskMetricsResponse } from "../types/schemas";
 import type { TradeImpactResponse } from "../types/schemas";
+import type { RiskScenariosResponse } from "../types/schemas";
 import { ToastProvider } from "../context/ToastProvider";
 import { Dashboard } from "./Dashboard";
 import { Portfolio } from "./Portfolio";
@@ -24,6 +25,7 @@ const api = vi.hoisted(() => ({
   setLegalName: vi.fn(),
   createCashMovement: vi.fn(),
   previewTradeImpact: vi.fn(),
+  previewRiskScenarios: vi.fn(),
 }));
 
 vi.mock("../api/portfolio", () => ({
@@ -67,6 +69,10 @@ vi.mock("../api/cash", () => ({
 
 vi.mock("../api/tradeImpact", () => ({
   previewTradeImpact: api.previewTradeImpact,
+}));
+
+vi.mock("../api/riskScenarios", () => ({
+  previewRiskScenarios: api.previewRiskScenarios,
 }));
 
 function attribution(status: "complete" | "incomplete"): AttributionResponse {
@@ -158,6 +164,42 @@ function tradeImpactBuy(warnings: string[] = []): TradeImpactResponse {
       cash_weight_pct: "-12.5000",
       symbol_weight_pct: "12.5000",
     },
+  };
+}
+
+function riskScenariosReference(): RiskScenariosResponse {
+  return {
+    user: { id: 1, email: "trader@example.com" },
+    read_at: "2026-11-05T15:00:00Z",
+    status: "complete",
+    shocks: [
+      { target_type: "symbol", target: "AAPL", shock_pct: "-10.0000" },
+      { target_type: "sector", target: "Energy", shock_pct: "-20.0000" },
+    ],
+    total_account_value_before: "1600.00",
+    total_account_value_after: "1550.00",
+    loss: "50.00",
+    loss_pct: "3.1250",
+    securities: [
+      {
+        symbol: "AAPL",
+        sector: "Technology",
+        position_value_before: "300.00",
+        position_value_after: "270.00",
+      },
+      {
+        symbol: "JPM",
+        sector: "Financials",
+        position_value_before: "200.00",
+        position_value_after: "200.00",
+      },
+      {
+        symbol: "XOM",
+        sector: "Energy",
+        position_value_before: "100.00",
+        position_value_after: "80.00",
+      },
+    ],
   };
 }
 
@@ -1300,5 +1342,162 @@ describe("valuation display", () => {
     expect(api.previewTradeImpact).toHaveBeenCalledTimes(1);
     expect(api.createTrade).not.toHaveBeenCalled();
     expect(api.createCashMovement).not.toHaveBeenCalled();
+  });
+
+  function riskScenariosCard() {
+    return screen.getByRole("heading", { name: "Custom risk scenarios" }).closest("section") as HTMLElement;
+  }
+
+  function fillShock(
+    card: HTMLElement,
+    index: number,
+    shock: { targetType: string; target: string; shockPct: string },
+  ) {
+    const view = within(card);
+    fireEvent.change(view.getByLabelText(`Target type ${index}`), {
+      target: { value: shock.targetType },
+    });
+    fireEvent.change(view.getByLabelText(`Target ${index}`), { target: { value: shock.target } });
+    fireEvent.change(view.getByLabelText(`Shock percent ${index}`), {
+      target: { value: shock.shockPct },
+    });
+  }
+
+  it("test_custom_risk_scenarios_card_adds_a_row_and_submits_two_shocks", async () => {
+    api.previewRiskScenarios.mockReset();
+    await renderSettledPortfolio();
+    expect(api.previewRiskScenarios).not.toHaveBeenCalled();
+
+    const card = riskScenariosCard();
+    const view = within(card);
+    fillShock(card, 1, { targetType: "symbol", target: "AAPL", shockPct: "-10" });
+    fireEvent.click(view.getByRole("button", { name: "Add shock" }));
+    fillShock(card, 2, { targetType: "sector", target: "Energy", shockPct: "-20" });
+    api.previewRiskScenarios.mockResolvedValue(riskScenariosReference());
+    fireEvent.click(view.getByRole("button", { name: "Preview scenarios" }));
+
+    expect(await view.findByText("AAPL -10.0000%")).toBeInTheDocument();
+    expect(view.getByText("Energy sector -20.0000%")).toBeInTheDocument();
+
+    const total = view.getByText("Total account value").closest("tr") as HTMLElement;
+    expect(within(total).getByText("$1,600.00")).toBeInTheDocument();
+    expect(within(total).getByText("$1,550.00")).toBeInTheDocument();
+    const loss = view.getByText("Loss").closest("tr") as HTMLElement;
+    expect(within(loss).getByText("$50.00")).toBeInTheDocument();
+
+    const lossPct = view.getByText("Loss %").closest("tr") as HTMLElement;
+    expect(within(lossPct).getByText("+3.13%")).toBeInTheDocument();
+
+    const apple = view.getByText("Technology").closest("tr") as HTMLElement;
+    expect(within(apple).getByText("AAPL")).toBeInTheDocument();
+    expect(within(apple).getByText("$300.00")).toBeInTheDocument();
+    expect(within(apple).getByText("$270.00")).toBeInTheDocument();
+
+    const jpm = view.getByText("Financials").closest("tr") as HTMLElement;
+    expect(within(jpm).getByText("JPM")).toBeInTheDocument();
+    expect(within(jpm).getAllByText("$200.00")).toHaveLength(2);
+
+    const xom = view.getByText("Energy").closest("tr") as HTMLElement;
+    expect(within(xom).getByText("XOM")).toBeInTheDocument();
+    expect(within(xom).getByText("$100.00")).toBeInTheDocument();
+    expect(within(xom).getByText("$80.00")).toBeInTheDocument();
+
+    expect(api.previewRiskScenarios).toHaveBeenCalledTimes(1);
+    expect(api.previewRiskScenarios).toHaveBeenCalledWith([
+      { target_type: "symbol", target: "AAPL", shock_pct: "-10" },
+      { target_type: "sector", target: "Energy", shock_pct: "-20" },
+    ]);
+    expect(view.getByLabelText("Target 1")).toHaveValue("AAPL");
+    expect(view.getByLabelText("Target 2")).toHaveValue("Energy");
+    expect(view.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Trade impact preview" })).toBeInTheDocument();
+  });
+
+  it("test_custom_risk_scenarios_card_removes_a_row", async () => {
+    api.previewRiskScenarios.mockReset();
+    await renderSettledPortfolio();
+    const card = riskScenariosCard();
+    const view = within(card);
+
+    fireEvent.click(view.getByRole("button", { name: "Add shock" }));
+    expect(view.getByLabelText("Target type 2")).toBeInTheDocument();
+    expect(view.getAllByLabelText(/Shock percent/)).toHaveLength(2);
+
+    fireEvent.click(view.getAllByRole("button", { name: "Remove" })[1]);
+
+    expect(view.getAllByLabelText(/Target type/)).toHaveLength(1);
+    expect(view.getAllByLabelText(/^Target \d+$/)).toHaveLength(1);
+    expect(view.getAllByLabelText(/Shock percent/)).toHaveLength(1);
+    expect(view.queryByLabelText("Target type 2")).not.toBeInTheDocument();
+    expect(view.queryByLabelText("Target 2")).not.toBeInTheDocument();
+    expect(view.queryByLabelText("Shock percent 2")).not.toBeInTheDocument();
+    expect(api.previewRiskScenarios).not.toHaveBeenCalled();
+  });
+
+  it("test_custom_risk_scenarios_card_shows_a_negative_loss_as_a_gain", async () => {
+    api.previewRiskScenarios.mockReset();
+    const gain = riskScenariosReference();
+    api.previewRiskScenarios.mockResolvedValue({
+      ...gain,
+      shocks: [{ target_type: "symbol", target: "AAPL", shock_pct: "10.0000" }],
+      total_account_value_before: "1600.00",
+      total_account_value_after: "1630.00",
+      loss: "-30.00",
+      loss_pct: "-1.8750",
+      securities: [
+        {
+          symbol: "AAPL",
+          sector: "Technology",
+          position_value_before: "300.00",
+          position_value_after: "330.00",
+        },
+        {
+          symbol: "JPM",
+          sector: "Financials",
+          position_value_before: "200.00",
+          position_value_after: "200.00",
+        },
+        {
+          symbol: "XOM",
+          sector: "Energy",
+          position_value_before: "100.00",
+          position_value_after: "100.00",
+        },
+      ],
+    });
+    await renderSettledPortfolio();
+    const card = riskScenariosCard();
+    fillShock(card, 1, { targetType: "symbol", target: "AAPL", shockPct: "10" });
+    fireEvent.click(within(card).getByRole("button", { name: "Preview scenarios" }));
+
+    const lossPct = (await within(card).findByText("Loss %")).closest("tr") as HTMLElement;
+    const rendered = within(lossPct).getByText(/-1\.88%/);
+    expect(rendered.textContent).toContain("-");
+    expect(rendered.textContent).not.toContain("+");
+    const total = within(card).getByText("Total account value").closest("tr") as HTMLElement;
+    expect(within(total).getByText("$1,600.00")).toBeInTheDocument();
+    expect(within(total).getByText("$1,630.00")).toBeInTheDocument();
+    const loss = within(card).getByText("Loss").closest("tr") as HTMLElement;
+    expect(within(loss).getByText("-$30.00")).toBeInTheDocument();
+  });
+
+  it("test_custom_risk_scenarios_card_shows_an_error_message_on_failure", async () => {
+    api.previewRiskScenarios.mockReset();
+    api.previewRiskScenarios.mockRejectedValue(new Error("preview failed"));
+    await renderSettledPortfolio();
+    const card = riskScenariosCard();
+    fillShock(card, 1, { targetType: "symbol", target: "AAPL", shockPct: "-10" });
+    fireEvent.click(within(card).getByRole("button", { name: "Preview scenarios" }));
+
+    expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "Risk scenarios could not be previewed.",
+    );
+    expect(within(card).queryByRole("columnheader", { name: "Before" })).not.toBeInTheDocument();
+    expect(within(card).queryByText("null")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Custom risk scenarios" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Trade impact preview" })).toBeInTheDocument();
+    expect(api.previewRiskScenarios).toHaveBeenCalledTimes(1);
+    expect(api.previewTradeImpact).not.toHaveBeenCalled();
+    expect(api.createTrade).not.toHaveBeenCalled();
   });
 });
