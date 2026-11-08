@@ -3,8 +3,10 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.research_job import ResearchJob
 from app.models.research_report import ResearchReport
+from app.services.research_llm import generate_synthesis
 from app.services.sec_service import get_sec_company_filings, get_sec_company_fundamentals
 
 
@@ -57,7 +59,28 @@ def process_one_job(db: Session) -> ResearchJob | None:
         return None
     try:
         sources = _gather_sources(db, job.symbol)
-        report = ResearchReport(job_id=job.id, user_id=job.user_id, symbol=job.symbol, sources=sources)
+        synthesis_fields = {
+            "bull_case": None, "bear_case": None, "synthesis": None, "risks": None,
+            "model_version": None, "prompt_version": None,
+        }
+        if settings.research_synthesis_enabled:
+            try:
+                synthesis_fields = generate_synthesis(job.symbol, sources)
+                sources.append({
+                    "type": "local_llm",
+                    "status": "ok",
+                    "detail": f"synthesis generated via {settings.research_llm_model}",
+                })
+            except Exception as exc:
+                sources.append({
+                    "type": "local_llm",
+                    "status": "unavailable",
+                    "detail": exc.__class__.__name__,
+                })
+        report = ResearchReport(
+            job_id=job.id, user_id=job.user_id, symbol=job.symbol, sources=sources,
+            **synthesis_fields,
+        )
         db.add(report)
         job.status = "completed"
     except Exception as exc:

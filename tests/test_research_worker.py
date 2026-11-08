@@ -3,6 +3,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.market_symbol import MarketSymbol
 from app.services.research_worker import process_pending_research_jobs
 
@@ -155,3 +156,108 @@ def test_requires_authentication(client: TestClient) -> None:
     for method, path, kwargs in calls:
         response = client.request(method, path, **kwargs)
         assert response.status_code == 401, response.text
+
+
+def _forbid_local_model(*args, **kwargs):
+    raise AssertionError("local model must not be called while research synthesis is disabled")
+
+
+def _report_for(client: TestClient, headers: dict) -> dict:
+    listed = client.get("/research/reports", headers=headers)
+    assert listed.status_code == 200, listed.text
+    reports = listed.json()["reports"]
+    assert len(reports) == 1
+    return reports[0]
+
+
+def test_synthesis_disabled_by_default_produces_no_local_llm_source_entry(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    assert settings.research_synthesis_enabled is False
+    _seed(db_session, "AAPL")
+    _patch_sources(monkeypatch)
+    monkeypatch.setattr("app.services.research_llm.requests.post", _forbid_local_model)
+    headers = auth_headers("worker-synthesis-off@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+
+    processed = process_pending_research_jobs(db_session, 5)
+    assert len(processed) == 1
+    assert processed[0].status == "completed"
+
+    report = _report_for(client, headers)
+    assert [source["type"] for source in report["sources"]] == ["sec_fundamentals", "sec_filings"]
+    assert all(source["type"] != "local_llm" for source in report["sources"])
+    assert all(report[field] is None for field in _AI_FIELDS)
+
+
+def test_synthesis_enabled_and_succeeding_populates_the_report(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    canned = {
+        "bull_case": "Services growth supports a higher multiple.",
+        "bear_case": "Hardware revenue is cyclical.",
+        "synthesis": "Cautiously constructive on the services mix.",
+        "risks": "Regulatory pressure on the app store.",
+        "model_version": "qwen3:14b",
+        "prompt_version": "v1",
+    }
+
+    def _fake_generate(symbol, sources):
+        assert symbol == "AAPL"
+        assert [source["type"] for source in sources] == ["sec_fundamentals", "sec_filings"]
+        return canned
+
+    _seed(db_session, "AAPL")
+    _patch_sources(monkeypatch)
+    monkeypatch.setattr(settings, "research_synthesis_enabled", True)
+    monkeypatch.setattr("app.services.research_worker.generate_synthesis", _fake_generate)
+    headers = auth_headers("worker-synthesis-ok@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+
+    processed = process_pending_research_jobs(db_session, 5)
+    assert len(processed) == 1
+
+    job = client.get(f"/research/jobs/{created.json()['id']}", headers=headers)
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == "completed"
+    report = _report_for(client, headers)
+    for field, value in canned.items():
+        assert report[field] == value
+    assert report["sources"][2] == {
+        "type": "local_llm",
+        "status": "ok",
+        "detail": f"synthesis generated via {settings.research_llm_model}",
+    }
+
+
+def test_synthesis_enabled_but_failing_still_completes_the_job(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    def _fail(symbol, sources):
+        raise TimeoutError("ollama timed out")
+
+    _seed(db_session, "AAPL")
+    _patch_sources(monkeypatch)
+    monkeypatch.setattr(settings, "research_synthesis_enabled", True)
+    monkeypatch.setattr("app.services.research_worker.generate_synthesis", _fail)
+    headers = auth_headers("worker-synthesis-down@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+
+    processed = process_pending_research_jobs(db_session, 5)
+    assert len(processed) == 1
+
+    job = client.get(f"/research/jobs/{created.json()['id']}", headers=headers)
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == "completed"
+    report = _report_for(client, headers)
+    assert all(report[field] is None for field in _AI_FIELDS)
+    assert report["sources"][2] == {
+        "type": "local_llm",
+        "status": "unavailable",
+        "detail": "TimeoutError",
+    }
+    assert [source["type"] for source in report["sources"][:2]] == ["sec_fundamentals", "sec_filings"]
+
