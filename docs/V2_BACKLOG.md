@@ -182,6 +182,21 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 49](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/49) is ready with all
+CI checks green: `historical_var_95_pct`/`historical_var_99_pct`/`expected_shortfall_95_pct`/
+`expected_shortfall_99_pct`, the third slice added to `GET /portfolio/risk-metrics` (additive on
+top of PRs #47/#48). Evidence:
+[P4D_PORTFOLIO_VAR_ES_VERIFICATION.md](P4D_PORTFOLIO_VAR_ES_VERIFICATION.md). Design:
+`docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md` section 3. Nearest-rank empirical quantile over
+the exact same period-over-period `twr_index` returns section 1's volatility already computes —
+still no change to `performance_service.py`. Explicit, documented minimum sample sizes
+(`return_count < 20` nulls every tail field; `< 100` publishes only the 95% pair) so a short
+account history never reports the same number at both confidence levels, directly serving the
+roadmap's "explicit unavailable rather than misleading estimate" acceptance criterion. Six of
+the roadmap's nine Phase 4.2 metrics are now closed (concentration, volatility, max drawdown,
+beta, historical VaR, Expected Shortfall); correlation, risk contribution, and stress-test loss
+remain open, unstarted.
+
 [PR 48](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/48) is ready with all
 CI checks green: `portfolio_beta`/`beta_pair_count`, the second slice added to
 `GET /portfolio/risk-metrics` (additive on top of PR #47 — every existing key unchanged).
