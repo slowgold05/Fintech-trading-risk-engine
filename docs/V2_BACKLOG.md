@@ -182,6 +182,16 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 38](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/38) landed on
+2026-11-07, after PR 37, ready with all 7 CI jobs green on the first attempt: a `drawdown_pct`
+field on each point of `GET /portfolio/performance`'s daily series — the decline from the
+running peak `account_value` (available days only) to that day's value. Evidence:
+[P4A_PERFORMANCE_DRAWDOWN_VERIFICATION.md](P4A_PERFORMANCE_DRAWDOWN_VERIFICATION.md). No new
+query or data source, purely derived from the already-computed `account_value` sequence. Design
+written first as contract section 10, with an independently computed reference continuing the
+same scenario sections 5/8 already use. Money-weighted return, benchmark comparison,
+performance by position/asset, and sector allocation remain open, separate Phase 4.1 units.
+
 [PR 37](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/37) landed on
 2026-11-07, after PR 36, ready with all 7 CI jobs green on the first attempt: the first slice of
 Phase 4.1 ("Portfolio performance engine") — `GET /portfolio/performance?range=1y|2y`, a daily
