@@ -2,7 +2,7 @@ import { apiClient } from "./client";
 import type { HistoryRange } from "./history";
 
 /** Public indicator names for one daily snapshot. No default is applied. */
-export type IndicatorName = "sma" | "ema" | "rsi" | "macd";
+export type IndicatorName = "sma" | "ema" | "rsi" | "macd" | "bollinger";
 
 const DAILY_INTERVAL = "1d";
 

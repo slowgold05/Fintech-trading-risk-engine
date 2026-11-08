@@ -321,4 +321,159 @@ describe("indicatorOverlay", () => {
     expect(() => overlay(payload)).toThrow();
     expect(payload.history.bars.map((bar) => bar.close)).toEqual([...CLOSES]);
   });
+
+  it("parses the Bollinger reference vector as the middle line plus both bands", () => {
+    const payload = bollingerPayload(bollingerReferencePoints(), "partial");
+    const result = indicatorOverlay(payload, BOLLINGER_REQUEST);
+
+    expect(result.name).toBe("bollinger");
+    expect(result.period).toBe(3);
+    expect(result.status).toBe("partial");
+    expect(result.values).toEqual([...BOLLINGER_MIDDLE]);
+    expect(result.line).toEqual(bandLine(BOLLINGER_MIDDLE));
+    expect(result.line[0]).not.toHaveProperty("value");
+    expect(result.line[1]).not.toHaveProperty("value");
+    expect(result.bollingerUpper).toEqual(bandLine(BOLLINGER_UPPER));
+    expect(result.bollingerLower).toEqual(bandLine(BOLLINGER_LOWER));
+    expect(result.bollingerUpper?.[0]).not.toHaveProperty("value");
+    expect(result.bollingerLower?.[1]).not.toHaveProperty("value");
+    expect(result.macdSignal).toBeUndefined();
+    expect(result.macdHistogram).toBeUndefined();
+  });
+
+  it("uses period closes for Bollinger status, the same threshold as SMA", () => {
+    const partial = indicatorOverlay(bollingerPayload(bollingerReferencePoints().slice(0, 3), "partial"), BOLLINGER_REQUEST);
+    expect(partial.status).toBe("partial");
+    expect(partial.values).toEqual([null, null, "11.000000"]);
+    expect(partial.line[2]).toEqual({ time: BOLLINGER_DATES[2], value: Number("11.000000") });
+
+    const short = [emptyBand(), emptyBand()];
+    const insufficient = indicatorOverlay(bollingerPayload(short, "insufficient"), BOLLINGER_REQUEST);
+    expect(insufficient.status).toBe("insufficient");
+    expect(insufficient.values).toEqual([null, null]);
+    expect(insufficient.bollingerUpper?.every((point) => !Object.hasOwn(point, "value"))).toBe(true);
+    expect(insufficient.bollingerLower?.every((point) => !Object.hasOwn(point, "value"))).toBe(true);
+    expect(() => indicatorOverlay(bollingerPayload(short, "partial"), BOLLINGER_REQUEST)).toThrow(/status is invalid/i);
+  });
+
+  it("accepts a zero or negative band and keeps the middle band strictly positive", () => {
+    const points = bollingerReferencePoints();
+    points[2] = { value: "11.000000", upper: "0.000000", lower: "-1.500000" };
+    const result = indicatorOverlay(bollingerPayload(points, "partial"), BOLLINGER_REQUEST);
+
+    expect(result.line[2]).toEqual({ time: BOLLINGER_DATES[2], value: Number("11.000000") });
+    expect(result.bollingerUpper?.[2]).toEqual({ time: BOLLINGER_DATES[2], value: 0 });
+    expect(result.bollingerLower?.[2]).toEqual({ time: BOLLINGER_DATES[2], value: Number("-1.500000") });
+  });
+
+  it.each([
+    ["upper on a warmup index", 0, { upper: "12.632993" }],
+    ["lower on a warmup index", 1, { lower: "9.367007" }],
+    ["null upper after warmup", 2, { upper: null }],
+    ["null lower after warmup", 4, { lower: null }],
+  ] as const)("rejects a Bollinger band with %s", (_label, index, patch) => {
+    const payload = bollingerPayload(bollingerReferencePoints(), "partial");
+    payload.points[index] = { ...payload.points[index], ...patch };
+    expect(() => indicatorOverlay(payload, BOLLINGER_REQUEST)).toThrow(/warmup value is invalid/i);
+  });
+
+  it.each([
+    ["negative middle", "-1.000000"],
+    ["zero middle", "0.000000"],
+  ] as const)("rejects a %s after warmup", (_label, value) => {
+    const payload = bollingerPayload(bollingerReferencePoints(), "partial");
+    payload.points[2] = { ...payload.points[2], value };
+    expect(() => indicatorOverlay(payload, BOLLINGER_REQUEST)).toThrow(/price is invalid/i);
+  });
 });
+
+const BOLLINGER_DATES = [
+  "2026-01-02",
+  "2026-01-05",
+  "2026-01-08",
+  "2026-01-12",
+  "2026-01-15",
+  "2026-01-20",
+  "2026-01-23",
+] as const;
+const BOLLINGER_CLOSES = ["10.000000", "12.000000", "11.000000", "13.000000", "14.000000", "12.000000", "15.000000"] as const;
+const BOLLINGER_MIDDLE = [null, null, "11.000000", "12.000000", "12.666667", "13.000000", "13.666667"] as const;
+const BOLLINGER_UPPER = [null, null, "12.632993", "13.632993", "15.161105", "14.632993", "16.161105"] as const;
+const BOLLINGER_LOWER = [null, null, "9.367007", "10.367007", "10.172228", "11.367007", "11.172228"] as const;
+const BOLLINGER_REQUEST = { ...REQUEST, name: "bollinger" as const, period: 3 };
+
+type BollingerPoint = { value: string | null; upper: string | null; lower: string | null };
+
+function emptyBand(): BollingerPoint {
+  return { value: null, upper: null, lower: null };
+}
+
+function bollingerReferencePoints(): BollingerPoint[] {
+  return BOLLINGER_MIDDLE.map((value, index) => ({
+    value,
+    upper: BOLLINGER_UPPER[index] ?? null,
+    lower: BOLLINGER_LOWER[index] ?? null,
+  }));
+}
+
+function bandLine(values: readonly (string | null)[]) {
+  return values.map((value, index) =>
+    value === null ? { time: BOLLINGER_DATES[index] } : { time: BOLLINGER_DATES[index], value: Number(value) },
+  );
+}
+
+function bollingerPayload(
+  points: readonly BollingerPoint[],
+  status: "unavailable" | "insufficient" | "partial",
+  period = 3,
+) {
+  const dates = BOLLINGER_DATES.slice(0, points.length);
+  const bars = dates.map((session_date, index) => ({
+    session_date,
+    open: BOLLINGER_CLOSES[index],
+    high: BOLLINGER_CLOSES[index],
+    low: BOLLINGER_CLOSES[index],
+    close: BOLLINGER_CLOSES[index],
+    volume: String(1000 + index),
+    fetched_at: FETCHED_AT,
+    provider: REQUEST.provider,
+    adjustment_type: REQUEST.adjustment_type,
+    quality_status: "valid" as const,
+  }));
+  const history = {
+    symbol: REQUEST.symbol,
+    interval: "1d" as const,
+    range: "2y" as const,
+    provider: REQUEST.provider,
+    adjustment_type: REQUEST.adjustment_type,
+    status: points.length === 0 ? ("unavailable" as const) : ("partial" as const),
+    coverage_status: "not_verified" as const,
+    expected_session_count: null,
+    collection: "disabled" as const,
+    read_at: READ_AT,
+    requested_start: REQUESTED_START,
+    requested_end: REQUESTED_END,
+    available_start: dates[0] ?? null,
+    available_end: dates[dates.length - 1] ?? null,
+    excluded_row_count: 0,
+    bars,
+  };
+  const flat: Omit<typeof history, "bars"> = { ...history };
+  Reflect.deleteProperty(flat, "bars");
+  return {
+    ...flat,
+    history,
+    name: "bollinger" as const,
+    period,
+    source: "observed_valid_closes",
+    session_basis: "not_exchange_sessions",
+    observed_valid_closes: points.length,
+    status,
+    points: dates.map((session_date, index) => ({
+      session_date: String(session_date),
+      value: points[index]?.value ?? null,
+      upper: points[index]?.upper ?? null,
+      lower: points[index]?.lower ?? null,
+    })),
+  };
+}

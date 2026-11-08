@@ -37,6 +37,8 @@ type ChartMount = {
   macdLineSetData: ReturnType<typeof vi.fn>;
   macdSignalSetData: ReturnType<typeof vi.fn>;
   macdHistogramSetData: ReturnType<typeof vi.fn>;
+  bollingerUpperSetData: ReturnType<typeof vi.fn>;
+  bollingerLowerSetData: ReturnType<typeof vi.fn>;
   fitContent: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
   addSeries: ReturnType<typeof vi.fn>;
@@ -94,6 +96,9 @@ function mountChart() {
   const macdLineSetData = vi.fn();
   const macdSignalSetData = vi.fn();
   const macdHistogramSetData = vi.fn();
+  const bollingerUpperSetData = vi.fn();
+  const bollingerLowerSetData = vi.fn();
+  let bollingerBands = 0;
   const fitContent = vi.fn();
   const remove = vi.fn();
   const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string; color?: string }) => {
@@ -108,6 +113,10 @@ function mountChart() {
     }
     if (kind === chartApi.HistogramSeries && options?.priceScaleId === "daily-history-macd") {
       return { setData: macdHistogramSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+    }
+    if (kind === chartApi.LineSeries && options?.color === "#c4b5fd") {
+      bollingerBands += 1;
+      return { setData: bollingerBands === 1 ? bollingerUpperSetData : bollingerLowerSetData };
     }
     if (kind === chartApi.LineSeries) return { setData: lineSetData };
     if (kind === chartApi.CandlestickSeries) return { setData: candleSetData };
@@ -124,6 +133,8 @@ function mountChart() {
     macdLineSetData,
     macdSignalSetData,
     macdHistogramSetData,
+    bollingerUpperSetData,
+    bollingerLowerSetData,
     fitContent,
     remove,
     addSeries,
@@ -158,7 +169,7 @@ function chooseSeries(symbol = "test") {
   fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: RAW_SERIES } });
 }
 
-function chooseIndicator(name: "sma" | "ema" | "rsi" | "macd" | "none", period?: string) {
+function chooseIndicator(name: "sma" | "ema" | "rsi" | "macd" | "bollinger" | "none", period?: string) {
   fireEvent.change(screen.getByRole("combobox", { name: "Indicator" }), { target: { value: name } });
   if (period !== undefined) {
     const periodName = name === "macd" ? "Signal period" : "Period";
@@ -216,6 +227,18 @@ function macdHistogramPoints(chart: ChartMount) {
   const points = chart.macdHistogramSetData.mock.calls.at(-1)?.[0];
   if (!Array.isArray(points)) throw new Error("Missing MACD histogram data.");
   return points as { time: string; value?: number; color?: string }[];
+}
+
+function bollingerUpperPoints(chart: ChartMount) {
+  const points = chart.bollingerUpperSetData.mock.calls.at(-1)?.[0];
+  if (!Array.isArray(points)) throw new Error("Missing Bollinger upper data.");
+  return points as { time: string; value?: number }[];
+}
+
+function bollingerLowerPoints(chart: ChartMount) {
+  const points = chart.bollingerLowerSetData.mock.calls.at(-1)?.[0];
+  if (!Array.isArray(points)) throw new Error("Missing Bollinger lower data.");
+  return points as { time: string; value?: number }[];
 }
 
 function openSessionPrices() {
@@ -335,6 +358,8 @@ describe("DailyIndicators", () => {
       chartApi.LineSeries,
       chartApi.HistogramSeries,
       chartApi.LineSeries,
+      chartApi.LineSeries,
+      chartApi.LineSeries,
     ]);
     const line = linePoints(chart);
     expect(line.slice(0, 2)).toEqual([{ time: DATES[0] }, { time: DATES[1] }]);
@@ -384,7 +409,7 @@ describe("DailyIndicators", () => {
     ]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
-    expect(chart.addSeries).toHaveBeenCalledTimes(7);
+    expect(chart.addSeries).toHaveBeenCalledTimes(9);
     expect(chart.candleSetData).toHaveBeenLastCalledWith(expect.arrayContaining([{ time: DATES[5], open: 7, high: 7, low: 7, close: 7 }]));
     expect(linePoints(chart).at(-1)).toEqual({ time: DATES[5], value: 6 });
     expect(chart.remove).not.toHaveBeenCalled();
@@ -475,6 +500,8 @@ describe("DailyIndicators", () => {
       chartApi.LineSeries,
       chartApi.LineSeries,
       chartApi.HistogramSeries,
+      chartApi.LineSeries,
+      chartApi.LineSeries,
     ]);
     expect(current.addSeries.mock.calls[2]?.[1]).toMatchObject({ priceScaleId: "daily-history-rsi" });
     expect(current.lineSetData).not.toHaveBeenCalled();
@@ -692,4 +719,91 @@ describe("DailyIndicators", () => {
     expect(linePoints(chart).slice(2).map((point) => point.value)).toEqual(SMA3.slice(2).map(Number));
     expect(chart.remove).not.toHaveBeenCalled();
   });
+
+  it("plots Bollinger middle, upper, and lower on the main price scale", async () => {
+    await ready();
+    chooseSeries();
+    chooseIndicator("bollinger", "3");
+    expect(screen.getByRole("spinbutton", { name: "Period" })).toHaveAttribute("id", "daily-history-period");
+    indicatorApi.fetchDailyIndicators.mockResolvedValue(bollingerIndicatorPayload());
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = mounts[0];
+    if (chart === undefined) throw new Error("Missing chart.");
+    expect(indicatorApi.fetchDailyIndicators.mock.calls).toEqual([["TEST", "fixture", "raw", "2y", "bollinger", 3]]);
+    const bands = chart.addSeries.mock.calls.filter((call) => call[1]?.color === "#c4b5fd");
+    expect(bands).toHaveLength(2);
+    expect(bands.map((call) => call[0])).toEqual([chartApi.LineSeries, chartApi.LineSeries]);
+    expect(bands[0]?.[1]).toMatchObject({
+      color: "#c4b5fd",
+      lineStyle: 2,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+    });
+    expect(bands[1]?.[1]).toMatchObject({ color: "#c4b5fd", lineStyle: 2, lineWidth: 1 });
+    expect(bands[0]?.[1]?.priceScaleId).toBeUndefined();
+    expect(bands[1]?.[1]?.priceScaleId).toBeUndefined();
+    const middleSeries = chart.addSeries.mock.calls.filter((call) => call[1]?.color === "#7dd3fc");
+    expect(middleSeries).toHaveLength(1);
+    expect(middleSeries[0]?.[1]?.priceScaleId).toBeUndefined();
+    const middle = linePoints(chart);
+    expect(middle.slice(0, 2)).toEqual([{ time: BOLLINGER_DATES[0] }, { time: BOLLINGER_DATES[1] }]);
+    expect(middle[0]).not.toHaveProperty("value");
+    expect(middle[1]).not.toHaveProperty("value");
+    expect(middle.slice(2).map((point) => point.value)).toEqual(BOLLINGER_MIDDLE.slice(2).map(Number));
+    const upper = bollingerUpperPoints(chart);
+    expect(upper.slice(0, 2)).toEqual([{ time: BOLLINGER_DATES[0] }, { time: BOLLINGER_DATES[1] }]);
+    expect(upper[0]).not.toHaveProperty("value");
+    expect(upper.slice(2).map((point) => point.value)).toEqual(BOLLINGER_UPPER.slice(2).map(Number));
+    const lower = bollingerLowerPoints(chart);
+    expect(lower[1]).toEqual({ time: BOLLINGER_DATES[1] });
+    expect(lower[1]).not.toHaveProperty("value");
+    expect(lower.slice(2).map((point) => point.value)).toEqual(BOLLINGER_LOWER.slice(2).map(Number));
+    const candles = chart.candleSetData.mock.calls.at(-1)?.[0] as { close: number }[];
+    expect(candles.map((candle) => candle.close)).toEqual(BOLLINGER_CLOSES.map(Number));
+    expect(rsiPoints(chart)).toEqual([]);
+    expect(macdLinePoints(chart)).toEqual([]);
+    expect(macdSignalPoints(chart)).toEqual([]);
+    expect(macdHistogramPoints(chart)).toEqual([]);
+    expect(screen.getByText("Warm-up: the first 2 observed stored closes have no indicator value.")).toBeInTheDocument();
+    openSessionPrices();
+    expect(screen.getByRole("columnheader", { name: "Bollinger Bands (3)" })).toBeInTheDocument();
+    expect(screen.getAllByRole("cell", { name: "Warm-up" })).toHaveLength(2);
+    expect(screen.getByRole("cell", { name: "12.666667" })).toBeInTheDocument();
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+  });
 });
+
+const BOLLINGER_DATES = ["2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10"] as const;
+const BOLLINGER_CLOSES = ["10.000000", "12.000000", "11.000000", "13.000000", "14.000000", "12.000000", "15.000000"] as const;
+const BOLLINGER_MIDDLE = [null, null, "11.000000", "12.000000", "12.666667", "13.000000", "13.666667"] as const;
+const BOLLINGER_UPPER = [null, null, "12.632993", "13.632993", "15.161105", "14.632993", "16.161105"] as const;
+const BOLLINGER_LOWER = [null, null, "9.367007", "10.367007", "10.172228", "11.367007", "11.172228"] as const;
+
+function bollingerIndicatorPayload(period = 3) {
+  const bars = BOLLINGER_DATES.map((session, index) => bar(session, BOLLINGER_CLOSES[index] ?? "10.000000"));
+  const nested = {
+    ...history(),
+    available_start: BOLLINGER_DATES[0],
+    available_end: BOLLINGER_DATES[BOLLINGER_DATES.length - 1],
+    bars,
+  };
+  return {
+    ...nested,
+    name: "bollinger" as const,
+    period,
+    source: "observed_valid_closes",
+    observed_valid_closes: bars.length,
+    session_basis: "not_exchange_sessions",
+    status: bars.length < period ? "insufficient" : "partial",
+    points: BOLLINGER_DATES.map((session_date, index) => ({
+      session_date,
+      value: BOLLINGER_MIDDLE[index] ?? null,
+      upper: BOLLINGER_UPPER[index] ?? null,
+      lower: BOLLINGER_LOWER[index] ?? null,
+    })),
+    history: nested,
+  };
+}

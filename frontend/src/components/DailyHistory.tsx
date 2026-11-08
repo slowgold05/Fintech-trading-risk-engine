@@ -106,6 +106,50 @@ function addLineSeries(chart: DailyChart, charts: LightweightChartsModule) {
 
 type LineSeriesHandle = ReturnType<typeof addLineSeries>;
 
+/** Dashed violet bands on the main price scale. LineStyle.Dashed is 2. */
+const BOLLINGER_BAND_LINE_STYLE = 2 as import("lightweight-charts").LineStyle;
+
+function addBollingerBandSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return chart.addSeries(charts.LineSeries, {
+    color: "#c4b5fd",
+    lineWidth: 1,
+    lineStyle: BOLLINGER_BAND_LINE_STYLE,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    priceFormat: {
+      type: "price",
+      precision: 6,
+      minMove: 0.000001,
+    },
+  });
+}
+
+function addBollingerUpperSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return addBollingerBandSeries(chart, charts);
+}
+
+function addBollingerLowerSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return addBollingerBandSeries(chart, charts);
+}
+
+type BollingerSeriesHandle = ReturnType<typeof addBollingerBandSeries>;
+
+/** Clear a band only after it has been drawn. An unused band stays off setData. */
+function setBollingerBandData(
+  series: BollingerSeriesHandle | null,
+  line: IndicatorLine | null,
+  painted: { current: boolean },
+) {
+  if (series === null) {
+    return;
+  }
+  if (line === null && !painted.current) {
+    return;
+  }
+  series.setData(line ?? []);
+  painted.current = line !== null;
+}
+
 function addRsiSeries(chart: DailyChart, charts: LightweightChartsModule) {
   const series = chart.addSeries(charts.LineSeries, {
     color: "#fbbf24",
@@ -443,6 +487,7 @@ export function DailyHistory({
                   <option value="ema">EMA</option>
                   <option value="rsi">RSI</option>
                   <option value="macd">MACD</option>
+                  <option value="bollinger">Bollinger Bands</option>
                 </select>
               </div>
               {indicatorDraft !== "none" ? (
@@ -553,6 +598,16 @@ export function DailyHistory({
                       : null
                   }
                   points={accepted.points}
+                  bollingerLower={
+                    accepted.overlay !== null && accepted.overlay.name === "bollinger"
+                      ? (accepted.overlay.bollingerLower ?? null)
+                      : null
+                  }
+                  bollingerUpper={
+                    accepted.overlay !== null && accepted.overlay.name === "bollinger"
+                      ? (accepted.overlay.bollingerUpper ?? null)
+                      : null
+                  }
                   priceScaleLine={
                     accepted.overlay !== null && accepted.overlay.name !== "rsi" && accepted.overlay.name !== "macd"
                       ? accepted.overlay.line
@@ -758,6 +813,8 @@ function DailyHistoryCanvas({
   points,
   volume,
   priceScaleLine,
+  bollingerUpper,
+  bollingerLower,
   rsiLine,
   macdLine,
   macdSignalLine,
@@ -766,6 +823,8 @@ function DailyHistoryCanvas({
   points: CandlestickData<Time>[];
   volume: HistogramData<Time>[];
   priceScaleLine: IndicatorLine | null;
+  bollingerUpper: IndicatorLine | null;
+  bollingerLower: IndicatorLine | null;
   rsiLine: IndicatorLine | null;
   macdLine: IndicatorLine | null;
   macdSignalLine: IndicatorLine | null;
@@ -776,6 +835,10 @@ function DailyHistoryCanvas({
   const seriesRef = useRef<CandleSeries | null>(null);
   const volumeSeriesRef = useRef<VolumeSeriesHandle | null>(null);
   const lineSeriesRef = useRef<LineSeriesHandle | null>(null);
+  const bollingerUpperSeriesRef = useRef<BollingerSeriesHandle | null>(null);
+  const bollingerLowerSeriesRef = useRef<BollingerSeriesHandle | null>(null);
+  const bollingerUpperPaintedRef = useRef(false);
+  const bollingerLowerPaintedRef = useRef(false);
   const rsiSeriesRef = useRef<RsiSeriesHandle | null>(null);
   const macdLineSeriesRef = useRef<MacdLineSeriesHandle | null>(null);
   const macdSignalSeriesRef = useRef<MacdSignalSeriesHandle | null>(null);
@@ -784,6 +847,8 @@ function DailyHistoryCanvas({
   const pointsRef = useRef(points);
   const volumeRef = useRef(volume);
   const priceScaleLineRef = useRef(priceScaleLine);
+  const bollingerUpperRef = useRef(bollingerUpper);
+  const bollingerLowerRef = useRef(bollingerLower);
   const rsiLineRef = useRef(rsiLine);
   const macdLineRef = useRef(macdLine);
   const macdSignalLineRef = useRef(macdSignalLine);
@@ -797,6 +862,8 @@ function DailyHistoryCanvas({
     pointsRef.current = points;
     volumeRef.current = volume;
     priceScaleLineRef.current = priceScaleLine;
+    bollingerUpperRef.current = bollingerUpper;
+    bollingerLowerRef.current = bollingerLower;
     rsiLineRef.current = rsiLine;
     macdLineRef.current = macdLine;
     macdSignalLineRef.current = macdSignalLine;
@@ -816,6 +883,8 @@ function DailyHistoryCanvas({
       series.setData(points);
       volumeSeriesRef.current?.setData(volume);
       syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, priceScaleLine);
+      setBollingerBandData(bollingerUpperSeriesRef.current, bollingerUpper, bollingerUpperPaintedRef);
+      setBollingerBandData(bollingerLowerSeriesRef.current, bollingerLower, bollingerLowerPaintedRef);
       rsiSeriesRef.current?.setData(rsiLine ?? []);
       macdLineSeriesRef.current?.setData(macdLine ?? []);
       macdSignalSeriesRef.current?.setData(macdSignalLine ?? []);
@@ -825,7 +894,7 @@ function DailyHistoryCanvas({
       failedRef.current = true;
       setFailed(true);
     }
-  }, [points, volume, priceScaleLine, rsiLine, macdLine, macdSignalLine, macdHistogram]);
+  }, [points, volume, priceScaleLine, bollingerUpper, bollingerLower, rsiLine, macdLine, macdSignalLine, macdHistogram]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -847,6 +916,10 @@ function DailyHistoryCanvas({
       seriesRef.current = null;
       volumeSeriesRef.current = null;
       lineSeriesRef.current = null;
+      bollingerUpperSeriesRef.current = null;
+      bollingerLowerSeriesRef.current = null;
+      bollingerUpperPaintedRef.current = false;
+      bollingerLowerPaintedRef.current = false;
       rsiSeriesRef.current = null;
       macdLineSeriesRef.current = null;
       macdSignalSeriesRef.current = null;
@@ -902,6 +975,12 @@ function DailyHistoryCanvas({
           const macdHistogramSeries = addMacdHistogramSeries(created, charts);
           macdHistogramSeriesRef.current = macdHistogramSeries;
           macdHistogramSeries.setData(coloredMacdHistogram(macdHistogramRef.current));
+          const bollingerUpperSeries = addBollingerUpperSeries(created, charts);
+          bollingerUpperSeriesRef.current = bollingerUpperSeries;
+          setBollingerBandData(bollingerUpperSeries, bollingerUpperRef.current, bollingerUpperPaintedRef);
+          const bollingerLowerSeries = addBollingerLowerSeries(created, charts);
+          bollingerLowerSeriesRef.current = bollingerLowerSeries;
+          setBollingerBandData(bollingerLowerSeries, bollingerLowerRef.current, bollingerLowerPaintedRef);
           syncIndicatorLine(created, charts, lineSeriesRef, priceScaleLineRef.current);
           created.timeScale().fitContent();
         } catch {
@@ -1018,6 +1097,16 @@ function acceptHistory(bundle: HistoryBundle, request: SubmittedSeries): Accepte
         return { state: "invalid" };
       }
     }
+    if (overlay.name === "bollinger") {
+      if (
+        overlay.bollingerUpper === undefined ||
+        overlay.bollingerLower === undefined ||
+        overlay.bollingerUpper.length !== points.length ||
+        overlay.bollingerLower.length !== points.length
+      ) {
+        return { state: "invalid" };
+      }
+    }
     if (points.length === 0) {
       return { state: "empty", meta: data };
     }
@@ -1057,6 +1146,12 @@ function alignedTimes(points: CandlestickData<Time>[], overlay: IndicatorOverlay
     if (overlay.macdHistogram !== undefined && overlay.macdHistogram[index]?.time !== points[index]?.time) {
       return false;
     }
+    if (overlay.bollingerUpper !== undefined && overlay.bollingerUpper[index]?.time !== points[index]?.time) {
+      return false;
+    }
+    if (overlay.bollingerLower !== undefined && overlay.bollingerLower[index]?.time !== points[index]?.time) {
+      return false;
+    }
   }
   return true;
 }
@@ -1084,12 +1179,14 @@ function indicatorLabel(overlay: IndicatorOverlay): string {
     name = "EMA";
   } else if (overlay.name === "rsi") {
     name = "RSI";
+  } else if (overlay.name === "bollinger") {
+    name = "Bollinger Bands";
   }
   return `${name} (${overlay.period})`;
 }
 
 function readIndicatorChoice(value: string): IndicatorChoice {
-  if (value === "sma" || value === "ema" || value === "rsi" || value === "macd") {
+  if (value === "sma" || value === "ema" || value === "rsi" || value === "macd" || value === "bollinger") {
     return value;
   }
   return "none";

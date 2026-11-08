@@ -346,6 +346,52 @@ function parseMacdPoints(points: readonly unknown[], candles: CandlestickData<Ti
   return { values, line, macdSignal, macdHistogram };
 }
 
+function parseBollingerPoints(
+  points: readonly unknown[],
+  candles: CandlestickData<Time>[],
+  period: number,
+): {
+  values: (string | null)[];
+  line: (LineData<Time> | WhitespaceData<Time>)[];
+  bollingerUpper: (LineData<Time> | WhitespaceData<Time>)[];
+  bollingerLower: (LineData<Time> | WhitespaceData<Time>)[];
+} {
+  const values: (string | null)[] = [];
+  const line: (LineData<Time> | WhitespaceData<Time>)[] = [];
+  const bollingerUpper: (LineData<Time> | WhitespaceData<Time>)[] = [];
+  const bollingerLower: (LineData<Time> | WhitespaceData<Time>)[] = [];
+  for (let index = 0; index < candles.length; index += 1) {
+    const point = record(points[index], "Indicator point is invalid.");
+    const candle = candles[index];
+    if (candle === undefined || point.session_date !== candle.time) {
+      throw new Error("Indicator point date does not match history.");
+    }
+    const time = candle.time;
+    // Same leading nulls as SMA: period - 1. Upper and lower share that cutoff.
+    const warming = index < period - 1;
+    if (warming) {
+      if (point.value !== null || point.upper !== null || point.lower !== null) {
+        throw new Error("Indicator warmup value is invalid.");
+      }
+      values.push(null);
+      line.push({ time });
+      bollingerUpper.push(signedSeriesPoint(time, point.upper).point);
+      bollingerLower.push(signedSeriesPoint(time, point.lower).point);
+      continue;
+    }
+    if (point.upper === null || point.lower === null) {
+      throw new Error("Indicator warmup value is invalid.");
+    }
+    // Middle band is the SMA, so it stays strictly positive. Bands may be signed.
+    const middle = canonicalPrice(point.value);
+    values.push(middle.text);
+    line.push({ time, value: chartNumber(middle.text) });
+    bollingerUpper.push(signedSeriesPoint(time, point.upper).point);
+    bollingerLower.push(signedSeriesPoint(time, point.lower).point);
+  }
+  return { values, line, bollingerUpper, bollingerLower };
+}
+
 function assertBounds(open: bigint, high: bigint, low: bigint, close: bigint): void {
   // 999999999999.000001 and 999999999999.000000 collapse under IEEE rounding.
   const lower = open <= close ? open : close;
@@ -355,7 +401,7 @@ function assertBounds(open: bigint, high: bigint, low: bigint, close: bigint): v
   }
 }
 
-/** One validated SMA, EMA, RSI, or MACD overlay over the nested history snapshot. Status is never "complete". */
+/** One validated SMA, EMA, RSI, MACD, or Bollinger overlay over the nested history snapshot. Status is never "complete". */
 export type IndicatorOverlay = {
   history: HistoryResponse;
   candles: CandlestickData<Time>[];
@@ -363,6 +409,8 @@ export type IndicatorOverlay = {
   values: (string | null)[];
   macdSignal?: (LineData<Time> | WhitespaceData<Time>)[];
   macdHistogram?: (HistogramData<Time> | WhitespaceData<Time>)[];
+  bollingerUpper?: (LineData<Time> | WhitespaceData<Time>)[];
+  bollingerLower?: (LineData<Time> | WhitespaceData<Time>)[];
   name: IndicatorName;
   period: number;
   status: "unavailable" | "insufficient" | "partial";
@@ -419,7 +467,13 @@ export function indicatorOverlay(
   ) {
     throw new Error("Indicator request identity does not match.");
   }
-  if (body.name !== "sma" && body.name !== "ema" && body.name !== "rsi" && body.name !== "macd") {
+  if (
+    body.name !== "sma" &&
+    body.name !== "ema" &&
+    body.name !== "rsi" &&
+    body.name !== "macd" &&
+    body.name !== "bollinger"
+  ) {
     throw new Error("Indicator name is invalid.");
   }
   if (body.name !== request.name) {
@@ -460,6 +514,7 @@ export function indicatorOverlay(
 
   // RSI's first value needs `period` diffs, so it lands one close later than SMA/EMA.
   // MACD's status threshold is the fixed slow period, not the signal `period`.
+  // Bollinger needs the same `period` closes as SMA, which is the final fallback.
   const closesRequired = body.name === "rsi" ? period + 1 : body.name === "macd" ? MACD_CLOSES_REQUIRED : period;
   let status: IndicatorOverlay["status"];
   if (count === 0) {
@@ -483,6 +538,21 @@ export function indicatorOverlay(
       values: macd.values,
       macdSignal: macd.macdSignal,
       macdHistogram: macd.macdHistogram,
+      name: body.name,
+      period,
+      status,
+    };
+  }
+
+  if (body.name === "bollinger") {
+    const bands = parseBollingerPoints(body.points, candles, period);
+    return {
+      history: history as HistoryResponse,
+      candles,
+      line: bands.line,
+      values: bands.values,
+      bollingerUpper: bands.bollingerUpper,
+      bollingerLower: bands.bollingerLower,
       name: body.name,
       period,
       status,
