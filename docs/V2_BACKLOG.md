@@ -182,6 +182,19 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 56](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/56) is ready with all
+CI checks green: a new "P&L attribution" card on `/portfolio`, additive on top of PR #55's
+Sector allocation card, rendering `GET /portfolio/attribution` (PR #53) — realized/unrealized/
+total P&L and contribution percentage per security and sector. Evidence:
+[P4E_PORTFOLIO_ATTRIBUTION_FRONTEND_VERIFICATION.md](P4E_PORTFOLIO_ATTRIBUTION_FRONTEND_VERIFICATION.md).
+Uses `formatSignedPercent`, not `formatPercent`, for `pnl_contribution_pct` — it is signed and
+unbounded (a loss contributes negatively, a large gain can exceed 100%), tested directly
+against both edge cases from the real contract reference (`"+130.31%"`/`"-30.31%"`), scoped to
+each security's own table row. Existing Sector allocation card untouched. Still open:
+rendering `GET /portfolio/risk-metrics` (nine metrics) and `POST /portfolio/trade-impact`, each
+its own future frontend slice; no manual browser/visual check was performed, disclosed
+explicitly.
+
 [PR 55](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/55) is ready with all
 CI checks green: a new "Sector allocation" card on the `/portfolio` page, rendering
 `GET /portfolio/allocation` (PR #45) — cash plus each sector's dollar value and weight
