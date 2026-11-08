@@ -182,6 +182,33 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 61](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/61) is ready with all
+CI checks green: a new "Trade impact preview" card on `/portfolio`, calling
+`POST /portfolio/trade-impact` (PR #54) on form submit. Evidence:
+[P4F_TRADE_IMPACT_PREVIEW_FRONTEND_VERIFICATION.md](P4F_TRADE_IMPACT_PREVIEW_FRONTEND_VERIFICATION.md).
+The first **mutation**-driven Phase 4 frontend unit this session — every prior card
+(allocation, attribution, risk metrics) fetches automatically on page load; this one previews
+a hypothetical trade only when the user submits the form, and never navigates or clears on
+success. Mirrors the existing `CashPanel` mutation pattern and `QuickTradePanel`'s buy/sell
+toggle for consistency. Warnings render without hiding the numeric result, faithfully matching
+the backend's own "never a rejection" design (tested with a deliberately infeasible trade going
+to a negative cash balance and a `106.25%` weight). A client-side `symbol_position_value` delta
+is computed from `after - before` since the real response has no such field in `changes`.
+Explicitly verified the submit calls only `previewTradeImpact` and nothing else — no real
+trade, cash movement, or other mutation is ever triggered by this preview, and every other
+card's read-only query call count is confirmed unchanged by the submit.
+
+**With this PR, every Phase 4 backend endpoint shipped this session — performance (PRs
+#37-#41, #43), allocation (#45), attribution (#53), risk-metrics (#47-#52), and trade-impact
+(#54) — now has some frontend surface on `/portfolio`** (PRs #55-#61). No manual browser/visual
+check was performed across any of them, disclosed explicitly in each one's own verification
+doc. Open, unstarted: a `1y`/`2y` range selector for the performance/risk-metrics cards
+(currently hardcoded); `POST /risk/scenarios` (Phase 4.4's full custom-shock Risk Lab, backend
+and frontend both); Phase 5 (AI Research Desk, deferred per the user's own decision), Phase 6
+(Forecast Lab), Phase 7 (release hardening); and the many still-open Phase 3 chart items (chart
+modes beyond candlestick, timeframes beyond 1y/2y, trade execution markers, price levels for
+open orders, persisted chart preferences, user-configurable indicator parameters).
+
 [PR 60](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/60) is ready with all
 CI checks green: a `risk_contributions` table added inside the existing "Risk metrics (1y)"
 card (no new card) — the **last** of the four list-shaped risk-metrics fields. Evidence:
