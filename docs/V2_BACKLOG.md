@@ -182,6 +182,31 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 70](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/70) is ready with
+all CI checks green: the job-queue **intake** surface named in roadmap Phase 5 section
+5.4 — `POST /research/jobs`, `GET /research/jobs`, `GET /research/jobs/{job_id}`,
+`POST /research/jobs/{job_id}/cancel`. **No worker exists yet** — a job only ever reaches
+`queued` (on creation) or `cancelled` (via cancel) from this code; `running`/`completed`/
+`failed` are already declared in the DB check constraint so the worker unit that comes
+next needs no further migration. Ownership-scoped lookups mirror `GET
+/orders/{order_id}`'s own pattern (another user's job 404s exactly like a nonexistent
+one, never a distinguishing 403); cancel mirrors `order_book.cancel_order`'s
+row-locking + state-check + 409. A 10-job cap (`queued`+`running`) guards against
+unbounded growth before a worker drains the queue. Evidence:
+[P5B_RESEARCH_JOBS_VERIFICATION.md](P5B_RESEARCH_JOBS_VERIFICATION.md); design:
+[P5B_RESEARCH_JOBS_CONTRACT.md](P5B_RESEARCH_JOBS_CONTRACT.md). **Learned from PR #69's
+own CI-caught breakage**: grepped the repo for the previous Alembic head string before
+shipping this time and pre-emptively bumped the same two Postgres-only "fresh install
+reaches head" assertions; the watchlist-migration isolation proof PR #69 pinned to its
+own revision needed no further change, confirming that fix actually generalizes. CI's
+`browser` job hit two *different* flakes across two reruns (the known
+`test_p3b_watchlists_ui` stale-element issue, then a separate DOM-update race in
+`test_p3a_indicators_ui`'s MACD warm-up check) — read each failure log before rerunning
+rather than assuming either was the other; both passed clean on their own by the third
+attempt, and neither touches code this PR changed. Still fully open for Phase 5: the
+async job queue's actual consumer (the bounded TradingAgents worker), report synthesis,
+personalized daily briefs, and `/research/reports`/`/research/briefs`.
+
 [PR 69](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/69) is ready with all
 CI checks green: the first unit of roadmap Phase 5 (AI Research Desk), redirected into by the
 user after PR #68 closed out Phase 4 and the Phase 3 core chart checklist. SEC EDGAR
