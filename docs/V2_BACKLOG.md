@@ -182,6 +182,26 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 67](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/67) is ready with all
+CI checks green: `POST /risk/scenarios`, the custom security/sector shock builder named in
+roadmap Phase 4.4's Risk Lab ("Custom simultaneous security or sector shocks") and section
+4.5's API list — distinct from the fixed three-scenario `stress_scenarios` already in
+`GET /portfolio/risk-metrics` (PR #51). Evidence:
+[P4G_RISK_SCENARIOS_VERIFICATION.md](P4G_RISK_SCENARIOS_VERIFICATION.md). Design:
+`docs/P4G_RISK_SCENARIOS_CONTRACT.md`. Matching shocks apply multiplicatively, in request
+order, with one cent-quantization per security after all matches — not summed percentages
+(which could push a value below `-100%`) and not one rounding per shock (which would compound
+error); a dedicated test distinguishes the correct multiplicative result from what a naive
+summed-percentage implementation would have produced. Does not assume every scenario is a
+loss — a positive `shock_pct` correctly produces a negative `loss` (a gain), tested
+explicitly. Never writes to the database, verified by the same book-fingerprint pattern the
+trade-impact preview already established. One `browser` CI flake hit on this PR's first run —
+the same already-documented `test_p3b_watchlists_ui.py` `StaleElementReferenceException`,
+confirmed via the actual log, unrelated, reran clean. Still open on the same Risk Lab list:
+interest-rate shock assumptions and historical crisis-style scenarios (each needs its own
+model), a broad-market/"all" target type (already covered by the existing fixed scenario), and
+any frontend rendering for this new endpoint.
+
 [PR 66](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/66) is ready with all
 CI checks green: trade execution markers and open-order price lines added to the daily history
 chart, closing the roadmap's "Trade execution markers on historical charts," "Price levels for
