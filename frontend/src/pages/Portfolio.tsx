@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { fetchMe, setLegalName } from "../api/auth";
 import { createCashMovement } from "../api/cash";
+import { fetchAllocation } from "../api/allocation";
 import { fetchPortfolio } from "../api/portfolio";
 import { useToast } from "../context/useToast";
 import { PageHeader } from "../components/PageHeader";
@@ -20,7 +21,7 @@ import {
   formatQuantity,
   formatSignedPercent,
 } from "../utils/format";
-import type { PortfolioPositionResponse } from "../types/schemas";
+import type { AllocationSector, PortfolioPositionResponse } from "../types/schemas";
 
 function getExposurePercent(positionValue: number | null, totalValue: number | null) {
   if (positionValue == null || totalValue == null) {
@@ -147,6 +148,10 @@ export function Portfolio() {
   const portfolioQuery = useQuery({
     queryKey: ["portfolio"],
     queryFn: fetchPortfolio,
+  });
+  const allocationQuery = useQuery({
+    queryKey: ["portfolio", "allocation"],
+    queryFn: fetchAllocation,
   });
 
   const portfolio = portfolioQuery.data;
@@ -514,8 +519,89 @@ export function Portfolio() {
               </div>
             )}
           </DashboardCard>
+
+          <DashboardCard title="Sector allocation">
+            {allocationQuery.isLoading ? (
+              <div className="space-y-3">
+                {[0, 1, 2].map((item) => (
+                  <SkeletonBlock className="h-10" key={item} />
+                ))}
+              </div>
+            ) : allocationQuery.isError ? (
+              <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
+                Sector allocation could not be loaded.
+              </div>
+            ) : allocationQuery.data == null ? (
+              <p className="text-sm text-slate-300">Sector allocation unavailable</p>
+            ) : allocationQuery.data.status === "incomplete" ? (
+              <EmptyState
+                detail="A holding is unpriced, so sector weights cannot be shown."
+                message="Sector allocation unavailable"
+              />
+            ) : (
+              <SectorAllocationTable
+                cashBalance={allocationQuery.data.cash_balance}
+                cashWeightPct={allocationQuery.data.cash_weight_pct}
+                sectors={allocationQuery.data.sectors ?? []}
+              />
+            )}
+          </DashboardCard>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SectorAllocationTable({
+  cashBalance,
+  cashWeightPct,
+  sectors,
+}: {
+  cashBalance: string;
+  cashWeightPct: string | null;
+  sectors: AllocationSector[];
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="table-shell">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="text-left">Sector</th>
+              <th className="text-right">Value</th>
+              <th className="text-right">Weight</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="font-mono text-sm font-semibold text-slate-100">Cash</td>
+              <td className="text-right font-mono tabular-nums">
+                {formatCurrency(Number(cashBalance), false)}
+              </td>
+              <td className="text-right font-mono tabular-nums">
+                {formatPercent(Number(cashWeightPct))}
+              </td>
+            </tr>
+            {sectors.map((sector) => (
+              <tr key={sector.sector}>
+                <td className="font-mono text-sm font-semibold text-slate-100">{sector.sector}</td>
+                <td className="text-right font-mono tabular-nums">
+                  {formatCurrency(Number(sector.value), false)}
+                </td>
+                <td className="text-right font-mono tabular-nums">
+                  {formatPercent(Number(sector.weight_pct))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {sectors.length === 0 ? (
+        <EmptyState
+          detail="Sector weights appear once priced holdings exist."
+          message="No sector exposure."
+        />
+      ) : null}
     </div>
   );
 }

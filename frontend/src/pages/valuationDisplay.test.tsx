@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { OrderResponse, PortfolioResponse } from "../types/schemas";
+import type { AllocationResponse, OrderResponse, PortfolioResponse } from "../types/schemas";
 import { ToastProvider } from "../context/ToastProvider";
 import { Dashboard } from "./Dashboard";
 import { Portfolio } from "./Portfolio";
@@ -12,6 +12,7 @@ import { Portfolio } from "./Portfolio";
 const api = vi.hoisted(() => ({
   fetchPortfolio: vi.fn(),
   fetchPortfolioPnl: vi.fn(),
+  fetchAllocation: vi.fn(),
   fetchTrades: vi.fn(),
   fetchRisk: vi.fn(),
   fetchOrders: vi.fn(),
@@ -24,6 +25,10 @@ const api = vi.hoisted(() => ({
 vi.mock("../api/portfolio", () => ({
   fetchPortfolio: api.fetchPortfolio,
   fetchPortfolioPnl: api.fetchPortfolioPnl,
+}));
+
+vi.mock("../api/allocation", () => ({
+  fetchAllocation: api.fetchAllocation,
 }));
 
 vi.mock("../api/trades", () => ({
@@ -47,6 +52,34 @@ vi.mock("../api/auth", () => ({
 vi.mock("../api/cash", () => ({
   createCashMovement: api.createCashMovement,
 }));
+
+function allocation(status: "complete" | "incomplete"): AllocationResponse {
+  const complete = status === "complete";
+  return {
+    user: { id: 1, email: "trader@example.com" },
+    read_at: "2026-11-05T15:00:00Z",
+    status,
+    cash_balance: "1000.00",
+    cash_weight_pct: complete ? "62.5000" : null,
+    total_account_value: complete ? "1600.00" : null,
+    unavailable_symbols: complete ? [] : ["MSFT"],
+    securities: [
+      {
+        symbol: "AAPL",
+        sector: "Technology",
+        position_value: complete ? "300.00" : null,
+        weight_pct: complete ? "18.7500" : null,
+        price_status: complete ? "available" : "unavailable",
+      },
+    ],
+    sectors: complete
+      ? [
+          { sector: "Technology", value: "300.00", weight_pct: "18.7500" },
+          { sector: "Financials", value: "200.00", weight_pct: "12.5000" },
+        ]
+      : null,
+  };
+}
 
 function book(status: "complete" | "incomplete"): PortfolioResponse {
   const complete = status === "complete";
@@ -179,6 +212,7 @@ function valueCard() {
 describe("valuation display", () => {
   beforeEach(() => {
     api.fetchOrders.mockResolvedValue({ orders: [] });
+    api.fetchAllocation.mockResolvedValue(allocation("incomplete"));
   });
 
   afterEach(() => {
@@ -688,5 +722,41 @@ describe("valuation display", () => {
     expect(within(valueCard()).queryByText("$100,000")).not.toBeInTheDocument();
     expect(screen.getByText("Cash").parentElement).toHaveTextContent("$100,000");
     expect(within(screen.getByText("Total P&L").parentElement as HTMLElement).getByText("Unavailable")).toBeInTheDocument();
+  });
+
+  it("renders cash and sector rows on the sector allocation card", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchAllocation.mockResolvedValue(allocation("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Sector allocation" })).closest("section") as HTMLElement;
+    expect(await within(card).findByText("$1,000")).toBeInTheDocument();
+    expect(within(card).getByText("Cash")).toBeInTheDocument();
+    expect(within(card).getByText("62.50%")).toBeInTheDocument();
+    expect(within(card).getByText("Technology")).toBeInTheDocument();
+    expect(within(card).getByText("$300")).toBeInTheDocument();
+    expect(within(card).getByText("18.75%")).toBeInTheDocument();
+    expect(within(card).getByText("Financials")).toBeInTheDocument();
+    expect(within(card).getByText("$200")).toBeInTheDocument();
+    expect(within(card).getByText("12.50%")).toBeInTheDocument();
+    expect(within(card).queryByText("Sector allocation unavailable")).not.toBeInTheDocument();
+  });
+
+  it("shows the sector allocation card as unavailable when allocation is incomplete", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("incomplete"));
+    api.fetchAllocation.mockResolvedValue(allocation("incomplete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Sector allocation" })).closest("section") as HTMLElement;
+    expect(await within(card).findByText("Sector allocation unavailable")).toBeInTheDocument();
+    expect(within(card).getByText(/holding is unpriced/i)).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/%/);
+    expect(within(card).queryByText("$1,000")).not.toBeInTheDocument();
+    expect(within(card).queryByText("62.50%")).not.toBeInTheDocument();
+    expect(within(card).queryByText("Technology")).not.toBeInTheDocument();
   });
 });

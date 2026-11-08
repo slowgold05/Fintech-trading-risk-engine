@@ -219,6 +219,32 @@ export interface PortfolioResponse {
   summary: PortfolioSummaryResponse;
 }
 
+export interface AllocationSecurity {
+  symbol: string;
+  sector: string;
+  position_value: string | null;
+  weight_pct: string | null;
+  price_status: PriceStatus;
+}
+
+export interface AllocationSector {
+  sector: string;
+  value: string;
+  weight_pct: string;
+}
+
+export interface AllocationResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  cash_balance: string;
+  cash_weight_pct: string | null;
+  total_account_value: string | null;
+  unavailable_symbols: string[];
+  securities: AllocationSecurity[];
+  sectors: AllocationSector[] | null;
+}
+
 export interface RiskAlertResponse {
   rule_code: string;
   severity: string;
