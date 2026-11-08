@@ -42,7 +42,7 @@ from tests.test_order_preview_postgres import _disposable_url
 pytestmark = pytest.mark.skipif(not os.environ.get("AUDIT_DATABASE_URL"), reason="AUDIT_DATABASE_URL is not set")
 
 BASELINE = "a21c9e7d4b60"
-HEAD = "b73e2d9f6a10"
+HEAD = "e1a7c3b5d820"
 _PREFIX = "p3b_watchlist_schema_"
 _NEW_TABLES = frozenset({"watchlists", "watchlist_items"})
 _HEX = frozenset("0123456789abcdef")
