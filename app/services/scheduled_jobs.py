@@ -10,6 +10,7 @@ from app.scripts.run_controls import app_control_results, persist_results
 from app.services.control_evidence import backfill_missing_file_evidence
 from app.services.market_cache_service import refresh_quote_cache
 from app.services.aml_cases import run_live_aml
+from app.services.research_worker import process_pending_research_jobs
 from app.services.scheduler_lock import acquire_scheduler, release_scheduler
 from app.services.surveillance_cases import run_live_surveillance
 
@@ -86,8 +87,14 @@ def _run_scheduled_steps(db) -> None:
         db.rollback()
         aml = {"error": exc.__class__.__name__}
         _log(f"aml scan failed: {exc.__class__.__name__}")
+    try:
+        research = process_pending_research_jobs(db, settings.scheduled_research_job_limit)
+    except Exception as exc:
+        db.rollback()
+        research = {"error": exc.__class__.__name__}
+        _log(f"research jobs failed: {exc.__class__.__name__}")
     statuses = ",".join(f"{item['control_id']}={item['status']}" for item in results)
-    _log(f"refresh={refresh} controls={statuses or 'none'} imported={imported} surveillance={surveillance} aml={aml}")
+    _log(f"refresh={refresh} controls={statuses or 'none'} imported={imported} surveillance={surveillance} aml={aml} research={research}")
 
 
 def start_scheduled_jobs() -> Callable[[], None]:

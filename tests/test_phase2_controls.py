@@ -128,7 +128,8 @@ def test_scheduled_cycle_refreshes_before_writing_controls(monkeypatch):
     monkeypatch.setattr(scheduled_jobs, "backfill_missing_file_evidence", lambda db: calls.append("backfill") or [])
     monkeypatch.setattr(scheduled_jobs, "run_live_surveillance", lambda db: calls.append("surveillance") or {"opened": 0, "rules": 0})
     monkeypatch.setattr(scheduled_jobs, "run_live_aml", lambda db: calls.append("aml") or {"opened": 0, "rules": 0})
+    monkeypatch.setattr(scheduled_jobs, "process_pending_research_jobs", lambda db, limit: calls.append("research") or [])
 
     scheduled_jobs.run_scheduled_cycle()
 
-    assert calls == ["refresh", "controls", "backfill", "surveillance", "aml"]
+    assert calls == ["refresh", "controls", "backfill", "surveillance", "aml", "research"]

@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.market_symbol import MarketSymbol
 from app.models.research_job import ResearchJob
+from app.models.research_report import ResearchReport
 from app.models.user import User
 from app.schemas.research_job import ResearchJobCreate
 from app.services.sec_service import get_sec_company_filings
@@ -144,4 +145,51 @@ def cancel_research_job(
     job.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     return _job_out(job)
+
+
+def _report_out(report: ResearchReport) -> dict:
+    return {
+        "id": report.id,
+        "job_id": report.job_id,
+        "symbol": report.symbol,
+        "created_at": _iso_z(report.created_at),
+        "sources": report.sources,
+        "bull_case": report.bull_case,
+        "bear_case": report.bear_case,
+        "synthesis": report.synthesis,
+        "risks": report.risks,
+        "model_version": report.model_version,
+        "prompt_version": report.prompt_version,
+    }
+
+
+@router.get("/reports")
+def list_research_reports(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = db.execute(
+        select(ResearchReport)
+        .where(ResearchReport.user_id == current_user.id)
+        .order_by(ResearchReport.id.desc())
+        .limit(limit)
+    ).scalars().all()
+    return {"reports": [_report_out(report) for report in rows]}
+
+
+@router.get("/reports/{report_id}")
+def get_research_report(
+    report_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    report = db.execute(
+        select(ResearchReport).where(
+            ResearchReport.id == report_id, ResearchReport.user_id == current_user.id
+        )
+    ).scalar_one_or_none()
+    if report is None:
+        raise HTTPException(status_code=404, detail="Research report not found")
+    return _report_out(report)
 

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     scheduled_job_interval_hours: int = Field(default=24, ge=1, le=168)
     scheduled_market_hot_limit: int = Field(default=200, ge=1, le=1000)
     scheduled_market_daily_limit: int = Field(default=100, ge=0, le=1000)
+    scheduled_research_job_limit: int = Field(default=5, ge=0, le=50)
     max_stock_concentration_pct: Decimal = Field(default=Decimal("50"), gt=0, le=100)
     max_stock_position_notional: Decimal = Field(default=Decimal("50000"), gt=0)
 
