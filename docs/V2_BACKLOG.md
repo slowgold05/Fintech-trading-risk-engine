@@ -182,6 +182,22 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 41](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/41) is ready with all
+CI checks green: a `benchmark_index` field on each point of `GET /portfolio/performance`'s
+daily series — a chained time-weighted price-return index for a fixed benchmark symbol,
+`"SPY"`, computed fully independently of the account's own availability or cash-flow logic (a
+price return has no deposits, so no flow exclusion is needed). Evidence:
+[P4A_PERFORMANCE_BENCHMARK_VERIFICATION.md](P4A_PERFORMANCE_BENCHMARK_VERIFICATION.md). One new
+query for the whole window's SPY raw closes (reusing the existing held-asset close query's
+shape), walked with its own independent chain-tracking locals that never touch the account's
+own. Design written first as contract section 13, with an independently computed reference that
+deliberately places SPY's own data gaps on different days than the account's own gaps, to prove
+the two chains never need to agree on which days are known — directly asserted by two dedicated
+test cases (an account gap with a real SPY index, and a SPY gap on a fully-valued account day).
+SPY is hardcoded, not configurable, in this unit. Money-weighted return, performance by
+position/asset, sector allocation, and a relative account-vs-benchmark field remain open,
+separate Phase 4.1 units.
+
 [PR 40](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/40) landed on
 2026-11-07, after PR 39, ready with all 7 CI jobs green on the first attempt: a
 `cumulative_pnl` field on each point of `GET /portfolio/performance`'s daily series — total
