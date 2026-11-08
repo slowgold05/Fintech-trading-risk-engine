@@ -182,6 +182,23 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 60](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/60) is ready with all
+CI checks green: a `risk_contributions` table added inside the existing "Risk metrics (1y)"
+card (no new card) — the **last** of the four list-shaped risk-metrics fields. Evidence:
+[P4D_RISK_CONTRIBUTIONS_FRONTEND_VERIFICATION.md](P4D_RISK_CONTRIBUTIONS_FRONTEND_VERIFICATION.md).
+`risk_contributions`' type widened from the placeholder `unknown[] | null` to a proper
+`RiskContribution[] | null` — **every field in `RiskMetricsResponse` is now properly typed**,
+none loosely typed. `weight_pct`/`risk_contribution_pct` both use plain `formatPercent` (genuine
+non-negative percentages, unlike `correlation`/`portfolio_beta`'s unitless ratios elsewhere on
+this card). **With this PR, every field `GET /portfolio/risk-metrics` returns has frontend
+rendering** — seven scalar stats plus `stress_scenarios`, `correlations`, and
+`risk_contributions`, across PRs #57-#60. Combined with PRs #55/#56 (allocation/attribution),
+all of this session's Phase 4 analytics backend work now has some frontend surface, except
+`POST /portfolio/trade-impact` (a form, not a read-only card — a different kind of frontend
+work, still open) and a `1y`/`2y` range selector for the risk metrics card (currently hardcoded
+to `1y`). No manual browser/visual check was performed across any of PRs #55-#60, disclosed
+explicitly in each one's own verification doc.
+
 [PR 59](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/59) is ready with all
 CI checks green: a `correlations` table added inside the existing "Risk metrics (1y)" card (no
 new card), rendering the per-pair correlation list from `GET /portfolio/risk-metrics` (PR #50).
