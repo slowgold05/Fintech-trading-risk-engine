@@ -442,3 +442,42 @@ export interface MarketResearchResponse {
     detail: string | null;
   }>;
 }
+
+export interface TradeImpactLevel {
+  cash_balance: string | null;
+  buying_power: string | null;
+  total_account_value: string | null;
+  cash_weight_pct: string | null;
+  symbol_position_value: string | null;
+  symbol_weight_pct: string | null;
+}
+
+export interface TradeImpactChanges {
+  cash_balance: string | null;
+  total_account_value: string | null;
+  cash_weight_pct: string | null;
+  symbol_weight_pct: string | null;
+}
+
+export interface TradeImpactResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: string;
+  reference_price: string;
+  order_type: "market" | "limit";
+  warnings: string[];
+  before: TradeImpactLevel;
+  after: TradeImpactLevel;
+  changes: TradeImpactChanges;
+}
+
+export interface TradeImpactRequestBody {
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: string;
+  reference_price: string;
+  order_type: "market" | "limit";
+}

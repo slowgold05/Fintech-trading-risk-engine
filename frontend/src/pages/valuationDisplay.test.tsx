@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AllocationResponse, AttributionResponse, OrderResponse, PortfolioResponse, RiskMetricsResponse } from "../types/schemas";
+import type { TradeImpactResponse } from "../types/schemas";
 import { ToastProvider } from "../context/ToastProvider";
 import { Dashboard } from "./Dashboard";
 import { Portfolio } from "./Portfolio";
@@ -22,6 +23,7 @@ const api = vi.hoisted(() => ({
   fetchMe: vi.fn(),
   setLegalName: vi.fn(),
   createCashMovement: vi.fn(),
+  previewTradeImpact: vi.fn(),
 }));
 
 vi.mock("../api/portfolio", () => ({
@@ -61,6 +63,10 @@ vi.mock("../api/auth", () => ({
 
 vi.mock("../api/cash", () => ({
   createCashMovement: api.createCashMovement,
+}));
+
+vi.mock("../api/tradeImpact", () => ({
+  previewTradeImpact: api.previewTradeImpact,
 }));
 
 function attribution(status: "complete" | "incomplete"): AttributionResponse {
@@ -116,6 +122,42 @@ function riskMetrics(overrides: Partial<RiskMetricsResponse> = {}): RiskMetricsR
     stress_scenarios: null,
     risk_contributions: null,
     ...overrides,
+  };
+}
+
+function tradeImpactBuy(warnings: string[] = []): TradeImpactResponse {
+  return {
+    user: { id: 1, email: "trader@example.com" },
+    read_at: "2026-11-05T15:00:00Z",
+    status: "complete",
+    symbol: "AAPL",
+    side: "buy",
+    quantity: "2.000000",
+    reference_price: "100.000000",
+    order_type: "market",
+    warnings,
+    before: {
+      cash_balance: "1000.00",
+      buying_power: "1000.00",
+      total_account_value: "1600.00",
+      cash_weight_pct: "62.5000",
+      symbol_position_value: "300.00",
+      symbol_weight_pct: "18.7500",
+    },
+    after: {
+      cash_balance: "800.00",
+      buying_power: "800.00",
+      total_account_value: "1600.00",
+      cash_weight_pct: "50.0000",
+      symbol_position_value: "500.00",
+      symbol_weight_pct: "31.2500",
+    },
+    changes: {
+      cash_balance: "-200.00",
+      total_account_value: "0.00",
+      cash_weight_pct: "-12.5000",
+      symbol_weight_pct: "12.5000",
+    },
   };
 }
 
@@ -1109,5 +1151,154 @@ describe("valuation display", () => {
     expect(scoped.queryByText("BBB")).not.toBeInTheDocument();
     expect(scoped.queryByRole("columnheader", { name: "Weight" })).not.toBeInTheDocument();
     expect(scoped.queryByRole("columnheader", { name: "Risk contribution" })).not.toBeInTheDocument();
+  });
+
+  async function renderSettledPortfolio() {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    renderPage(<Portfolio />);
+    expect(await screen.findByRole("heading", { name: "Trade impact preview" })).toBeInTheDocument();
+    expect(await screen.findByText("$50,000")).toBeInTheDocument();
+    expect(await screen.findByText(/Paper deposits and withdrawals are available/)).toBeInTheDocument();
+    expect(await screen.findByText("Sector allocation unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("P&L attribution unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Stress scenarios unavailable")).toBeInTheDocument();
+  }
+
+  function tradeImpactCard() {
+    return screen.getByRole("heading", { name: "Trade impact preview" }).closest("section") as HTMLElement;
+  }
+
+  function submitTradeImpact(card: HTMLElement) {
+    const view = within(card);
+    fireEvent.change(view.getByLabelText("Symbol"), { target: { value: "AAPL" } });
+    fireEvent.click(view.getByRole("button", { name: "Buy" }));
+    fireEvent.change(view.getByLabelText("Quantity"), { target: { value: "2" } });
+    fireEvent.change(view.getByLabelText("Reference price"), { target: { value: "100" } });
+    fireEvent.change(view.getByLabelText("Order type"), { target: { value: "market" } });
+    fireEvent.click(view.getByRole("button", { name: "Preview impact" }));
+  }
+
+  it("test_trade_impact_preview_form_submits_and_renders_the_result", async () => {
+    api.previewTradeImpact.mockReset();
+    await renderSettledPortfolio();
+    expect(api.previewTradeImpact).not.toHaveBeenCalled();
+
+    const card = tradeImpactCard();
+    expect(within(card).getByRole("button", { name: "Preview impact" })).toBeEnabled();
+    api.previewTradeImpact.mockResolvedValue(tradeImpactBuy());
+    const reads = {
+      portfolio: api.fetchPortfolio.mock.calls.length,
+      allocation: api.fetchAllocation.mock.calls.length,
+      attribution: api.fetchAttribution.mock.calls.length,
+      riskMetrics: api.fetchRiskMetrics.mock.calls.length,
+      me: api.fetchMe.mock.calls.length,
+    };
+
+    submitTradeImpact(card);
+
+    const cash = (await within(card).findByText("Cash balance")).closest("tr") as HTMLElement;
+    expect(within(cash).getByText("$1,000.00")).toBeInTheDocument();
+    expect(within(cash).getByText("$800.00")).toBeInTheDocument();
+    expect(within(cash).getByText("-$200.00")).toBeInTheDocument();
+
+    const total = within(card).getByText("Total account value").closest("tr") as HTMLElement;
+    expect(within(total).getAllByText("$1,600.00")).toHaveLength(2);
+    expect(within(total).getByText("$0.00")).toBeInTheDocument();
+
+    const cashWeight = within(card).getByText("Cash weight").closest("tr") as HTMLElement;
+    expect(within(cashWeight).getByText("62.50%")).toBeInTheDocument();
+    expect(within(cashWeight).getByText("50.00%")).toBeInTheDocument();
+    expect(within(cashWeight).getByText("-12.50%")).toBeInTheDocument();
+
+    const position = within(card).getByText("AAPL position value").closest("tr") as HTMLElement;
+    expect(within(position).getByText("$300.00")).toBeInTheDocument();
+    expect(within(position).getByText("$500.00")).toBeInTheDocument();
+    expect(within(position).getByText("$200.00")).toBeInTheDocument();
+
+    const weight = within(card).getByText("AAPL weight").closest("tr") as HTMLElement;
+    expect(within(weight).getByText("18.75%")).toBeInTheDocument();
+    expect(within(weight).getByText("31.25%")).toBeInTheDocument();
+    expect(within(weight).getByText("+12.50%")).toBeInTheDocument();
+
+    expect(api.previewTradeImpact).toHaveBeenCalledTimes(1);
+    expect(api.previewTradeImpact).toHaveBeenCalledWith({
+      symbol: "AAPL",
+      side: "buy",
+      quantity: "2",
+      reference_price: "100",
+      order_type: "market",
+    });
+    expect(within(card).getByLabelText("Symbol")).toHaveValue("AAPL");
+    expect(within(card).queryByRole("alert")).not.toBeInTheDocument();
+    expect(api.fetchPortfolio).toHaveBeenCalledTimes(reads.portfolio);
+    expect(api.fetchAllocation).toHaveBeenCalledTimes(reads.allocation);
+    expect(api.fetchAttribution).toHaveBeenCalledTimes(reads.attribution);
+    expect(api.fetchRiskMetrics).toHaveBeenCalledTimes(reads.riskMetrics);
+    expect(api.fetchMe).toHaveBeenCalledTimes(reads.me);
+    expect(api.createTrade).not.toHaveBeenCalled();
+    expect(api.createCashMovement).not.toHaveBeenCalled();
+    expect(api.setLegalName).not.toHaveBeenCalled();
+    expect(api.fetchOrders).not.toHaveBeenCalled();
+    expect(api.fetchTrades).not.toHaveBeenCalled();
+    expect(api.fetchRisk).not.toHaveBeenCalled();
+    expect(api.fetchPortfolioPnl).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Holdings" })).toBeInTheDocument();
+  });
+
+  it("test_trade_impact_preview_shows_a_warning_without_blocking_the_result", async () => {
+    api.previewTradeImpact.mockReset();
+    const baseline = tradeImpactBuy(["insufficient_buying_power"]);
+    api.previewTradeImpact.mockResolvedValue({
+      ...baseline,
+      after: {
+        ...baseline.after,
+        cash_balance: "-400.00",
+        buying_power: "-400.00",
+        cash_weight_pct: "-25.0000",
+        symbol_position_value: "1700.00",
+        symbol_weight_pct: "106.2500",
+      },
+      changes: {
+        cash_balance: "-1400.00",
+        total_account_value: "0.00",
+        cash_weight_pct: "-87.5000",
+        symbol_weight_pct: "87.5000",
+      },
+    });
+    await renderSettledPortfolio();
+    const card = tradeImpactCard();
+    submitTradeImpact(card);
+
+    expect(await within(card).findByText("Insufficient buying power")).toBeInTheDocument();
+    expect(within(card).getByRole("status")).toBeInTheDocument();
+    const cash = within(card).getByText("Cash balance").closest("tr") as HTMLElement;
+    expect(within(cash).getByText("$1,000.00")).toBeInTheDocument();
+    expect(within(cash).getByText("-$400.00")).toBeInTheDocument();
+    expect(within(cash).getByText("-$1,400.00")).toBeInTheDocument();
+    const weight = within(card).getByText("AAPL weight").closest("tr") as HTMLElement;
+    expect(within(weight).getByText("+87.50%")).toBeInTheDocument();
+    expect(within(card).getByText("$1,700.00")).toBeInTheDocument();
+    expect(within(card).queryByRole("alert")).not.toBeInTheDocument();
+    expect(api.createTrade).not.toHaveBeenCalled();
+  });
+
+  it("test_trade_impact_preview_shows_an_error_message_on_failure", async () => {
+    api.previewTradeImpact.mockReset();
+    api.previewTradeImpact.mockRejectedValue(new Error("preview failed"));
+    await renderSettledPortfolio();
+    const card = tradeImpactCard();
+    submitTradeImpact(card);
+
+    expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "Trade impact could not be previewed.",
+    );
+    expect(within(card).queryByRole("columnheader", { name: "Before" })).not.toBeInTheDocument();
+    expect(within(card).queryByText("null")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Trade impact preview" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Risk metrics (1y)" })).toBeInTheDocument();
+    expect(api.previewTradeImpact).toHaveBeenCalledTimes(1);
+    expect(api.createTrade).not.toHaveBeenCalled();
+    expect(api.createCashMovement).not.toHaveBeenCalled();
   });
 });

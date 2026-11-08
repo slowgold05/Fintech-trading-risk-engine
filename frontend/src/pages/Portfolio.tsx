@@ -31,6 +31,9 @@ import type {
   RiskCorrelation,
   StressScenario,
 } from "../types/schemas";
+import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
+import { previewTradeImpact } from "../api/tradeImpact";
+import type { TradeImpactRequestBody, TradeImpactResponse } from "../types/schemas";
 
 function getExposurePercent(positionValue: number | null, totalValue: number | null) {
   if (positionValue == null || totalValue == null) {
@@ -635,6 +638,7 @@ export function Portfolio() {
               </>
             )}
           </DashboardCard>
+          <TradeImpactPreview />
         </div>
       </div>
     </div>
@@ -970,5 +974,303 @@ function RiskMetricsStats({
         </div>
       ))}
     </div>
+  );
+}
+
+const WARNING_LABELS: Record<string, string> = {
+  insufficient_buying_power: "Insufficient buying power",
+  insufficient_shares: "Insufficient shares",
+};
+
+function impactUnavailable() {
+  return <span className="text-slate-400">Unavailable</span>;
+}
+
+function impactMoney(value: string | null) {
+  if (value == null) {
+    return impactUnavailable();
+  }
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return impactUnavailable();
+  }
+  // Cents stay visible. This preview is quantized to the cent, unlike the compact totals above.
+  return formatCurrency(amount);
+}
+
+function impactWeight(value: string | null) {
+  if (value == null) {
+    return impactUnavailable();
+  }
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return impactUnavailable();
+  }
+  return formatPercent(amount);
+}
+
+function impactWeightChange(value: string | null) {
+  if (value == null) {
+    return impactUnavailable();
+  }
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return impactUnavailable();
+  }
+  return formatSignedPercent(amount);
+}
+
+function positionValueChange(before: string | null, after: string | null) {
+  if (before == null || after == null) {
+    return null;
+  }
+  const delta = Number(after) - Number(before);
+  if (!Number.isFinite(delta)) {
+    return null;
+  }
+  // The response has no position-value delta. It is after minus before.
+  return delta.toFixed(2);
+}
+
+function TradeImpactResult({ result }: { result: TradeImpactResponse }) {
+  const rows = [
+    {
+      label: "Cash balance",
+      before: impactMoney(result.before.cash_balance),
+      after: impactMoney(result.after.cash_balance),
+      change: impactMoney(result.changes.cash_balance),
+    },
+    {
+      label: "Total account value",
+      before: impactMoney(result.before.total_account_value),
+      after: impactMoney(result.after.total_account_value),
+      change: impactMoney(result.changes.total_account_value),
+    },
+    {
+      label: "Cash weight",
+      before: impactWeight(result.before.cash_weight_pct),
+      after: impactWeight(result.after.cash_weight_pct),
+      change: impactWeightChange(result.changes.cash_weight_pct),
+    },
+    {
+      label: `${result.symbol} position value`,
+      before: impactMoney(result.before.symbol_position_value),
+      after: impactMoney(result.after.symbol_position_value),
+      change: impactMoney(
+        positionValueChange(
+          result.before.symbol_position_value,
+          result.after.symbol_position_value,
+        ),
+      ),
+    },
+    {
+      label: `${result.symbol} weight`,
+      before: impactWeight(result.before.symbol_weight_pct),
+      after: impactWeight(result.after.symbol_weight_pct),
+      change: impactWeightChange(result.changes.symbol_weight_pct),
+    },
+  ];
+
+  return (
+    <div className="mt-4 space-y-3">
+      {result.warnings.length > 0 ? (
+        <div
+          className="rounded-md border border-amber-400/30 bg-amber-950/40 px-4 py-3 text-sm text-amber-100"
+          role="status"
+        >
+          <ul className="list-disc space-y-1 pl-4">
+            {result.warnings.map((warning) => (
+              <li key={warning}>{WARNING_LABELS[warning] ?? warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <div className="table-shell">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="text-left">Metric</th>
+              <th className="text-right">Before</th>
+              <th className="text-right">After</th>
+              <th className="text-right">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label}>
+                <td className="text-sm text-slate-100">{row.label}</td>
+                <td className="text-right font-mono tabular-nums">{row.before}</td>
+                <td className="text-right font-mono tabular-nums">{row.after}</td>
+                <td className="text-right font-mono tabular-nums">{row.change}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TradeImpactPreview() {
+  const [symbol, setSymbol] = useState("");
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [quantity, setQuantity] = useState("");
+  const [referencePrice, setReferencePrice] = useState("");
+  const [orderType, setOrderType] = useState<"market" | "limit">("market");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const impactMutation = useMutation({
+    mutationFn: (payload: TradeImpactRequestBody) => previewTradeImpact(payload),
+    onSuccess: () => {
+      setErrorMessage(null);
+    },
+    onError: (error) => {
+      setErrorMessage(
+        isAxiosError(error)
+          ? String(error.response?.data?.detail ?? "Trade impact could not be previewed.")
+          : "Trade impact could not be previewed.",
+      );
+    },
+  });
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const payload = {
+      symbol: symbol.trim().toUpperCase(),
+      side,
+      quantity: quantity.trim(),
+      reference_price: referencePrice.trim(),
+      order_type: orderType,
+    };
+    if (
+      payload.symbol.length === 0 ||
+      payload.quantity.length === 0 ||
+      payload.reference_price.length === 0
+    ) {
+      return;
+    }
+    setErrorMessage(null);
+    impactMutation.mutate(payload);
+  }
+
+  return (
+    <DashboardCard title="Trade impact preview">
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <fieldset className="min-w-0 border-0 p-0">
+          <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Side
+          </legend>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setSide("buy")}
+              aria-pressed={side === "buy"}
+              aria-label="Buy"
+              className={[
+                "flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold tracking-wide transition duration-200",
+                side === "buy"
+                  ? "bg-emerald-400 text-slate-950 shadow-[0_0_20px_-4px_rgb(52_211_153_/_0.55)]"
+                  : "border border-slate-700/80 bg-slate-900/60 text-slate-500 hover:border-emerald-400/50 hover:text-emerald-400",
+              ].join(" ")}
+            >
+              <ArrowUp aria-hidden="true" className="size-4 shrink-0" weight="bold" />
+              BUY
+            </button>
+            <button
+              type="button"
+              onClick={() => setSide("sell")}
+              aria-pressed={side === "sell"}
+              aria-label="Sell"
+              className={[
+                "flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold tracking-wide transition duration-200",
+                side === "sell"
+                  ? "bg-rose-500 text-white shadow-[0_0_20px_-4px_rgb(244_63_94_/_0.5)]"
+                  : "border border-slate-700/80 bg-slate-900/60 text-slate-500 hover:border-rose-400/50 hover:text-rose-400",
+              ].join(" ")}
+            >
+              <ArrowDown aria-hidden="true" className="size-4 shrink-0" weight="bold" />
+              SELL
+            </button>
+          </div>
+        </fieldset>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Symbol
+            </span>
+            <input
+              aria-label="Symbol"
+              className="field-control font-mono uppercase"
+              onChange={(event) => setSymbol(event.target.value.toUpperCase())}
+              required
+              type="text"
+              value={symbol}
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Quantity
+            </span>
+            <input
+              aria-label="Quantity"
+              className="field-control text-right font-mono"
+              inputMode="decimal"
+              min="0"
+              onChange={(event) => setQuantity(event.target.value)}
+              required
+              step="any"
+              type="number"
+              value={quantity}
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Reference price
+            </span>
+            <input
+              aria-label="Reference price"
+              className="field-control text-right font-mono"
+              inputMode="decimal"
+              min="0"
+              onChange={(event) => setReferencePrice(event.target.value)}
+              required
+              step="any"
+              type="number"
+              value={referencePrice}
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Order type
+            </span>
+            <select
+              aria-label="Order type"
+              className="field-control"
+              onChange={(event) =>
+                setOrderType(event.target.value === "limit" ? "limit" : "market")
+              }
+              value={orderType}
+            >
+              <option value="market">Market</option>
+              <option value="limit">Limit</option>
+            </select>
+          </label>
+        </div>
+
+        <p className="text-xs text-slate-500">Preview only. This does not place an order.</p>
+        <button className="primary-action" disabled={impactMutation.isPending} type="submit">
+          {impactMutation.isPending ? "Previewing..." : "Preview impact"}
+        </button>
+      </form>
+      {errorMessage ? (
+        <div
+          className="mt-4 rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200"
+          role="alert"
+        >
+          {errorMessage}
+        </div>
+      ) : null}
+      {impactMutation.data ? <TradeImpactResult result={impactMutation.data} /> : null}
+    </DashboardCard>
   );
 }
