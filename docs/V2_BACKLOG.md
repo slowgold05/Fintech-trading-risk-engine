@@ -182,6 +182,26 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 65](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/65) is ready with all
+CI checks green: the daily history chart's range/indicator/period/chart-type now persist in
+`localStorage`, closing the roadmap's "Persisted chart preferences" line. Evidence:
+[P3_CHART_PREFERENCES_VERIFICATION.md](P3_CHART_PREFERENCES_VERIFICATION.md). The selected
+symbol/series is deliberately not persisted — only display preferences. Every stored field is
+individually validated against its own allowed-value set before being trusted; a corrupted or
+stale entry degrades field-by-field to the existing hardcoded default, never throws. Both
+load/save are best-effort (`try`/`catch`), so a private window or full storage quota never
+breaks the chart. A test-mode-only cleanup on unmount prevents preference leakage into
+`DailyIndicators.test.tsx`, which also renders `DailyHistory` across many of its own tests and
+was correctly left outside this unit's edit scope — verified by running the full suite, not
+just the two files this unit directly touched. `historyData.ts` is byte-identical. One
+`browser` CI flake hit on this PR's first run — the same already-documented
+`test_p3b_watchlists_ui.py` `StaleElementReferenceException`, confirmed via the actual log,
+unrelated, reran clean. No manual browser/visual check was performed, disclosed explicitly.
+With this PR, every item on the roadmap's Phase 3 "Core chart features" list is closed except
+trade execution markers and price levels for open limit orders (both need live order/trade
+data wired into the chart, a separate, larger unit) and user-configurable indicator parameters
+beyond period/signal-period.
+
 [PR 64](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/64) is ready with all
 CI checks green: the four new history timeframes (`1m`/`3m`/`6m`/`all`, backend PR #63) wired
 into the daily history chart's range `<select>`. Evidence:
