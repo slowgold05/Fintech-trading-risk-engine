@@ -409,3 +409,94 @@ frontend. A later MACD chart-integration unit will need its own design pass for 
 three series (MACD line, signal line as a second line on the same sub-scale, histogram as bars)
 in one panel, analogous to RSI's own dedicated price scale but with one more series than RSI
 needed.
+
+## 15. Bollinger Bands addendum (2026-11-07) — design, not yet implemented
+
+Written before any code change, the same way sections 1-12, 13, and 14 were. Bollinger Bands
+are the one indicator left open on the roadmap's Phase 3 line "SMA, EMA, Bollinger Bands, RSI,
+and MACD." Like MACD, this indicator produces more than one number per bar; unlike MACD, the
+middle band is exactly the existing SMA, not a new calculation, so most of this addendum is
+about wiring, not new arithmetic.
+
+### 15.1 Query contract
+
+`name=bollinger` is a fifth accepted value, alongside `sma`, `ema`, `rsi`, `macd`. The `name`
+error detail becomes `name must be sma, ema, rsi, macd, or bollinger.` No router change and no
+new query parameter: the existing `period` parameter (the same integer 2 through 200, same
+validation) is the moving-average window, exactly as it already means for `sma`. The band width
+multiplier is fixed at `2` (the universal industry-standard default) and is **not**
+configurable in this unit — the same deliberate choice section 14.1 already made for MACD's
+fast/slow periods: reusing `period` for yet another per-`name` meaning is an accepted compromise
+only because a second required query parameter (`k`, or a band-width multiplier) would be a
+router change most callers would never vary. A future unit could add it if ever needed.
+
+### 15.2 Series definition
+
+Let `C[0..M-1]` be the same accepted closes every other indicator uses. For each index `i`:
+
+- `i < period - 1`: `null` for all three emitted numbers — the same SMA warm-up convention
+  section 6 already defines (`period - 1` leading nulls, not RSI's `period`/`period+1`).
+- `i >= period - 1`: let `window = C[i-period+1 .. i]` (the same `period`-length trailing window
+  `_sma` already slides over `closes`).
+  - `mean = sum(window) / period` — identical to `_sma`'s existing per-bar value. This unit
+    must reuse the existing `_sma` output for the middle band, not recompute an independent
+    second mean calculation that could silently diverge from it.
+  - `variance = sum((x - mean) ** 2 for x in window) / period` — **population** variance
+    (divide by `period`, not `period - 1`), the standard Bollinger Bands convention.
+  - `stdev = variance.sqrt()` (`Decimal.sqrt()`, inside the same `Context(prec=50)`
+    `localcontext` every other indicator's arithmetic already runs in).
+  - `upper = mean + 2 * stdev`, `lower = mean - 2 * stdev`.
+
+All three stay unrounded `Decimal` until the final emitted text; each is quantized exactly once
+with the existing six-place `ROUND_HALF_UP` convention (`_response_text`), the same
+single-quantization rule every other indicator follows.
+
+### 15.3 Response shape — additive only
+
+For `name != "bollinger"`, every existing response shape is byte-identical — no change. For
+`name == "bollinger"`, each point is:
+
+```
+{"session_date": ..., "value": <middle band>, "upper": ..., "lower": ...}
+```
+
+`value` is deliberately the same key name `sma`/`ema`/`rsi` already use for their one number
+(it is literally the SMA), so a caller that only reads `value` from any indicator response
+already gets the middle band for free. `upper`/`lower` are the two new keys, parallel to how
+`macd` added `signal`/`histogram` alongside its own `value`.
+
+### 15.4 Status and warm-up
+
+`_closes_required(name, period)` gets a fourth branch: `bollinger` uses `period`, identical to
+`sma`'s existing branch (the default case already returns `period` for any name not explicitly
+listed — confirm this still returns the right value for `bollinger` rather than silently falling
+through to a wrong branch). `unavailable` (`M == 0`), `insufficient` (`1 <= M < period`, every
+point's `value`/`upper`/`lower` all `null`), `partial` (`M >= period`) — the exact same
+thresholds and status semantics `sma` already has, since the warm-up length is identical.
+
+### 15.5 Worked reference (independently verified, not derived from the implementation)
+
+Closes `[10, 12, 11, 13, 14, 12, 15]`, `period = 3`:
+
+```
+i=0,1: null (warm-up, period - 1 = 2 leading nulls)
+i=2: mean="11.000000" stdev="0.816497" upper="12.632993" lower="9.367007"
+i=3: mean="12.000000" stdev="0.816497" upper="13.632993" lower="10.367007"
+i=4: mean="12.666667" stdev="1.247219" upper="15.161105" lower="10.172228"
+i=5: mean="13.000000" stdev="0.816497" upper="14.632993" lower="11.367007"
+i=6: mean="13.666667" stdev="1.247219" upper="16.161105" lower="11.172228"
+```
+
+Verified independently with a standalone `Decimal`/`Context(prec=50)` script before
+implementation — the `mean` values match what `_sma` already computes for the same inputs; the
+`stdev`/`upper`/`lower` values are new.
+
+### 15.6 What this unit does and does not do
+
+Backend only, mirroring how RSI and MACD each landed as their own backend-only unit before any
+chart-integration work. The frontend `IndicatorName` type, the indicator `<select>`, and
+`historyData.ts`'s overlay builder are unchanged by this unit — `upper`/`lower` are not yet
+parsed or plotted anywhere in the frontend. A later Bollinger Bands chart-integration unit would
+render the middle/upper/lower as a shaded band around price, not as a separate indicator
+sub-panel (unlike RSI/MACD, Bollinger Bands overlay directly on the price scale) — that design
+is not part of this unit.

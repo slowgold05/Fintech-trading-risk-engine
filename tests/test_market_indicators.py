@@ -29,7 +29,7 @@ _DATES = (
 _CLOSES = (1, 4, 2, 8, 3, 9)
 _SMA = (None, None, "2.333333", "4.666667", "4.333333", "6.666667")
 _EMA = (None, None, "2.333333", "5.166667", "4.083333", "6.541667")
-_NAME_DETAIL = "name must be sma, ema, rsi, or macd."
+_NAME_DETAIL = "name must be sma, ema, rsi, macd, or bollinger."
 _PERIOD_DETAIL = "period must be an integer from 2 through 200."
 _OHLC_DETAIL = "Accepted bar prices are not usable."
 _META = (
@@ -201,6 +201,18 @@ def test_exact_half_quantizes_half_up(db_session, monkeypatch):
         ("macd", 1, _PERIOD_DETAIL),
         ("macd", 201, _PERIOD_DETAIL),
         ("macd", "201", _PERIOD_DETAIL),
+        ("BOLLINGER", 20, _NAME_DETAIL),
+        ("bands", 20, _NAME_DETAIL),
+        ("bollinger", True, _PERIOD_DETAIL),
+        ("bollinger", False, _PERIOD_DETAIL),
+        ("bollinger", 2.0, _PERIOD_DETAIL),
+        ("bollinger", "2.0", _PERIOD_DETAIL),
+        ("bollinger", "2e1", _PERIOD_DETAIL),
+        ("bollinger", " 2", _PERIOD_DETAIL),
+        ("bollinger", "02", _PERIOD_DETAIL),
+        ("bollinger", 1, _PERIOD_DETAIL),
+        ("bollinger", 201, _PERIOD_DETAIL),
+        ("bollinger", "201", _PERIOD_DETAIL),
     ],
 )
 def test_service_rejects_name_and_noninteger_period(name, period, detail):
@@ -619,6 +631,14 @@ def test_non_macd_points_omit_signal_and_histogram(db_session, monkeypatch):
         assert body["points"]
         for point in body["points"]:
             assert set(point) == {"session_date", "value"}
+    macd = _call(db_session, symbol="SHAPE", name="macd", period=3)
+    assert macd["points"]
+    for point in macd["points"]:
+        assert set(point) == {"session_date", "value", "signal", "histogram"}
+    bollinger = _call(db_session, symbol="SHAPE", name="bollinger", period=3)
+    assert bollinger["points"]
+    for point in bollinger["points"]:
+        assert set(point) == {"session_date", "value", "upper", "lower"}
 
 
 def test_macd_accepts_same_period_bounds_as_sma(db_session, monkeypatch):
@@ -636,4 +656,90 @@ def test_macd_accepts_same_period_bounds_as_sma(db_session, monkeypatch):
     assert len(high["points"]) == 3
     text = _call(db_session, symbol="MACDBOUND", name="macd", period="9")
     assert text["period"] == 9
+    assert text["status"] == "insufficient"
+
+
+_BOLLINGER_CLOSES = (10, 12, 11, 13, 14, 12, 15)
+_BOLLINGER_BANDS = (
+    (None, None, None),
+    (None, None, None),
+    ("11.000000", "12.632993", "9.367007"),
+    ("12.000000", "13.632993", "10.367007"),
+    ("12.666667", "15.161105", "10.172228"),
+    ("13.000000", "14.632993", "11.367007"),
+    ("13.666667", "16.161105", "11.172228"),
+)
+
+
+def test_bollinger_reference_vector(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    rows = _rsi_rows(_BOLLINGER_CLOSES)
+    _seed(db_session, "BBREF", rows)
+    body = _call(db_session, symbol="BBREF", name="bollinger", period=3)
+    expected = [
+        {
+            "session_date": day.isoformat(),
+            "value": value,
+            "upper": upper,
+            "lower": lower,
+        }
+        for (day, _close), (value, upper, lower) in zip(rows, _BOLLINGER_BANDS, strict=True)
+    ]
+    assert body["status"] == "partial"
+    assert body["observed_valid_closes"] == 7
+    assert body["name"] == "bollinger" and body["period"] == 3
+    assert body["points"] == expected
+    assert list(body["points"][0]) == ["session_date", "value", "upper", "lower"]
+    assert list(body["points"][2]) == ["session_date", "value", "upper", "lower"]
+
+
+def test_bollinger_insufficient_until_period_closes(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "BB2", _rsi_rows(_BOLLINGER_CLOSES[:2]))
+    short = _call(db_session, symbol="BB2", name="bollinger", period=3)
+    assert short["status"] == "insufficient"
+    assert short["observed_valid_closes"] == 2
+    assert [
+        (point["value"], point["upper"], point["lower"]) for point in short["points"]
+    ] == [(None, None, None)] * 2
+
+    _seed(db_session, "BB3", _rsi_rows(_BOLLINGER_CLOSES[:3]))
+    minimum = _call(db_session, symbol="BB3", name="bollinger", period=3)
+    assert minimum["status"] == "partial"
+    assert minimum["observed_valid_closes"] == 3
+    assert [
+        (point["value"], point["upper"], point["lower"]) for point in minimum["points"]
+    ] == list(_BOLLINGER_BANDS[:3])
+
+
+def test_bollinger_unavailable_when_no_closes(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "BBEMPTY", [])
+    body = _call(db_session, symbol="BBEMPTY", name="bollinger", period=20)
+    assert body["status"] == "unavailable"
+    assert body["points"] == []
+    assert body["observed_valid_closes"] == 0
+
+
+def test_bollinger_accepts_same_period_bounds_as_sma(db_session, monkeypatch):
+    _pin_clock(monkeypatch, _CLOCK)
+    _seed(db_session, "BBBOUND", _rsi_rows(("50.000000",) * 3))
+    low = _call(db_session, symbol="BBBOUND", name="bollinger", period=2)
+    assert low["period"] == 2
+    assert low["status"] == "partial"
+    assert [
+        (point["value"], point["upper"], point["lower"]) for point in low["points"]
+    ] == [
+        (None, None, None),
+        ("50.000000", "50.000000", "50.000000"),
+        ("50.000000", "50.000000", "50.000000"),
+    ]
+    high = _call(db_session, symbol="BBBOUND", name="bollinger", period=200)
+    assert high["period"] == 200
+    assert high["status"] == "insufficient"
+    assert [
+        (point["value"], point["upper"], point["lower"]) for point in high["points"]
+    ] == [(None, None, None)] * 3
+    text = _call(db_session, symbol="BBBOUND", name="bollinger", period="20")
+    assert text["period"] == 20
     assert text["status"] == "insufficient"

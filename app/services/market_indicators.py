@@ -1,4 +1,4 @@
-"""SMA, EMA, Wilder RSI, and MACD over one cached daily history snapshot.
+"""SMA, EMA, Wilder RSI, MACD, and Bollinger Bands over one cached daily history snapshot.
 
 The window is the last N observed valid stored closes. Missing dates stay
 missing: nothing fills a calendar, resets the carry, or reads a second clock.
@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from app.services.market_history import PRICE_QUANTUM, read_symbol_history
 
-_NAMES = frozenset({"sma", "ema", "rsi", "macd"})
+_NAMES = frozenset({"sma", "ema", "rsi", "macd", "bollinger"})
 _PERIOD_MIN = 2
 _PERIOD_MAX = 200
 # Digit text longer than this cannot be inside 2..200. Reject before int().
@@ -49,7 +49,9 @@ def read_symbol_indicators(
 
 def _validate_indicator(name, period) -> tuple[str, int]:
     if not isinstance(name, str) or name not in _NAMES:
-        raise HTTPException(status_code=422, detail="name must be sma, ema, rsi, or macd.")
+        raise HTTPException(
+            status_code=422, detail="name must be sma, ema, rsi, macd, or bollinger.",
+        )
     if isinstance(period, bool) or isinstance(period, str) and (
         len(period) > _PERIOD_TEXT_MAX
         or not period.isascii()
@@ -94,10 +96,13 @@ def _finite_positive(value: object) -> Decimal:
 def _closes_required(name: str, period: int) -> int:
     # The first RSI needs `period` diffs, so it lands on close index `period`.
     # MACD's first value needs the fixed slow EMA, not the request's signal period.
+    # Bollinger's first band needs the same `period` closes as SMA, not RSI or MACD.
     if name == "rsi":
         return period + 1
     if name == "macd":
         return _MACD_SLOW
+    if name == "bollinger":
+        return period
     return period
 
 
@@ -117,6 +122,16 @@ def _points(closes: list[Decimal], bars: list[dict], indicator: tuple[str, int])
                 }
                 for bar in bars
             ]
+        if name == "bollinger":
+            return [
+                {
+                    "session_date": bar["session_date"],
+                    "value": None,
+                    "upper": None,
+                    "lower": None,
+                }
+                for bar in bars
+            ]
         return [{"session_date": bar["session_date"], "value": None} for bar in bars]
 
     with localcontext(Context(prec=50)):
@@ -128,6 +143,8 @@ def _points(closes: list[Decimal], bars: list[dict], indicator: tuple[str, int])
             values = _rsi(closes, period)
         elif name == "macd":
             macd_text, signal_text, histogram_text = _macd(closes, period)
+        elif name == "bollinger":
+            middle_text, upper_text, lower_text = _bollinger(closes, period)
     if name == "macd":
         return [
             {
@@ -140,6 +157,18 @@ def _points(closes: list[Decimal], bars: list[dict], indicator: tuple[str, int])
                 bars, macd_text, signal_text, histogram_text, strict=True,
             )
         ]
+    if name == "bollinger":
+        return [
+            {
+                "session_date": bar["session_date"],
+                "value": value,
+                "upper": upper,
+                "lower": lower,
+            }
+            for bar, value, upper, lower in zip(
+                bars, middle_text, upper_text, lower_text, strict=True,
+            )
+        ]
     return [
         {"session_date": bar["session_date"], "value": value}
         for bar, value in zip(bars, values, strict=True)
@@ -147,6 +176,14 @@ def _points(closes: list[Decimal], bars: list[dict], indicator: tuple[str, int])
 
 
 def _sma(closes: list[Decimal], period: int) -> list:
+    return [
+        None if value is None else _response_text(value)
+        for value in _sma_decimals(closes, period)
+    ]
+
+
+def _sma_decimals(closes: list[Decimal], period: int) -> list:
+    """Unrounded SMA. The caller quantizes each emitted number once."""
     divisor = Decimal(period)
     values: list = []
     running = Decimal(0)
@@ -157,8 +194,29 @@ def _sma(closes: list[Decimal], period: int) -> list:
             continue
         if index >= period:
             running -= closes[index - period]
-        values.append(_response_text(running / divisor))
+        values.append(running / divisor)
     return values
+
+
+def _bollinger(closes: list[Decimal], period: int) -> tuple[list, list, list]:
+    """Middle band is `_sma` text. Deviation uses that function's unrounded mean."""
+    middle = _sma(closes, period)
+    means = _sma_decimals(closes, period)
+    upper: list = []
+    lower: list = []
+    divisor = Decimal(period)
+    width = Decimal(2)
+    for index, mean in enumerate(means):
+        if mean is None:
+            upper.append(None)
+            lower.append(None)
+            continue
+        window = closes[index - period + 1:index + 1]
+        variance = sum(((item - mean) ** 2 for item in window), Decimal(0)) / divisor
+        stdev = variance.sqrt()
+        upper.append(_response_text(mean + width * stdev))
+        lower.append(_response_text(mean - width * stdev))
+    return middle, upper, lower
 
 
 def _ema(closes: list[Decimal], period: int) -> list:
