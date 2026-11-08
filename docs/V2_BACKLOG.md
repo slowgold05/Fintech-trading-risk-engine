@@ -182,6 +182,23 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 51](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/51) is ready with all
+CI checks green: `stress_scenarios`, the fifth slice added to `GET /portfolio/risk-metrics`
+(additive on top of PRs #47-#50). Evidence:
+[P4D_PORTFOLIO_STRESS_TEST_VERIFICATION.md](P4D_PORTFOLIO_STRESS_TEST_VERIFICATION.md). Design:
+`docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md` section 5. A third black-box call,
+`build_allocation_response` (first use of `portfolio_allocation.py` from this module), backs
+three fixed, non-configurable scenarios: a 10% broad market selloff, a 25% Technology-sector
+selloff (filtered by each security's already-classified sector, no reclassification), and a 30%
+shock to the single largest priced holding (ties broken by ascending symbol). Cash is never
+shocked. `stress_scenarios` is `null` only when the underlying allocation is incomplete; a
+scenario with nothing to shock (no Technology exposure, or nothing priced at all) still reports
+a real measured `"0.00"`, correctly distinguished from the incomplete-allocation null case. All
+nine of the roadmap's Phase 4.2 metrics now have some form closed except risk contribution,
+which needs a full covariance-matrix risk model built on top of this session's correlation work
+— a separate, larger future unit. `POST /risk/scenarios` (Phase 4.4's custom-shock Risk Lab
+backend) also remains open, unstarted.
+
 [PR 50](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/50) is ready with all
 CI checks green: `correlations`, the fourth slice added to `GET /portfolio/risk-metrics`
 (additive on top of PRs #47-#49). Evidence:
