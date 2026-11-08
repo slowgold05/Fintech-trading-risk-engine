@@ -131,7 +131,100 @@ implementation, not derived from the code under test.
 ## What this unit does not do
 
 Does not add beta, VaR, Expected Shortfall, correlation, risk contribution, or stress-test loss
-(each a separate future unit, as scoped above). Does not add `GET /portfolio/attribution`. Does
+(each a separate future unit, as scoped above — beta is picked up immediately below in section
+2, added after this slice shipped as PR #47). Does not add `GET /portfolio/attribution`. Does
 not add an annualized volatility figure. Does not modify `performance_service.py` or
 `portfolio_allocation.py`. No frontend rendering. No merge or deploy is claimed by writing this
 contract.
+
+## 2. Portfolio beta addendum (2026-11-08) — design, not yet implemented
+
+Written before any code change, the same way section 15 of the indicator contract and this
+contract's own section 1 were. Adds `portfolio_beta` and `beta_pair_count` to the same
+`GET /portfolio/risk-metrics` response — additive only, section 1's existing fields are
+unchanged. Still a single route; the roadmap's section 4.5 list names exactly one
+`GET /portfolio/risk-metrics` endpoint for every metric on its table, not one route per metric.
+
+### 2.1 Inputs — still a black-box reuse
+
+Reuses the same single `build_performance_response` call this unit already makes. No second
+call, no new query. Adds one more read of a field that call's `series` already publishes on
+every entry regardless of account status: `benchmark_index` (the SPY `twr_index`-style chain
+PR #41 added) — nullable independently of the account's own `status`, per that field's own
+design ("the account chain and the SPY chain skip different days").
+
+### 2.2 Paired days
+
+```
+paired = [(point["twr_index"], point["benchmark_index"])
+          for point in series
+          if point["status"] == "available" and point["benchmark_index"] is not None]
+```
+
+Only a day where **both** the account has a value and SPY has a value contributes a pair. The
+two source chains are not filtered together elsewhere in this codebase, so a day where one is
+present and the other is not is simply excluded from `paired` — it is not an error, and it does
+not interrupt the chain (both `twr_index` and `benchmark_index` already correctly account for
+gaps in their own chaining, so taking a direct ratio between two `paired` entries that are not
+adjacent in the full `series` is still a valid return over whatever calendar span actually
+elapsed, the same reasoning section 1's volatility calculation already relies on).
+
+### 2.3 Beta
+
+Let `P[0..M-1]` be the `twr_index` values and `S[0..M-1]` the `benchmark_index` values of
+`paired`, in order. For `i in 1..M-1`:
+
+```
+p_return[i] = P[i] / P[i-1] - 1
+s_return[i] = S[i] / S[i-1] - 1
+```
+
+`beta_pair_count = M - 1` (the number of return pairs, `0` if `M == 0`). With
+`beta_pair_count < 2`, `portfolio_beta` is `null` (a sample covariance/variance needs at least 2
+observations, the same threshold section 1's volatility already uses for the same reason).
+Otherwise, inside the same `Context(prec=50)` `localcontext()` every other computation in this
+module already uses:
+
+```
+mean_p = mean(p_return), mean_s = mean(s_return)
+covariance = sum((p_return[i] - mean_p) * (s_return[i] - mean_s)) / (beta_pair_count - 1)
+variance_s = sum((s_return[i] - mean_s) ** 2) / (beta_pair_count - 1)
+portfolio_beta = covariance / variance_s
+```
+
+Both `covariance` and `variance_s` use the sample (`ddof=1`) convention, matching section 1's
+volatility. If `variance_s == 0` (the benchmark showed no variation across the paired returns —
+a degenerate case that should not occur with real SPY data, but is guarded against rather than
+dividing by zero), `portfolio_beta` is `null`. Otherwise, quantized to 4 decimal places,
+`ROUND_HALF_UP` — the same precision every other field in this response uses, even though beta
+is a unitless ratio, not a percentage.
+
+### 2.4 Worked reference (independently verified, not derived from the implementation)
+
+Five paired days: `twr_index = [1.000000, 1.020000, 1.040000, 1.000000, 1.050000]`,
+`benchmark_index = [1.000000, 1.010000, 1.020000, 1.005000, 1.015000]` (one real series day in
+between these, with a present `twr_index` but a `null` `benchmark_index`, was excluded from
+`paired` entirely — not shown here since it contributes nothing to the calculation).
+
+```
+p_return = [0.02, 0.0196078431372549019607843137254901960784313725490,
+            -0.03846153846153846153846153846153846153846153846154, 0.05]
+s_return = [0.01, 0.0099009900990099009900990099009900990099009900990,
+            -0.01470588235294117647058823529411764705882352941176,
+            0.0099502487562189054726368159203980099502487562189]
+mean_p = 0.012786576168929110105580693815987933634992458521865
+mean_s = 0.003786339125571907498036897631817615475331554226535
+covariance = 0.00042120103459408850981938983297090496541526703676297
+variance_s = 0.00015198485837817604292545915627560159988347915079349
+portfolio_beta = covariance / variance_s = 2.7713355072913632886581510859955567536939492729531
+             → quantized = "2.7713"
+```
+
+`beta_pair_count = 4`.
+
+### 2.5 What this addendum does not do
+
+Does not add VaR, Expected Shortfall, correlation, risk contribution, or stress-test loss. Does
+not annualize beta (it is already scale-invariant between covariance and variance over the same
+period length, so no annualization question arises the way it does for volatility). Does not
+change `performance_service.py` — still a pure consumer of its already-published fields.
