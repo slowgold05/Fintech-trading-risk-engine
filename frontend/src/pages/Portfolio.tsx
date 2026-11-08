@@ -24,7 +24,12 @@ import {
   formatSignedPercent,
 } from "../utils/format";
 import type { AllocationSector, PortfolioPositionResponse } from "../types/schemas";
-import type { AttributionSector, AttributionSecurity, StressScenario } from "../types/schemas";
+import type {
+  AttributionSector,
+  AttributionSecurity,
+  RiskCorrelation,
+  StressScenario,
+} from "../types/schemas";
 
 function getExposurePercent(positionValue: number | null, totalValue: number | null) {
   if (positionValue == null || totalValue == null) {
@@ -614,6 +619,13 @@ export function Portfolio() {
                 ) : (
                   <StressScenarioTable scenarios={riskMetricsQuery.data.stress_scenarios} />
                 )}
+                {riskMetricsQuery.data.correlations == null ? (
+                  <p className="mt-4 text-sm text-slate-300">Correlations unavailable</p>
+                ) : riskMetricsQuery.data.correlations.length === 0 ? (
+                  <p className="mt-4 text-sm text-slate-300">No security pairs to correlate.</p>
+                ) : (
+                  <CorrelationTable correlations={riskMetricsQuery.data.correlations} />
+                )}
               </>
             )}
           </DashboardCard>
@@ -839,6 +851,44 @@ function StressScenarioTable({ scenarios }: { scenarios: StressScenario[] }) {
               <td className="font-mono text-sm text-slate-100">{affectedSymbolCell(scenario)}</td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatCorrelation(value: string | null) {
+  if (value == null) {
+    return <span className="text-slate-400">Unavailable</span>;
+  }
+  // Unitless ratio in [-1, 1], same decimal convention as portfolio beta.
+  return Number(value).toFixed(4);
+}
+
+function CorrelationTable({ correlations }: { correlations: RiskCorrelation[] }) {
+  return (
+    <div className="table-shell mt-4">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th className="text-left">Pair</th>
+            <th className="text-right">Return count</th>
+            <th className="text-right">Correlation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {correlations.map((entry) => {
+            const pair = `${entry.symbols[0]} / ${entry.symbols[1]}`;
+            return (
+              <tr key={pair}>
+                <td className="font-mono text-sm font-semibold text-slate-100">{pair}</td>
+                <td className="text-right font-mono tabular-nums">{entry.return_count}</td>
+                <td className="text-right font-mono tabular-nums">
+                  {formatCorrelation(entry.correlation)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

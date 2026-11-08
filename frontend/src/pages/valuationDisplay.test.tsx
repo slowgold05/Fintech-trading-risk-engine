@@ -1008,4 +1008,56 @@ describe("valuation display", () => {
     expect(scoped.queryByText("$90")).not.toBeInTheDocument();
     expect(card.textContent ?? "").not.toMatch(/\$/);
   });
+
+  it("test_correlation_table_renders_pairs_with_a_null_entry", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchRiskMetrics.mockResolvedValue(
+      riskMetrics({
+        correlations: [
+          { symbols: ["AAPL", "JPM"], return_count: 45, correlation: "0.6123" },
+          { symbols: ["AAPL", "XOM"], return_count: 1, correlation: null },
+        ],
+      }),
+    );
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    const scoped = within(card);
+
+    expect(await scoped.findByText("AAPL / JPM")).toBeInTheDocument();
+    expect(scoped.getByText("AAPL / XOM")).toBeInTheDocument();
+    expect(scoped.queryByText("Correlations unavailable")).not.toBeInTheDocument();
+
+    const definedPair = scoped.getByText("AAPL / JPM").closest("tr") as HTMLElement;
+    expect(within(definedPair).getByText("45")).toBeInTheDocument();
+    expect(within(definedPair).getByText("0.6123")).toBeInTheDocument();
+    expect(definedPair.textContent ?? "").not.toMatch(/%/);
+
+    const missingPair = scoped.getByText("AAPL / XOM").closest("tr") as HTMLElement;
+    expect(within(missingPair).getByText("1")).toBeInTheDocument();
+    expect(within(missingPair).getByText("Unavailable")).toBeInTheDocument();
+    expect(missingPair.textContent ?? "").not.toMatch(/%/);
+  });
+
+  it("test_correlation_table_shows_unavailable_when_null", async () => {
+    api.fetchPortfolio.mockResolvedValue(book("complete"));
+    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchRiskMetrics.mockResolvedValue(riskMetrics({ correlations: null }));
+
+    renderPage(<Portfolio />);
+
+    const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
+      "section",
+    ) as HTMLElement;
+    const scoped = within(card);
+    expect(await scoped.findByText("Correlations unavailable")).toBeInTheDocument();
+    expect(scoped.queryByText("AAPL / JPM")).not.toBeInTheDocument();
+    expect(scoped.queryByText("AAPL / XOM")).not.toBeInTheDocument();
+    expect(scoped.queryByRole("columnheader", { name: "Pair" })).not.toBeInTheDocument();
+    expect(scoped.queryByRole("columnheader", { name: "Correlation" })).not.toBeInTheDocument();
+  });
 });

@@ -280,6 +280,12 @@ export interface StressScenario {
   affected_symbol?: string | null;
 }
 
+export interface RiskCorrelation {
+  symbols: [string, string];
+  return_count: number;
+  correlation: string | null;
+}
+
 export interface RiskMetricsResponse {
   user: { id: number; email: string };
   range: "1y" | "2y";
@@ -297,7 +303,7 @@ export interface RiskMetricsResponse {
   historical_var_99_pct: string | null;
   expected_shortfall_95_pct: string | null;
   expected_shortfall_99_pct: string | null;
-  correlations: unknown[] | null;
+  correlations: RiskCorrelation[] | null;
   stress_scenarios: StressScenario[] | null;
   risk_contributions: unknown[] | null;
 }
