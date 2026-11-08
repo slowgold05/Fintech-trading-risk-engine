@@ -533,3 +533,141 @@ separate and much larger unit — user-chosen symbols/sectors/magnitudes, not a 
 not model interest-rate shocks (this app holds equities/ETFs only; a rate shock needs a duration/
 factor model this unit does not build). Does not change `build_allocation_response`,
 `build_portfolio_response`, or `performance_service.py` — a third black-box read only.
+
+## 6. Risk contribution addendum (2026-11-08) — design, not yet implemented
+
+Written before any code change, same pattern as sections 1-5. Adds `risk_contributions` to the
+same `GET /portfolio/risk-metrics` response, additive only — this closes the ninth and final
+metric on the roadmap's section 4.2 table. Reuses `build_allocation_response` (already read for
+section 5's stress scenarios) for weights, and the same raw-close/common-day machinery section
+4 already built for correlation (`_single_provider_closes`), extended to also compute the raw
+(unnormalized) sample covariance between every pair of held securities, not just the
+correlation coefficient.
+
+### 6.1 The portfolio risk model
+
+Let `held` be the currently-held, priced securities only (`price_status == "available"`,
+`position_value` and `weight_pct` both non-null) from `build_allocation_response`'s
+`securities` — cash is excluded from this list entirely. For each `held[i]`, `weight[i] =
+Decimal(weight_pct[i]) / 100` (a fraction of `total_account_value`, the exact same weight the
+allocation response already publishes as a percentage).
+
+For every pair `(i, j)` with `i <= j` (including `i == j`, the diagonal, each security's own
+variance against itself), compute the sample covariance of period-over-period simple returns
+over that pair's own common usable days (`i == j` reduces to that one security's own sample
+variance) — the exact same `_pairwise_correlation`-style common-days/return-count machinery
+section 4 already established, but returning the raw covariance, not the normalized
+correlation coefficient. **This is a deliberate, documented simplification**: each pairwise
+covariance is computed over that pair's own common-day window, not one single aligned date
+grid shared across every held security simultaneously — the same simplification section 4
+already made for correlation. A more rigorous multi-asset model would use one shared date grid;
+this unit does not build that.
+
+If **any** required covariance entry (diagonal or off-diagonal) cannot be computed (fewer than 2
+common/own returns for that pair), `risk_contributions` is `null` in its entirety — the
+interlocking nature of a covariance matrix means one missing entry invalidates the whole
+decomposition, the same all-or-nothing principle sections 3 and 5 already apply for their own
+different reasons.
+
+### 6.2 Variance decomposition (Euler's theorem on a quadratic form)
+
+```
+(Σw)[i] = sum(covariance[i][j] * weight[j] for j in held)
+portfolio_variance = sum(weight[i] * (Σw)[i] for i in held)
+contribution[i] = weight[i] * (Σw)[i]
+risk_contribution_pct[i] = contribution[i] / portfolio_variance * 100
+```
+
+By construction (`w^T Σ w` is a quadratic form, and `Σ_i weight[i] * (Σw)[i]` is exactly its own
+expansion), `sum(contribution[i] for i in held) == portfolio_variance` **exactly** — so
+`sum(risk_contribution_pct[i] for i in held) == "100.0000"` exactly whenever the field is
+non-null, the same explicit, checkable sum-to-100% property `GET /portfolio/allocation`'s own
+weights already guarantee. This is contribution to portfolio **variance**, not volatility
+(standard deviation) — a deliberate simplification that avoids an extra `sqrt`, and still
+produces the same additive, sum-to-100% decomposition a volatility-based version would (scaling
+every component by the same `1/sqrt(portfolio_variance)` factor to convert variance
+contributions into volatility contributions would not change their *relative* percentages).
+
+If `portfolio_variance <= 0` (a degenerate case — every held security showing zero variance,
+not expected with real market data but guarded against), `risk_contributions` is `null`. With
+zero held, priced securities at all, `risk_contributions` is `null` (nothing to decompose).
+Each `risk_contribution_pct` quantized to 4 decimal places, `ROUND_HALF_UP`.
+
+### 6.3 Response shape
+
+```
+"risk_contributions": [
+  {"symbol": "AAA", "weight_pct": "60.0000", "risk_contribution_pct": "33.7947"},
+  {"symbol": "BBB", "weight_pct": "40.0000", "risk_contribution_pct": "66.2053"}
+] | null
+```
+
+Ordered by `symbol` ascending, same convention as `GET /portfolio/allocation`'s own
+`securities` list. `weight_pct` is copied straight through from `build_allocation_response`
+(not recomputed), so a caller can directly compare a security's capital weight against its risk
+weight — the entire point of this metric (a security can carry a disproportionately large share
+of portfolio risk relative to its dollar weight, which is exactly what this field exposes).
+
+### 6.4 Worked reference (independently verified, not derived from the implementation)
+
+Two held securities, weights `60%`/`40%`, reusing section 4.4's own seven-day `AAA`/`BBB`
+closes. **Important, and the reason this reference was corrected after an initial draft got it
+wrong:** the diagonal entry for `AAA` is *not* section 4.4's `var_a` — that figure was computed
+over the `AAA`∩`BBB` *common*-day window (6 days, 5 returns, since `BBB`'s day 4 was ambiguous
+and excluded from the pair entirely). Per section 6.1, the diagonal is each security's **own**
+sample variance — `AAA` has no ambiguity of its own, so its own usable-day set is the full 7
+days (6 returns), not the pair-restricted 5. `BBB`'s own diagonal happens to equal section
+4.4's `var_b` exactly, because `BBB`'s own full usable-day set (6 days, with day 4 already
+excluded for `BBB` on its own merits) coincides with the `AAA`∩`BBB` intersection in this
+particular example — that coincidence does not generalize to `AAA`.
+
+```
+var(AAA), AAA's own 6 returns over all 7 of its own usable days (no ambiguity of its own):
+  returns = [0.02, -0.0098039215686274509803921568627450980392156862745,
+             0.029702970297029702970297029702970297029702970297,
+             -0.0096153846153846153846153846153846153846153846154,
+             0.0194174757281553398058252427184466019417475728155,
+             0.0190476190476190476190476190476190476190476190476]
+  var(AAA) = 0.00028459142482739615947657075752608920826080589756838
+
+var(BBB) (BBB's own 5 returns over its own 6 usable days) = section 4.4's var_b
+  = 0.0013871936922561708854880149110690569535114319917560
+
+covariance(AAA, BBB) over the AAA∩BBB common 6 days (5 returns, day 4 excluded) =
+  section 4.4's covariance_ab = 0.00043524385357409836122616562497758373092408409098 22
+
+(Σw)_AAA = 0.6 * var(AAA) + 0.4 * covariance(AAA, BBB)
+         = 0.00034485239632607704017640870450668701732611717493303
+(Σw)_BBB = 0.6 * covariance(AAA, BBB) + 0.4 * var(BBB)
+         = 0.00081602378904692737093090533941417301995902325129040
+contribution_AAA = 0.6 * (Σw)_AAA = 0.00020691143779564622410584522270401221039567030495982
+contribution_BBB = 0.4 * (Σw)_BBB = 0.00032640951561877094837236213576566920798360930051616
+portfolio_variance = contribution_AAA + contribution_BBB
+                    = 0.00053332095341441717247820735846968141837927960547598
+risk_contribution_pct_AAA = contribution_AAA / portfolio_variance * 100 → "38.7968"
+risk_contribution_pct_BBB = contribution_BBB / portfolio_variance * 100 → "61.2032"
+```
+
+`"38.7968" + "61.2032" == "100.0000"` exactly — confirms the Euler-decomposition identity.
+`BBB`, the smaller dollar weight (`40%`), still carries the larger risk share (`61.2032%`)
+because its own return series is far more volatile than `AAA`'s — the metric correctly surfaces
+that concentration-by-dollar-weight and concentration-by-risk can diverge, which is the entire
+reason this metric exists on the roadmap's table as something distinct from "concentration"
+(security/sector weights, already closed by `GET /portfolio/allocation`).
+
+(An earlier draft of this section mistakenly reused section 4.4's pair-restricted `var_a`
+`0.00017266119452185244984350376253074614116717932830619` as if it were `AAA`'s own diagonal,
+giving the wrong figures `"33.7947"`/`"66.2053"`. The implementer who actually computed both
+numbers from the specified rule, rather than trusting this contract's arithmetic blindly,
+caught exactly this discrepancy before writing any code, rather than silently implementing a
+mismatched reference — flagged back, verified independently against the corrected rule, and
+this section rewritten with the right figures before implementation proceeded.)
+
+### 6.5 What this addendum does not do
+
+Does not use one shared date grid across every held security (each pairwise covariance keeps
+its own common-day window, the same simplification section 4 already made). Does not convert
+to a volatility-based (rather than variance-based) decomposition. Does not add `POST
+/risk/scenarios`. Does not change `build_allocation_response`, `build_portfolio_response`,
+`performance_service.py`, or `sector_classifier.py` — every read in this module remains a
+black-box call or a small, self-contained new query.

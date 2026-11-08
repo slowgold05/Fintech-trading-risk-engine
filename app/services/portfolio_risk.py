@@ -1,4 +1,4 @@
-"""Historical volatility, maximum drawdown, portfolio beta, tail loss, correlation, and stress loss.
+"""Historical volatility, maximum drawdown, portfolio beta, tail loss, correlation, stress loss, and risk contribution.
 
 Volatility, drawdown, beta, and tail loss come from a single
 ``build_performance_response`` read. Volatility is the sample standard
@@ -27,6 +27,14 @@ Three fixed shocks apply to priced holdings: 10% of every security, 25% of
 those already classified Technology, and 30% of the single largest position.
 An incomplete allocation leaves ``stress_scenarios`` null. Cash is not
 shocked. Loss is cents. Loss percent is four places.
+
+Risk contribution reads that same allocation snapshot. It decomposes
+portfolio variance across priced holdings: each share is that security's
+weight times its covariance row. A pair uses its own common usable days,
+and a security's diagonal is that security's own sample variance. One
+missing covariance, a non-positive portfolio variance, or an incomplete
+allocation nulls the whole list. The percentages are four places and sum
+to 100.0000. This is contribution to variance, not volatility.
 """
 
 from collections import defaultdict
@@ -195,6 +203,37 @@ def _single_provider_closes(
     return result
 
 
+def _pairwise_covariance(
+    closes_a: dict[date, Decimal], closes_b: dict[date, Decimal]
+) -> Decimal | None:
+    """Raw sample covariance of simple returns over the common usable days.
+
+    ``None`` below two common returns, the same threshold
+    ``_pairwise_correlation`` already uses, since a sample covariance needs
+    the same minimum. When ``closes_a`` and ``closes_b`` are the same dict,
+    this is that security's own sample variance.
+    """
+    common_days = sorted(set(closes_a) & set(closes_b))
+    prices_a = [closes_a[day] for day in common_days]
+    prices_b = [closes_b[day] for day in common_days]
+    with localcontext(Context(prec=50)):
+        returns_a = [prices_a[i] / prices_a[i - 1] - 1 for i in range(1, len(prices_a))]
+        returns_b = [prices_b[i] / prices_b[i - 1] - 1 for i in range(1, len(prices_b))]
+        pair_return_count = len(returns_a)
+        if pair_return_count < 2:
+            return None
+        mean_a = sum(returns_a, Decimal(0)) / pair_return_count
+        mean_b = sum(returns_b, Decimal(0)) / pair_return_count
+        covariance = sum(
+            (
+                (returns_a[index] - mean_a) * (returns_b[index] - mean_b)
+                for index in range(pair_return_count)
+            ),
+            Decimal(0),
+        ) / (pair_return_count - 1)
+        return covariance
+
+
 def _pairwise_correlation(
     closes_a: dict[date, Decimal], closes_b: dict[date, Decimal]
 ) -> tuple[int, str | None]:
@@ -237,7 +276,7 @@ def _pairwise_correlation(
 
 
 def _held_correlations(
-    db: Session, user_id: int, email: str, requested_start: str, requested_end: str
+    db: Session, user_id: int, email: str, requested_start: date, requested_end: date
 ) -> list[dict] | None:
     """One entry per held pair, or null when fewer than two symbols are held."""
     portfolio = build_portfolio_response(db, user_id, email)
@@ -247,8 +286,8 @@ def _held_correlations(
     closes_by_symbol = _single_provider_closes(
         db,
         held_symbols,
-        date.fromisoformat(requested_start),
-        date.fromisoformat(requested_end),
+        requested_start,
+        requested_end,
     )
     correlations = []
     # `held_symbols` is sorted, so combinations already emits each pair in
@@ -336,6 +375,72 @@ def _stress_scenarios(allocation: dict) -> list[dict] | None:
     return scenarios
 
 
+def _risk_contributions(
+    db: Session, allocation: dict, start: date, end: date
+) -> list[dict] | None:
+    """Variance decomposition of the portfolio's held, priced securities.
+
+    Every pairwise covariance, diagonal included, must be computable, or
+    the whole result is null. One missing entry invalidates the matrix.
+    Contribution is to portfolio variance, not volatility. Percentages
+    still sum to exactly 100.0000.
+    """
+    if allocation["status"] != "complete":
+        return None
+    # ``.get`` treats a row that omits the key the same as an explicit null.
+    held = [
+        item
+        for item in allocation["securities"]
+        if item["price_status"] == "available"
+        and item["position_value"] is not None
+        and item.get("weight_pct") is not None
+    ]
+    if not held:
+        return None
+    symbols = [item["symbol"] for item in held]
+    weights = {item["symbol"]: Decimal(item["weight_pct"]) / 100 for item in held}
+    closes_by_symbol = _single_provider_closes(db, symbols, start, end)
+
+    covariance: dict[tuple[str, str], Decimal] = {}
+    for symbol_a in symbols:
+        for symbol_b in symbols:
+            # Sample covariance is symmetric. The reverse pair is the same value.
+            if (symbol_b, symbol_a) in covariance:
+                covariance[(symbol_a, symbol_b)] = covariance[(symbol_b, symbol_a)]
+                continue
+            value = _pairwise_covariance(
+                closes_by_symbol[symbol_a], closes_by_symbol[symbol_b]
+            )
+            if value is None:
+                return None
+            covariance[(symbol_a, symbol_b)] = value
+
+    with localcontext(Context(prec=50)):
+        sigma_w = {
+            symbol_a: sum(
+                (covariance[(symbol_a, symbol_b)] * weights[symbol_b] for symbol_b in symbols),
+                Decimal(0),
+            )
+            for symbol_a in symbols
+        }
+        contributions = {symbol: weights[symbol] * sigma_w[symbol] for symbol in symbols}
+        portfolio_variance = sum(contributions.values(), Decimal(0))
+        if portfolio_variance <= 0:
+            return None
+        results = []
+        for item in sorted(held, key=lambda entry: entry["symbol"]):
+            symbol = item["symbol"]
+            pct = (contributions[symbol] / portfolio_variance * 100).quantize(
+                FOUR_PLACES, rounding=ROUND_HALF_UP
+            )
+            results.append({
+                "symbol": symbol,
+                "weight_pct": item["weight_pct"],
+                "risk_contribution_pct": format(pct, "f"),
+            })
+        return results
+
+
 def build_risk_metrics_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
     performance = build_performance_response(db, user_id, email, range_token)
     available = [point for point in performance["series"] if point["status"] == "available"]
@@ -362,17 +467,24 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
         raise AssertionError("return_count does not match the twr_index ratios")
     # Same per-period twr returns as volatility, not the benchmark pairs beta uses.
     tail = _historical_var_and_es(returns)
+    # One parse of the performance window. Correlation and risk contribution
+    # both read closes over these same two dates.
+    requested_start = date.fromisoformat(performance["requested_start"])
+    requested_end = date.fromisoformat(performance["requested_end"])
     correlations = _held_correlations(
         db,
         user_id,
         email,
-        performance["requested_start"],
-        performance["requested_end"],
+        requested_start,
+        requested_end,
     )
     # After the performance read. An invalid range still fails inside that
     # call, before this third black-box snapshot.
     allocation = build_allocation_response(db, user_id, email)
     stress_scenarios = _stress_scenarios(allocation)
+    risk_contributions = _risk_contributions(
+        db, allocation, requested_start, requested_end
+    )
     return {
         "user": performance["user"],
         "range": performance["range"],
@@ -392,4 +504,5 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
         "expected_shortfall_99_pct": tail["expected_shortfall_99_pct"],
         "correlations": correlations,
         "stress_scenarios": stress_scenarios,
+        "risk_contributions": risk_contributions,
     }

@@ -1,4 +1,4 @@
-"""GET /portfolio/risk-metrics volatility, drawdown, beta, tail loss, correlation, and stress loss.
+"""GET /portfolio/risk-metrics volatility, drawdown, beta, tail loss, correlation, stress loss, and risk contribution.
 
 The reference digits are the contract's independently computed values
 (docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md). They are not derived from
@@ -350,6 +350,17 @@ def test_route_end_to_end_with_a_real_seeded_account(client, auth_headers, db_se
                     _assert_decimal_text(value)
         affected_symbol = stress[2]["affected_symbol"]
         assert affected_symbol is None or isinstance(affected_symbol, str)
+    contributions = body["risk_contributions"]
+    assert contributions is None or isinstance(contributions, list)
+    if contributions is not None:
+        contribution_total = Decimal(0)
+        for entry in contributions:
+            assert isinstance(entry["symbol"], str)
+            assert entry["symbol"] != ""
+            _assert_decimal_text(entry["weight_pct"])
+            _assert_decimal_text(entry["risk_contribution_pct"])
+            contribution_total += Decimal(entry["risk_contribution_pct"])
+        assert contribution_total == Decimal("100.0000")
 
 
 def test_correlation_reference_vector_matches_the_contract(db_session, monkeypatch):
@@ -615,3 +626,143 @@ def test_worst_holding_scenario_is_null_with_zero_priced_securities(monkeypatch)
         "loss": None,
         "loss_pct": None,
     }
+
+
+def _priced_allocation(status, securities):
+    return {
+        "status": status,
+        "total_account_value": "1000.00" if status == "complete" else None,
+        "securities": securities,
+    }
+
+
+def _held_security(symbol, weight_pct, position_value="100.00"):
+    return {
+        "symbol": symbol,
+        "sector": "Other",
+        "position_value": position_value,
+        "weight_pct": weight_pct,
+        "price_status": "available",
+    }
+
+
+def test_risk_contribution_reference_vector_matches_the_contract(monkeypatch):
+    """Section 6.4: AAA's diagonal uses all seven of its own closes, not the pair window."""
+    start = date(2026, 3, 2)
+    days = [start + timedelta(days=offset) for offset in range(7)]
+    aaa_closes = [
+        Decimal("100.000000"),
+        Decimal("102.000000"),
+        Decimal("101.000000"),
+        Decimal("104.000000"),
+        Decimal("103.000000"),
+        Decimal("105.000000"),
+        Decimal("107.000000"),
+    ]
+    # Day 4 is ambiguous for BBB, so it is absent from BBB's own usable series.
+    bbb_closes = [
+        Decimal("50.000000"),
+        Decimal("51.000000"),
+        Decimal("49.000000"),
+        None,
+        Decimal("52.000000"),
+        Decimal("54.000000"),
+        Decimal("55.000000"),
+    ]
+    closes = {
+        "AAA": {day: price for day, price in zip(days, aaa_closes)},
+        "BBB": {day: price for day, price in zip(days, bbb_closes) if price is not None},
+    }
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation=_priced_allocation(
+            "complete",
+            [
+                _held_security("BBB", "40.0000", "400.00"),
+                _held_security("AAA", "60.0000", "600.00"),
+            ],
+        ),
+    )
+
+    def fixed_closes(_db, _symbols, _start, _end):
+        return closes
+
+    monkeypatch.setattr("app.services.portfolio_risk._single_provider_closes", fixed_closes)
+    body = _read()
+
+    assert body["risk_contributions"] == [
+        {"symbol": "AAA", "weight_pct": "60.0000", "risk_contribution_pct": "38.7968"},
+        {"symbol": "BBB", "weight_pct": "40.0000", "risk_contribution_pct": "61.2032"},
+    ]
+    contribution_total = sum(
+        (Decimal(entry["risk_contribution_pct"]) for entry in body["risk_contributions"]),
+        Decimal(0),
+    )
+    assert contribution_total == Decimal("100.0000")
+
+
+def test_risk_contribution_is_null_when_allocation_is_incomplete(monkeypatch):
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation=_priced_allocation(
+            "incomplete",
+            [
+                _held_security("AAA", "60.0000", "600.00"),
+                _held_security("BBB", "40.0000", "400.00"),
+            ],
+        ),
+    )
+    body = _read()
+    assert body["risk_contributions"] is None
+
+
+def test_risk_contribution_is_null_with_zero_priced_securities(monkeypatch):
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation=_priced_allocation("complete", []),
+    )
+    body = _read()
+    assert body["risk_contributions"] is None
+
+
+def test_risk_contribution_is_null_when_a_covariance_entry_is_missing(monkeypatch):
+    """Each name has two own returns. They share one return, so the pair covariance is missing."""
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation=_priced_allocation(
+            "complete",
+            [
+                _held_security("AAA", "60.0000"),
+                _held_security("BBB", "40.0000"),
+            ],
+        ),
+    )
+
+    def below_two_common_returns(_db, _symbols, _start, _end):
+        first = date(2026, 3, 2)
+        second = date(2026, 3, 3)
+        third = date(2026, 3, 4)
+        fourth = date(2026, 3, 5)
+        return {
+            "AAA": {
+                first: Decimal("100"),
+                second: Decimal("102"),
+                third: Decimal("103"),
+            },
+            "BBB": {
+                second: Decimal("50"),
+                third: Decimal("51"),
+                fourth: Decimal("53"),
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.services.portfolio_risk._single_provider_closes",
+        below_two_common_returns,
+    )
+    body = _read()
+    assert body["risk_contributions"] is None
