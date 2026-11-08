@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryRange, HistoryResponse, MarketDataStatus } from "../api/history";
+import type { OrderResponse, TradeResponse } from "../types/schemas";
 import { saveChartPreferences } from "../utils/chartPreferences";
 import { DailyHistory } from "./DailyHistory";
 
@@ -20,8 +21,11 @@ const RAW_SERIES = JSON.stringify(["fixture", "raw"]);
 
 const historyApi = vi.hoisted(() => ({ fetchCachedSeries: vi.fn(), fetchDailyHistory: vi.fn() }));
 const indicatorApi = vi.hoisted(() => ({ fetchDailyIndicators: vi.fn() }));
+const tradesApi = vi.hoisted(() => ({ fetchTrades: vi.fn() }));
+const ordersApi = vi.hoisted(() => ({ fetchOrders: vi.fn() }));
 const chartApi = vi.hoisted(() => ({
   createChart: vi.fn(),
+  createSeriesMarkers: vi.fn(),
   ColorType: { Solid: "solid" },
   CandlestickSeries: { type: "candlestick" },
   HistogramSeries: { type: "histogram" },
@@ -30,6 +34,8 @@ const chartApi = vi.hoisted(() => ({
 }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("../api/indicators", () => indicatorApi);
+vi.mock("../api/trades", () => tradesApi);
+vi.mock("../api/orders", () => ordersApi);
 vi.mock("lightweight-charts", () => chartApi);
 
 type ChartMount = {
@@ -43,6 +49,18 @@ type ChartMount = {
   fitContent: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
   addSeries: ReturnType<typeof vi.fn>;
+  candleSeries: { setMarkers: ReturnType<typeof vi.fn> };
+  lineModeSeries: { setMarkers: ReturnType<typeof vi.fn> };
+  areaModeSeries: { setMarkers: ReturnType<typeof vi.fn> };
+  candleSetMarkers: ReturnType<typeof vi.fn>;
+  lineModeSetMarkers: ReturnType<typeof vi.fn>;
+  areaModeSetMarkers: ReturnType<typeof vi.fn>;
+  candleCreatePriceLine: ReturnType<typeof vi.fn>;
+  lineModeCreatePriceLine: ReturnType<typeof vi.fn>;
+  areaModeCreatePriceLine: ReturnType<typeof vi.fn>;
+  candleRemovePriceLine: ReturnType<typeof vi.fn>;
+  lineModeRemovePriceLine: ReturnType<typeof vi.fn>;
+  areaModeRemovePriceLine: ReturnType<typeof vi.fn>;
 };
 const mounts: ChartMount[] = [];
 const clients: QueryClient[] = [];
@@ -79,6 +97,15 @@ function history(close = "108.500000"): HistoryResponse {
   };
 }
 
+function withOverlays<T extends object>(series: T) {
+  return {
+    setMarkers: vi.fn(),
+    createPriceLine: vi.fn(() => ({})),
+    removePriceLine: vi.fn(),
+    ...series,
+  };
+}
+
 function mountChart() {
   const setData = vi.fn();
   const lineModeSetData = vi.fn();
@@ -89,26 +116,56 @@ function mountChart() {
   const volumeSetData = vi.fn();
   const fitContent = vi.fn();
   const remove = vi.fn();
+  const candleSetMarkers = vi.fn();
+  const lineModeSetMarkers = vi.fn();
+  const areaModeSetMarkers = vi.fn();
+  const candleCreatePriceLine = vi.fn((options: unknown) => ({ options }));
+  const lineModeCreatePriceLine = vi.fn((options: unknown) => ({ options }));
+  const areaModeCreatePriceLine = vi.fn((options: unknown) => ({ options }));
+  const candleRemovePriceLine = vi.fn();
+  const lineModeRemovePriceLine = vi.fn();
+  const areaModeRemovePriceLine = vi.fn();
+  const candleSeries = withOverlays({
+    setData,
+    applyOptions: candleApplyOptions,
+    setMarkers: candleSetMarkers,
+    createPriceLine: candleCreatePriceLine,
+    removePriceLine: candleRemovePriceLine,
+  });
+  const lineModeSeries = withOverlays({
+    setData: lineModeSetData,
+    applyOptions: lineModeApplyOptions,
+    setMarkers: lineModeSetMarkers,
+    createPriceLine: lineModeCreatePriceLine,
+    removePriceLine: lineModeRemovePriceLine,
+  });
+  const areaModeSeries = withOverlays({
+    setData: areaModeSetData,
+    applyOptions: areaModeApplyOptions,
+    setMarkers: areaModeSetMarkers,
+    createPriceLine: areaModeCreatePriceLine,
+    removePriceLine: areaModeRemovePriceLine,
+  });
   const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string; color?: string }) => {
     if (options?.priceScaleId === "daily-history-volume") {
-      return { setData: volumeSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: volumeSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     if (options?.priceScaleId === "daily-history-rsi") {
-      return { setData: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     if (options?.priceScaleId === "daily-history-macd") {
-      return { setData: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     if (kind === chartApi.AreaSeries) {
-      return { setData: areaModeSetData, applyOptions: areaModeApplyOptions };
+      return areaModeSeries;
     }
     if (kind === chartApi.LineSeries && options?.color === "#34d399") {
-      return { setData: lineModeSetData, applyOptions: lineModeApplyOptions };
+      return lineModeSeries;
     }
     if (kind === chartApi.CandlestickSeries) {
-      return { setData, applyOptions: candleApplyOptions };
+      return candleSeries;
     }
-    return { setData: vi.fn(), applyOptions: vi.fn() };
+    return withOverlays({ setData: vi.fn(), applyOptions: vi.fn() });
   });
   mounts.push({
     setData,
@@ -121,6 +178,18 @@ function mountChart() {
     fitContent,
     remove,
     addSeries,
+    candleSeries,
+    lineModeSeries,
+    areaModeSeries,
+    candleSetMarkers,
+    lineModeSetMarkers,
+    areaModeSetMarkers,
+    candleCreatePriceLine,
+    lineModeCreatePriceLine,
+    areaModeCreatePriceLine,
+    candleRemovePriceLine,
+    lineModeRemovePriceLine,
+    areaModeRemovePriceLine,
   });
   return { addSeries, timeScale: () => ({ fitContent }), remove };
 }
@@ -170,6 +239,60 @@ function onlyChart() {
   return chart;
 }
 
+function trade(patch: Partial<TradeResponse> = {}): TradeResponse {
+  return {
+    id: 1,
+    symbol: "TEST",
+    asset_type: "stock",
+    side: "buy",
+    quantity: 5,
+    price_at_execution: 103.75,
+    notional: 518.75,
+    realized_pnl: 0,
+    realized_pnl_pct: 0,
+    executed_at: "2026-11-04T14:30:00Z",
+    ...patch,
+  };
+}
+
+function order(patch: Partial<OrderResponse> = {}): OrderResponse {
+  return {
+    id: 1,
+    symbol: "TEST",
+    side: "buy",
+    order_type: "limit",
+    quantity: 4,
+    remaining_quantity: 4,
+    limit_price: 190.25,
+    status: "open",
+    created_at: "2026-11-05T15:00:00Z",
+    ...patch,
+  };
+}
+
+const BUY_MARKER = {
+  time: "2026-11-04",
+  position: "belowBar",
+  shape: "arrowUp",
+  color: "#34d399",
+  text: "BUY 5",
+};
+const SELL_MARKER = {
+  time: "2026-11-05",
+  position: "aboveBar",
+  shape: "arrowDown",
+  color: "#fb7185",
+  text: "SELL 3",
+};
+const BUY_LINE = {
+  price: 190.25,
+  color: "#34d399",
+  lineStyle: 2,
+  lineWidth: 1,
+  axisLabelVisible: true,
+  title: "BUY limit",
+};
+
 function deferred<T>() {
   let resolve: (value: T) => void = () => undefined;
   const promise = new Promise<T>((res) => {
@@ -185,8 +308,18 @@ describe("DailyHistory", () => {
     historyApi.fetchCachedSeries.mockReset();
     historyApi.fetchDailyHistory.mockReset();
     indicatorApi.fetchDailyIndicators.mockReset();
+    tradesApi.fetchTrades.mockReset();
+    tradesApi.fetchTrades.mockResolvedValue({ trades: [] });
+    ordersApi.fetchOrders.mockReset();
+    ordersApi.fetchOrders.mockResolvedValue({ orders: [] });
     chartApi.createChart.mockReset();
     chartApi.createChart.mockImplementation(mountChart);
+    chartApi.createSeriesMarkers.mockReset();
+    chartApi.createSeriesMarkers.mockImplementation((series: { setMarkers?: ReturnType<typeof vi.fn> }) => ({
+      setMarkers: series?.setMarkers ?? vi.fn(),
+      markers: () => [],
+      detach: vi.fn(),
+    }));
   });
   afterEach(() => {
     cleanup();
@@ -579,5 +712,151 @@ describe("DailyHistory", () => {
       period: "20",
       chartType: "candlestick",
     });
+  });
+
+  it("marks buy and sell executions on the loaded session dates for every price series", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    tradesApi.fetchTrades.mockResolvedValue({
+      trades: [
+        trade({ id: 1, side: "buy", quantity: 5, executed_at: "2026-11-04T14:30:00Z" }),
+        trade({ id: 2, side: "sell", quantity: 3, executed_at: "2026-11-05T20:15:00Z" }),
+        trade({ id: 3, symbol: "MSFT", side: "buy", quantity: 9, executed_at: "2026-11-04T14:30:00Z" }),
+      ],
+    });
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    const markers = [BUY_MARKER, SELL_MARKER];
+    await waitFor(() => expect(chart.candleSetMarkers).toHaveBeenLastCalledWith(markers));
+    expect(chart.lineModeSetMarkers).toHaveBeenLastCalledWith(markers);
+    expect(chart.areaModeSetMarkers).toHaveBeenLastCalledWith(markers);
+    expect(chartApi.createSeriesMarkers).toHaveBeenCalledWith(chart.candleSeries, []);
+    expect(chartApi.createSeriesMarkers).toHaveBeenCalledWith(chart.lineModeSeries, []);
+    expect(chartApi.createSeriesMarkers).toHaveBeenCalledWith(chart.areaModeSeries, []);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Daily price chart unavailable.")).not.toBeInTheDocument();
+  });
+
+  it("skips a trade whose session date has no loaded candle", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    tradesApi.fetchTrades.mockResolvedValue({
+      trades: [trade({ id: 8, executed_at: "2020-01-01T00:00:00Z", quantity: 7 })],
+    });
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    await waitFor(() => expect(tradesApi.fetchTrades).toHaveBeenCalled());
+    await act(async () => {
+      await tradesApi.fetchTrades.mock.results[0]?.value;
+    });
+    await waitFor(() => expect(chart.candleSetMarkers).toHaveBeenLastCalledWith([]));
+    expect(chart.lineModeSetMarkers).toHaveBeenLastCalledWith([]);
+    expect(chart.areaModeSetMarkers).toHaveBeenLastCalledWith([]);
+    for (const call of chart.candleSetMarkers.mock.calls) {
+      expect(call[0]).not.toEqual(expect.arrayContaining([expect.objectContaining({ time: "2020-01-01", text: "BUY 7" })]));
+    }
+    expect(screen.getByText(PARTIAL)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Daily price chart unavailable.")).not.toBeInTheDocument();
+  });
+
+  it("draws one dashed price line per open limit order on every price series", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    ordersApi.fetchOrders.mockResolvedValue({ orders: [order()] });
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    await waitFor(() => expect(chart.candleCreatePriceLine).toHaveBeenCalledWith(BUY_LINE));
+    expect(chart.lineModeCreatePriceLine).toHaveBeenCalledWith(BUY_LINE);
+    expect(chart.areaModeCreatePriceLine).toHaveBeenCalledWith(BUY_LINE);
+  });
+
+  it("removes the previous open-order price line before drawing the replacement", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    ordersApi.fetchOrders.mockResolvedValue({ orders: [order()] });
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    await waitFor(() => expect(chart.candleCreatePriceLine).toHaveBeenCalledWith(BUY_LINE));
+    const firstLine = chart.candleCreatePriceLine.mock.results[0]?.value;
+    const firstLineModeLine = chart.lineModeCreatePriceLine.mock.results[0]?.value;
+    const firstAreaLine = chart.areaModeCreatePriceLine.mock.results[0]?.value;
+    const sellLine = {
+      price: 210,
+      color: "#fb7185",
+      lineStyle: 2,
+      lineWidth: 1,
+      axisLabelVisible: true,
+      title: "SELL limit",
+    };
+    ordersApi.fetchOrders.mockResolvedValue({
+      orders: [order({ id: 2, side: "sell", limit_price: 210 })],
+    });
+    submitForm();
+    await waitFor(() => expect(chart.candleRemovePriceLine).toHaveBeenCalledWith(firstLine));
+    expect(chart.lineModeRemovePriceLine).toHaveBeenCalledWith(firstLineModeLine);
+    expect(chart.areaModeRemovePriceLine).toHaveBeenCalledWith(firstAreaLine);
+    await waitFor(() => expect(chart.candleCreatePriceLine).toHaveBeenCalledWith(sellLine));
+    expect(chart.lineModeCreatePriceLine).toHaveBeenCalledWith(sellLine);
+    expect(chart.areaModeCreatePriceLine).toHaveBeenCalledWith(sellLine);
+    const candleRemoveAt = chart.candleRemovePriceLine.mock.invocationCallOrder[0];
+    const candleCreateAt = chart.candleCreatePriceLine.mock.invocationCallOrder.at(-1);
+    expect(candleRemoveAt).toBeLessThan(candleCreateAt ?? 0);
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+
+    ordersApi.fetchOrders.mockResolvedValue({ orders: [] });
+    const createsBeforeClear = chart.candleCreatePriceLine.mock.calls.length;
+    submitForm();
+    await waitFor(() => expect(chart.candleCreatePriceLine.mock.results.at(-1)?.value).toBeDefined());
+    const replacement = chart.candleCreatePriceLine.mock.results.at(-1)?.value;
+    await waitFor(() => expect(chart.candleRemovePriceLine).toHaveBeenCalledWith(replacement));
+    expect(chart.candleCreatePriceLine).toHaveBeenCalledTimes(createsBeforeClear);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Daily price chart unavailable.")).not.toBeInTheDocument();
+  });
+
+  it("ignores orders that are not open limits for the shown symbol", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    ordersApi.fetchOrders.mockResolvedValue({
+      orders: [
+        order({ id: 1, symbol: "MSFT", limit_price: 10 }),
+        order({ id: 2, symbol: "TEST", order_type: "market", limit_price: null, status: "open" }),
+        order({ id: 3, symbol: "TEST", status: "filled", limit_price: 20 }),
+        order({ id: 4, symbol: "TEST", status: "canceled", limit_price: 30 }),
+      ],
+    });
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    await waitFor(() => expect(ordersApi.fetchOrders).toHaveBeenCalled());
+    await act(async () => {
+      await ordersApi.fetchOrders.mock.results[0]?.value;
+    });
+    const chart = onlyChart();
+    expect(chart.candleCreatePriceLine).not.toHaveBeenCalled();
+    expect(chart.lineModeCreatePriceLine).not.toHaveBeenCalled();
+    expect(chart.areaModeCreatePriceLine).not.toHaveBeenCalled();
+    expect(screen.getByText(PARTIAL)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Daily price chart unavailable.")).not.toBeInTheDocument();
   });
 });

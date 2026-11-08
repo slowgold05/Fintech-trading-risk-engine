@@ -1,7 +1,17 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import type { CandlestickData, HistogramData, LineData, Time, WhitespaceData } from "lightweight-charts";
+import type {
+  CandlestickData,
+  CreatePriceLineOptions,
+  HistogramData,
+  IPriceLine,
+  ISeriesMarkersPluginApi,
+  LineData,
+  SeriesMarker,
+  Time,
+  WhitespaceData,
+} from "lightweight-charts";
 import { Link } from "react-router-dom";
 import {
   type AdjustmentType,
@@ -13,6 +23,9 @@ import {
   fetchDailyHistory,
 } from "../api/history";
 import { fetchDailyIndicators, type IndicatorName } from "../api/indicators";
+import { fetchOrders } from "../api/orders";
+import { fetchTrades } from "../api/trades";
+import type { OrderResponse, TradeResponse } from "../types/schemas";
 import {
   discardChartPreferencesInTests,
   loadChartPreferences,
@@ -241,6 +254,54 @@ type MacdHistogramSeriesHandle = ReturnType<typeof addMacdHistogramSeries>;
 
 type MacdHistogramPoints = NonNullable<IndicatorOverlay["macdHistogram"]>;
 
+type OpenLimitOrder = OrderResponse & { limit_price: number };
+
+type PriceLineSeries = {
+  createPriceLine(options: CreatePriceLineOptions): IPriceLine;
+  removePriceLine(line: IPriceLine): void;
+};
+
+type MarkerPlugin = ISeriesMarkersPluginApi<Time>;
+
+function orderPriceLineOptions(order: OpenLimitOrder): CreatePriceLineOptions {
+  const isBuy = order.side === "buy";
+  return {
+    price: order.limit_price,
+    color: isBuy ? "#34d399" : "#fb7185",
+    lineStyle: BOLLINGER_BAND_LINE_STYLE,
+    lineWidth: 1,
+    axisLabelVisible: true,
+    title: `${order.side.toUpperCase()} limit`,
+  };
+}
+
+function replaceOrderPriceLines(
+  series: PriceLineSeries | null,
+  linesRef: { current: IPriceLine[] },
+  orders: readonly OpenLimitOrder[],
+) {
+  if (series === null) {
+    return;
+  }
+  for (const line of linesRef.current) {
+    series.removePriceLine(line);
+  }
+  const next: IPriceLine[] = [];
+  for (const order of orders) {
+    next.push(series.createPriceLine(orderPriceLineOptions(order)));
+  }
+  linesRef.current = next;
+}
+
+function removeOrderPriceLines(series: PriceLineSeries | null, lines: readonly IPriceLine[]) {
+  if (series === null) {
+    return;
+  }
+  for (const line of lines) {
+    series.removePriceLine(line);
+  }
+}
+
 function coloredMacdHistogram(points: MacdHistogramPoints | null): MacdHistogramPoints {
   if (points === null) {
     return [];
@@ -367,6 +428,31 @@ export function DailyHistory({
     enabled: submitted !== null,
     retry: false,
   });
+  const tradesQuery = useQuery({
+    queryKey: ["trades"],
+    queryFn: fetchTrades,
+    enabled: submitted !== null,
+  });
+  const ordersQuery = useQuery({
+    queryKey: ["orders"],
+    queryFn: fetchOrders,
+    enabled: submitted !== null,
+  });
+  const symbolTrades = useMemo(
+    () => (tradesQuery.data?.trades ?? []).filter((trade) => trade.symbol === submitted?.symbol),
+    [submitted?.symbol, tradesQuery.data?.trades],
+  );
+  const openLimitOrders = useMemo(
+    () =>
+      (ordersQuery.data?.orders ?? []).filter(
+        (order): order is OpenLimitOrder =>
+          order.symbol === submitted?.symbol &&
+          order.status === "open" &&
+          order.order_type === "limit" &&
+          order.limit_price !== null,
+      ),
+    [ordersQuery.data?.orders, submitted?.symbol],
+  );
   const catalog = useMemo(
     () => (catalogQuery.isSuccess ? readCatalog(catalogQuery.data) : null),
     [catalogQuery.data, catalogQuery.isSuccess],
@@ -410,6 +496,12 @@ export function DailyHistory({
       indicator: indicatorDraft,
       period,
     };
+    if (submitted !== null) {
+      // Trades and orders keep a stable query key, so a later view has to
+      // refetch them. The first view enables those queries instead.
+      void tradesQuery.refetch();
+      void ordersQuery.refetch();
+    }
     if (
       submitted !== null &&
       submitted.symbol === next.symbol &&
@@ -693,6 +785,8 @@ export function DailyHistory({
                       : null
                   }
                   rsiLine={accepted.overlay !== null && accepted.overlay.name === "rsi" ? accepted.overlay.line : null}
+                  openLimitOrders={openLimitOrders}
+                  trades={symbolTrades}
                   volume={accepted.volume}
                 />
                 <SessionPrices
@@ -899,6 +993,8 @@ function DailyHistoryCanvas({
   macdLine,
   macdSignalLine,
   macdHistogram,
+  trades,
+  openLimitOrders,
 }: {
   chartType: "candlestick" | "line" | "area";
   points: CandlestickData<Time>[];
@@ -910,16 +1006,53 @@ function DailyHistoryCanvas({
   macdLine: IndicatorLine | null;
   macdSignalLine: IndicatorLine | null;
   macdHistogram: MacdHistogramPoints | null;
+  trades: TradeResponse[];
+  openLimitOrders: OpenLimitOrder[];
 }) {
   const closeLine = useMemo(
     () => points.map((point) => ({ time: point.time, value: point.close })),
     [points],
   );
+  const executionMarkers = useMemo(() => {
+    const candleTimes = new Set(points.map((point) => point.time));
+    const markers: SeriesMarker<Time>[] = [];
+    for (const trade of trades) {
+      const sessionDate = trade.executed_at.slice(0, 10);
+      if (!candleTimes.has(sessionDate)) {
+        continue;
+      }
+      const text = `${trade.side.toUpperCase()} ${trade.quantity}`;
+      if (trade.side === "buy") {
+        markers.push({
+          time: sessionDate,
+          position: "belowBar",
+          shape: "arrowUp",
+          color: "#34d399",
+          text,
+        });
+      } else {
+        markers.push({
+          time: sessionDate,
+          position: "aboveBar",
+          shape: "arrowDown",
+          color: "#fb7185",
+          text,
+        });
+      }
+    }
+    return markers;
+  }, [points, trades]);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<DailyChart | null>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
   const lineModeSeriesRef = useRef<LineModeSeries | null>(null);
   const areaModeSeriesRef = useRef<AreaModeSeries | null>(null);
+  const candleMarkersRef = useRef<MarkerPlugin | null>(null);
+  const lineModeMarkersRef = useRef<MarkerPlugin | null>(null);
+  const areaModeMarkersRef = useRef<MarkerPlugin | null>(null);
+  const candlePriceLinesRef = useRef<IPriceLine[]>([]);
+  const lineModePriceLinesRef = useRef<IPriceLine[]>([]);
+  const areaModePriceLinesRef = useRef<IPriceLine[]>([]);
   const volumeSeriesRef = useRef<VolumeSeriesHandle | null>(null);
   const lineSeriesRef = useRef<LineSeriesHandle | null>(null);
   const bollingerUpperSeriesRef = useRef<BollingerSeriesHandle | null>(null);
@@ -942,6 +1075,8 @@ function DailyHistoryCanvas({
   const macdLineRef = useRef(macdLine);
   const macdSignalLineRef = useRef(macdSignalLine);
   const macdHistogramRef = useRef(macdHistogram);
+  const executionMarkersRef = useRef(executionMarkers);
+  const openLimitOrdersRef = useRef(openLimitOrders);
   const disposeRef = useRef<(() => void) | null>(null);
   const failedRef = useRef(false);
   const [attempt, setAttempt] = useState(0);
@@ -1004,6 +1139,40 @@ function DailyHistoryCanvas({
     macdHistogram,
   ]);
 
+  // Overlays stay off the candle setData effect so a trade or order update
+  // does not replot prices. Price lines are replaced only when the orders change.
+  useEffect(() => {
+    executionMarkersRef.current = executionMarkers;
+    if (!seriesRef.current || !chartRef.current) {
+      return;
+    }
+    try {
+      candleMarkersRef.current?.setMarkers(executionMarkers);
+      lineModeMarkersRef.current?.setMarkers(executionMarkers);
+      areaModeMarkersRef.current?.setMarkers(executionMarkers);
+    } catch {
+      disposeRef.current?.();
+      failedRef.current = true;
+      setFailed(true);
+    }
+  }, [executionMarkers]);
+
+  useEffect(() => {
+    openLimitOrdersRef.current = openLimitOrders;
+    if (!seriesRef.current || !chartRef.current) {
+      return;
+    }
+    try {
+      replaceOrderPriceLines(seriesRef.current, candlePriceLinesRef, openLimitOrders);
+      replaceOrderPriceLines(lineModeSeriesRef.current, lineModePriceLinesRef, openLimitOrders);
+      replaceOrderPriceLines(areaModeSeriesRef.current, areaModePriceLinesRef, openLimitOrders);
+    } catch {
+      disposeRef.current?.();
+      failedRef.current = true;
+      setFailed(true);
+    }
+  }, [openLimitOrders]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -1018,6 +1187,15 @@ function DailyHistoryCanvas({
       }
       removed = true;
       cancelled = true;
+      removeOrderPriceLines(seriesRef.current, candlePriceLinesRef.current);
+      removeOrderPriceLines(lineModeSeriesRef.current, lineModePriceLinesRef.current);
+      removeOrderPriceLines(areaModeSeriesRef.current, areaModePriceLinesRef.current);
+      candlePriceLinesRef.current = [];
+      lineModePriceLinesRef.current = [];
+      areaModePriceLinesRef.current = [];
+      candleMarkersRef.current = null;
+      lineModeMarkersRef.current = null;
+      areaModeMarkersRef.current = null;
       active?.remove();
       active = null;
       chartRef.current = null;
@@ -1079,6 +1257,18 @@ function DailyHistoryCanvas({
           areaModeSeriesRef.current = areaModeSeries;
           areaModeSeries.setData(closeLineRef.current);
           areaModeSeries.applyOptions({ visible: chartTypeRef.current === "area" });
+          const candleMarkers = charts.createSeriesMarkers(series, []);
+          candleMarkersRef.current = candleMarkers;
+          const lineModeMarkers = charts.createSeriesMarkers(lineModeSeries, []);
+          lineModeMarkersRef.current = lineModeMarkers;
+          const areaModeMarkers = charts.createSeriesMarkers(areaModeSeries, []);
+          areaModeMarkersRef.current = areaModeMarkers;
+          candleMarkers.setMarkers(executionMarkersRef.current);
+          lineModeMarkers.setMarkers(executionMarkersRef.current);
+          areaModeMarkers.setMarkers(executionMarkersRef.current);
+          replaceOrderPriceLines(series, candlePriceLinesRef, openLimitOrdersRef.current);
+          replaceOrderPriceLines(lineModeSeries, lineModePriceLinesRef, openLimitOrdersRef.current);
+          replaceOrderPriceLines(areaModeSeries, areaModePriceLinesRef, openLimitOrdersRef.current);
           const volumeSeries = addVolumeSeries(created, charts);
           volumeSeriesRef.current = volumeSeries;
           volumeSeries.setData(volumeRef.current);

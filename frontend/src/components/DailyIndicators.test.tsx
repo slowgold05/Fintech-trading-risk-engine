@@ -18,8 +18,15 @@ const PERIOD_ERROR = "Enter a whole period from 2 to 200.";
 
 const historyApi = vi.hoisted(() => ({ fetchCachedSeries: vi.fn(), fetchDailyHistory: vi.fn() }));
 const indicatorApi = vi.hoisted(() => ({ fetchDailyIndicators: vi.fn() }));
+const tradesApi = vi.hoisted(() => ({ fetchTrades: vi.fn() }));
+const ordersApi = vi.hoisted(() => ({ fetchOrders: vi.fn() }));
 const chartApi = vi.hoisted(() => ({
   createChart: vi.fn(),
+  createSeriesMarkers: vi.fn((series?: { setMarkers?: ReturnType<typeof vi.fn> }) => ({
+    setMarkers: series?.setMarkers ?? vi.fn(),
+    markers: () => [],
+    detach: vi.fn(),
+  })),
   ColorType: { Solid: "solid" },
   CandlestickSeries: { type: "candlestick-sentinel" },
   LineSeries: { type: "line-sentinel" },
@@ -28,6 +35,8 @@ const chartApi = vi.hoisted(() => ({
 }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("../api/indicators", () => indicatorApi);
+vi.mock("../api/trades", () => tradesApi);
+vi.mock("../api/orders", () => ordersApi);
 vi.mock("lightweight-charts", () => chartApi);
 
 type ChartMount = {
@@ -89,6 +98,15 @@ function indicatorPayload(
   };
 }
 
+function withOverlays<T extends object>(series: T) {
+  return {
+    setMarkers: vi.fn(),
+    createPriceLine: vi.fn(() => ({})),
+    removePriceLine: vi.fn(),
+    ...series,
+  };
+}
+
 function mountChart() {
   const candleSetData = vi.fn();
   const volumeSetData = vi.fn();
@@ -104,29 +122,29 @@ function mountChart() {
   const remove = vi.fn();
   const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string; color?: string }) => {
     if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-rsi") {
-      return { setData: rsiSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: rsiSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-macd" && options.color === "#60a5fa") {
-      return { setData: macdLineSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: macdLineSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-macd") {
-      return { setData: macdSignalSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: macdSignalSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     if (kind === chartApi.HistogramSeries && options?.priceScaleId === "daily-history-macd") {
-      return { setData: macdHistogramSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: macdHistogramSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     if (kind === chartApi.LineSeries && options?.color === "#c4b5fd") {
       bollingerBands += 1;
-      return { setData: bollingerBands === 1 ? bollingerUpperSetData : bollingerLowerSetData, applyOptions: vi.fn() };
+      return withOverlays({ setData: bollingerBands === 1 ? bollingerUpperSetData : bollingerLowerSetData, applyOptions: vi.fn() });
     }
-    if (kind === chartApi.AreaSeries) return { setData: vi.fn(), applyOptions: vi.fn() };
+    if (kind === chartApi.AreaSeries) return withOverlays({ setData: vi.fn(), applyOptions: vi.fn() });
     if (kind === chartApi.LineSeries && options?.color === "#34d399") {
-      return { setData: vi.fn(), applyOptions: vi.fn() };
+      return withOverlays({ setData: vi.fn(), applyOptions: vi.fn() });
     }
-    if (kind === chartApi.LineSeries) return { setData: lineSetData, applyOptions: vi.fn() };
-    if (kind === chartApi.CandlestickSeries) return { setData: candleSetData, applyOptions: vi.fn() };
+    if (kind === chartApi.LineSeries) return withOverlays({ setData: lineSetData, applyOptions: vi.fn() });
+    if (kind === chartApi.CandlestickSeries) return withOverlays({ setData: candleSetData, applyOptions: vi.fn() });
     if (kind === chartApi.HistogramSeries) {
-      return { setData: volumeSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return withOverlays({ setData: volumeSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) });
     }
     throw new Error("Unexpected series.");
   });
@@ -326,8 +344,18 @@ describe("DailyIndicators", () => {
     historyApi.fetchCachedSeries.mockReset();
     historyApi.fetchDailyHistory.mockReset();
     indicatorApi.fetchDailyIndicators.mockReset();
+    tradesApi.fetchTrades.mockReset();
+    tradesApi.fetchTrades.mockResolvedValue({ trades: [] });
+    ordersApi.fetchOrders.mockReset();
+    ordersApi.fetchOrders.mockResolvedValue({ orders: [] });
     chartApi.createChart.mockReset();
     chartApi.createChart.mockImplementation(mountChart);
+    chartApi.createSeriesMarkers.mockReset();
+    chartApi.createSeriesMarkers.mockImplementation((series?: { setMarkers?: ReturnType<typeof vi.fn> }) => ({
+      setMarkers: series?.setMarkers ?? vi.fn(),
+      markers: () => [],
+      detach: vi.fn(),
+    }));
   });
   afterEach(() => {
     cleanup();
