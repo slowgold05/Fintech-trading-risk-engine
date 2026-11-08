@@ -182,6 +182,26 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 63](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/63) is ready with all
+CI checks green: 1m/3m/6m/all history timeframes added to
+`app/services/market_history.py`'s `SUPPORTED_RANGES` (backend only), closing the remaining
+timeframe scope of the roadmap's Phase 3 line "Historical timeframes: 1M, 3M, 6M, 1Y, 2Y, and
+All." Evidence:
+[P3_HISTORY_TIMEFRAMES_VERIFICATION.md](P3_HISTORY_TIMEFRAMES_VERIFICATION.md). Design:
+`docs/P3_HISTORY_TIMEFRAMES_CONTRACT.md`. `market_indicators.py` inherits the new tokens
+automatically (already a black-box caller of `read_symbol_history`);
+`performance_service.py`'s own separate, unrelated range concept is untouched. `"all"` is a
+fixed `1900-01-01` sentinel, deliberately relying on `_coverage`'s existing `try/except
+ValueError` fallback (already written generally, not for this unit specifically) rather than
+new special-case code — verified directly by a test asserting `coverage_status ==
+"not_verified"` for that window. Worth recording: running the **full** backend suite (not just
+the scoped test file) surfaced one real failure — `test_market_indicators.py` had its own
+hardcoded copy of the old `"range must be 1y or 2y."` error string, in a test file outside this
+unit's Grok task's edit scope; fixed directly as a trivial one-line consequence of the
+already-reviewed, correct message change, not re-delegated. Backend only — the frontend
+`HistoryRange` type and the range `<select>` in `DailyHistory.tsx` remain `1y`/`2y` only;
+wiring the four new tokens into the frontend is a separate, following unit.
+
 [PR 62](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/62) is ready with all
 CI checks green: line and area chart modes added to the daily history chart — candlestick was
 the only mode before this unit. Evidence:
