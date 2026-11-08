@@ -13,6 +13,7 @@ from app.models.order import Order
 from app.services.ledger_service import append_reset, ensure_opening
 from app.services.performance_service import build_performance_response
 from app.services.portfolio_allocation import build_allocation_response
+from app.services.portfolio_attribution import build_attribution_response
 from app.services.portfolio_risk import build_risk_metrics_response
 from app.services.portfolio_valuation import build_portfolio_response
 
@@ -51,6 +52,17 @@ def get_portfolio_allocation(
     user_id = current_user.id
     email = current_user.email
     return build_allocation_response(db, user_id, email)
+
+
+@router.get("/attribution")
+def get_portfolio_attribution(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Copy identity before the valuation read rolls the session back to a snapshot.
+    user_id = current_user.id
+    email = current_user.email
+    return build_attribution_response(db, user_id, email)
 
 
 @router.get("/risk-metrics")
