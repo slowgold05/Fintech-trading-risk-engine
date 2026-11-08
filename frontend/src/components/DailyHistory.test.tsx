@@ -16,18 +16,26 @@ const SHOWING = "Showing TEST, source fixture, adjustment raw.";
 const RAW_SERIES = JSON.stringify(["fixture", "raw"]);
 
 const historyApi = vi.hoisted(() => ({ fetchCachedSeries: vi.fn(), fetchDailyHistory: vi.fn() }));
+const indicatorApi = vi.hoisted(() => ({ fetchDailyIndicators: vi.fn() }));
 const chartApi = vi.hoisted(() => ({
   createChart: vi.fn(),
   ColorType: { Solid: "solid" },
   CandlestickSeries: { type: "candlestick" },
   HistogramSeries: { type: "histogram" },
   LineSeries: { type: "line" },
+  AreaSeries: { type: "area" },
 }));
 vi.mock("../api/history", () => historyApi);
+vi.mock("../api/indicators", () => indicatorApi);
 vi.mock("lightweight-charts", () => chartApi);
 
 type ChartMount = {
   setData: ReturnType<typeof vi.fn>;
+  lineModeSetData: ReturnType<typeof vi.fn>;
+  areaModeSetData: ReturnType<typeof vi.fn>;
+  candleApplyOptions: ReturnType<typeof vi.fn>;
+  lineModeApplyOptions: ReturnType<typeof vi.fn>;
+  areaModeApplyOptions: ReturnType<typeof vi.fn>;
   volumeSetData: ReturnType<typeof vi.fn>;
   fitContent: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
@@ -70,22 +78,47 @@ function history(close = "108.500000"): HistoryResponse {
 
 function mountChart() {
   const setData = vi.fn();
+  const lineModeSetData = vi.fn();
+  const areaModeSetData = vi.fn();
+  const candleApplyOptions = vi.fn();
+  const lineModeApplyOptions = vi.fn();
+  const areaModeApplyOptions = vi.fn();
   const volumeSetData = vi.fn();
   const fitContent = vi.fn();
   const remove = vi.fn();
-  const addSeries = vi.fn((_kind: unknown, options?: { priceScaleId?: string }) => {
+  const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string; color?: string }) => {
     if (options?.priceScaleId === "daily-history-volume") {
-      return { setData: volumeSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: volumeSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     if (options?.priceScaleId === "daily-history-rsi") {
-      return { setData: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     if (options?.priceScaleId === "daily-history-macd") {
-      return { setData: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
-    return { setData };
+    if (kind === chartApi.AreaSeries) {
+      return { setData: areaModeSetData, applyOptions: areaModeApplyOptions };
+    }
+    if (kind === chartApi.LineSeries && options?.color === "#34d399") {
+      return { setData: lineModeSetData, applyOptions: lineModeApplyOptions };
+    }
+    if (kind === chartApi.CandlestickSeries) {
+      return { setData, applyOptions: candleApplyOptions };
+    }
+    return { setData: vi.fn(), applyOptions: vi.fn() };
   });
-  mounts.push({ setData, volumeSetData, fitContent, remove, addSeries });
+  mounts.push({
+    setData,
+    lineModeSetData,
+    areaModeSetData,
+    candleApplyOptions,
+    lineModeApplyOptions,
+    areaModeApplyOptions,
+    volumeSetData,
+    fitContent,
+    remove,
+    addSeries,
+  });
   return { addSeries, timeScale: () => ({ fitContent }), remove };
 }
 
@@ -147,6 +180,7 @@ describe("DailyHistory", () => {
     mounts.length = 0;
     historyApi.fetchCachedSeries.mockReset();
     historyApi.fetchDailyHistory.mockReset();
+    indicatorApi.fetchDailyIndicators.mockReset();
     chartApi.createChart.mockReset();
     chartApi.createChart.mockImplementation(mountChart);
   });
@@ -207,8 +241,8 @@ describe("DailyHistory", () => {
     expect(chart.addSeries.mock.calls[0]?.[0]).toBe(chartApi.CandlestickSeries);
     expect(chart.addSeries.mock.calls[0]?.[1]).toMatchObject({ priceFormat: { precision: 6 } });
     expect(chart.setData).toHaveBeenCalledTimes(1);
-    expect(chart.addSeries.mock.calls[1]?.[0]).toBe(chartApi.HistogramSeries);
-    expect(chart.addSeries.mock.calls[1]?.[1]).toMatchObject({ priceFormat: { type: "volume" } });
+    expect(chart.addSeries.mock.calls[3]?.[0]).toBe(chartApi.HistogramSeries);
+    expect(chart.addSeries.mock.calls[3]?.[1]).toMatchObject({ priceFormat: { type: "volume" } });
     expect(chart.volumeSetData).toHaveBeenCalledWith([
       { time: "2026-11-04", value: 0, color: "rgba(52, 211, 153, 0.5)" },
       { time: "2026-11-05", value: 0, color: "rgba(52, 211, 153, 0.5)" },
@@ -407,5 +441,92 @@ describe("DailyHistory", () => {
     submitForm();
     await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1));
     expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", "1y"]]);
+  });
+
+  it("defaults to candlestick and leaves that price series visible", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    renderHistory();
+    const chartType = await screen.findByRole("combobox", { name: "Chart type" });
+    expect(chartType).toHaveValue("candlestick");
+    expect(chartType.closest("form")).toBeNull();
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    expect(chart.addSeries.mock.calls[0]?.[0]).toBe(chartApi.CandlestickSeries);
+    expect(chart.setData).toHaveBeenCalledWith([
+      { time: "2026-11-04", open: 101.25, high: 105.5, low: 99.5, close: 103.75 },
+      { time: "2026-11-05", open: 103.75, high: 110, low: 100, close: 108.5 },
+    ]);
+    expect(chart.candleApplyOptions).toHaveBeenLastCalledWith({ visible: true });
+    expect(chart.lineModeApplyOptions).toHaveBeenLastCalledWith({ visible: false });
+    expect(chart.areaModeApplyOptions).toHaveBeenLastCalledWith({ visible: false });
+    expect(screen.getByRole("combobox", { name: "Chart type" })).toHaveValue("candlestick");
+  });
+
+  it("plots close prices on the line series and hides candlesticks", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart type" }), { target: { value: "line" } });
+    expect(chart.lineModeSetData).toHaveBeenCalledWith([
+      { time: "2026-11-04", value: 103.75 },
+      { time: "2026-11-05", value: 108.5 },
+    ]);
+    expect(chart.lineModeApplyOptions).toHaveBeenLastCalledWith({ visible: true });
+    expect(chart.candleApplyOptions).toHaveBeenLastCalledWith({ visible: false });
+    expect(chart.areaModeApplyOptions).toHaveBeenLastCalledWith({ visible: false });
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+    expect(chart.volumeSetData).toHaveBeenLastCalledWith([
+      { time: "2026-11-04", value: 0, color: "rgba(52, 211, 153, 0.5)" },
+      { time: "2026-11-05", value: 0, color: "rgba(52, 211, 153, 0.5)" },
+    ]);
+  });
+
+  it("plots close prices on the area series and hides the other price series", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const chart = onlyChart();
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart type" }), { target: { value: "area" } });
+    expect(chart.areaModeSetData).toHaveBeenCalledWith([
+      { time: "2026-11-04", value: 103.75 },
+      { time: "2026-11-05", value: 108.5 },
+    ]);
+    expect(chart.areaModeApplyOptions).toHaveBeenLastCalledWith({ visible: true });
+    expect(chart.candleApplyOptions).toHaveBeenLastCalledWith({ visible: false });
+    expect(chart.lineModeApplyOptions).toHaveBeenLastCalledWith({ visible: false });
+    expect(chart.addSeries.mock.calls.some((call) => call[0] === chartApi.AreaSeries)).toBe(true);
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refetch history when the chart type changes", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    renderHistory();
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    const callsBefore = historyApi.fetchDailyHistory.mock.calls.length;
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart type" }), { target: { value: "line" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart type" }), { target: { value: "area" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart type" }), { target: { value: "candlestick" } });
+    await act(async () => { await Promise.resolve(); });
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(callsBefore);
+    expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", "2y"]]);
+    expect(indicatorApi.fetchDailyIndicators).not.toHaveBeenCalled();
+    expect(chartApi.createChart).toHaveBeenCalledTimes(1);
   });
 });

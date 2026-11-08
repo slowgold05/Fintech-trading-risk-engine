@@ -90,6 +90,32 @@ function addCandleSeries(chart: DailyChart, charts: LightweightChartsModule) {
 
 type CandleSeries = ReturnType<typeof addCandleSeries>;
 
+function addLineModeSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return chart.addSeries(charts.LineSeries, {
+    color: "#34d399",
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+  });
+}
+
+type LineModeSeries = ReturnType<typeof addLineModeSeries>;
+
+function addAreaModeSeries(chart: DailyChart, charts: LightweightChartsModule) {
+  return chart.addSeries(charts.AreaSeries, {
+    lineColor: "#34d399",
+    topColor: "rgba(52, 211, 153, 0.35)",
+    bottomColor: "rgba(52, 211, 153, 0.02)",
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+  });
+}
+
+type AreaModeSeries = ReturnType<typeof addAreaModeSeries>;
+
 function addLineSeries(chart: DailyChart, charts: LightweightChartsModule) {
   return chart.addSeries(charts.LineSeries, {
     color: "#7dd3fc",
@@ -261,6 +287,7 @@ export function DailyHistory({
   const [periodDraft, setPeriodDraft] = useState(String(PERIOD_DEFAULT));
   const [submitted, setSubmitted] = useState<SubmittedSeries | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [chartType, setChartType] = useState<"candlestick" | "line" | "area">("candlestick");
   const catalogQuery = useQuery({
     queryKey: ["market", "cachedseries"],
     queryFn: fetchCachedSeries,
@@ -517,6 +544,25 @@ export function DailyHistory({
             ) : null}
           </form>
         ) : null}
+        {showForm ? (
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,8rem)] sm:items-end">
+            <div className="min-w-0">
+              <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-chart-type">
+                Chart type
+              </label>
+              <select
+                className="field-control"
+                id="daily-history-chart-type"
+                onChange={(event) => setChartType(readChartType(event.target.value))}
+                value={chartType}
+              >
+                <option value="candlestick">Candlestick</option>
+                <option value="line">Line</option>
+                <option value="area">Area</option>
+              </select>
+            </div>
+          </div>
+        ) : null}
 
         {showForm && submitted ? (
           <div className="min-w-0 space-y-4">
@@ -586,6 +632,7 @@ export function DailyHistory({
                 <HistoryFacts meta={accepted.meta} submitted={submitted} />
                 {accepted.overlay ? <IndicatorFacts overlay={accepted.overlay} /> : null}
                 <DailyHistoryCanvas
+                  chartType={chartType}
                   macdHistogram={
                     accepted.overlay !== null && accepted.overlay.name === "macd"
                       ? (accepted.overlay.macdHistogram ?? null)
@@ -810,6 +857,7 @@ function SessionPrices({
 }
 
 function DailyHistoryCanvas({
+  chartType,
   points,
   volume,
   priceScaleLine,
@@ -820,6 +868,7 @@ function DailyHistoryCanvas({
   macdSignalLine,
   macdHistogram,
 }: {
+  chartType: "candlestick" | "line" | "area";
   points: CandlestickData<Time>[];
   volume: HistogramData<Time>[];
   priceScaleLine: IndicatorLine | null;
@@ -830,9 +879,15 @@ function DailyHistoryCanvas({
   macdSignalLine: IndicatorLine | null;
   macdHistogram: MacdHistogramPoints | null;
 }) {
+  const closeLine = useMemo(
+    () => points.map((point) => ({ time: point.time, value: point.close })),
+    [points],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<DailyChart | null>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
+  const lineModeSeriesRef = useRef<LineModeSeries | null>(null);
+  const areaModeSeriesRef = useRef<AreaModeSeries | null>(null);
   const volumeSeriesRef = useRef<VolumeSeriesHandle | null>(null);
   const lineSeriesRef = useRef<LineSeriesHandle | null>(null);
   const bollingerUpperSeriesRef = useRef<BollingerSeriesHandle | null>(null);
@@ -845,6 +900,8 @@ function DailyHistoryCanvas({
   const macdHistogramSeriesRef = useRef<MacdHistogramSeriesHandle | null>(null);
   const libraryRef = useRef<LightweightChartsModule | null>(null);
   const pointsRef = useRef(points);
+  const closeLineRef = useRef(closeLine);
+  const chartTypeRef = useRef(chartType);
   const volumeRef = useRef(volume);
   const priceScaleLineRef = useRef(priceScaleLine);
   const bollingerUpperRef = useRef(bollingerUpper);
@@ -860,6 +917,8 @@ function DailyHistoryCanvas({
 
   useEffect(() => {
     pointsRef.current = points;
+    closeLineRef.current = closeLine;
+    chartTypeRef.current = chartType;
     volumeRef.current = volume;
     priceScaleLineRef.current = priceScaleLine;
     bollingerUpperRef.current = bollingerUpper;
@@ -881,6 +940,11 @@ function DailyHistoryCanvas({
     }
     try {
       series.setData(points);
+      lineModeSeriesRef.current?.setData(closeLine);
+      areaModeSeriesRef.current?.setData(closeLine);
+      series.applyOptions({ visible: chartType === "candlestick" });
+      lineModeSeriesRef.current?.applyOptions({ visible: chartType === "line" });
+      areaModeSeriesRef.current?.applyOptions({ visible: chartType === "area" });
       volumeSeriesRef.current?.setData(volume);
       syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, priceScaleLine);
       setBollingerBandData(bollingerUpperSeriesRef.current, bollingerUpper, bollingerUpperPaintedRef);
@@ -894,7 +958,19 @@ function DailyHistoryCanvas({
       failedRef.current = true;
       setFailed(true);
     }
-  }, [points, volume, priceScaleLine, bollingerUpper, bollingerLower, rsiLine, macdLine, macdSignalLine, macdHistogram]);
+  }, [
+    points,
+    closeLine,
+    chartType,
+    volume,
+    priceScaleLine,
+    bollingerUpper,
+    bollingerLower,
+    rsiLine,
+    macdLine,
+    macdSignalLine,
+    macdHistogram,
+  ]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -914,6 +990,8 @@ function DailyHistoryCanvas({
       active = null;
       chartRef.current = null;
       seriesRef.current = null;
+      lineModeSeriesRef.current = null;
+      areaModeSeriesRef.current = null;
       volumeSeriesRef.current = null;
       lineSeriesRef.current = null;
       bollingerUpperSeriesRef.current = null;
@@ -960,6 +1038,15 @@ function DailyHistoryCanvas({
           const series = addCandleSeries(created, charts);
           seriesRef.current = series;
           series.setData(pointsRef.current);
+          series.applyOptions({ visible: chartTypeRef.current === "candlestick" });
+          const lineModeSeries = addLineModeSeries(created, charts);
+          lineModeSeriesRef.current = lineModeSeries;
+          lineModeSeries.setData(closeLineRef.current);
+          lineModeSeries.applyOptions({ visible: chartTypeRef.current === "line" });
+          const areaModeSeries = addAreaModeSeries(created, charts);
+          areaModeSeriesRef.current = areaModeSeries;
+          areaModeSeries.setData(closeLineRef.current);
+          areaModeSeries.applyOptions({ visible: chartTypeRef.current === "area" });
           const volumeSeries = addVolumeSeries(created, charts);
           volumeSeriesRef.current = volumeSeries;
           volumeSeries.setData(volumeRef.current);
@@ -1190,6 +1277,13 @@ function readIndicatorChoice(value: string): IndicatorChoice {
     return value;
   }
   return "none";
+}
+
+function readChartType(value: string): "candlestick" | "line" | "area" {
+  if (value === "line" || value === "area") {
+    return value;
+  }
+  return "candlestick";
 }
 
 function readHistoryRange(value: string): HistoryRange {

@@ -24,6 +24,7 @@ const chartApi = vi.hoisted(() => ({
   CandlestickSeries: { type: "candlestick-sentinel" },
   LineSeries: { type: "line-sentinel" },
   HistogramSeries: { type: "histogram-sentinel" },
+  AreaSeries: { type: "area-sentinel" },
 }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("../api/indicators", () => indicatorApi);
@@ -103,25 +104,29 @@ function mountChart() {
   const remove = vi.fn();
   const addSeries = vi.fn((kind: unknown, options?: { priceScaleId?: string; color?: string }) => {
     if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-rsi") {
-      return { setData: rsiSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: rsiSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-macd" && options.color === "#60a5fa") {
-      return { setData: macdLineSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: macdLineSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     if (kind === chartApi.LineSeries && options?.priceScaleId === "daily-history-macd") {
-      return { setData: macdSignalSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: macdSignalSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     if (kind === chartApi.HistogramSeries && options?.priceScaleId === "daily-history-macd") {
-      return { setData: macdHistogramSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: macdHistogramSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     if (kind === chartApi.LineSeries && options?.color === "#c4b5fd") {
       bollingerBands += 1;
-      return { setData: bollingerBands === 1 ? bollingerUpperSetData : bollingerLowerSetData };
+      return { setData: bollingerBands === 1 ? bollingerUpperSetData : bollingerLowerSetData, applyOptions: vi.fn() };
     }
-    if (kind === chartApi.LineSeries) return { setData: lineSetData };
-    if (kind === chartApi.CandlestickSeries) return { setData: candleSetData };
+    if (kind === chartApi.AreaSeries) return { setData: vi.fn(), applyOptions: vi.fn() };
+    if (kind === chartApi.LineSeries && options?.color === "#34d399") {
+      return { setData: vi.fn(), applyOptions: vi.fn() };
+    }
+    if (kind === chartApi.LineSeries) return { setData: lineSetData, applyOptions: vi.fn() };
+    if (kind === chartApi.CandlestickSeries) return { setData: candleSetData, applyOptions: vi.fn() };
     if (kind === chartApi.HistogramSeries) {
-      return { setData: volumeSetData, priceScale: () => ({ applyOptions: vi.fn() }) };
+      return { setData: volumeSetData, applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }) };
     }
     throw new Error("Unexpected series.");
   });
@@ -352,6 +357,8 @@ describe("DailyIndicators", () => {
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chart.addSeries.mock.calls.map((call) => call[0])).toEqual([
       chartApi.CandlestickSeries,
+      chartApi.LineSeries,
+      chartApi.AreaSeries,
       chartApi.HistogramSeries,
       chartApi.LineSeries,
       chartApi.LineSeries,
@@ -409,7 +416,7 @@ describe("DailyIndicators", () => {
     ]);
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
-    expect(chart.addSeries).toHaveBeenCalledTimes(9);
+    expect(chart.addSeries).toHaveBeenCalledTimes(11);
     expect(chart.candleSetData).toHaveBeenLastCalledWith(expect.arrayContaining([{ time: DATES[5], open: 7, high: 7, low: 7, close: 7 }]));
     expect(linePoints(chart).at(-1)).toEqual({ time: DATES[5], value: 6 });
     expect(chart.remove).not.toHaveBeenCalled();
@@ -495,6 +502,8 @@ describe("DailyIndicators", () => {
     expect(previous.remove).toHaveBeenCalledTimes(1);
     expect(current.addSeries.mock.calls.map((call) => call[0])).toEqual([
       chartApi.CandlestickSeries,
+      chartApi.LineSeries,
+      chartApi.AreaSeries,
       chartApi.HistogramSeries,
       chartApi.LineSeries,
       chartApi.LineSeries,
@@ -503,7 +512,7 @@ describe("DailyIndicators", () => {
       chartApi.LineSeries,
       chartApi.LineSeries,
     ]);
-    expect(current.addSeries.mock.calls[2]?.[1]).toMatchObject({ priceScaleId: "daily-history-rsi" });
+    expect(current.addSeries.mock.calls[4]?.[1]).toMatchObject({ priceScaleId: "daily-history-rsi" });
     expect(current.lineSetData).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     const prices = screen.getByText("Session prices").closest("details");
