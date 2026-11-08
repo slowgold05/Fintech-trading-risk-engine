@@ -182,6 +182,22 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 64](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/64) is ready with all
+CI checks green: the four new history timeframes (`1m`/`3m`/`6m`/`all`, backend PR #63) wired
+into the daily history chart's range `<select>`. Evidence:
+[P3_HISTORY_TIMEFRAMES_FRONTEND_VERIFICATION.md](P3_HISTORY_TIMEFRAMES_FRONTEND_VERIFICATION.md).
+`HistoryRange` widened from two to six literals; `readHistoryRange`'s `"2y"` fallback and the
+form's default range are both unchanged; `historyData.ts` is byte-identical (pure option-list
+wiring). **This closes the full timeframe scope — backend (PR #63) and frontend (this unit) —
+of the roadmap's Phase 3 line "Historical timeframes: 1M, 3M, 6M, 1Y, 2Y, and All."** Combined
+with PRs #46 (Bollinger frontend) and #62 (chart modes), the "SMA, EMA, Bollinger Bands, RSI,
+and MACD" indicator line, the "Candlestick, line, and area chart modes" line, and now the
+timeframes line are all fully closed end-to-end. Still open on that same Phase 3 section: a
+volume-only toggle/crosshair inspection details, trade execution markers, price levels for
+open limit orders, persisted chart preferences, and user-configurable indicator parameters
+beyond period/signal-period. No manual browser/visual check was performed, disclosed
+explicitly.
+
 [PR 63](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/63) is ready with all
 CI checks green: 1m/3m/6m/all history timeframes added to
 `app/services/market_history.py`'s `SUPPORTED_RANGES` (backend only), closing the remaining
