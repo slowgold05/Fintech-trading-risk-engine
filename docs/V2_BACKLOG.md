@@ -182,6 +182,28 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 52](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/52) is ready with all
+CI checks green: `risk_contributions`, the sixth and final slice added to
+`GET /portfolio/risk-metrics` (additive on top of PRs #47-#51). Evidence:
+[P4D_PORTFOLIO_RISK_CONTRIBUTION_VERIFICATION.md](P4D_PORTFOLIO_RISK_CONTRIBUTION_VERIFICATION.md).
+Design: `docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md` section 6. Decomposes portfolio variance
+across held, priced securities via a full covariance matrix (each off-diagonal pair over its
+own common usable days — the same simplification correlation already made; each diagonal entry
+over that security's own full usable-day variance, not the pair-restricted window). Null on any
+missing matrix entry, non-positive portfolio variance, an incomplete allocation, or zero priced
+holdings; otherwise every `risk_contribution_pct` sums to exactly `"100.0000"` by construction
+(Euler's theorem). Worth recording: I caught a real arithmetic error in my own contract's first
+worked reference before any implementation code existed — it mistakenly reused the
+pair-restricted variance for a security's diagonal instead of that security's own full-series
+variance. Grok's first attempt independently computed both and stopped rather than guessing,
+which is what surfaced it; I re-derived both figures myself, corrected the contract, and
+relaunched. With this PR, **every one of the roadmap's nine Phase 4.2 "Quantitative risk
+engine" metrics now has some form shipped** (concentration via PR #45; historical volatility,
+max drawdown, beta, historical VaR, Expected Shortfall, correlation, stress-test loss, and risk
+contribution via PRs #47-#52). `GET /portfolio/attribution` (the remaining named route in
+roadmap section 4.5) and the full custom-shock Risk Lab backend (`POST /risk/scenarios`, Phase
+4.4) remain open, unstarted.
+
 [PR 51](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/51) is ready with all
 CI checks green: `stress_scenarios`, the fifth slice added to `GET /portfolio/risk-metrics`
 (additive on top of PRs #47-#50). Evidence:
