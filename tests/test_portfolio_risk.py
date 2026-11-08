@@ -1,4 +1,4 @@
-"""GET /portfolio/risk-metrics volatility, drawdown, beta, tail loss, and correlation.
+"""GET /portfolio/risk-metrics volatility, drawdown, beta, tail loss, correlation, and stress loss.
 
 The reference digits are the contract's independently computed values
 (docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md). They are not derived from
@@ -38,10 +38,19 @@ _REFERENCE_SERIES = [
 ]
 
 
-def _install_series(monkeypatch, series, positions=None):
-    """Stub both black-box reads. An empty book yields ``correlations: None``."""
+# Complete book with nothing priced. Pre-existing tests only need the call to exist.
+_DEFAULT_ALLOCATION = {
+    "status": "complete",
+    "total_account_value": "1000.00",
+    "securities": [],
+}
+
+
+def _install_series(monkeypatch, series, positions=None, allocation=None):
+    """Stub all three black-box reads. An empty book yields ``correlations: None``."""
     payload = {**_PASSTHROUGH, "series": series}
     held = [] if positions is None else positions
+    allocation_payload = _DEFAULT_ALLOCATION if allocation is None else allocation
 
     def fake_performance(_db, _user_id, _email, _range_token):
         return payload
@@ -49,8 +58,12 @@ def _install_series(monkeypatch, series, positions=None):
     def fake_portfolio(_db, _user_id, _email):
         return {"positions": held}
 
+    def fake_allocation(_db, _user_id, _email):
+        return allocation_payload
+
     monkeypatch.setattr("app.services.portfolio_risk.build_performance_response", fake_performance)
     monkeypatch.setattr("app.services.portfolio_risk.build_portfolio_response", fake_portfolio)
+    monkeypatch.setattr("app.services.portfolio_risk.build_allocation_response", fake_allocation)
     return payload
 
 
@@ -327,6 +340,16 @@ def test_route_end_to_end_with_a_real_seeded_account(client, auth_headers, db_se
             _assert_decimal_text(value)
     # The seeded book holds only XYZ, so no pair exists.
     assert body["correlations"] is None
+    stress = body["stress_scenarios"]
+    if stress is not None:
+        assert len(stress) == 3
+        for entry in stress:
+            for field in ("loss", "loss_pct"):
+                value = entry[field]
+                if value is not None:
+                    _assert_decimal_text(value)
+        affected_symbol = stress[2]["affected_symbol"]
+        assert affected_symbol is None or isinstance(affected_symbol, str)
 
 
 def test_correlation_reference_vector_matches_the_contract(db_session, monkeypatch):
@@ -394,7 +417,11 @@ def test_correlation_reference_vector_matches_the_contract(db_session, monkeypat
     def fake_performance(_db, _user_id, _email, _range_token):
         return payload
 
+    def fake_allocation(_db, _user_id, _email):
+        return _DEFAULT_ALLOCATION
+
     monkeypatch.setattr("app.services.portfolio_risk.build_performance_response", fake_performance)
+    monkeypatch.setattr("app.services.portfolio_risk.build_allocation_response", fake_allocation)
     body = build_risk_metrics_response(db_session, user.id, user.email, "1y")
 
     assert body["return_count"] == 4
@@ -450,3 +477,141 @@ def test_correlation_pair_is_null_below_two_common_returns(monkeypatch):
         {"symbols": ["AAA", "BBB"], "return_count": 1, "correlation": None},
     ]
     assert one_return["return_count"] == 4
+
+
+def test_stress_scenarios_reference_vector_matches_the_contract(monkeypatch):
+    """Section 5.5: cash is unshocked; only AAPL is Technology; AAPL is the largest holding."""
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation={
+            "status": "complete",
+            "total_account_value": "1600.00",
+            "securities": [
+                {
+                    "symbol": "AAPL",
+                    "sector": "Technology",
+                    "position_value": "300.00",
+                    "price_status": "available",
+                },
+                {
+                    "symbol": "JPM",
+                    "sector": "Financials",
+                    "position_value": "200.00",
+                    "price_status": "available",
+                },
+                {
+                    "symbol": "XOM",
+                    "sector": "Energy",
+                    "position_value": "100.00",
+                    "price_status": "available",
+                },
+            ],
+        },
+    )
+    body = _read()
+
+    assert body["stress_scenarios"][0] == {
+        "scenario": "broad_market_selloff",
+        "shock_pct": "-10.0000",
+        "loss": "60.00",
+        "loss_pct": "3.7500",
+    }
+    assert body["stress_scenarios"][1] == {
+        "scenario": "technology_sector_selloff",
+        "shock_pct": "-25.0000",
+        "loss": "75.00",
+        "loss_pct": "4.6875",
+    }
+    assert body["stress_scenarios"][2] == {
+        "scenario": "single_security_worst_holding",
+        "shock_pct": "-30.0000",
+        "affected_symbol": "AAPL",
+        "loss": "90.00",
+        "loss_pct": "5.6250",
+    }
+
+
+def test_stress_scenarios_is_null_when_allocation_is_incomplete(monkeypatch):
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation={
+            "status": "incomplete",
+            "total_account_value": None,
+            "securities": [
+                {
+                    "symbol": "AAPL",
+                    "sector": "Technology",
+                    "position_value": None,
+                    "price_status": "unavailable",
+                },
+            ],
+        },
+    )
+    body = _read()
+    assert body["stress_scenarios"] is None
+
+
+def test_technology_sector_selloff_is_a_real_zero_without_tech_exposure(monkeypatch):
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation={
+            "status": "complete",
+            "total_account_value": "300.00",
+            "securities": [
+                {
+                    "symbol": "JPM",
+                    "sector": "Financials",
+                    "position_value": "200.00",
+                    "price_status": "available",
+                },
+                {
+                    "symbol": "XOM",
+                    "sector": "Energy",
+                    "position_value": "100.00",
+                    "price_status": "available",
+                },
+            ],
+        },
+    )
+    body = _read()
+    technology = body["stress_scenarios"][1]
+    assert technology["scenario"] == "technology_sector_selloff"
+    assert technology["loss"] == "0.00"
+    assert technology["loss_pct"] == "0.0000"
+
+
+def test_worst_holding_scenario_is_null_with_zero_priced_securities(monkeypatch):
+    _install_series(
+        monkeypatch,
+        _REFERENCE_SERIES,
+        allocation={
+            "status": "complete",
+            "total_account_value": "1000.00",
+            "securities": [
+                {
+                    "symbol": "AAPL",
+                    "sector": "Technology",
+                    "position_value": None,
+                    "price_status": "unavailable",
+                },
+            ],
+        },
+    )
+    body = _read()
+    broad, technology, worst = body["stress_scenarios"]
+    assert broad["scenario"] == "broad_market_selloff"
+    assert broad["loss"] == "0.00"
+    assert broad["loss_pct"] == "0.0000"
+    assert technology["scenario"] == "technology_sector_selloff"
+    assert technology["loss"] == "0.00"
+    assert technology["loss_pct"] == "0.0000"
+    assert worst == {
+        "scenario": "single_security_worst_holding",
+        "shock_pct": "-30.0000",
+        "affected_symbol": None,
+        "loss": None,
+        "loss_pct": None,
+    }

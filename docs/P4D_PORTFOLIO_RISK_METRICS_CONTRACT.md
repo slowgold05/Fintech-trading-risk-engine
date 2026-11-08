@@ -426,3 +426,110 @@ only. Does not build a full correlation matrix data structure keyed by symbol-sy
 flat pair-list shape in 4.3 is deliberately simpler to serialize and test. Does not change
 `performance_service.py` or `portfolio_allocation.py` — this is the module's second black-box
 call to `build_portfolio_response`, reading only `positions`, nothing else from that response.
+
+## 5. Stress-test loss addendum (2026-11-08) — design, not yet implemented
+
+Written before any code change, same pattern as sections 1-4. Adds `stress_scenarios` to the
+same `GET /portfolio/risk-metrics` response, additive only. This is a **fixed, small set of
+canned scenarios**, not the full custom scenario builder — `POST /risk/scenarios` (roadmap
+section 4.5's separate route, backing Phase 4.4's interactive Risk Lab where a user picks
+arbitrary shocks) remains a separate, later, larger unit. This slice gives the roadmap's 4.2
+metrics table its ninth and final entry a first, deliberately simple answer: a short list of
+pre-defined shocks applied to the account's current holdings, reusing
+`GET /portfolio/allocation`'s own already-published position values and sector classification
+as a third black-box call (`build_allocation_response`, already imported by nothing else in
+this module — this is its first use here).
+
+### 5.1 The three fixed scenarios
+
+No query parameter, no configurability in this unit — the same deliberate "fixed, not
+configurable" choice this codebase has made before (MACD's periods, Bollinger's band width).
+Every scenario is a pure revaluation: cash is never shocked (it carries no price risk), and a
+shock only reduces (never increases) a security's `position_value` for this unit's purposes,
+since "stress-test loss" by definition studies downside scenarios.
+
+1. **`broad_market_selloff`**: every currently-held, priced security's `position_value` is
+   reduced by `10%`.
+2. **`technology_sector_selloff`**: every currently-held, priced security classified
+   `"Technology"` (the same `sector_classifier.py` classification `GET /portfolio/allocation`
+   already computes) is reduced by `25%`; every other security is unaffected. A holding with
+   zero Technology exposure correctly produces a real, measured `"0.00"` loss for this scenario,
+   not `null` — the account genuinely has no Technology-driven loss to report.
+3. **`single_security_worst_holding`**: the single currently-held, priced security with the
+   **largest** `position_value` (ties broken by ascending symbol, for determinism) is reduced
+   by `30%`; every other security is unaffected. With zero currently-held, priced securities at
+   all (a cash-only account, or one where every holding is unpriced), there is no "worst
+   holding" to shock: this scenario's `loss`/`loss_pct`/`affected_symbol` are all `null` (the
+   entry is still present in the list, for the same transparency reason section 4.3 already
+   established for a correlation pair that could not be computed).
+
+### 5.2 Computation
+
+For a scenario with a shock set `shocked = {symbol: shock_fraction}` (e.g. `{"AAPL": Decimal
+("0.25")}` for scenario 2 if `AAPL` is the account's only Technology holding):
+
+```
+loss = sum(position_value[symbol] * shock_fraction for symbol in shocked)
+loss_pct = loss / total_account_value * 100
+```
+
+`total_account_value` and every `position_value` come directly from
+`build_allocation_response`'s own already-computed, already-cent-quantized fields — this unit
+does not re-derive them from `build_portfolio_response` a second time. `loss` quantized to
+cents, `loss_pct` to 4 decimal places, `ROUND_HALF_UP`, matching every other dollar/percentage
+field in this codebase.
+
+### 5.3 Gating — the same all-or-nothing rule `GET /portfolio/allocation` already established
+
+When the underlying allocation's own `status == "incomplete"` (one or more held position is
+unpriced), `stress_scenarios` is `null` in its entirety — not a partial list computed only over
+the priced subset, for the exact same reason `GET /portfolio/allocation`'s own weights go null
+in that case: a stress-test loss computed while ignoring an unpriced holding's unknown exposure
+would be a misleading understatement, not an honest "unavailable."
+
+### 5.4 Response shape
+
+```
+"stress_scenarios": [
+  {"scenario": "broad_market_selloff", "shock_pct": "-10.0000",
+   "loss": "60.00", "loss_pct": "3.7500"},
+  {"scenario": "technology_sector_selloff", "shock_pct": "-25.0000",
+   "loss": "75.00", "loss_pct": "4.6875"},
+  {"scenario": "single_security_worst_holding", "shock_pct": "-30.0000",
+   "affected_symbol": "AAPL", "loss": "90.00", "loss_pct": "5.6250"}
+] | null
+```
+
+`shock_pct` is a fixed literal per scenario (`"-10.0000"`/`"-25.0000"`/`"-30.0000"`), not a
+computed value — included so a caller does not have to hardcode the three scenarios' own
+magnitudes elsewhere. `affected_symbol` appears only on the third scenario (the other two shock
+every qualifying security, not one named symbol).
+
+### 5.5 Worked reference (independently verified, not derived from the implementation)
+
+Reuses `GET /portfolio/allocation`'s own already-independently-verified reference fixture
+(section matching `docs/P4C_PORTFOLIO_ALLOCATION_CONTRACT.md`'s reference): cash `$1000.00`,
+`AAPL` (`Technology`) `$300.00`, `JPM` (`Financials`) `$200.00`, `XOM` (`Energy`) `$100.00`,
+`total_account_value = $1600.00`.
+
+```
+broad_market_selloff:        loss = (300.00 + 200.00 + 100.00) * 0.10 = 60.00
+                              loss_pct = 60.00 / 1600.00 * 100 = "3.7500"
+technology_sector_selloff:    loss = 300.00 * 0.25 = 75.00   (only AAPL is Technology)
+                              loss_pct = 75.00 / 1600.00 * 100 = "4.6875"
+single_security_worst_holding: largest holding is AAPL ($300.00); loss = 300.00 * 0.30 = 90.00
+                              loss_pct = 90.00 / 1600.00 * 100 = "5.6250"
+```
+
+Deliberately chosen with three distinct percentages that do not coincide (an earlier draft of
+this worked example picked a tech shock that happened to numerically match the broad-market
+loss by coincidence — corrected to `25%` specifically so the three reference numbers are
+visibly distinct and not mistakable for a copy-paste error in review).
+
+### 5.6 What this addendum does not do
+
+Does not add `POST /risk/scenarios` (the full custom-shock Risk Lab backend, Phase 4.4, a
+separate and much larger unit — user-chosen symbols/sectors/magnitudes, not a fixed list). Does
+not model interest-rate shocks (this app holds equities/ETFs only; a rate shock needs a duration/
+factor model this unit does not build). Does not change `build_allocation_response`,
+`build_portfolio_response`, or `performance_service.py` — a third black-box read only.

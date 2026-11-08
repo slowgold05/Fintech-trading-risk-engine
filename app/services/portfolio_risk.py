@@ -1,4 +1,4 @@
-"""Historical volatility, maximum drawdown, portfolio beta, tail loss, and correlation.
+"""Historical volatility, maximum drawdown, portfolio beta, tail loss, correlation, and stress loss.
 
 Volatility, drawdown, beta, and tail loss come from a single
 ``build_performance_response`` read. Volatility is the sample standard
@@ -21,6 +21,12 @@ Pairwise correlation is separate. It reads current non-zero holdings from
 ``build_portfolio_response`` and one raw-close query. A ``(symbol, date)``
 with exactly one raw provider row is usable. Fewer than two holdings leaves
 ``correlations`` null.
+
+Stress-test loss is a third black-box read, ``build_allocation_response``.
+Three fixed shocks apply to priced holdings: 10% of every security, 25% of
+those already classified Technology, and 30% of the single largest position.
+An incomplete allocation leaves ``stress_scenarios`` null. Cash is not
+shocked. Loss is cents. Loss percent is four places.
 """
 
 from collections import defaultdict
@@ -33,9 +39,17 @@ from sqlalchemy.orm import Session
 
 from app.models.market_bar_daily import MarketBarDaily
 from app.services.performance_service import build_performance_response
+from app.services.portfolio_allocation import build_allocation_response
 from app.services.portfolio_valuation import build_portfolio_response
 
 FOUR_PLACES = Decimal("0.0001")
+CENT = Decimal("0.01")
+_SCENARIO_SHOCKS = (
+    ("broad_market_selloff", Decimal("0.10"), "-10.0000"),
+    ("technology_sector_selloff", Decimal("0.25"), "-25.0000"),
+)
+_WORST_HOLDING_SHOCK = Decimal("0.30")
+_WORST_HOLDING_SHOCK_TEXT = "-30.0000"
 
 
 def _max_drawdown_pct(drawdown_values: list[Decimal]) -> str | None:
@@ -252,6 +266,76 @@ def _held_correlations(
     return correlations
 
 
+def _priced_securities(securities: list[dict]) -> list[dict]:
+    """Holdings a shock can revalue. Unpriced rows stay out of every sum."""
+    return [
+        item
+        for item in securities
+        if item["price_status"] == "available" and item["position_value"] is not None
+    ]
+
+
+def _scenario_loss(priced: list[dict], *, sector: str | None, shock: Decimal) -> Decimal:
+    """Dollar loss before cent rounding. ``sector`` None shocks every priced holding.
+
+    The percentage uses the cent-rounded loss, so this sum does not divide.
+    """
+    affected = priced if sector is None else [item for item in priced if item["sector"] == sector]
+    return sum((Decimal(item["position_value"]) * shock for item in affected), Decimal(0))
+
+
+def _loss_pct(loss: Decimal, total_account_value: Decimal) -> str:
+    pct = (loss / total_account_value * 100).quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
+    return format(pct, "f")
+
+
+def _stress_scenarios(allocation: dict) -> list[dict] | None:
+    """Three fixed downside shocks, or null when allocation is incomplete.
+
+    A complete book with nothing priced still returns three entries. The
+    first two are a measured zero. The worst-holding entry is present with
+    null loss fields, because there is no symbol to name.
+    """
+    if allocation["status"] != "complete":
+        return None
+    total_account_value = Decimal(allocation["total_account_value"])
+    priced = _priced_securities(allocation["securities"])
+    scenarios = []
+    for name, shock, shock_text in _SCENARIO_SHOCKS:
+        sector = "Technology" if name == "technology_sector_selloff" else None
+        loss = _scenario_loss(priced, sector=sector, shock=shock).quantize(
+            CENT, rounding=ROUND_HALF_UP
+        )
+        scenarios.append({
+            "scenario": name,
+            "shock_pct": shock_text,
+            "loss": format(loss, "f"),
+            "loss_pct": _loss_pct(loss, total_account_value),
+        })
+    if priced:
+        # Largest position_value. Ties break by ascending symbol.
+        worst = min(priced, key=lambda item: (-Decimal(item["position_value"]), item["symbol"]))
+        worst_loss = (Decimal(worst["position_value"]) * _WORST_HOLDING_SHOCK).quantize(
+            CENT, rounding=ROUND_HALF_UP
+        )
+        scenarios.append({
+            "scenario": "single_security_worst_holding",
+            "shock_pct": _WORST_HOLDING_SHOCK_TEXT,
+            "affected_symbol": worst["symbol"],
+            "loss": format(worst_loss, "f"),
+            "loss_pct": _loss_pct(worst_loss, total_account_value),
+        })
+    else:
+        scenarios.append({
+            "scenario": "single_security_worst_holding",
+            "shock_pct": _WORST_HOLDING_SHOCK_TEXT,
+            "affected_symbol": None,
+            "loss": None,
+            "loss_pct": None,
+        })
+    return scenarios
+
+
 def build_risk_metrics_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
     performance = build_performance_response(db, user_id, email, range_token)
     available = [point for point in performance["series"] if point["status"] == "available"]
@@ -285,6 +369,10 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
         performance["requested_start"],
         performance["requested_end"],
     )
+    # After the performance read. An invalid range still fails inside that
+    # call, before this third black-box snapshot.
+    allocation = build_allocation_response(db, user_id, email)
+    stress_scenarios = _stress_scenarios(allocation)
     return {
         "user": performance["user"],
         "range": performance["range"],
@@ -303,4 +391,5 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
         "expected_shortfall_95_pct": tail["expected_shortfall_95_pct"],
         "expected_shortfall_99_pct": tail["expected_shortfall_99_pct"],
         "correlations": correlations,
+        "stress_scenarios": stress_scenarios,
     }
