@@ -4,7 +4,10 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryRange, HistoryResponse, MarketDataStatus } from "../api/history";
+import { saveChartPreferences } from "../utils/chartPreferences";
 import { DailyHistory } from "./DailyHistory";
+
+const CHART_PREFERENCES_KEY = "sentinel.dailyHistory.chartPreferences";
 
 const READ_AT = "2026-11-06T12:00:00Z";
 const FETCHED_AT = "2026-11-06T11:00:00Z";
@@ -177,6 +180,7 @@ function deferred<T>() {
 
 describe("DailyHistory", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     mounts.length = 0;
     historyApi.fetchCachedSeries.mockReset();
     historyApi.fetchDailyHistory.mockReset();
@@ -188,6 +192,7 @@ describe("DailyHistory", () => {
     cleanup();
     for (const client of clients) client.clear();
     clients.length = 0;
+    window.localStorage.clear();
   });
 
   it("retries a failed catalog into an empty list without history or a chart", async () => {
@@ -547,5 +552,32 @@ describe("DailyHistory", () => {
     expect(historyApi.fetchDailyHistory.mock.calls).toEqual([["TEST", "fixture", "raw", "2y"]]);
     expect(indicatorApi.fetchDailyIndicators).not.toHaveBeenCalled();
     expect(chartApi.createChart).toHaveBeenCalledTimes(1);
+  });
+
+  it("initializes range, indicator, period, and chart type from stored preferences", async () => {
+    saveChartPreferences({ range: "6m", indicator: "ema", period: "50", chartType: "area" });
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    renderHistory();
+    expect(await screen.findByRole("combobox", { name: "Range" })).toHaveValue("6m");
+    expect(screen.getByRole("combobox", { name: "Indicator" })).toHaveValue("ema");
+    expect(screen.getByRole("spinbutton", { name: "Period" })).toHaveValue(50);
+    expect(screen.getByRole("combobox", { name: "Chart type" })).toHaveValue("area");
+    expect(screen.getByRole("textbox", { name: "Symbol" })).toHaveValue("");
+  });
+
+  it("saves a range change under the chart preferences key", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    renderHistory();
+    const range = await screen.findByRole("combobox", { name: "Range" });
+    expect(range).toHaveValue("2y");
+    fireEvent.change(range, { target: { value: "1y" } });
+    const raw = window.localStorage.getItem(CHART_PREFERENCES_KEY);
+    expect(raw).not.toBeNull();
+    expect(JSON.parse(raw ?? "")).toEqual({
+      range: "1y",
+      indicator: "none",
+      period: "20",
+      chartType: "candlestick",
+    });
   });
 });

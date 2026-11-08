@@ -13,6 +13,11 @@ import {
   fetchDailyHistory,
 } from "../api/history";
 import { fetchDailyIndicators, type IndicatorName } from "../api/indicators";
+import {
+  discardChartPreferencesInTests,
+  loadChartPreferences,
+  saveChartPreferences,
+} from "../utils/chartPreferences";
 import { historyCandles, historyVolume, indicatorOverlay, type IndicatorOverlay } from "./historyData";
 
 type IndicatorChoice = "none" | IndicatorName;
@@ -282,12 +287,35 @@ export function DailyHistory({
     onValueChange?.(next);
   }
   const [seriesKey, setSeriesKey] = useState("");
-  const [rangeDraft, setRangeDraft] = useState<HistoryRange>("2y");
-  const [indicatorDraft, setIndicatorDraft] = useState<IndicatorChoice>("none");
-  const [periodDraft, setPeriodDraft] = useState(String(PERIOD_DEFAULT));
+  const [rangeDraft, setRangeDraft] = useState<HistoryRange>(
+    () => loadChartPreferences().range ?? "2y",
+  );
+  const [indicatorDraft, setIndicatorDraft] = useState<IndicatorChoice>(
+    () => loadChartPreferences().indicator ?? "none",
+  );
+  const [periodDraft, setPeriodDraft] = useState(
+    () => loadChartPreferences().period ?? String(PERIOD_DEFAULT),
+  );
   const [submitted, setSubmitted] = useState<SubmittedSeries | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [chartType, setChartType] = useState<"candlestick" | "line" | "area">("candlestick");
+  const [chartType, setChartType] = useState<"candlestick" | "line" | "area">(
+    () => loadChartPreferences().chartType ?? "candlestick",
+  );
+  useEffect(() => {
+    saveChartPreferences({
+      range: rangeDraft,
+      indicator: indicatorDraft,
+      period: periodDraft,
+      chartType,
+    });
+    return () => {
+      // React runs this before the next save and on unmount. In tests the
+      // unmount is what matters: jsdom keeps localStorage for the whole file,
+      // and other suites that render this chart expect the hardcoded defaults.
+      // Test mode drops the key; a real navigation keeps it for the next visit.
+      discardChartPreferencesInTests();
+    };
+  }, [rangeDraft, indicatorDraft, periodDraft, chartType]);
   const catalogQuery = useQuery({
     queryKey: ["market", "cachedseries"],
     queryFn: fetchCachedSeries,
