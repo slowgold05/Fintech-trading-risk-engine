@@ -182,6 +182,30 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 71](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/71) is ready
+with all CI checks green: the bounded worker that actually drains the job queue PR #70
+built intake for. **No TradingAgents or LLM integration** — the report produced only
+documents which already-existing data sources (SEC fundamentals, SEC filings) were
+available for that symbol; every AI-synthesis field (`bull_case`/`bear_case`/
+`synthesis`/`risks`/`model_version`/`prompt_version`) stays `null`, deliberately
+deferred to its own later unit that needs separate scoping (model choice, cost, prompt
+versioning). Wired into the existing single scheduled-jobs cycle as a sixth step, same
+try/except/rollback/log shape as the other five, bounded by a new
+`scheduled_research_job_limit` setting (default 5) — this is the actual "bounded" in
+"bounded worker." New `GET /research/reports`/`GET /research/reports/{report_id}`,
+ownership-scoped the same way as the job routes. Evidence:
+[P5C_RESEARCH_WORKER_VERIFICATION.md](P5C_RESEARCH_WORKER_VERIFICATION.md); design:
+[P5C_RESEARCH_WORKER_CONTRACT.md](P5C_RESEARCH_WORKER_CONTRACT.md). Pre-emptively bumped
+the two Postgres-only "fresh install reaches head" assertions again, same class of fix
+as the prior two units. **Self-caught review mistake, disclosed in the verification
+doc**: removed a defensive guard from the implementation as apparent dead code without
+checking why it was there first; it was the deliberate fix for a pre-existing scheduler
+test (`test_phase2_controls.py`) whose fake `Session` double only implements
+`rollback()`. Caught by the full suite, fixed properly by extending that test's own
+mocks to cover the new step instead of restoring the guard — keeps the worker code free
+of test-only defensive logic. Still fully open for Phase 5: the actual TradingAgents/LLM
+synthesis step, personalized daily briefs, and `/research/briefs/*`.
+
 [PR 70](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/70) is ready with
 all CI checks green: the job-queue **intake** surface named in roadmap Phase 5 section
 5.4 — `POST /research/jobs`, `GET /research/jobs`, `GET /research/jobs/{job_id}`,
