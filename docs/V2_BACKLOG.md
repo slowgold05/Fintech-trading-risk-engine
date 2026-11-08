@@ -182,6 +182,32 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 73](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/73) is ready
+with all CI checks green: `GET /research/briefs`/`GET /research/briefs/{brief_id}`,
+closing out every named route in roadmap Phase 5 section 5.4
+(`/research/jobs`, `/research/filings`, `/research/reports`, `/research/briefs`).
+**Aggregation only** — a brief pairs each symbol a user currently holds with the most
+recent completed report for it, or `null`; no new job creation, no local-model calls,
+no new synthesis. **Idempotent by design**: a `(user_id, brief_date)` unique
+constraint at the DB level, and `build_daily_brief` returns the existing brief
+unchanged on a second same-day call even if a newer report has since appeared — a
+brief is a snapshot at build time, not a live view, proven by a test that rebuilds
+after a second, newer report exists and confirms the brief still points at the
+original one. `build_daily_briefs`'s bound is enforced by a `NOT IN` subquery at the
+database level, not by fetching-then-slicing in Python, proven by a test that seeds
+more eligible users than the limit. Wired into the scheduler as a seventh step;
+extended the one pre-existing scheduler test that doesn't mock every step (already
+touched once in PR #71 for the sixth step) to also mock this one. Evidence:
+[P5E_RESEARCH_BRIEFS_VERIFICATION.md](P5E_RESEARCH_BRIEFS_VERIFICATION.md); design:
+[P5E_RESEARCH_BRIEFS_CONTRACT.md](P5E_RESEARCH_BRIEFS_CONTRACT.md). **This closes the
+currently-scoped Phase 5 slice started with PR #69** — SEC EDGAR filings (PR #69) →
+job intake (PR #70) → bounded worker with real data gathering (PR #71) → local-model
+synthesis via Ollama (PR #72) → personalized daily briefs (PR #73) — five stacked,
+independently-CI-green PRs, none merged. Still fully open for a future pass: the
+actual TradingAgents multi-agent framework (every synthesis step shipped so far is a
+single direct local-model call, not that), automatic refresh of a stale report feeding
+into a brief, and a frontend for any of Phase 5's five new routes.
+
 [PR 72](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/72) is ready
 with all CI checks green: the user's explicit choice to use a **local, cost-free model
 via Ollama** (`qwen3:14b`, already installed and running on this machine) instead of a
