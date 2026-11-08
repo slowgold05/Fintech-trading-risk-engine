@@ -478,3 +478,78 @@ chains never need to agree on which days are known.
 Does not add a configurable benchmark symbol, a relative-performance field (e.g.
 `account_minus_benchmark`), or any frontend rendering — those are separate, later units if
 wanted. Does not change any existing field's meaning.
+
+## 14. Money-weighted return addendum (2026-11-07) — a sixth slice, gated by "where cash-flow history permits"
+
+Written before implementation, appended after sections 1-13. Adds `money_weighted_return_pct`
+to the **top level** of the performance response (alongside `inception_at`/`read_at`/`status`),
+not to each series point — a money-weighted return is a single number summarizing the whole
+requested window, not a per-day value. Roadmap Phase 4.1 wording: "money-weighted returns
+(where cash-flow history permits)." This unit reads that condition literally: the field is
+`null` whenever there is nothing a money-weighted return would tell you that `twr_index` does
+not already tell you — i.e. whenever the window has **zero** `cash_deposit`/`cash_withdrawal`
+flows. With no flows, Modified Dietz collapses to the same simple point-to-point return already
+implied by the last available day's `twr_index`; reporting it again would be a duplicate, not a
+new metric.
+
+### Formula (Modified Dietz, weighted by actual calendar days elapsed)
+
+Let `base_date`/`V_start` be the series' first available day and its `account_value` (the same
+`base_date`/`base_value` the `cumulative_pnl` addendum, section 12, already tracks). Let
+`last_available_date`/`V_end` be the series' last available day and its `account_value`. Let
+`T = (last_available_date - base_date).days` (actual calendar days, not trading-day count — the
+series is indexed by trading day, but flow timing is calendar time, and `session_date` is
+already a real date). Let every `(flow_date, amount)` pair from `_cash_flows(entries)` with
+`base_date <= flow_date <= last_available_date` have `t = (flow_date - base_date).days` and
+weight `w = (T - t) / T`.
+
+```
+money_weighted_return_pct(window) =
+    null                                           if fewer than 2 available days, or no flows
+                                                     in [base_date, last_available_date], or T == 0
+    100 * (V_end - V_start - sum(F))
+        / (V_start + sum(F * (T - t) / T))          otherwise
+```
+
+where `sum(F)` is the sum of every flow amount in the window (signed: deposit positive,
+withdrawal negative) and the denominator's sum uses each flow's own weight. A flow dated on
+`base_date` itself gets weight `1` (counted as invested for the whole period); a flow dated on
+`last_available_date` gets weight `0` (no time to earn a return). Quantize to 4 decimal places,
+`ROUND_HALF_UP` — the same precision already used for `drawdown_pct`.
+
+This needs no new query — `_cash_flows(entries)` and `base_date`/`last_available_date` are
+already computed by sections 5 and 12. It is the only field in this file computed once per
+request rather than once per series point.
+
+### Reference (continuing the same 10-day deposit/withdrawal scenario sections 5/10/11/12/13 use)
+
+Account values: `D0 = 1000.00` (base), `D5 = 1075.00`, `D6 = 1175.00` (after the $100 deposit),
+`D7 = 1125.00` (after the $50 withdrawal), `D8` gap, `D9 = 1145.00` (after the $20 deposit
+posted on the gap day). Calendar dates: `D0 = 2026-03-06`, `D9 = 2026-03-19` (`T = 13` days);
+flows dated `D6 = 2026-03-16` (`t = 10`), `D7 = 2026-03-17` (`t = 11`), `D8 = 2026-03-18`
+(`t = 12`, the flow still counts even though its own day is a gap — the same "a flow lands on
+whatever day it's dated, independent of whether that day itself has a priced account value"
+rule section 5 already establishes for `_flow_since`).
+
+```
+V_start = 1000.00, V_end = 1145.00, sum(F) = 100 - 50 + 20 = 70
+weights: w6 = (13-10)/13 = 3/13, w7 = (13-11)/13 = 2/13, w8 = (13-12)/13 = 1/13
+numerator   = 1145.00 - 1000.00 - 70 = 75
+denominator = 1000.00 + (100 * 3/13) - (50 * 2/13) + (20 * 1/13) = 1000 + 220/13 = 1016.923077
+money_weighted_return_pct = 100 * 75 / 1016.923077 = "7.3752"
+```
+
+Verified independently with exact fraction arithmetic (not floating point) before
+implementation: `75 / (13220/13) = 195/2644 ≈ 0.07375189...`, `* 100` quantized to 4 places is
+`7.3752`.
+
+For the original 6-day reference scenario (sections 5/8/10/11/12's own series, no deposits or
+withdrawals anywhere in the window): `money_weighted_return_pct` is `null` — the "where
+cash-flow history permits" gate, not a computation that happens to come out to `0.0000` or
+`None` for a different reason.
+
+### What this addendum does not do
+
+Does not add a per-day money-weighted figure, does not add an annualized or money-weighted
+"since inception" figure spanning resets, and does not change any existing field. No frontend
+rendering.

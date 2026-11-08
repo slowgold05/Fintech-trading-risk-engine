@@ -58,6 +58,18 @@ among available days only:
 quantized to 4 decimal places, ``ROUND_HALF_UP``, as decimal text. A new
 high is ``"0.0000"``. A gap day is null and does not move the peak.
 
+``money_weighted_return_pct`` is one Modified Dietz figure for the whole
+requested window, a sibling of ``status`` rather than a field on each series
+point. It is null when fewer than two days are available (``T`` would be 0)
+or when no ``cash_deposit``/``cash_withdrawal`` falls in the inclusive span
+``[base_date, last_available_date]`` — including a flow dated on a gap day.
+Otherwise, with ``T`` and each flow's ``t`` in calendar days:
+
+    100 * (V_end - V_start - sum(F)) / (V_start + sum(F * (T - t) / T))
+
+quantized to ``DRAWDOWN_UNIT``, ``ROUND_HALF_UP``, as decimal text. A flow on
+``base_date`` has weight 1. A flow on ``last_available_date`` has weight 0.
+
 ``benchmark_index`` is a fixed ``"SPY"`` price-return chain. It uses the same
 sub-period ratio and ``TWR_UNIT`` rounding as ``twr_index``, and no flow term,
 because a benchmark close has no deposits:
@@ -227,6 +239,9 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
         "inception_at": None if inception is None else _iso_z(inception),
         "read_at": _iso_z(clock),
         "status": status,
+        "money_weighted_return_pct": _money_weighted_return_pct(
+            flows, base_date, base_value, last_available_date, last_value,
+        ),
         "series": series,
         "reconciliation": _reconciliation(db, user_id, email, clock, series),
     }
@@ -322,6 +337,45 @@ def _flow_since(flows: list[tuple[date, Decimal]], after: date | None, through: 
         if after is None or flow_date > after:
             total += amount
     return total
+
+
+def _money_weighted_return_pct(
+    flows: list[tuple[date, Decimal]],
+    base_date: date | None,
+    base_value: Decimal | None,
+    last_available_date: date | None,
+    last_value: Decimal | None,
+) -> str | None:
+    """Modified Dietz for [base_date, last_available_date], inclusive of both ends.
+
+    ``_flow_since`` excludes its start date. This window does not: a flow on
+    ``base_date`` was invested for the whole period. ``flows`` is sorted by
+    date, so the scan can stop at the first flow past ``last_available_date``.
+    """
+    if base_date is None or last_available_date is None or base_date == last_available_date:
+        return None
+    # Calendar days. Equal dates are already rejected above, so this is >= 1.
+    period = (last_available_date - base_date).days
+    span = Decimal(period)
+    total_flow = Decimal(0)
+    weighted_flow = Decimal(0)
+    saw_flow = False
+    for flow_date, amount in flows:
+        if flow_date < base_date:
+            continue
+        if flow_date > last_available_date:
+            break
+        saw_flow = True
+        elapsed = (flow_date - base_date).days
+        weight = Decimal(period - elapsed) / span
+        total_flow += amount
+        weighted_flow += amount * weight
+    if not saw_flow:
+        return None
+    numerator = last_value - base_value - total_flow
+    denominator = base_value + weighted_flow
+    pct = (numerator / denominator * 100).quantize(DRAWDOWN_UNIT, rounding=ROUND_HALF_UP)
+    return format(pct, "f")
 
 
 def _asset_symbols(db: Session, entries: list[LedgerEntry]) -> dict[int, str]:

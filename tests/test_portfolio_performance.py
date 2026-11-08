@@ -1,7 +1,7 @@
-"""GET /portfolio/performance daily value, time-weighted return, drawdown, daily dollar P&L, cumulative dollar P&L, and the SPY benchmark index.
+"""GET /portfolio/performance daily value, time-weighted return, drawdown, daily dollar P&L, cumulative dollar P&L, the SPY benchmark index, and the window's money-weighted return.
 
 The series numbers are the contract's independently computed reference
-(docs/P4A_PERFORMANCE_CONTRACT.md sections 8, 5, 10, 11, 12, and 13). They are not
+(docs/P4A_PERFORMANCE_CONTRACT.md sections 8, 5, 10, 11, 12, 13, and 14). They are not
 derived from the service under test.
 """
 
@@ -289,6 +289,10 @@ def test_reference_six_day_series_and_reconciliation_match(client, auth_headers,
         "current_total_account_value": "1075.00",
         "matches": True,
     }
+    # Five available days and no cash_deposit/cash_withdrawal. Null is the
+    # zero-flow gate, not the single-day guard and not a computed 0.0000.
+    assert sum(point["status"] == "available" for point in body["series"]) >= 2
+    assert body["money_weighted_return_pct"] is None
 
 
 def test_reconciliation_is_null_when_today_is_not_a_trading_day(client, auth_headers, db_session, monkeypatch):
@@ -667,6 +671,36 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
     assert body["status"] == "incomplete"
     assert body["reconciliation"]["matches"] is True
     assert body["reconciliation"]["current_total_account_value"] == "1145.00"
+    # 75 / (13220/13) * 100 = 19500/2644 = 7.375189... → "7.3752".
+    assert body["money_weighted_return_pct"] == "7.3752"
+
+
+def test_money_weighted_return_is_null_on_a_single_available_day(client, auth_headers, db_session, monkeypatch):
+    """base_date == last_available_date, so T would be 0.
+
+    The same-day deposit is in the books (account value is 1100.00, not the
+    1000.00 opening). Null is the one-day guard, not the zero-flow gate.
+    """
+    _forbid_providers(monkeypatch)
+    sessions = exchange_calendar.expected_session_dates(date(2026, 5, 4), date(2026, 5, 4))
+    assert sessions == [date(2026, 5, 4)]
+    session = sessions[0]
+    clock = datetime.combine(session, time(18, 0))
+    _pin_clock(monkeypatch, clock)
+    headers = auth_headers("perf-mwr-one-day@example.com")
+    user = db_session.query(User).one()
+
+    _replace_opening(db_session, user, Decimal("1000.00"), datetime.combine(session, time(14, 3)))
+    before = _max_ledger_id(db_session)
+    post_movement(db_session, user, "deposit", Decimal("100.00"), None)
+    _stamp_after(db_session, user.id, before, datetime.combine(session, time(15, 0)))
+    db_session.commit()
+
+    body = client.get("/portfolio/performance", headers=headers, params={"range": "1y"}).json()
+    assert [point["session_date"] for point in body["series"]] == [session.isoformat()]
+    assert body["series"][0]["status"] == "available"
+    assert body["series"][0]["account_value"] == "1100.00"
+    assert body["money_weighted_return_pct"] is None
 
 
 def test_spy_benchmark_index_is_independent_of_the_account_chain(client, auth_headers, db_session, monkeypatch):
