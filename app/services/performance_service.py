@@ -37,6 +37,19 @@ fields cannot disagree about what counts as external cash. The first available
 day has no prior value to diff, so ``daily_pnl`` is null there. A gap day is
 null too. ``"0.00"`` is a measured flat day, not a stand-in for "unknown."
 
+``cumulative_pnl`` is that same excluded-flow change, measured from the
+series' first available day (the base day, where ``twr_index`` is
+``1.000000``) instead of from the previous available day:
+
+    cumulative_pnl(d) = account_value(d) - base_value
+                        - _flow_since(flows, base_date, d)
+
+quantized to cents (``CENT``), ``ROUND_HALF_UP``, as decimal text. The flow
+anchor is ``base_date``, not ``last_available_date``, so this is a second
+``_flow_since`` call — not the ``flow`` already computed for ``twr_index``
+and ``daily_pnl``. The base day itself is ``"0.00"``: day zero of its own
+measurement, a real zero. A gap day is null.
+
 ``drawdown_pct`` is the decline from the running peak ``account_value``
 among available days only:
 
@@ -125,6 +138,8 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
     last_index: Decimal | None = None
     last_available_date: date | None = None
     peak: Decimal | None = None
+    base_value: Decimal | None = None
+    base_date: date | None = None
     for session_day in series_days:
         cash, quantities = _state_as_of(states, session_day)
         raw_value, missing = _account_value(cash, quantities, symbols, closes, session_day)
@@ -141,6 +156,7 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
                 "twr_index": None,
                 "drawdown_pct": None,
                 "daily_pnl": None,
+                "cumulative_pnl": None,
             })
             continue
         account = Decimal(_account_text(raw_value))
@@ -148,11 +164,20 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
             index = Decimal("1.000000")
             # No prior available day yet, so there is nothing to diff.
             daily_pnl = None
+            # Day zero of this series: a measured zero, not unknown.
+            base_value = account
+            base_date = session_day
+            cumulative_pnl = Decimal("0.00")
         else:
             flow = _flow_since(flows, last_available_date, session_day)
             index = (last_index * (account - flow) / last_value).quantize(TWR_UNIT, rounding=ROUND_HALF_UP)
             # Same flow and still-unupdated last_value as the index above.
             daily_pnl = (account - flow - last_value).quantize(CENT, rounding=ROUND_HALF_UP)
+            # Anchored at the base day, not last_available. A different window
+            # than `flow` above, so this is a second call.
+            cumulative_pnl = (
+                account - base_value - _flow_since(flows, base_date, session_day)
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
         last_value = account
         last_available_date = session_day
         last_index = index
@@ -166,6 +191,7 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
             "twr_index": format(index, "f"),
             "drawdown_pct": format(drawdown, "f"),
             "daily_pnl": None if daily_pnl is None else format(daily_pnl, "f"),
+            "cumulative_pnl": format(cumulative_pnl, "f"),
         })
 
     status = "complete" if all(point["status"] == "available" for point in series) else "incomplete"

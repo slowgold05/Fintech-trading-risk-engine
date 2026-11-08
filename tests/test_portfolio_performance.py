@@ -1,7 +1,7 @@
-"""GET /portfolio/performance daily value, time-weighted return, drawdown, and daily dollar P&L.
+"""GET /portfolio/performance daily value, time-weighted return, drawdown, daily dollar P&L, and cumulative dollar P&L.
 
 The series numbers are the contract's independently computed reference
-(docs/P4A_PERFORMANCE_CONTRACT.md sections 8, 5, 10, and 11). They are not
+(docs/P4A_PERFORMANCE_CONTRACT.md sections 8, 5, 10, 11, and 12). They are not
 derived from the service under test.
 """
 
@@ -197,6 +197,7 @@ REFERENCE_SERIES = [
         "twr_index": "1.000000",
         "drawdown_pct": "0.0000",
         "daily_pnl": None,
+        "cumulative_pnl": "0.00",
     },
     {
         "session_date": "2026-03-09",
@@ -206,6 +207,7 @@ REFERENCE_SERIES = [
         "twr_index": "1.020000",
         "drawdown_pct": "0.0000",
         "daily_pnl": "20.00",
+        "cumulative_pnl": "20.00",
     },
     {
         "session_date": "2026-03-10",
@@ -215,6 +217,7 @@ REFERENCE_SERIES = [
         "twr_index": "1.040000",
         "drawdown_pct": "0.0000",
         "daily_pnl": "20.00",
+        "cumulative_pnl": "40.00",
     },
     {
         "session_date": "2026-03-11",
@@ -224,6 +227,7 @@ REFERENCE_SERIES = [
         "twr_index": "1.050000",
         "drawdown_pct": "0.0000",
         "daily_pnl": "10.00",
+        "cumulative_pnl": "50.00",
     },
     {
         "session_date": "2026-03-12",
@@ -233,6 +237,7 @@ REFERENCE_SERIES = [
         "twr_index": None,
         "drawdown_pct": None,
         "daily_pnl": None,
+        "cumulative_pnl": None,
     },
     {
         "session_date": "2026-03-13",
@@ -242,6 +247,7 @@ REFERENCE_SERIES = [
         "twr_index": "1.075000",
         "drawdown_pct": "0.0000",
         "daily_pnl": "25.00",
+        "cumulative_pnl": "75.00",
     },
 ]
 
@@ -318,6 +324,7 @@ def test_reconciliation_is_null_when_today_is_unavailable(client, auth_headers, 
         "twr_index": None,
         "drawdown_pct": None,
         "daily_pnl": None,
+        "cumulative_pnl": None,
     }
     assert body["status"] == "incomplete"
     assert body["reconciliation"] is None
@@ -443,6 +450,7 @@ def test_reset_is_the_same_inception_boundary_as_realized_pnl(client, auth_heade
     assert body["series"][0]["twr_index"] == "1.000000"
     assert body["series"][0]["drawdown_pct"] == "0.0000"
     assert body["series"][0]["daily_pnl"] is None
+    assert body["series"][0]["cumulative_pnl"] == "0.00"
     assert body["series"][0]["unavailable_symbols"] == []
     assert body["series"][1] == {
         "session_date": "2026-04-10",
@@ -452,6 +460,7 @@ def test_reset_is_the_same_inception_boundary_as_realized_pnl(client, auth_heade
         "twr_index": "1.000070",
         "drawdown_pct": "0.0000",
         "daily_pnl": "7.00",
+        "cumulative_pnl": "7.00",
     }
     assert body["status"] == "complete"
     assert body["reconciliation"]["matches"] is True
@@ -492,6 +501,7 @@ def test_ambiguous_raw_providers_make_the_day_unavailable(client, auth_headers, 
     assert body["series"][0]["twr_index"] == "1.000000"
     assert body["series"][0]["drawdown_pct"] == "0.0000"
     assert body["series"][0]["daily_pnl"] is None
+    assert body["series"][0]["cumulative_pnl"] == "0.00"
     assert body["series"][1] == {
         "session_date": priced.isoformat(),
         "status": "unavailable",
@@ -500,6 +510,7 @@ def test_ambiguous_raw_providers_make_the_day_unavailable(client, auth_headers, 
         "twr_index": None,
         "drawdown_pct": None,
         "daily_pnl": None,
+        "cumulative_pnl": None,
     }
     assert body["status"] == "incomplete"
     assert "1020.00" not in {point["account_value"] for point in body["series"]}
@@ -559,6 +570,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "twr_index": "1.075000",
         "drawdown_pct": "0.0000",
         "daily_pnl": "0.00",
+        "cumulative_pnl": "75.00",
     }
     # Proves the exclusion actually fired, not merely that some number came out.
     assert by_date[day6.isoformat()]["twr_index"] != "1.175000"
@@ -571,6 +583,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "twr_index": "1.075000",
         "drawdown_pct": "4.2553",
         "daily_pnl": "0.00",
+        "cumulative_pnl": "75.00",
     }
 
     assert by_date[day8.isoformat()] == {
@@ -581,6 +594,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "twr_index": None,
         "drawdown_pct": None,
         "daily_pnl": None,
+        "cumulative_pnl": None,
     }
 
     assert by_date[day9.isoformat()] == {
@@ -591,6 +605,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "twr_index": "1.075000",
         "drawdown_pct": "2.5532",
         "daily_pnl": "0.00",
+        "cumulative_pnl": "75.00",
     }
 
     # Same excluded-flow logic, two fields: flat dollars iff the index did not move.
@@ -614,6 +629,26 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
             point["twr_index"],
             prior["twr_index"],
         )
+
+    # Day 9 has two gaps (day 4, day 8) and cash flows since the base day.
+    # cumulative_pnl equals the telescoping sum of daily_pnl over days that
+    # were actually valued. A null daily_pnl (a gap) contributes nothing.
+    base_index = next(
+        index for index, point in enumerate(body["series"]) if point["status"] == "available"
+    )
+    through = day9.isoformat()
+    window = [
+        point for point in body["series"][base_index + 1:]
+        if point["session_date"] <= through
+    ]
+    assert any(point["daily_pnl"] is None for point in window)
+    assert any(point["daily_pnl"] == "0.00" for point in window)
+    summed = sum(
+        (Decimal(point["daily_pnl"]) for point in window if point["daily_pnl"] is not None),
+        Decimal("0.00"),
+    )
+    assert Decimal(by_date[through]["cumulative_pnl"]) == summed
+
     assert body["status"] == "incomplete"
     assert body["reconciliation"]["matches"] is True
     assert body["reconciliation"]["current_total_account_value"] == "1145.00"
@@ -663,17 +698,21 @@ def test_drawdown_peak_survives_a_gap_day(client, auth_headers, db_session, monk
     assert peak_day["account_value"] == "1175.00"
     assert peak_day["drawdown_pct"] == "0.0000"
     assert peak_day["daily_pnl"] == "0.00"
+    assert peak_day["cumulative_pnl"] == "75.00"
     assert before_gap["account_value"] == "1125.00"
     assert before_gap["drawdown_pct"] == "4.2553"
     assert before_gap["daily_pnl"] == "0.00"
+    assert before_gap["cumulative_pnl"] == "75.00"
     assert gap["status"] == "unavailable"
     assert gap["account_value"] is None
     assert gap["drawdown_pct"] is None
     assert gap["daily_pnl"] is None
+    assert gap["cumulative_pnl"] is None
     assert after_gap["account_value"] == "1145.00"
     assert after_gap["drawdown_pct"] == "2.5532"
     assert after_gap["drawdown_pct"] != "0.0000"
     assert after_gap["daily_pnl"] == "0.00"
+    assert after_gap["cumulative_pnl"] == "75.00"
 
 
 def test_range_must_be_one_or_two_years(client, auth_headers, db_session):

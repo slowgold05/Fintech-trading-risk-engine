@@ -348,3 +348,61 @@ flow-bearing days in this reference), not just assert each field's own number in
 Does not add a top-level cumulative-P&L-since-inception summary field (that needs a second,
 inception-anchored running total, not just a day-over-day diff — a separate, later addendum if
 wanted). Does not change any existing field's meaning. Does not add frontend rendering.
+
+## 12. Cumulative dollar P&L addendum (2026-11-07) — a fourth slice on the same route
+
+Written before implementation, appended after sections 1-11. Adds `cumulative_pnl` to each
+series point — the total dollar gain or loss since the series' own base day (the first available
+day, where `twr_index` is defined as `1.000000`), excluding every deposit/withdrawal posted since
+then. Complements `daily_pnl` (section 11), which measures change since the *previous* available
+day; this measures change since the *first* one. No new query, no new data source: reuses the
+exact `_flow_since` helper section 5/11 already use, anchored at the base day's date instead of
+`last_available`'s.
+
+### Formula
+
+Let `base_value` be `account_value` on the series' first available day (the same day
+`twr_index` is set to `1.000000`), and `base_date` that day's date. For a later available day
+`d`:
+
+```
+cumulative_pnl(d) = account_value(d) - base_value - _flow_since(flows, base_date, d)
+```
+
+(`_flow_since(flows, base_date, d)` sums every deposit/withdrawal dated in `(base_date, d]` —
+the exact same function `twr_index`/`daily_pnl` already call, just with `base_date` instead of
+`last_available_date` as the `after` argument.) The base day itself has `cumulative_pnl ==
+"0.00"` (a real, measured zero — it is day zero of its own measurement, not unknown). A gap day
+has `cumulative_pnl == null`, same as every other field in this response.
+
+This is consistent with `daily_pnl` by construction (a telescoping sum of every `daily_pnl` from
+the day after the base day through `d` equals `cumulative_pnl(d)` exactly, because both reuse the
+same flow-exclusion logic) — a test should prove this consistency explicitly for at least one
+day with intervening gaps and flows, not just assert `cumulative_pnl`'s own numbers in isolation.
+
+### Reference (continuing the same 10-day worked scenario)
+
+```
+D0  "0.00"    (base day)
+D1  "20.00"   (1020.00 - 1000.00 - 0)
+D2  "40.00"   (1040.00 - 1000.00 - 0)
+D3  "50.00"   (1050.00 - 1000.00 - 0)
+D4  null      (gap)
+D5  "75.00"   (1075.00 - 1000.00 - 0)
+D6  "75.00"   (1175.00 - 1000.00 - 100.00 deposit)
+D7  "75.00"   (1125.00 - 1000.00 - 50.00 net flow: +100 deposit, -50 withdrawal)
+D8  null      (gap)
+D9  "75.00"   (1145.00 - 1000.00 - 70.00 net flow: +100 -50 +20)
+```
+
+Verified independently in a separate Decimal script before implementation, not derived from the
+code under test. Note `cumulative_pnl` correctly stays flat at `"75.00"` from D5 through D9
+despite real cash moving in and out, exactly mirroring why `daily_pnl` was `"0.00"` on each of
+those same days (D6, D7, D9) — the two fields must agree, by construction, on every day where
+nothing but cash moved.
+
+### What this addendum does not do
+
+Does not add a top-level summary field outside the per-day series (the last point's
+`cumulative_pnl` already is that total — a dedicated top-level duplicate is not needed). Does
+not add money-weighted return or benchmark comparison. Does not add frontend rendering.
