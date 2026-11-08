@@ -13,6 +13,7 @@ class ResearchReportOut(BaseModel):
     risks: str | None
     model_version: str | None
     prompt_version: str | None
+    backend_detail: dict | None
 
 
 class ResearchReportCollection(BaseModel):

@@ -261,3 +261,135 @@ def test_synthesis_enabled_but_failing_still_completes_the_job(
     }
     assert [source["type"] for source in report["sources"][:2]] == ["sec_fundamentals", "sec_filings"]
 
+
+def test_tradingagents_backend_populates_backend_detail_on_success(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    backend_detail = {
+        "signal": "Buy",
+        "market_report": "market marker",
+        "sentiment_report": "sentiment marker",
+        "news_report": "news marker",
+        "fundamentals_report": "fundamentals marker",
+        "trader_investment_plan": "trader marker",
+        "final_trade_decision": "decision marker",
+    }
+    canned = {
+        "bull_case": "Services growth supports a higher multiple.",
+        "bear_case": "Hardware revenue is cyclical.",
+        "synthesis": "Cautiously constructive on the services mix.",
+        "risks": "Regulatory pressure on the app store.",
+        "model_version": "qwen3:14b",
+        "prompt_version": "tradingagents-v1",
+        "backend_detail": backend_detail,
+    }
+
+    def _fake(symbol, as_of_date):
+        assert symbol == "AAPL"
+        return canned
+
+    _seed(db_session, "AAPL")
+    _patch_sources(monkeypatch)
+    monkeypatch.setattr(settings, "research_synthesis_enabled", True)
+    monkeypatch.setattr(settings, "research_synthesis_backend", "tradingagents")
+    monkeypatch.setattr("app.services.research_worker.generate_tradingagents_synthesis", _fake)
+    headers = auth_headers("worker-tradingagents-ok@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+
+    processed = process_pending_research_jobs(db_session, 5)
+    assert len(processed) == 1
+
+    job = client.get(f"/research/jobs/{created.json()['id']}", headers=headers)
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == "completed"
+    report = _report_for(client, headers)
+    assert report["backend_detail"] == backend_detail
+    for field, value in canned.items():
+        assert report[field] == value
+    assert report["sources"][2] == {
+        "type": "local_llm_tradingagents",
+        "status": "ok",
+        "detail": f"synthesis generated via tradingagents ({settings.research_llm_model})",
+    }
+    assert all(source["type"] != "local_llm" for source in report["sources"])
+
+
+def test_tradingagents_backend_failure_still_completes_the_job(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    def _fail(symbol, as_of_date):
+        raise TimeoutError("tradingagents timed out")
+
+    _seed(db_session, "AAPL")
+    _patch_sources(monkeypatch)
+    monkeypatch.setattr(settings, "research_synthesis_enabled", True)
+    monkeypatch.setattr(settings, "research_synthesis_backend", "tradingagents")
+    monkeypatch.setattr("app.services.research_worker.generate_tradingagents_synthesis", _fail)
+    headers = auth_headers("worker-tradingagents-down@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+
+    processed = process_pending_research_jobs(db_session, 5)
+    assert len(processed) == 1
+
+    job = client.get(f"/research/jobs/{created.json()['id']}", headers=headers)
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == "completed"
+    report = _report_for(client, headers)
+    assert report["backend_detail"] is None
+    assert all(report[field] is None for field in _AI_FIELDS)
+    assert report["sources"][2] == {
+        "type": "local_llm_tradingagents",
+        "status": "unavailable",
+        "detail": "TimeoutError",
+    }
+    assert all(source["type"] != "local_llm" for source in report["sources"])
+
+
+def test_simple_backend_still_produces_a_null_backend_detail(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    assert settings.research_synthesis_backend == "simple"
+    canned = {
+        "bull_case": "Services growth supports a higher multiple.",
+        "bear_case": "Hardware revenue is cyclical.",
+        "synthesis": "Cautiously constructive on the services mix.",
+        "risks": "Regulatory pressure on the app store.",
+        "model_version": "qwen3:14b",
+        "prompt_version": "v1",
+    }
+
+    def _fake_generate(symbol, sources):
+        assert symbol == "AAPL"
+        assert [source["type"] for source in sources] == ["sec_fundamentals", "sec_filings"]
+        return canned
+
+    def _forbid_tradingagents(*args, **kwargs):
+        raise AssertionError("tradingagents backend must not run for the simple backend")
+
+    _seed(db_session, "AAPL")
+    _patch_sources(monkeypatch)
+    monkeypatch.setattr(settings, "research_synthesis_enabled", True)
+    monkeypatch.setattr("app.services.research_worker.generate_synthesis", _fake_generate)
+    monkeypatch.setattr(
+        "app.services.research_worker.generate_tradingagents_synthesis", _forbid_tradingagents
+    )
+    headers = auth_headers("worker-simple-backend@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+
+    processed = process_pending_research_jobs(db_session, 5)
+    assert len(processed) == 1
+
+    report = _report_for(client, headers)
+    assert report["backend_detail"] is None
+    for field, value in canned.items():
+        assert report[field] == value
+    assert report["sources"][2] == {
+        "type": "local_llm",
+        "status": "ok",
+        "detail": f"synthesis generated via {settings.research_llm_model}",
+    }
+    assert all(source["type"] != "local_llm_tradingagents" for source in report["sources"])
+

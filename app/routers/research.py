@@ -161,6 +161,7 @@ def _report_out(report: ResearchReport) -> dict:
         "risks": report.risks,
         "model_version": report.model_version,
         "prompt_version": report.prompt_version,
+        "backend_detail": report.backend_detail,
     }
 
 

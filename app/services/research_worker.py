@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.models.research_job import ResearchJob
 from app.models.research_report import ResearchReport
 from app.services.research_llm import generate_synthesis
+from app.services.research_tradingagents import generate_tradingagents_synthesis
 from app.services.sec_service import get_sec_company_filings, get_sec_company_fundamentals
 
 
@@ -61,22 +62,26 @@ def process_one_job(db: Session) -> ResearchJob | None:
         sources = _gather_sources(db, job.symbol)
         synthesis_fields = {
             "bull_case": None, "bear_case": None, "synthesis": None, "risks": None,
-            "model_version": None, "prompt_version": None,
+            "model_version": None, "prompt_version": None, "backend_detail": None,
         }
         if settings.research_synthesis_enabled:
+            backend = settings.research_synthesis_backend
             try:
-                synthesis_fields = generate_synthesis(job.symbol, sources)
-                sources.append({
-                    "type": "local_llm",
-                    "status": "ok",
-                    "detail": f"synthesis generated via {settings.research_llm_model}",
-                })
+                if backend == "tradingagents":
+                    synthesis_fields = generate_tradingagents_synthesis(
+                        job.symbol, _now().date().isoformat()
+                    )
+                    source_type = "local_llm_tradingagents"
+                    detail = f"synthesis generated via tradingagents ({settings.research_llm_model})"
+                else:
+                    synthesis_fields = generate_synthesis(job.symbol, sources)
+                    synthesis_fields["backend_detail"] = None
+                    source_type = "local_llm"
+                    detail = f"synthesis generated via {settings.research_llm_model}"
+                sources.append({"type": source_type, "status": "ok", "detail": detail})
             except Exception as exc:
-                sources.append({
-                    "type": "local_llm",
-                    "status": "unavailable",
-                    "detail": exc.__class__.__name__,
-                })
+                source_type = "local_llm_tradingagents" if backend == "tradingagents" else "local_llm"
+                sources.append({"type": source_type, "status": "unavailable", "detail": exc.__class__.__name__})
         report = ResearchReport(
             job_id=job.id, user_id=job.user_id, symbol=job.symbol, sources=sources,
             **synthesis_fields,

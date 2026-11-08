@@ -18,3 +18,4 @@ class ResearchReport(Base):
     risks = Column(Text, nullable=True)
     model_version = Column(String(64), nullable=True)
     prompt_version = Column(String(64), nullable=True)
+    backend_detail = Column(JSON, nullable=True)
