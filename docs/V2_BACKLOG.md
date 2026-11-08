@@ -182,6 +182,27 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 53](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/53) is ready with all
+CI checks green: a new `GET /portfolio/attribution` route — the last remaining named route from
+the roadmap's section 4.5 API list (`/performance`, `/allocation`, `/risk-metrics` were all
+already shipped). Evidence:
+[P4E_PORTFOLIO_ATTRIBUTION_VERIFICATION.md](P4E_PORTFOLIO_ATTRIBUTION_VERIFICATION.md). A new,
+isolated `app/services/portfolio_attribution.py`, structurally a sibling of
+`portfolio_allocation.py`: reuses the already-published `realized_pnl`/`unrealized_pnl`/
+`total_pnl` fields `build_portfolio_response` already produces (PR #42) — no new P&L
+arithmetic — plus the existing `sector_classifier.py`. `pnl_contribution_pct` is deliberately
+not clamped to `[0, 100]`: a losing position contributes a negative share, and a position whose
+gain exceeds the account's net total contributes over 100%, both correct and explicitly tested
+against the real route. Distinct from `GET /portfolio/risk-metrics`'s variance-based
+`risk_contributions` (PR #52) — dollar P&L attribution and risk attribution answer different
+questions and share no implementation. With this PR, every route named in roadmap section 4.5
+is shipped. Still open: `POST /portfolio/trade-impact` (Phase 4.3's Trade Impact Preview) and
+`POST /risk/scenarios` (Phase 4.4's full custom-shock Risk Lab, as opposed to the fixed
+three-scenario `stress_scenarios` already shipped in `GET /portfolio/risk-metrics`) — both
+separate, larger, unstarted units. Phase 4 (performance, allocation, and risk analytics) is now
+substantially complete at the API level; the frontend has not yet rendered any of
+risk-metrics', allocation's, or attribution's data.
+
 [PR 52](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/52) is ready with all
 CI checks green: `risk_contributions`, the sixth and final slice added to
 `GET /portfolio/risk-metrics` (additive on top of PRs #47-#51). Evidence:
