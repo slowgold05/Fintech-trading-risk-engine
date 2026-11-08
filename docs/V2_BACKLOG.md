@@ -182,6 +182,24 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 62](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/62) is ready with all
+CI checks green: line and area chart modes added to the daily history chart — candlestick was
+the only mode before this unit. Evidence:
+[P3_CHART_MODES_FRONTEND_VERIFICATION.md](P3_CHART_MODES_FRONTEND_VERIFICATION.md). Closes the
+roadmap's Phase 3 line "Candlestick, line, and area chart modes." All three price series are
+created once per chart mount and toggled via `visible`, never recreated on a mode switch; the
+chart-type `<select>` lives outside the existing symbol/range/indicator form and its own
+`onChange` never calls `handleSubmit` or `refetch` — proven directly by a test cycling through
+all three modes and asserting no additional network call or chart recreation.
+`frontend/src/components/historyData.ts` (data parsing) is byte-identical — pure rendering,
+no change to how candles or indicators are parsed. One `browser` CI flake hit on this PR's
+first run — the same already-documented `test_p3b_watchlists_ui.py`
+`StaleElementReferenceException`, confirmed via the actual log, unrelated to chart rendering,
+reran clean. No manual browser/visual check was performed, disclosed explicitly. Still open on
+the same roadmap line: historical timeframes beyond `1y`/`2y` (1M/3M/6M/All), trade execution
+markers, price levels for open orders, persisted chart preferences, and user-configurable
+indicator parameters beyond period/signal-period.
+
 [PR 61](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/61) is ready with all
 CI checks green: a new "Trade impact preview" card on `/portfolio`, calling
 `POST /portfolio/trade-impact` (PR #54) on form submit. Evidence:
