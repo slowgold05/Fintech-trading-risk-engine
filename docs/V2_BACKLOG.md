@@ -182,6 +182,20 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 39](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/39) landed on
+2026-11-07, after PR 38, ready with all 7 CI jobs green on the first attempt: a `daily_pnl`
+field on each point of `GET /portfolio/performance`'s daily series — the dollar change in
+`account_value` since the last available day, excluding the same cash-flow amount `twr_index`
+already excludes. Evidence:
+[P4A_PERFORMANCE_DAILY_PNL_VERIFICATION.md](P4A_PERFORMANCE_DAILY_PNL_VERIFICATION.md). No new
+query or data source; reuses the exact `flow`/`last_value` locals the TWR calculation already
+computes, so the two fields can never disagree about what counts as external cash — proved by
+an explicit cross-check assertion (flat dollars if and only if the index didn't move that day).
+Design written first as contract section 11, with an independently computed reference
+continuing the same 10-day scenario sections 5/8/10 already use. A top-level cumulative-P&L-
+since-inception summary, money-weighted return, benchmark comparison, performance by
+position/asset, and sector allocation remain open, separate Phase 4.1 units.
+
 [PR 38](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/38) landed on
 2026-11-07, after PR 37, ready with all 7 CI jobs green on the first attempt: a `drawdown_pct`
 field on each point of `GET /portfolio/performance`'s daily series — the decline from the
