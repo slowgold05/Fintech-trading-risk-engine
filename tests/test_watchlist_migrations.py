@@ -42,7 +42,10 @@ from tests.test_order_preview_postgres import _disposable_url
 pytestmark = pytest.mark.skipif(not os.environ.get("AUDIT_DATABASE_URL"), reason="AUDIT_DATABASE_URL is not set")
 
 BASELINE = "a21c9e7d4b60"
-HEAD = "e1a7c3b5d820"
+# The watchlist migration's own revision, not necessarily the current repo
+# head — this module proves that migration is additive/reversible in
+# isolation, independent of whatever has been layered on top of it since.
+WATCHLIST_REVISION = "b73e2d9f6a10"
 _PREFIX = "p3b_watchlist_schema_"
 _NEW_TABLES = frozenset({"watchlists", "watchlist_items"})
 _HEX = frozenset("0123456789abcdef")
@@ -426,17 +429,17 @@ def test_watchlist_migration_preserves_baseline_and_app_grants(isolated_watchlis
         before_names = set(inspect(engine).get_table_names())
         baseline = _digests(engine)
         counts = _preserved_counts(engine)
-        command.upgrade(config, HEAD)
+        command.upgrade(config, WATCHLIST_REVISION)
         with engine.connect() as db:
-            assert db.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == HEAD
+            assert db.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == WATCHLIST_REVISION
         after_names = set(inspect(engine).get_table_names())
         assert after_names - before_names == set(_NEW_TABLES)
         assert _NEW_TABLES.isdisjoint(before_names)
         assert _digests(engine, only=set(baseline)) == baseline
     elif mode == "fresh":
-        command.upgrade(config, "head")
+        command.upgrade(config, WATCHLIST_REVISION)
         with engine.connect() as db:
-            assert db.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == HEAD
+            assert db.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == WATCHLIST_REVISION
             assert db.execute(text("SELECT count(*) FROM watchlists")).scalar_one() == 0
             assert db.execute(text("SELECT count(*) FROM watchlist_items")).scalar_one() == 0
         _assert_watchlist_schema(engine)
