@@ -16,6 +16,7 @@ import pytest
 
 pytest.importorskip("selenium")
 
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
@@ -138,9 +139,16 @@ def _type_id(driver, field_id: str, value: str) -> None:
 
 def _status(driver, phrase: str) -> None:
     def ready(current) -> bool:
-        noticed = any(node.is_displayed() and phrase in node.text for node in current.find_elements(By.CSS_SELECTOR, "[role='status']"))
-        create = current.find_elements(By.ID, "watchlist-create-name")
-        return noticed and any(node.is_displayed() and node.is_enabled() for node in create)
+        try:
+            section = current.find_element(By.CSS_SELECTOR, "section[aria-labelledby='watchlists-title']")
+            noticed = any(
+                node.is_displayed() and phrase in node.text
+                for node in section.find_elements(By.CSS_SELECTOR, "[role='status']")
+            )
+            create = current.find_elements(By.ID, "watchlist-create-name")
+            return noticed and any(node.is_displayed() and node.is_enabled() for node in create)
+        except StaleElementReferenceException:
+            return False
 
     h._wait(driver).until(ready)
 
