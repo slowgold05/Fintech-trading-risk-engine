@@ -258,6 +258,29 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+2026-11-09, continuing further still: with Phase 7 now covering everything
+locally reachable, PR 89 (stacked on 88) picks up a genuinely still-open
+small gap flagged in an earlier backlog entry (the PR #60 paragraph
+below): the risk metrics card's range selector was hardcoded to `1y` even
+though `fetchRiskMetrics` and the backend endpoint already support `2y`.
+See [P4F_RISK_METRICS_RANGE_VERIFICATION.md](P4F_RISK_METRICS_RANGE_VERIFICATION.md).
+Checked the live code first rather than trusting the older paragraph at
+face value — a neighboring item flagged the same way (Bollinger Bands
+"upper/lower not yet parsed or plotted") turned out to already be fully
+shipped in a later PR, so the backlog's append-only older entries are not
+all still accurate; this risk-metrics gap, unlike that one, checked out as
+real. Frontend-only change (`frontend/src/pages/Portfolio.tsx`): a
+`<select>` in the card's existing `action` slot, driving the query
+key/`fetchRiskMetrics` call and the card's own title text. No backend
+change needed. `npm run lint`/`build`/`test -- --run` all clean, 417 tests
+unchanged (no dedicated test file exists for this page, same disclosed gap
+as PRs #55-#60 on this same card — not newly introduced here). Implemented
+directly rather than through Grok given the size of the change (under 15
+lines).
+
+`main` is still unchanged at `be8ffdc19f78d2942b5e9922ce605d6a5de7d472`;
+PR 89, like every other open PR (#2 through #89), is not merged.
+
 2026-11-09, continuing further still: PR 88 (Phase 7.1, stacked on 87)
 closes the remaining slice of roadmap 7.1's original scope — partial
 fills, rejections, and duplicate submissions chained inside a trader

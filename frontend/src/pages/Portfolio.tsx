@@ -171,9 +171,10 @@ export function Portfolio() {
     queryKey: ["portfolio", "attribution"],
     queryFn: fetchAttribution,
   });
+  const [riskMetricsRange, setRiskMetricsRange] = useState<"1y" | "2y">("1y");
   const riskMetricsQuery = useQuery({
-    queryKey: ["portfolio", "risk-metrics", "1y"],
-    queryFn: () => fetchRiskMetrics("1y"),
+    queryKey: ["portfolio", "risk-metrics", riskMetricsRange],
+    queryFn: () => fetchRiskMetrics(riskMetricsRange),
   });
 
   const portfolio = portfolioQuery.data;
@@ -596,7 +597,20 @@ export function Portfolio() {
             )}
           </DashboardCard>
 
-          <DashboardCard title="Risk metrics (1y)">
+          <DashboardCard
+            action={
+              <select
+                aria-label="Risk metrics range"
+                className="field-control"
+                onChange={(event) => setRiskMetricsRange(event.target.value as "1y" | "2y")}
+                value={riskMetricsRange}
+              >
+                <option value="1y">1 year</option>
+                <option value="2y">2 years</option>
+              </select>
+            }
+            title={`Risk metrics (${riskMetricsRange})`}
+          >
             {riskMetricsQuery.isLoading ? (
               <div className="space-y-3">
                 {[0, 1, 2, 3, 4, 5, 6].map((item) => (
