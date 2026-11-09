@@ -1,5 +1,7 @@
 # Forecast Lab — open limitations to resolve before real use
 
+**Update, 9 November 2026:** this is a historical limitations record. The session-date cutoff and real evaluation adapter described as missing in section 4 are now implemented; see [the verification](P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md). That adapter still reads the current two-year cache and does not reconstruct historical data vintages. The TradingAgents data-vendor documentation mentioned as missing below is now [recorded](../grc/vendors/tradingagents_data_vendors.md). Pandas was installed for local predictor-stub tests; the default installation and CI still omit the optional forecasting stack. Actual Kronos weights, real inference/evaluation, and model-owner approval remain unverified. See [the current project review](REVIEW_2026-11-09.md).
+
 Everything in roadmap Phase 6 (PRs #76-#81) is built and tested, but **nothing has
 ever been run against a real model**. This doc is the single place to come back to
 before actually turning this feature on. Each item below is a real, specific
@@ -32,7 +34,7 @@ actually works end to end — it is only verified by reading the vendored source
 and the official README, never exercised.
 
 **Before enabling for real**, re-review
-[grc/vendors/huggingface.md](grc/vendors/huggingface.md) — it is currently
+[grc/vendors/huggingface.md](../grc/vendors/huggingface.md) — it is currently
 "Pending vendor-owner review," written when this call was still hypothetical.
 
 ## 3. The feature flag is off, and flipping it on is a real decision
@@ -74,7 +76,7 @@ does
 
 `GET /forecasts/evaluations` will return an empty list until step 4 is fixed and
 someone runs the script for real. The `SM-FC-02` model card
-([grc/models/cards/SM-FC-02.md](grc/models/cards/SM-FC-02.md)) says this
+([grc/models/cards/SM-FC-02.md](../grc/models/cards/SM-FC-02.md)) says this
 explicitly: "Approved uses: None. Pending model owner review." Don't let a
 forecast's presence in the UI be mistaken for a validated signal — nothing in
 this app currently claims otherwise, and that should stay true until a real
