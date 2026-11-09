@@ -105,7 +105,7 @@ of 7.3's items that require a deployed environment).
 | Authenticated browser journey | Not run. Vitest covers routes in jsdom. The hosted bundle is still the pre-PR #15 research console. Login writes session and audit rows, so the journey needs a named test account and a named environment |
 | Provider rights and access | Not reviewed. Yahoo is called by the scheduler path. Alpha Vantage is called by portfolio marks, immediate trades, trending, and research. Keys and terms were not inspected |
 | Hosted and local divergence | Proven for the web bundle. Unproven for the API image digest and the database revision |
-| PostgreSQL concurrency and grants | Six tests skipped because `AUDIT_DATABASE_URL` was unset and no disposable server was available. A fresh database on a shared server is not sufficient |
+| PostgreSQL concurrency and grants | **Closed 2026-11-09**, once Docker became available. See [P0C_POSTGRES_CONCURRENCY_VERIFICATION.md](P0C_POSTGRES_CONCURRENCY_VERIFICATION.md): 7/7 passed on a fresh disposable `postgres:17` container (not the user's own long-running dev container), full suite 530 passed/8 skipped with `AUDIT_DATABASE_URL` set |
 
 ## Ordered review units
 
@@ -257,6 +257,36 @@ Separate slices after the core gate. P5 needs a pinned TradingAgents revision, o
 P1-A, P1-B, the signed-in truthfulness correction, and the public-data correction remain local, in the notes linked above. The P1-C snapshot correction is the verified local pass in [P1C_DATA_CONTRACT.md](P1C_DATA_CONTRACT.md): 25 focused tests passed; the full backend passed 190 with 1 skipped on a fresh disposable PostgreSQL 17.11; SQLite pins the schema page before the precise clock; putting back the old `SELECT 1` fails both WAL clock regressions. Those results verify the read corrections.
 
 ## Next task
+
+2026-11-09, resuming: the user started Docker Desktop and a local Ollama
+instance and said to proceed, resolving the single biggest standing
+blocker this entire session. Closed Phase 0's "PostgreSQL concurrency and
+grants" gate for real — see
+[P0C_POSTGRES_CONCURRENCY_VERIFICATION.md](P0C_POSTGRES_CONCURRENCY_VERIFICATION.md).
+Used a fresh, disposable `postgres:17` container on port 5555 (CI's own
+public `ci_audit`/`ci-only-test` credentials, not a secret) — never the
+user's own long-running `fintechapp-postgres` container on port 5433,
+which holds real locally-migrated application data and was never touched.
+7/7 passed on a freshly recreated container; full suite 530 passed/8
+skipped with `AUDIT_DATABASE_URL` set (down from 29 skipped). Caught and
+resolved a false alarm along the way: reusing the same container across
+several manual test invocations left behind residual rows that broke two
+concurrency tests' dedup assumptions (`assert [0, 2] == [0, 1]`) —
+looked like a real locking bug at first, resolved by recreating a
+genuinely fresh container and confirming 7/7 passed repeatably; not a
+product bug, a reused-disposable-container artifact. Also ran the
+previously mocked-only AI-usage token capture (PR 87) against the real
+local `qwen3:14b` Ollama model for the first time — `prompt_tokens: 74,
+completion_tokens: 567, duration_ms: 95046`, matching measured wall-clock
+time — see the addendum in
+[P73_AI_USAGE_VERIFICATION.md](P73_AI_USAGE_VERIFICATION.md).
+
+Per the user's explicit instruction, continuing the roadmap now without
+stopping. Still open: the other five rows in the gates table (disposable
+backup/restore, hosted account reconciliation, authenticated browser
+journey, provider rights review, hosted/local divergence) are unrelated
+to Postgres/Docker and remain blocked on hosted/browser access this
+sandboxed environment does not have.
 
 2026-11-09, pausing here at the user's request (laptop going to sleep,
 work resumes later): CI on PRs 87, 88, and 89 came back with a genuine

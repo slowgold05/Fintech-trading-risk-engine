@@ -2,6 +2,30 @@
 
 Contract: [P73_AI_USAGE_CONTRACT.md](P73_AI_USAGE_CONTRACT.md).
 
+## Addendum, 2026-11-09: confirmed against a real, live local Ollama
+
+Everything below this line was verified with the Ollama response fields
+mocked (the only option while Docker/Ollama weren't running). Once the
+user started Ollama locally, ran `generate_synthesis("AAPL", sources)`
+directly against the real local `qwen3:14b` model (the app's own
+configured default — already pulled locally, not downloaded for this
+check) with no mocking at all:
+
+```
+wall_clock_seconds: 97.12
+prompt_tokens: 74
+completion_tokens: 567
+duration_ms: 95046
+```
+
+`duration_ms` (95.0s) matches the measured wall-clock time (97.1s)
+within the expected small overhead, and `bull_case`/`synthesis` both
+parsed correctly from the real model output. This confirms the field
+names read from Ollama's actual `/api/generate` response
+(`prompt_eval_count`, `eval_count`, `total_duration`) are correct against
+the real API, not just assumed from documentation — this is a real
+confirmation that was not possible earlier in this session.
+
 ## Diff scope
 
 `git status --short` after Grok's implementation shows exactly the files
