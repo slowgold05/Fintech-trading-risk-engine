@@ -121,7 +121,7 @@ def test_generate_forecast_rejects_insufficient_cached_history(monkeypatch):
 
 
 def test_generate_forecast_builds_correct_input_window_and_future_sessions(monkeypatch):
-    import pandas as pd
+    pd = pytest.importorskip("pandas")
 
     sessions = _trading_days_ending(date(2026, 11, 6), 8)
     fixture = _bars(sessions)
