@@ -5,7 +5,7 @@ connection, unless the preview helper accepts it as disposable. Schema upgrade
 uses that helper. The app password exists only for this proof.
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import os
 import secrets
@@ -24,6 +24,7 @@ from app.models.forecast_job import ForecastJob
 from app.models.forecast_result import ForecastResult
 from app.models.holding import Holding
 from app.models.ledger_entry import LedgerEntry
+from app.models.market_filings_cache import MarketFilingsCache
 from app.models.market_symbol import MarketSymbol
 from app.models.research_brief import ResearchBrief
 from app.models.research_job import ResearchJob
@@ -34,7 +35,7 @@ from app.routers.research import cancel_research_job, create_research_job
 from app.schemas.forecast_job import ForecastJobCreate
 from app.schemas.research_job import ResearchJobCreate
 from app.scripts.configure_postgres_role import configure
-from app.services import forecast_worker, research_worker
+from app.services import forecast_worker, research_worker, sec_service
 from app.services.ledger_service import ensure_opening
 from app.services.research_briefs import build_daily_brief
 import tests.test_order_preview_postgres as preview
@@ -69,6 +70,7 @@ _INSERT = {
         "model_mae", "model_directional_accuracy", "baseline_type", "baseline_mae",
         "baseline_directional_accuracy", "weights_exercised", "notes",
     },
+    "market_filings_cache": {"symbol", "cik", "payload", "source", "fetched_at"},
 }
 _UPDATE = {
     "research_jobs": {
@@ -76,6 +78,7 @@ _UPDATE = {
         "completion_tokens", "duration_ms",
     },
     "forecast_jobs": {"status", "updated_at", "error_message"},
+    "market_filings_cache": {"cik", "payload", "fetched_at"},
 }
 
 
@@ -359,3 +362,66 @@ def test_app_role_can_write_research_and_forecast_and_cannot_mutate_role_or_ledg
         assert amount != 0
         assert db.get(ResearchJob, completed_job["id"]).status == "completed"
         assert db.get(ForecastJob, finished.id).status == "completed"
+
+
+def _submissions(name: str, form: str):
+    return {
+        "entityName": name,
+        "filings": {
+            "recent": {
+                "form": [form],
+                "filingDate": ["2026-03-01"],
+                "reportDate": ["2025-12-31"],
+                "accessionNumber": ["0000320193-26-000001"],
+                "primaryDocument": ["filing.htm"],
+            }
+        },
+    }
+
+
+def test_app_role_can_insert_and_refresh_filings_cache(app_sessions, monkeypatch):
+    symbol = f"F{uuid4().hex[:6].upper()}"
+    cik = "0000320193"
+    bodies = [_submissions("First Name", "10-K"), _submissions("Refreshed Name", "8-K")]
+
+    def fake_get(url, headers=None, timeout=30):
+        assert url.endswith(f"CIK{cik}.json")
+        body = bodies.pop(0)
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return body
+
+        return Response()
+
+    monkeypatch.setattr(sec_service, "_get_ticker_map", lambda: {symbol: {"cik_str": 320193}})
+    monkeypatch.setattr(sec_service.requests, "get", fake_get)
+
+    with app_sessions() as db:
+        inserted = sec_service.get_sec_company_filings(symbol, db, limit=5)
+        assert inserted["cik"] == cik
+        assert inserted["filings"][0]["form"] == "10-K"
+        row = db.get(MarketFilingsCache, symbol)
+        assert row is not None
+        assert row.source == "sec_edgar"
+        assert row.payload["name"] == "First Name"
+        assert row.cik == cik
+
+        row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=25)
+        db.commit()
+        refreshed = sec_service.get_sec_company_filings(symbol, db, limit=5)
+        assert refreshed["name"] == "Refreshed Name"
+        assert refreshed["filings"][0]["form"] == "8-K"
+        db.refresh(row)
+        assert row.payload["name"] == "Refreshed Name"
+        assert row.source == "sec_edgar"
+        assert row.symbol == symbol
+
+        _denied(db, f"DELETE FROM market_filings_cache WHERE symbol = '{symbol}'")
+        _denied(db, f"UPDATE market_filings_cache SET symbol = 'ZZZZ' WHERE symbol = '{symbol}'")
+        _denied(db, f"UPDATE market_filings_cache SET source = 'other' WHERE symbol = '{symbol}'")
+        kept = db.get(MarketFilingsCache, symbol)
+        assert kept is not None and kept.symbol == symbol and kept.source == "sec_edgar"

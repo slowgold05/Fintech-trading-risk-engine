@@ -77,6 +77,15 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("GRANT INSERT, UPDATE ON detection_cursors TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON scheduler_locks TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE, DELETE ON watchlists, watchlist_items TO fintech_app")
+            # Filings helper inserts a row (Python source default sec_edgar is
+            # emitted) and later refreshes cik, payload, and fetched_at only.
+            cursor.execute(
+                "GRANT INSERT (symbol, cik, payload, source, fetched_at) "
+                "ON market_filings_cache TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT UPDATE (cik, payload, fetched_at) ON market_filings_cache TO fintech_app"
+            )
             # Research and forecast writers. SQLAlchemy INSERT lists every mapped
             # column without a server default, including nullable columns left as
             # None (research error/token/duration fields and forecast error_message).
