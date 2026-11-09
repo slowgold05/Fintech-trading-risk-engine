@@ -182,6 +182,28 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 77](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/77) is ready
+with all CI checks green: the job-queue **intake** surface for Phase 6 (Experimental
+Forecast Lab) — `POST /forecasts/jobs`, `GET /forecasts/jobs`, `GET
+/forecasts/jobs/{job_id}`, `POST /forecasts/jobs/{job_id}/cancel`, closely mirroring
+PR #70's own research-job intake. **No worker exists yet** — a job only ever reaches
+`queued` (on creation) or `cancelled` (via cancel). A forecast job stores
+`generate_forecast`'s own keyword arguments (`provider`/`adjustment_type`/
+`lookback`/`horizon`/`sample_count`) at creation time so the worker (a later unit)
+can replay them unchanged; intake validates `adjustment_type` against the existing
+`SUPPORTED_ADJUSTMENTS` constant and the three numeric bounds against the same
+`forecast_kronos_max_*` settings `generate_forecast` (PR #76) itself checks — a
+request that would definitely be rejected later never reaches the queue. A tighter
+5-job cap than research jobs' 10, reflecting that a real Kronos inference call is far
+more compute-heavy per job. Evidence:
+[P6B_FORECAST_JOBS_VERIFICATION.md](P6B_FORECAST_JOBS_VERIFICATION.md); design:
+[P6B_FORECAST_JOBS_CONTRACT.md](P6B_FORECAST_JOBS_CONTRACT.md). Still fully open for
+Phase 6: the bounded worker (6.C, mirrors Phase 5's own PR #71), `GET
+/forecasts/{forecast_id}`/`GET /forecasts/models`/`GET /forecasts/evaluations`, the
+chart UI, and — the real gate before any broad exposure — the roadmap's own 6.3
+walk-forward historical validation against baselines, not attempted by any unit so
+far.
+
 [PR 76](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/76) is ready
 with all CI checks green: the first unit of roadmap Phase 6 (Experimental Forecast
 Lab) — the Kronos model wrapper only, no job queue, no API route, no chart UI yet
