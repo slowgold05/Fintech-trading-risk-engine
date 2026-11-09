@@ -506,3 +506,45 @@ export interface RiskScenariosResponse {
   loss_pct: string | null;
   securities: RiskScenarioSecurity[];
 }
+
+export interface ResearchJob {
+  id: number;
+  symbol: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+}
+
+export interface ResearchReportSource {
+  type: string;
+  status: string;
+  detail: string;
+}
+
+export interface ResearchReport {
+  id: number;
+  job_id: number;
+  symbol: string;
+  created_at: string;
+  sources: ResearchReportSource[];
+  bull_case: string | null;
+  bear_case: string | null;
+  synthesis: string | null;
+  risks: string | null;
+  model_version: string | null;
+  prompt_version: string | null;
+  backend_detail: Record<string, unknown> | null;
+}
+
+export interface ResearchBriefEntry {
+  symbol: string;
+  report_id: number | null;
+}
+
+export interface ResearchBrief {
+  id: number;
+  brief_date: string;
+  created_at: string;
+  entries: ResearchBriefEntry[];
+}

@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Portfolio } from "./pages/Portfolio";
+import { Research } from "./pages/Research";
 import { Risk } from "./pages/Risk";
 import { Trades } from "./pages/Trades";
 import { Compliance } from "./pages/Compliance";
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/trades" element={<Trades />} />
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/risk" element={<Risk />} />
+          <Route path="/research" element={<Research />} />
           <Route path="/compliance" element={<Compliance />} />
         </Route>
       </Route>
