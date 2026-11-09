@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
-from app.routers import auth, assets, cash, compliance, market, orders, trades, portfolio, risk
+from app.routers import auth, assets, cash, compliance, market, market_history, orders, trades, portfolio, risk, watchlists, research, forecasts
 
 
 @asynccontextmanager
@@ -98,6 +98,7 @@ def token(
 # Register routers
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(market.router, prefix="/market", tags=["Market"])
+app.include_router(market_history.router, prefix="/market", tags=["Market"])
 app.include_router(trades.router, prefix="/trades", tags=["Trades"])
 app.include_router(orders.router, prefix="/orders", tags=["Orders"])
 app.include_router(compliance.router, prefix="/compliance", tags=["Compliance"])
@@ -105,3 +106,6 @@ app.include_router(portfolio.router, prefix="/portfolio", tags=["Portfolio"])
 app.include_router(risk.router, prefix="/risk", tags=["Risk"])
 app.include_router(assets.router, prefix="/assets", tags=["Assets"])
 app.include_router(cash.router, prefix="/cash", tags=["Cash"])
+app.include_router(watchlists.router, prefix="/watchlists", tags=["Watchlists"])
+app.include_router(research.router, prefix="/research", tags=["Research"])
+app.include_router(forecasts.router, prefix="/forecasts", tags=["Forecasts"])

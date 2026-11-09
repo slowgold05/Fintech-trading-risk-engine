@@ -104,3 +104,21 @@ models:
   passed: true
   note: Hit rate is the share of walk-forward closes inside the band. It is not precision
     or recall.
+- id: SM-FC-02
+  version: 1
+  title: Kronos bounded daily forecast
+  model_type: foundation_timeseries
+  owner: Market Risk (pending confirmation)
+  activation: none; pending model owner review and the Phase 6.3 walk-forward evaluation
+  validation_report: grc/models/reports/SM-FC-02.md
+  model_card: grc/models/cards/SM-FC-02.md
+  lookback_over_max_rejected: true
+  horizon_over_max_rejected: true
+  sample_count_over_max_rejected: true
+  insufficient_history_rejected: true
+  reference_vectors_matched: true
+  output_shape_matched: true
+  weights_exercised: false
+  accuracy_evaluated: false
+  note: Checks cover bounds rejection, point-in-time windowing, and output shape on
+    a synthetic fixture. They are not a hit rate or an accuracy number.

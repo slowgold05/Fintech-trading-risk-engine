@@ -1,26 +1,27 @@
-import { useMemo, useRef } from "react";
+import { useRef } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { fetchPortfolio, fetchPortfolioPnl } from "../api/portfolio";
+import { fetchOrders } from "../api/orders";
+import { fetchPortfolio } from "../api/portfolio";
 import { fetchRisk } from "../api/risk";
 import { createTrade, fetchTrades } from "../api/trades";
 import {
   DashboardCard,
   EmptyState,
   PnlValue,
-  PortfolioChart,
   PositionsTable,
   QuickTradePanel,
+  RecentOrdersTable,
   RecentTradesTable,
   RiskScoreCard,
   SkeletonBlock,
 } from "../features/dashboard/components";
 import {
-  getDayPnl,
-  getDayPnlPercent,
+  getTotalPnl,
+  getUnrealizedPnlPercent,
   getBuyingPower,
   getCashBalance,
-  getPortfolioChartPoints,
   getPortfolioValue,
   getRiskLabel,
   getRiskScore,
@@ -32,6 +33,7 @@ import { useToast } from "../context/useToast";
 import {
   formatCurrency,
   formatSignedPercent,
+  formatUtcDateTime,
 } from "../utils/format";
 import { getRiskTone } from "../utils/riskTone";
 
@@ -45,12 +47,6 @@ export function Dashboard() {
     queryFn: fetchPortfolio,
   });
 
-  const portfolioPnlQuery = useQuery({
-    queryKey: ["portfolio", "pnl"],
-    queryFn: fetchPortfolioPnl,
-    retry: false,
-  });
-
   const tradesQuery = useQuery({
     queryKey: ["trades"],
     queryFn: fetchTrades,
@@ -59,6 +55,11 @@ export function Dashboard() {
   const riskQuery = useQuery({
     queryKey: ["risk"],
     queryFn: fetchRisk,
+  });
+
+  const ordersQuery = useQuery({
+    queryKey: ["orders"],
+    queryFn: fetchOrders,
   });
 
   const tradeMutation = useMutation({
@@ -72,7 +73,6 @@ export function Dashboard() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["trades"] }),
         queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio", "pnl"] }),
         queryClient.invalidateQueries({ queryKey: ["risk"] }),
       ]);
     },
@@ -86,33 +86,27 @@ export function Dashboard() {
   });
 
   const portfolio = portfolioQuery.data;
-  const portfolioPnl = portfolioPnlQuery.data;
   const trades = tradesQuery.data;
   const risk = riskQuery.data;
+  const valuationIncomplete = portfolio?.valuation_status === "incomplete";
   const portfolioValue = getPortfolioValue(portfolio);
   const cashBalance = getCashBalance(portfolio);
   const buyingPower = getBuyingPower(portfolio);
-  const dayPnl = portfolioPnl?.daily_pnl ?? getDayPnl(portfolio);
-  const dayPnlPercent =
-    portfolioPnl?.daily_pnl_pct ?? getDayPnlPercent(portfolio);
-  const baseChartPoints = useMemo(
-    () => getPortfolioChartPoints(portfolio, portfolioPnl),
-    [portfolio, portfolioPnl],
-  );
-  const chartPoints = useMemo(
-    () => baseChartPoints,
-    [baseChartPoints],
-  );
+  const totalPnl = getTotalPnl(portfolio);
+  const unrealizedPnlPercent = getUnrealizedPnlPercent(portfolio);
   const recentTrades = mapRecentTrades(trades);
+  const recentOrders = ordersQuery.data?.orders.slice(0, 5) ?? null;
   const positions = mapPortfolioPositions(portfolio);
-  const riskScore = getRiskScore(risk);
-  const riskLabel = getRiskLabel(riskScore);
+  const valuationRead =
+    formatUtcDateTime(portfolio?.snapshot_read_at) ?? "Unavailable";
+  const riskFailed = riskQuery.isError;
+  const riskScore = riskFailed ? null : getRiskScore(risk);
+  const riskLabel = riskScore == null ? null : getRiskLabel(riskScore);
   const isPortfolioLoading = portfolioQuery.isLoading;
   const isTradesLoading = tradesQuery.isLoading;
   const isRiskLoading = riskQuery.isLoading;
   const hasDashboardError =
     portfolioQuery.isError || tradesQuery.isError || riskQuery.isError;
-  const riskTone = getRiskTone(riskScore);
 
   function handleQuickTradeSubmit(values: QuickTradeFormValues) {
     if (!values.symbol || values.quantity <= 0) {
@@ -137,9 +131,6 @@ export function Dashboard() {
     <div className="space-y-6">
       {/* Page header */}
       <div className="border-b border-slate-800/60 pb-6">
-        <span className="inline-flex items-center rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-400">
-          Dashboard
-        </span>
         <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
@@ -161,7 +152,7 @@ export function Dashboard() {
                   <span className="animate-ping-slow absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 </span>
-                Live
+                Cached prices
               </span>
             )}
           </div>
@@ -176,39 +167,59 @@ export function Dashboard() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className={["metric-tile border-l-2", riskTone.metric].join(" ")}>
+        <div
+          className={[
+            "metric-tile border-l-2",
+            riskScore == null ? "border-slate-700/80" : getRiskTone(riskScore).metric,
+          ].join(" ")}
+        >
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Risk level
+            Latest assessment
           </div>
           <div className="mt-2 flex items-baseline justify-between gap-2">
             <span className="font-mono text-base font-semibold">
-              {isRiskLoading ? <span className="text-slate-500">—</span> : riskLabel}
+              {isRiskLoading ? (
+                <span className="text-slate-500">—</span>
+              ) : riskFailed ? (
+                <span className="text-slate-400">Unavailable</span>
+              ) : riskLabel == null ? (
+                <span className="text-slate-400">No assessments</span>
+              ) : (
+                riskLabel
+              )}
             </span>
             <span className="font-mono text-xs text-slate-500">
-              {isRiskLoading ? "--" : riskScore}
+              {isRiskLoading || riskScore == null ? "--" : riskScore}
             </span>
           </div>
         </div>
 
         <div className="metric-tile">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Day P&amp;L
+            Total P&amp;L
           </div>
           <div className="mt-2 text-base font-semibold">
             {isPortfolioLoading
               ? <span className="font-mono text-slate-500">—</span>
-              : <PnlValue value={dayPnl} />}
+              : totalPnl == null
+                ? <span className="text-slate-400">Unavailable</span>
+                : <PnlValue value={totalPnl} />}
           </div>
         </div>
 
         <div className="metric-tile">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Day change
+            Unrealized P&amp;L %
           </div>
-          <div className={["mt-2 font-mono text-base font-semibold", dayPnlPercent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
+          <div className={[
+            "mt-2 font-mono text-base font-semibold",
+            unrealizedPnlPercent == null ? "text-slate-400" : unrealizedPnlPercent >= 0 ? "text-emerald-300" : "text-rose-300",
+          ].join(" ")}>
             {isPortfolioLoading
               ? <span className="text-slate-500">—</span>
-              : formatSignedPercent(dayPnlPercent)}
+              : unrealizedPnlPercent == null
+                ? "Unavailable"
+                : formatSignedPercent(unrealizedPnlPercent)}
           </div>
         </div>
 
@@ -219,85 +230,134 @@ export function Dashboard() {
           <div className="mt-2 font-mono text-base font-semibold text-slate-200">
             {isPortfolioLoading
               ? <span className="text-slate-500">—</span>
-              : formatCurrency(cashBalance, false)}
+              : portfolio == null
+                ? "Unavailable"
+                : formatCurrency(cashBalance, false)}
           </div>
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.75fr)]">
-        <div className="space-y-5">
-          <DashboardCard
-            action={
-              <span className="risk-chip border-sky-400/30 bg-sky-400/10 text-sky-300">
-                Real 1D
-              </span>
-            }
-            title="Portfolio Value"
-          >
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.75fr)]">
+        <div className="min-w-0 space-y-5">
+          <DashboardCard title="Portfolio Value">
             {isPortfolioLoading ? (
               <div className="space-y-4">
                 <SkeletonBlock className="h-10 w-56" />
-                <SkeletonBlock className="h-72" />
+                <SkeletonBlock className="h-28" />
               </div>
-            ) : chartPoints.length === 0 ? (
-              <EmptyState
-                detail="Portfolio valuation will appear after positions are loaded."
-                message="No portfolio data is available yet."
-              />
+            ) : portfolioValue == null ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <div className="font-mono text-4xl font-semibold text-slate-400">Unavailable</div>
+                  <p className="mt-2 text-sm text-slate-300">
+                    {valuationIncomplete ? "Valuation incomplete" : "Portfolio valuation could not be loaded."}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Valuation read{" "}
+                    <span className="font-mono text-slate-300">{valuationRead}</span>
+                  </p>
+                </div>
+                {portfolio ? (
+                  <div className="text-right">
+                    <div className="text-xs text-slate-400">Buying power</div>
+                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
+                  </div>
+                ) : null}
+              </div>
             ) : (
               <>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <div className="font-mono text-4xl font-semibold text-slate-50">
-                      {formatCurrency(portfolioValue, false)}
-                    </div>
-                    <div className="mt-2 text-sm text-slate-400">
-                      <PnlValue value={dayPnl} /> /{" "}
-                      <span
-                        className={[
-                          "font-mono",
-                          dayPnlPercent >= 0
-                            ? "text-emerald-300"
-                            : "text-rose-300",
-                        ].join(" ")}
-                      >
-                        {formatSignedPercent(dayPnlPercent)}
-                      </span>{" "}
-                      daily change
-                    </div>
+                  <div className="font-mono text-4xl font-semibold text-slate-50">
+                    {formatCurrency(portfolioValue, false)}
                   </div>
-                  <div className="rounded border border-slate-800 bg-slate-900/70 px-3 py-2 text-right">
-                    <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                      Buying power
-                    </div>
-                    <div className="font-mono text-sm text-slate-100">
-                      {formatCurrency(buyingPower, false)}
-                    </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-400">Buying power</div>
+                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
                   </div>
                 </div>
-                <PortfolioChart points={chartPoints} />
+                <p className="mt-2 text-xs text-slate-400">
+                  Valuation read{" "}
+                  <span className="font-mono text-slate-300">{valuationRead}</span>
+                </p>
+                <div className="mt-6 border-t border-slate-800 pt-5">
+                  <EmptyState
+                    message="Performance history unavailable"
+                    detail="Your current account value is shown above. A performance chart needs recorded account values over time."
+                  />
+                </div>
               </>
             )}
           </DashboardCard>
 
           <DashboardCard title="Recent Trades">
             <RecentTradesTable
+              isError={tradesQuery.isError}
               isLoading={isTradesLoading}
+              onRetry={() => {
+                void tradesQuery.refetch();
+              }}
               trades={recentTrades}
+            />
+          </DashboardCard>
+
+          <DashboardCard
+            action={
+              <Link
+                className="text-xs font-semibold text-emerald-300 transition duration-200 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                to="/trades"
+              >
+                View orders
+              </Link>
+            }
+            title="Recent Orders"
+          >
+            <RecentOrdersTable
+              isError={ordersQuery.isError}
+              isLoading={ordersQuery.isLoading}
+              onRetry={() => {
+                void ordersQuery.refetch();
+              }}
+              orders={recentOrders}
             />
           </DashboardCard>
         </div>
 
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           {isRiskLoading ? (
             <DashboardCard title="Risk Score">
               <SkeletonBlock className="h-28" />
             </DashboardCard>
-          ) : (
+          ) : riskFailed ? (
+            <DashboardCard title="Risk Score">
+              <div className="rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+                <p>Risk assessment unavailable.</p>
+                <p className="mt-1 text-xs leading-5 text-rose-200/80">
+                  The latest post-trade assessment could not be loaded. Portfolio-wide risk is not estimated here.
+                  {risk ? " A previously loaded result is not shown as current." : ""}
+                </p>
+                <button
+                  className="mt-3 rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-1.5 text-xs font-semibold text-slate-100 transition duration-200 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                  onClick={() => {
+                    void riskQuery.refetch();
+                  }}
+                  type="button"
+                >
+                  Retry risk assessment
+                </button>
+              </div>
+            </DashboardCard>
+          ) : riskScore != null && riskLabel != null ? (
             <RiskScoreCard
               label={riskLabel}
               score={riskScore}
             />
+          ) : (
+            <DashboardCard title="Risk Score">
+              <EmptyState
+                detail="No post-trade assessment has been recorded. Portfolio-wide risk is not estimated here."
+                message="No assessments"
+              />
+            </DashboardCard>
           )}
           <DashboardCard title="Positions">
             <PositionsTable
@@ -305,11 +365,17 @@ export function Dashboard() {
               positions={positions}
             />
           </DashboardCard>
-          <QuickTradePanel
-            buyingPower={buyingPower}
-            isSubmitting={tradeMutation.isPending}
-            onSubmit={handleQuickTradeSubmit}
-          />
+          {portfolio ? (
+            <QuickTradePanel
+              buyingPower={buyingPower}
+              isSubmitting={tradeMutation.isPending}
+              onSubmit={handleQuickTradeSubmit}
+            />
+          ) : (
+            <DashboardCard title="Quick Trade">
+              <EmptyState message="Account data unavailable" detail="Order entry will appear when your account data loads." />
+            </DashboardCard>
+          )}
         </div>
       </div>
     </div>

@@ -2,9 +2,11 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Dashboard } from "./pages/Dashboard";
+import ForecastLab from "./pages/ForecastLab";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Portfolio } from "./pages/Portfolio";
+import { Research } from "./pages/Research";
 import { Risk } from "./pages/Risk";
 import { Trades } from "./pages/Trades";
 import { Compliance } from "./pages/Compliance";
@@ -29,6 +31,8 @@ export default function App() {
           <Route path="/trades" element={<Trades />} />
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/risk" element={<Risk />} />
+          <Route path="/research" element={<Research />} />
+          <Route path="/forecasts" element={<ForecastLab />} />
           <Route path="/compliance" element={<Compliance />} />
         </Route>
       </Route>

@@ -6,8 +6,16 @@ from app.models.risk_assessment import RiskAssessment
 from app.models.risk_alert import RiskAlert
 from app.models.price_history import PriceHistory
 from app.models.price_history_daily import PriceHistoryDaily
+from app.models.market_bar_daily import MarketBarDaily
 from app.models.lot import Lot
 from app.models.market_fundamentals_cache import MarketFundamentalsCache
+from app.models.market_filings_cache import MarketFilingsCache
+from app.models.research_job import ResearchJob
+from app.models.research_report import ResearchReport
+from app.models.research_brief import ResearchBrief
+from app.models.forecast_job import ForecastJob
+from app.models.forecast_result import ForecastResult
+from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.refresh_token import RefreshToken
@@ -25,3 +33,4 @@ from app.models.aml import AmlActivation, AmlCase, CashMovement, Incident, Sanct
 from app.models.sar import SarDraft
 from app.models.expansion import ExpansionAlert, Finding, RiskBrief, TradeIntent
 from app.models.ops_state import DetectionCursor, SchedulerLock
+from app.models.watchlist import Watchlist, WatchlistItem

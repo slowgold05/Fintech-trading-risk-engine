@@ -47,6 +47,8 @@ Where this guidance conflicts with the project's own instructions, the project's
 
 ### Help level
 
+- help_level: HIGH (selected by the user on 2026-11-05). Explain steps and relevant trade-offs; do not ask the user to select a guidance level again unless they request a change.
+
 - help_level (required): LOW, MEDIUM, or HIGH. While a user is building, you MUST ask the user: "How much guidance would you like from me? Low (I only flag security risks), medium (I ask a couple of clarifying questions if something seems off), or high (I explain what I'm doing, suggest alternatives, and flag best practices)."
 
 You CAN update this rule file to save a user's help_level.

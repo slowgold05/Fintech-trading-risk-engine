@@ -27,7 +27,7 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE, DELETE ON assets, holdings, lots, "
                            "market_fundamentals_cache, market_quote_cache, market_symbols, orders, "
-                           "price_history, price_history_daily, refresh_tokens, risk_alerts, "
+                           "price_history, price_history_daily, market_bars_daily, refresh_tokens, risk_alerts, "
                            "risk_assessments, trades TO fintech_app")
             cursor.execute("GRANT INSERT ON ledger_entries TO fintech_app")
             cursor.execute("GRANT INSERT (email, password_hash, cash_balance, full_name) ON users TO fintech_app")
@@ -76,6 +76,57 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("GRANT INSERT (kind, summary, evidence_ref, created_at) ON expansion_alerts TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON detection_cursors TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON scheduler_locks TO fintech_app")
+            cursor.execute("GRANT INSERT, UPDATE, DELETE ON watchlists, watchlist_items TO fintech_app")
+            # Filings helper inserts a row (Python source default sec_edgar is
+            # emitted) and later refreshes cik, payload, and fetched_at only.
+            cursor.execute(
+                "GRANT INSERT (symbol, cik, payload, source, fetched_at) "
+                "ON market_filings_cache TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT UPDATE (cik, payload, fetched_at) ON market_filings_cache TO fintech_app"
+            )
+            # Research and forecast writers. SQLAlchemy INSERT lists every mapped
+            # column without a server default, including nullable columns left as
+            # None (research error/token/duration fields and forecast error_message).
+            # Routes insert queued jobs and cancel only status/updated_at. Workers
+            # update those plus error_message and research token/duration columns,
+            # then insert one report or result. Briefs and evaluations are insert-only.
+            # Identity and timestamp server defaults stay omitted.
+            cursor.execute(
+                "GRANT INSERT (user_id, symbol, status, error_message, prompt_tokens, "
+                "completion_tokens, duration_ms) ON research_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT UPDATE (status, updated_at, error_message, prompt_tokens, "
+                "completion_tokens, duration_ms) ON research_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (job_id, user_id, symbol, sources, bull_case, bear_case, "
+                "synthesis, risks, model_version, prompt_version, backend_detail) "
+                "ON research_reports TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (user_id, brief_date, entries) ON research_briefs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (user_id, symbol, provider, adjustment_type, lookback, "
+                "horizon, sample_count, status, error_message) ON forecast_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT UPDATE (status, updated_at, error_message) ON forecast_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (job_id, user_id, symbol, provider, adjustment_type, "
+                "model_name, tokenizer_name, lookback, horizon, sample_count, "
+                "input_cutoff, generated_at, bars) ON forecast_results TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (symbol, provider, adjustment_type, horizon, window_count, "
+                "model_mae, model_directional_accuracy, baseline_type, baseline_mae, "
+                "baseline_directional_accuracy, weights_exercised, notes) "
+                "ON forecast_evaluations TO fintech_app"
+            )
 
 
 def main() -> None:

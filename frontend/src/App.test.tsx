@@ -14,6 +14,16 @@ vi.mock("./api/market", () => ({
   fetchMarketTrending: vi.fn().mockRejectedValue(new Error("Unavailable")),
   fetchMarketResearch: vi.fn().mockRejectedValue(new Error("Unavailable")),
 }));
+vi.mock("./api/history", () => ({
+  fetchCachedSeries: vi.fn().mockResolvedValue({
+    read_at: "2026-11-06T12:00:00Z",
+    collection: "disabled",
+    coverage_status: "not_verified",
+    expected_session_count: null,
+    canonical_history: { row_count: 0, series: [] },
+  }),
+  fetchDailyHistory: vi.fn().mockRejectedValue(new Error("No series selected")),
+}));
 vi.mock("./api/auth", () => ({ fetchMe: vi.fn().mockResolvedValue({ role: "trader" }) }));
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -57,4 +67,11 @@ it.each(["/", "/dashboard"])("opens the private dashboard at %s after sign-in", 
 it.each(["/portfolio", "/trades", "/risk", "/compliance"])("keeps %s behind sign-in", (path) => {
   open(path);
   expect(screen.getByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
+});
+
+it("keeps an anonymous /trades?symbol=AAPL handoff on the sign-in form", () => {
+  open("/trades?symbol=AAPL");
+  expect(screen.getByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Trade symbol")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Preview order" })).not.toBeInTheDocument();
 });

@@ -1,9 +1,9 @@
 FROM python:3.12-slim
 
-# Patch the base image's APT verification vulnerability (CVE-2026-109518).
+# Apply base-image security patches for APT and zlib.
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends --only-upgrade apt \
+    && apt-get install -y --no-install-recommends --only-upgrade apt zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

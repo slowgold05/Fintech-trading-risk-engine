@@ -1,123 +1,158 @@
 # Sentinel Markets
 
-Sentinel Markets is a paper-trading brokerage where orders, cash movements, risk checks, and access decisions leave an audit trail. Follow a trade from its pre-trade checks through matching, holdings, realized P&L, and balanced ledger postings, then inspect the controls and evidence behind it.
+Sentinel Markets combines a paper-trading terminal, portfolio analytics, optional local AI research, and an experimental Kronos Forecast Lab. Orders, cash movements, and review decisions leave an audit trail, while research and forecasting remain advisory.
 
-The system keeps trading limits deterministic and review decisions explicit. Surveillance and AML rules require independent activation approval. Trade intents record proposals and human decisions; approving an intent does not place an order.
+> Simulated cash and orders only, with no live broker connection. This is not investment advice or a compliance certification. Research notes and forecasts do not place orders or change hard risk limits.
 
-> Sentinel Markets is a demonstration using simulated cash and orders. It has no live broker connection, moves no real money, and does not establish regulatory compliance or production readiness.
+**Source and the hosted release are different.** This repository contains the API and the frontend. The last recorded host release is deployment **7** (`fintechapp-preview.api.3`, `fintechapp-preview.web.4`, Alembic `f3a8c2d7e961`). That record is not a verification of the host today, and hosted parity with this branch was not rechecked.
 
-**[Open the live demo](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/)** · **[API health](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/api/health)** · [Control matrix](grc/control_matrix.csv) · [Current action items](docs/GRC_ACTION_ITEMS.md)
+**[Last recorded hosted preview](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/)** · **[Preview API health](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/api/health)** · [Control matrix](grc/control_matrix.csv) · [Security summary](Security.md)
 
----
+## Workspaces
 
-## Explore the live demo
-
-The application opens its public market dashboard at `/` or `/dashboard`, with a **Log in** button at the top right. Signing in opens the account dashboard; market research remains available at `/market`. Portfolio, trading, risk, and compliance pages require a session. [Register or sign in](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/login) to explore a trader account with **$100,000 in paper cash**. Admin and compliance-officer credentials are not published. This entry-flow update requires a frontend deployment after the release recorded below.
-
-| Area | What to explore |
-| --- | --- |
-| Dashboard | Account summary, positions, recent activity, and risk indicators. |
-| Trades | Cached stock prices, market and limit orders, the order book, and cancellation. |
-| Portfolio | Holdings, cost basis, realized P&L, paper deposits, and withdrawals. |
-| Risk | Rule-based assessments and alerts associated with executed trades. |
-| Compliance | Role-gated controls, evidence, access reviews, surveillance, AML, incidents, and proposal decisions. |
-
-Trader accounts cannot enter the compliance console. An auditor can read compliance records; mutation rights are restricted to the appropriate review roles. Authenticator enrollment is available, and a high-risk login can require enrollment even while broad MFA enforcement is off.
-
-The hosted release and its verification results are documented below. The two-minute walkthrough is still to be recorded; [the video shot list](docs/VIDEO_SCRIPT.md) describes the planned demo.
-
-## What it does
-
-| Capability | What Sentinel Markets does | Why it matters |
+| Path | What it provides | Access |
 | --- | --- | --- |
-| Paper trading | Matches eligible orders by price and time, supports partial fills, and reserves cash or shares for open orders | Makes buying power and order state inspectable |
-| Pre-trade controls | Enforces available cash and shares, a 20% reference-price band, a 50% per-symbol concentration cap, a $50,000 stock-position cap, and an audited halt | Applies explicit limits before execution |
-| Trade accounting | Records holdings, lots, realized P&L, and balanced, hash-chained ledger postings | Lets reconciliation check balances and positions against recorded events |
-| Cash movements | Locks balances and commits each movement, ledger posting, and idempotency response together | Prevents concurrent withdrawals from spending the same cash and retries from posting twice |
-| Identity and access | Provides five roles, password authentication, optional authenticator enrollment, login-risk step-up, and current-code checks for large transactions | Separates trading, review, audit, and privileged operations |
-| Role governance | Requires a request, independent approval, and privileged application of role changes; records quarterly access reviews | Preserves who requested, approved, and applied access changes |
-| Trade surveillance | Implements four versioned detection rules, labeled backtests, activation requests, case dispositions, and deadlines | Connects a detection to its rule version, activity, and review history |
-| AML and sanctions | Implements two cash-monitoring rules and onboarding/payout screening, with repeat-scan and replay protection | Demonstrates cash-control workflows while clearly identifying fixture-backed screening |
-| Control evidence | Defines 28 controls and 29 risks, stores operating results, and exports evidence with a SHA-256 manifest | Keeps passes, failures, missing samples, and unrun controls distinguishable |
-| Incidents and SAR drafts | Tracks incident deadlines and produces verified template narratives from case event IDs | Keeps evidence traceable and filing decisions outside the drafting component |
-| Research and proposals | Provides a Nasdaq universe, quote cache, sector heatmap, SEC fundamentals, and structured trade intents | Supports research and review without giving proposals authority to trade |
+| `/`, `/dashboard` | Public market home or signed-in account overview | Account numbers require a session. |
+| `/market` | Market discovery, daily charts, and watchlists | Public market data; private watchlists require a session. |
+| `/trades` | Order preview, paper execution, fills, and cancellation | Signed in; execution role checks still apply. |
+| `/portfolio` | Valuation, performance, allocation, and P&L attribution | Signed in. |
+| `/risk` | Portfolio risk measures and read-only scenario previews | Signed in. |
+| `/research` | SEC filings, owned research reports, and briefs | Signed in; model synthesis is opt-in. |
+| `/forecasts` | Forecast jobs, results, models, and evaluation records | Signed in; Kronos inference is opt-in. |
+| `/compliance` | Evidence, case reviews, access governance, and ops health | Authorized roles; trader accounts are denied. |
+| `/login` | Sign-in | Public. |
 
-The four surveillance rules cover wash trading, spoofing/layering, pump-and-dump, and unusual volume. The two AML rules cover structuring and rapid movement. **All remain inactive on the hosted service until separately approved.** With `YENTE_URL` empty, sanctions screening uses a local test fixture, not an OFAC or OpenSanctions list.
+The public home header has a **Log in** link to `/login` (signed-in visitors see **Open dashboard** instead). A **Get started** link also goes to `/login`. Admin and compliance-officer credentials are not published.
 
-## End-to-end workflow
+## Product path
 
-1. A user registers a trader account and signs in; enrolled accounts complete an authenticator challenge.
-2. The trader inspects cached quotes and their freshness, then submits an order with an idempotency key.
-3. Deterministic checks evaluate trading status, reference prices, buying power or available shares, and applicable position limits.
-4. The order book reserves resources and matches eligible opposite orders by price-time priority. Unmatched limit orders can remain open; unfilled market-order remainders are canceled.
-5. Fills update cash, holdings, lots, risk assessments, and balanced ledger postings within the transaction.
-6. Paper deposits and withdrawals use a separate locked cash workflow. New withdrawals need a legal name, a clear screen, and available cash after reservations.
-7. The scheduler refreshes quotes, runs application controls, stores evidence, and scans activity using approved rule versions.
-8. Reviewers inspect cases and proposals, record decisions, and manage access-review or incident work. Auditors can export the latest evidence and verify its hashes.
+1. Browse the public dashboard: cached market context, no account required.
+2. Sign in. Private watchlists support multiple lists, membership, and ordering. They can prefill a research or chart draft. Trade entry from a watchlist passes only the symbol.
+3. Open a cached chart, then an explicit non-binding order preview, then confirm a supported paper order.
+4. Matching uses actual opposing liquidity and price-time priority, including partial fills, cancel, and buying power. Idempotency keys are required on submit.
+5. Fills, open reservations, portfolio, and risk views follow from the ledger. Missing marks stay null and dependent totals stay unavailable. The app does not draw a fabricated equity curve.
+6. Research Desk and Forecast Lab jobs are owned by the user. Notes, briefs, and forecasts cannot place orders or change hard risk limits.
 
-## Rules, models, and human review
+## Charts and market data
 
-The implemented proposal and forecasting components have deliberately limited authority:
+Charts use Lightweight Charts 5.2.1: candle, line, and area series, volume, and SMA, EMA, Bollinger Bands, RSI, and MACD with configurable parameters. Ranges are `1m`, `3m`, `6m`, `1y`, `2y`, and `all`. **All** means stored available history, not guaranteed full listing coverage. Chart preferences persist. Owned execution markers and open-order price levels are drawn for the signed-in account.
 
-- Trade intents validate structured fields and reject malformed, oversized, or injection-flagged proposals. Approval records the reviewer and time without creating an order.
-- The current forecast is a historical-volatility baseline with seeded simulations and a monitor. Kronos weights are not loaded, and the forecast does not change a hard order limit.
-- Technical, risk, and debate notes are deterministic. Risk briefs and SAR narratives use templates; no external language model was called for the deployed build.
-- Model cards and validation reports record fixture results and limitations. Small labeled scenario sets are not production-performance evidence.
-- Surveillance and AML activation require a second reviewer and a matching rule version. Per-detector locks serialize scans; full event identities distinguish reviewed activity from new qualifying patterns.
+The quote path is a cached provider. Adjustment policy is explicit. The standard NYSE calendar has documented coverage limits. There is no intraday feed and no claim of a continuous provider entitlement.
 
-Policies, models, vendor notes, and the asset inventory still require their respective owners' approval. Implementation does not imply approval. See the [model inventory](grc/models/inventory.yaml), [model-risk policy](grc/policies/model_risk.md), and [expansion roadmap](docs/Sentinel%20Markets%20%E2%80%94%20Expansion%20Roadmap.md).
+## Trading, ledger, and access
 
-## Architecture
+Market and limit orders match against actual opposing liquidity. Partial fills, cancellation, and buying-power checks are implemented. Preview is explicit and non-binding; confirmation is a separate step.
+
+Durable recovery for an unknown order outcome uses `sessionStorage` and is implemented for a same-tab reload. See [docs/P3B_ORDER_RETRY_DURABILITY_VERIFICATION.md](docs/P3B_ORDER_RETRY_DURABILITY_VERIFICATION.md). If that storage write fails, the recovery record is lost, so this is not a universal durability guarantee.
+
+Existing cash locking, hash-chained ledger postings, role approval versus privileged application, MFA step-up, and review controls remain in place. Surveillance and AML rules still need independent activation. See [Security.md](Security.md) for MFA, secrets rotation, and related boundaries.
+
+## Portfolio analytics and risk
+
+The supported contract windows for `GET /portfolio/performance` are `1y` and `2y`. The endpoint reports flow-adjusted time-weighted return, daily and cumulative P&L, drawdown, an SPY price benchmark, and Modified Dietz money-weighted return. Security and sector allocation and point-in-time P&L attribution are included. An open bug accepts `1m`, `3m`, `6m`, and `all` and still computes `2y`.
+
+Risk metrics, when history is long enough, include volatility as a **sample per period** (not annualized), beta, historical VaR and expected shortfall at 95% and 99%, correlations, variance contributions, and fixed stresses. Scarce history returns unavailable or null. Numbers are not filled in.
+
+`/portfolio/trade-impact` and `/risk/scenarios` are **read-only what-ifs**. They do not execute or approve anything. Trade impact ignores fees, slippage, margin, and open-order reservations. Order preview is non-binding: it applies the pre-trade checks, submission revalidates current state, and execution is authoritative.
+
+**Open follow-ups, not fixed by this file:** the performance range bug above, divide-by-zero on a zero-value account in TWR, drawdown, Modified Dietz, and stress, and multiple separate reads on the risk-metric endpoints. Details are for [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md).
+
+## Research Desk
+
+`/research` serves a cached SEC filing index, owner-scoped jobs and reports, and daily watchlist briefs.
+
+Optional local synthesis uses Ollama. `research_synthesis_enabled` defaults to **false**. The configured model is `qwen3:14b` and the base URL is `http://localhost:11434`, which must be reachable from the worker. The simple backend sends only source-status summaries, the company name, and a count. It does **not** send full SEC filing text, so this is not grounded or verified filing analysis.
+
+Optional TradingAgents **v0.7.1** is listed in `requirements-research.txt`. Set `research_synthesis_backend` to `tradingagents` to use its Ollama backend. That upstream package can fetch Yahoo, SEC, and FRED itself. It is not an offline-only stack.
+
+Worker states are `queued`, `running`, `completed`, `failed`, and `cancelled`. Cancellation applies to queued jobs only. Scheduler limits exist. This README does not claim crash-safe job leases, a hard concurrent-cap guarantee, or a hard wall-clock bound. An open review issue is a count-then-insert race on the research cap (10) and the forecast cap (5).
+
+Prompt tokens, completion tokens, and duration are recorded for simple Ollama research jobs and summarized in operator ops health. That is not complete model-cost accounting, and it does not bill TradingAgents or Kronos tokens. A real local Ollama call is recorded in [docs/P73_AI_USAGE_VERIFICATION.md](docs/P73_AI_USAGE_VERIFICATION.md) and the [backlog](docs/V2_BACKLOG.md). That record is not new inference proof for this review, and it is not Kronos proof.
+
+## Forecast Lab
+
+`/forecasts` lists owned jobs, supports cancel-while-queued, and shows results plus model metadata. The result view charts historical observed OHLC against predicted OHLC. `ForecastJob`, `ForecastResult`, and `ForecastEvaluation` are ORM models.
+
+Kronos source is vendored. Config defaults are `NeoQuasar/Kronos-small` and Tokenizer-base (`NeoQuasar/Kronos-Tokenizer-base`). Those names are defaults, not a pinned weights revision. Default limits are lookback **400**, horizon **30**, and sample count **5**. `forecast_kronos_enabled` defaults to **false**.
+
+`requirements-forecast.txt` is optional (PyTorch, pandas, and related packages). Hugging Face weights are not part of the default install. No real Kronos weight inference and no walk-forward validation on real weights have been verified. A local Ollama research run is not Kronos proof.
+
+The offline walk-forward harness calls the real adapter with a session-date `as_of` cutoff (commit `1000c4d`). Tests use a fake predictor. The `as_of` filter does not reconstruct historical data vintages and still reads the latest two-year cache. That is not a full point-in-time or revision-safe backtest, and it is not validated forecast accuracy. Weight downloads, machine capacity, and vendor or model-owner review stay separate. See [docs/FORECAST_LAB_OPEN_LIMITATIONS.md](docs/FORECAST_LAB_OPEN_LIMITATIONS.md). Its historical section 4 is superseded by [docs/P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md](docs/P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md).
+
+The default API image installs `requirements.txt` only. AI extras and a model server must be configured on purpose. They are outside the default CI installation and need their own dependency and model validation before use.
+
+## Compliance controls
+
+Four versioned surveillance detectors (wash trading, spoofing/layering, pump-and-dump, unusual volume) and two AML rules (structuring, rapid movement) stay inactive until independent activation. Evidence, reviews, and role application remain separate from the operator path. MFA and secrets rotation are described in [Security.md](Security.md). With `YENTE_URL` empty on the last documented host, sanctions screening used a local fixture, not a live OFAC or OpenSanctions list. That statement is from the deployment record, not a check performed for this README.
+
+## Architecture reference
+
+The images below illustrate the **last documented hosted layout**. Research and forecast services in this branch are part of the API process and the optional scheduler path. They are not proof of a deployed topology.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/sentinel-markets-stack-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/diagrams/sentinel-markets-stack.png">
-  <img alt="Sentinel Markets architecture: browser to React and Nginx, FastAPI with deterministic controls and an in-process scheduler, private PostgreSQL on Amazon Lightsail, and an operator-driven GitHub and Docker release path." src="docs/diagrams/sentinel-markets-stack.png" width="1120">
+  <img alt="Historical hosting diagram for the last documented Sentinel Markets release: browser, React, Nginx, FastAPI, private PostgreSQL, and an operator release path. Research and forecast extras in current source are not shown as deployed services." src="docs/diagrams/sentinel-markets-stack.png" width="1120">
 </picture>
 
 [Light PNG](docs/diagrams/sentinel-markets-stack.png) · [Dark PNG](docs/diagrams/sentinel-markets-stack-dark.png) · [Self-contained HTML](docs/diagrams/sentinel-markets-stack.html) · [Diagram sources and notices](docs/diagrams/NOTICE.md)
 
-The web and API containers share one Amazon Lightsail container service in **`us-east-2`**. Nginx serves the React app on port 8080 and proxies `/api/` to FastAPI on localhost port 8000. Only the web container has a public endpoint. The API connects to private PostgreSQL over verified TLS using a restricted database role.
+On that hosted layout, Nginx serves the React app and proxies `/api/` to FastAPI. PostgreSQL is private. The scheduler runs inside the API process. Schema changes used a separate temporary migration runner. Operations for that release are in [docs/aws_deployment.md](docs/aws_deployment.md). This file does not publish a new deployment.
 
-The scheduler runs inside the API process, coordinated through a database lease and persisted next-due time. GitHub CI gates merges; an operator builds and uploads Docker images and creates the deployment. Schema changes use a separate temporary private runner. The migration credential is kept out of the web deployment, and the runner is deleted afterward. The diagram shows Lightsail-managed boundaries and does not infer a customer-managed VPC or subnets.
+| Layer | Technology |
+| --- | --- |
+| Web | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Lightweight Charts |
+| API | Python 3.12, FastAPI, SQLAlchemy, Pydantic |
+| Data | PostgreSQL 17, Alembic |
+| Optional research | Ollama; TradingAgents via `requirements-research.txt` |
+| Optional forecast | PyTorch and Kronos via `requirements-forecast.txt` and separate weights |
+| Local and host packaging | Docker, Nginx, Docker Compose |
+| CI | GitHub Actions, seven jobs covering tests and security |
 
-| Layer | Technology | Responsibility |
-| --- | --- | --- |
-| Web | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query | Trader views, research, review workflows, and API state |
-| HTTP serving | Nginx | Static frontend, deep links, and same-origin API proxy |
-| API | Python 3.12, FastAPI, Pydantic, SQLAlchemy | Validation, authorization, matching, cash, risk, and compliance services |
-| Data | PostgreSQL 17, Alembic | Transactions, lots, ledger, approvals, control evidence, and scan/scheduler state |
-| Identity | PyJWT, bcrypt, time-based authenticator codes | Sessions, password verification, login-risk checks, and step-up |
-| Market inputs | Yahoo daily quotes, Nasdaq symbol data, SEC fundamentals | Cached market research with freshness information |
-| Infrastructure | Docker, Docker Compose, Amazon Lightsail | Isolated local development and the hosted web/API/private-database deployment |
-| CI | GitHub Actions, Gitleaks, Bandit, pip-audit, Semgrep, Trivy | Required tests, frontend checks, security scanning, and API SBOM output |
+## Verification on 9 November 2026
 
-See [the architecture notes](Architecture.md), [threat model](docs/THREAT_MODEL.md), and [AWS operations runbook](docs/aws_deployment.md) for the detailed flows and recovery procedure.
+Do not read this table as an all-green release. The manager record is [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md). Historical unit logs are in [docs/V2_BACKLOG.md](docs/V2_BACKLOG.md).
 
-## Security and control boundaries
+| Run | Result |
+| --- | --- |
+| Local root, Python 3.14.6, `AUDIT_DATABASE_URL` unset | 515 passed, 28 skipped, 125.29s. Skips are 21 PostgreSQL proofs and 7 Selenium modules. This run is not PostgreSQL proof. The fresh pandas stub tests, 12 of 12, are included in this 515. They do not load real Kronos weights. |
+| Review code `1ceee43`, GitHub Actions run [42667916677](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42667916677) | All seven jobs passed. Backend: 533 passed, 10 skipped, 192.68s, including fresh PostgreSQL proofs. The 10 skips are 7 browser modules and 3 pandas-dependent Kronos tests (pandas is not installed in that CI job). |
+| Frontend, fresh root run the same day | 417 tests in 30 files. Lint and the production build passed. The main bundle is 635.65 kB, with the existing size warning. |
+| Linux browser job, same review-code CI | 10 passed, 1 hosted case excluded, 141.19s. This verifies the existing disposable-stack journeys and the watchlist readiness correction; it does not prove hosted parity or real-model inference. |
 
-- The runtime database login cannot update `users.role` or change existing ledger and control-evidence rows. A separate privileged login handles migrations and approved role changes.
-- PostgreSQL triggers audit privileged role updates and reject ledger mutation. Reconciliation checks ledger hashes, balanced events, cash, and positions.
-- Deposits and withdrawals reload a locked user row. Authenticator-code consumption and login challenges use a consistent lock order and conditional writes.
-- A failed AML pass does not reverse or hide an already committed cash movement; detection remains pending for retry.
-- Configured sanctions-provider errors fail closed. Successful withdrawal replays return their stored result before screening again.
-- The hosted app uses HTTPS, secure refresh cookies, HSTS, and disabled API documentation. The API health endpoint queries the database.
-- Credentials, generated account passwords, and exported operating evidence stay out of git. Normal application credentials remain hosting environment values readable by project administrators; a separate secret manager remains open.
+## Run locally
 
-The [security summary](Security.md), [security audit](docs/security/AUDIT-001.md), [control workpapers](grc/workpapers), and [policies](grc/policies) describe the implemented safeguards and their limits. Reporting instructions are in [docs/SECURITY.md](docs/SECURITY.md).
+Prerequisites: Docker Desktop, Node.js 22, and npm. Core install does not include the research or forecast extras.
 
-## Tests and measurable checks
+```powershell
+Copy-Item .env.compose.example .env.compose
+```
 
-The **2026-11-04 application release** was verified with:
+Replace `POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD`, and `JWT_SECRET` with distinct random values, then start Postgres and the API:
 
-- **134 passing backend tests**, including migration, restricted-role, cash, MFA, and detector concurrency proofs against fresh disposable PostgreSQL 17; no skips in that run.
-- **9 passing frontend tests**, plus ESLint, TypeScript checks, and the production build.
-- **Six passing required CI jobs**, including secret, static-analysis, dependency, and container-image scans.
-- Live HTTP checks for operator login, compliance endpoints, intent approval, paper cash replay, and order placement/replay/cancellation. The order test executed no fill.
-- Ledger reconciliation for **14 accounts with zero failures** after smoke testing.
-- A first scheduled cycle that refreshed **180 quotes**, stored **23 evidence payloads**, released its lease, and saved its next due time. Exported payload hashes verified.
+```powershell
+docker compose --env-file .env.compose up --build -d
+```
 
-The first hosted control snapshot contained **10 passes, 12 `no_sample`, one MFA-enrollment failure, and five `not_run` controls** outside the scheduled runner. These are dated operating results, not an assertion that every control passed. Browser click-through remains unverified because the browser automation service was unavailable during release verification.
+In another terminal:
+
+```powershell
+Set-Location frontend
+npm ci
+npm run dev
+```
+
+Open **http://127.0.0.1:5173**. The API listens on **http://127.0.0.1:8000**. Interactive `/docs` is for local development only.
+
+Compose uses its own database volume. It does not attach to the hosted database. Stop without deleting that volume:
+
+```powershell
+docker compose --env-file .env.compose down
+```
+
+Non-Compose setup and migration history: [docs/postgresql_migration.md](docs/postgresql_migration.md). Do not commit `.env` files, dumps, or account credentials.
+
+### Tests
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
@@ -130,74 +165,37 @@ npm test
 npm run build
 ```
 
-Set `AUDIT_DATABASE_URL` to a **fresh disposable PostgreSQL database** to run the PostgreSQL proofs; they otherwise skip. These tests create records and refresh a database role. Never point them at the hosted or development database.
+Set `AUDIT_DATABASE_URL` only to a **fresh isolated container**. A fresh database on a shared server is not safe: some proofs `ALTER ROLE` at cluster scope. Never point them at the hosted database or a shared development instance. Optional AI extras are not required for the core suite.
 
-The operator control runner checks 24 controls when its restricted and privileged database settings are configured; the hosted application cycle runs 23 without the migration login. Four additional controls are repository or design checks. A `no_sample` result does not establish operating effectiveness.
+## Where to read next
 
-## Run locally
-
-Prerequisites: Docker Desktop, Node.js 22, and npm. Copy the Compose example:
-
-```powershell
-Copy-Item .env.compose.example .env.compose
-```
-
-Replace the `POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD`, and `JWT_SECRET` placeholders with distinct random values. Start the database and API:
-
-```powershell
-docker compose --env-file .env.compose up --build -d
-```
-
-Start the frontend in another terminal:
-
-```powershell
-Set-Location frontend
-npm ci
-npm run dev
-```
-
-Open **http://127.0.0.1:5173**. The API is at **http://127.0.0.1:8000**, with local development documentation at `/docs`.
-
-Compose creates a separate development database volume; it does not connect to the hosted database or reuse the migrated local data. To stop the stack while retaining its data:
-
-```powershell
-docker compose --env-file .env.compose down
-```
-
-For a non-Compose setup and the migration history, see [PostgreSQL migration](docs/postgresql_migration.md). Never commit `.env` files, database dumps, or account credentials.
-
-## Deployment
-
-The hosted release runs on the AWS-provided Lightsail HTTPS address, with a private PostgreSQL 17 database and no custom domain. Deployment **7** uses API `:fintechapp-preview.api.3` and web `:fintechapp-preview.web.4`; the schema is **`f3a8c2d7e961`**. Application changes were merged in [PR #12](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/12), with the operating record updated in [PR #13](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/13).
-
-`SCHEDULED_JOBS_ENABLED` is on. `MFA_REQUIRED` remains false, and `YENTE_URL` remains empty. The temporary migration runner was removed after grants and ledger verification. Automatic database backups and a retained recovery snapshot are available. The service has fixed capacity and does not autoscale.
-
-Build, private migration, deployment, rollback, and cleanup instructions are in [docs/aws_deployment.md](docs/aws_deployment.md). Quote freshness depends on provider availability and refresh limits; the scheduler does not guarantee every symbol is current.
+- [Sentinel Markets 2.0 roadmap](Sentinel_Markets_2_0_Roadmap.md) — scope of the expansion. Not every phase is complete.
+- [V2 backlog](docs/V2_BACKLOG.md) — historical unit log.
+- [Codex and Grok workflow](docs/GROK_CODEX_WORKFLOW.md) — how changes are scoped and reviewed.
+- [Review, 9 November 2026](docs/REVIEW_2026-11-09.md) — findings and evidence. The manager creates this note and will fill final CI evidence after the pipeline. This README does not claim an all-green release.
+- [Security.md](Security.md) — access, MFA, secrets, and control boundaries.
+- [Control matrix](grc/control_matrix.csv)
+- [Forecast Lab limitations](docs/FORECAST_LAB_OPEN_LIMITATIONS.md) and [point-in-time verification](docs/P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md)
+- [Research extras](requirements-research.txt) · [Forecast extras](requirements-forecast.txt)
+- [Hosted release runbook](docs/aws_deployment.md) — last documented deployment only.
+- [Diagram notices and third-party marks](docs/diagrams/NOTICE.md)
 
 ## Repository map
 
 ```text
 app/                  FastAPI routes, models, services, and operator scripts
 alembic/              Versioned database migrations
-frontend/             React client, API modules, and frontend tests
-tests/                Backend unit, integration, and PostgreSQL race proofs
-grc/controls/         Control definitions and generated matrix inputs
-grc/workpapers/       Design and operating-test workpapers
-grc/policies/         Draft policies and review requirements
-grc/models/           Model inventory, cards, and validation reports
-docs/diagrams/        Self-contained architecture diagram and themed PNGs
-docs/                 Architecture, release records, operations, and roadmaps
+frontend/             React client and frontend tests
+tests/                Backend unit, integration, and PostgreSQL proofs
+grc/                  Control matrix inputs, workpapers, policies, model inventory
+docs/diagrams/        Hosted-layout diagram (historical reference) and notices
+docs/                 Roadmap, review evidence, security, and the deployment runbook
+requirements*.txt     Core install, plus optional research and forecast extras
 ```
 
-## Current limitations and remaining roadmap
+## Limits that remain
 
-- **Demonstration scope:** all money and trading are simulated. This is not a regulated brokerage, a compliance determination, or a production control environment.
-- **Data quality:** the new quality checks still need enforcement on every price load and order. Persistent checksums, lineage, and actor/reason override records remain unfinished.
-- **Live integrations:** expansion-provider adapters, historical backfills, the persisted news/social feed, and ticker buzz panel are incomplete. New signal accounts need verified onboarding and approval.
-- **Proposal risk checks:** the intent path still needs the full pre-trade checks and a daily-loss limit. Forecast advice is not wired into order limits, and Kronos is not loaded.
-- **Reporting:** scheduled risk briefs, authorized outbound alerts, and optional PDF/XLSX workpapers remain open. SAR narratives and briefs are templates.
-- **Security and evidence:** secret management, independent evidence retention, provider proof of the exposed Alpha Vantage key's revocation, and safe MFA recovery/rotation remain open. Broad MFA enrollment is incomplete; the dedicated smoke account needs an access-review decision.
-- **Human review:** policies, model cards, vendors, and inventory await owner approval. Surveillance and AML rules remain inactive; fixture precision/recall is not a production-performance claim.
-- **Verification and presentation:** live browser click-through, the demo video, and the external GRC Sentinel connection remain open. Passkeys, crypto, and replay mode are deferred.
-
-The [GRC roadmap](Finance%20Project%20Roadmap%20Built%20for%20GRC.md), [expansion roadmap](docs/Sentinel%20Markets%20%E2%80%94%20Expansion%20Roadmap.md), and [action-item ledger](docs/GRC_ACTION_ITEMS.md) track the remaining work. Historical implementation details are in the [expansion build notes](docs/EXPANSION_CHANGES.md) and the linked phase records.
+- Paper trading only. No broker, no real funds, no compliance certification.
+- The last recorded host release is deployment 7. Hosted parity with this branch was not rechecked.
+- Optional models stay off unless someone installs the extra requirements and points the worker at a model server. Enabling them is a separate decision. This README does not do it.
+- Open review items include the performance-range bug, zero-account division, job-cap races, and multi-read risk metrics. None of those are closed here.
