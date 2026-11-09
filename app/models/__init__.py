@@ -13,6 +13,7 @@ from app.models.market_filings_cache import MarketFilingsCache
 from app.models.research_job import ResearchJob
 from app.models.research_report import ResearchReport
 from app.models.research_brief import ResearchBrief
+from app.models.forecast_job import ForecastJob
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.refresh_token import RefreshToken

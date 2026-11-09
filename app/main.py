@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
-from app.routers import auth, assets, cash, compliance, market, market_history, orders, trades, portfolio, risk, watchlists, research
+from app.routers import auth, assets, cash, compliance, market, market_history, orders, trades, portfolio, risk, watchlists, research, forecasts
 
 
 @asynccontextmanager
@@ -108,3 +108,4 @@ app.include_router(assets.router, prefix="/assets", tags=["Assets"])
 app.include_router(cash.router, prefix="/cash", tags=["Cash"])
 app.include_router(watchlists.router, prefix="/watchlists", tags=["Watchlists"])
 app.include_router(research.router, prefix="/research", tags=["Research"])
+app.include_router(forecasts.router, prefix="/forecasts", tags=["Forecasts"])
