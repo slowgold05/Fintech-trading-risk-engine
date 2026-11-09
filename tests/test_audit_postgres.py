@@ -121,7 +121,7 @@ def test_migrations_and_app_role_grants_on_disposable_postgres():
     configure(owner_url, "audit-app-secret")
     with _engine().connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    assert version == "d8e1b4c7a902"
+    assert version == "f2c8e5a1d734"
 
     import psycopg
     from sqlalchemy.engine import make_url

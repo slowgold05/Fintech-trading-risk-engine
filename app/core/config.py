@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     forecast_kronos_max_lookback: int = Field(default=400, ge=1, le=512)
     forecast_kronos_max_horizon: int = Field(default=30, ge=1, le=120)
     forecast_kronos_max_sample_count: int = Field(default=5, ge=1, le=20)
+    scheduled_forecast_job_limit: int = Field(default=1, ge=0, le=10)
     max_stock_concentration_pct: Decimal = Field(default=Decimal("50"), gt=0, le=100)
     max_stock_position_notional: Decimal = Field(default=Decimal("50000"), gt=0)
 

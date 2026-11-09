@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.forecast_job import ForecastJob
+from app.models.forecast_result import ForecastResult
 from app.models.market_symbol import MarketSymbol
 from app.models.user import User
 from app.schemas.forecast_job import ForecastJobCreate
@@ -162,3 +163,52 @@ def cancel_forecast_job(
     job.updated_at = _now()
     db.commit()
     return _job_out(job)
+
+
+def _result_out(result: ForecastResult) -> dict:
+    return {
+        "id": result.id,
+        "job_id": result.job_id,
+        "symbol": result.symbol,
+        "provider": result.provider,
+        "adjustment_type": result.adjustment_type,
+        "model_name": result.model_name,
+        "tokenizer_name": result.tokenizer_name,
+        "lookback": result.lookback,
+        "horizon": result.horizon,
+        "sample_count": result.sample_count,
+        "input_cutoff": result.input_cutoff,
+        "generated_at": _iso_z(result.generated_at),
+        "bars": result.bars,
+    }
+
+
+@router.get("")
+def list_forecast_results(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = db.execute(
+        select(ForecastResult)
+        .where(ForecastResult.user_id == current_user.id)
+        .order_by(ForecastResult.id.desc())
+        .limit(limit)
+    ).scalars().all()
+    return {"results": [_result_out(result) for result in rows]}
+
+
+@router.get("/{forecast_id}")
+def get_forecast_result(
+    forecast_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = db.execute(
+        select(ForecastResult).where(
+            ForecastResult.id == forecast_id, ForecastResult.user_id == current_user.id
+        )
+    ).scalar_one_or_none()
+    if result is None:
+        raise HTTPException(status_code=404, detail="Forecast not found")
+    return _result_out(result)
