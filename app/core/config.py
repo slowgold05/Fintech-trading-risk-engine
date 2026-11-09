@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     scheduled_daily_brief_limit: int = Field(default=20, ge=0, le=200)
     research_synthesis_backend: str = "simple"
     research_tradingagents_data_dir: str = "./var/tradingagents"
+    forecast_kronos_enabled: bool = False
+    forecast_kronos_model_name: str = "NeoQuasar/Kronos-small"
+    forecast_kronos_tokenizer_name: str = "NeoQuasar/Kronos-Tokenizer-base"
+    forecast_kronos_cache_dir: str = "./var/kronos"
+    forecast_kronos_max_lookback: int = Field(default=400, ge=1, le=512)
+    forecast_kronos_max_horizon: int = Field(default=30, ge=1, le=120)
+    forecast_kronos_max_sample_count: int = Field(default=5, ge=1, le=20)
     max_stock_concentration_pct: Decimal = Field(default=Decimal("50"), gt=0, le=100)
     max_stock_position_notional: Decimal = Field(default=Decimal("50000"), gt=0)
 

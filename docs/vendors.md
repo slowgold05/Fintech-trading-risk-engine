@@ -15,6 +15,7 @@ Pending vendor-owner review. No SOC report is attached. The compliance console n
 | Bluesky | No. Account rows are a YAML file. Nothing is polled. | `grc/signals/accounts.yaml` |
 | Alpaca | No. | [grc/vendors/alpaca.md](../grc/vendors/alpaca.md) |
 | OpenSanctions / yente | No. `YENTE_URL` is empty. | [grc/vendors/opensanctions.md](../grc/vendors/opensanctions.md) |
+| Hugging Face Hub | No, unless `forecast_kronos_enabled` is set. Downloads pinned Kronos model/tokenizer weights for local forecasting. | [grc/vendors/huggingface.md](../grc/vendors/huggingface.md) |
 
 Provider permissions are distinct from API access and quota. Some request handlers call providers; cached overview and heatmap reads do not. The in-process `CallBudget` counts calls inside one job. It is not a shared rate limiter. [PROVIDER_ACCESS_REVIEW.md](PROVIDER_ACCESS_REVIEW.md) records the 2026-11-05 source review and the approvals still missing.
 
