@@ -71,6 +71,7 @@ def generate_forecast(
     horizon: int,
     sample_count: int,
     seed: int | None = None,
+    as_of: date | None = None,
 ) -> dict:
     if lookback > settings.forecast_kronos_max_lookback:
         raise ValueError(f"lookback must not exceed {settings.forecast_kronos_max_lookback}.")
@@ -84,6 +85,11 @@ def generate_forecast(
         provider=provider, adjustment_type=adjustment_type,
     )
     bars = history["bars"]
+    if as_of is not None:
+        bars = [
+            bar for bar in bars
+            if date.fromisoformat(bar["session_date"]) <= as_of
+        ]
     if len(bars) < lookback:
         raise ValueError(
             f"insufficient history: {len(bars)} cached session(s), {lookback} requested."

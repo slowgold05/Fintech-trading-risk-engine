@@ -184,3 +184,126 @@ def test_generate_forecast_builds_correct_input_window_and_future_sessions(monke
     assert [bar["session_date"] for bar in result["bars"]] == [day.isoformat() for day in expected_y]
     assert result["bars"][0]["open"] == 10.0
     assert result["bars"][-1]["close"] == 10.5 + (horizon - 1)
+
+
+def _fake_predictor(pd):
+    class FakePredictor:
+        def __init__(self):
+            self.kwargs = None
+
+        def predict(self, df, x_timestamp, y_timestamp, pred_len, T=1.0, top_k=0, top_p=0.9, sample_count=1, verbose=True):
+            self.kwargs = {
+                "df": df,
+                "x_timestamp": x_timestamp,
+                "y_timestamp": y_timestamp,
+                "pred_len": pred_len,
+                "sample_count": sample_count,
+                "verbose": verbose,
+            }
+            return pd.DataFrame({
+                "open": [10.0 + index for index in range(pred_len)],
+                "high": [11.0 + index for index in range(pred_len)],
+                "low": [9.0 + index for index in range(pred_len)],
+                "close": [10.5 + index for index in range(pred_len)],
+                "volume": [100.0 + index for index in range(pred_len)],
+            })
+
+    return FakePredictor()
+
+
+def test_generate_forecast_as_of_excludes_bars_after_the_cutoff(monkeypatch):
+    pd = pytest.importorskip("pandas")
+
+    sessions = _trading_days_ending(date(2026, 11, 6), 10)
+    fixture = _bars(sessions)
+    lookback = 5
+    horizon = 2
+    cutoff_index = 6
+
+    def history(*args, **kwargs):
+        return {"bars": fixture}
+
+    fake = _fake_predictor(pd)
+    monkeypatch.setattr("app.services.forecast_kronos.read_symbol_history", history)
+    monkeypatch.setattr("app.services.forecast_kronos._load_predictor", lambda: fake)
+
+    result = _forecast(lookback=lookback, horizon=horizon, as_of=sessions[cutoff_index])
+
+    window = fixture[:cutoff_index + 1][-lookback:]
+    expected_x = [date.fromisoformat(bar["session_date"]) for bar in window]
+    captured_x = _as_dates(fake.kwargs["x_timestamp"])
+    forbidden_dates = set(sessions[cutoff_index + 1:])
+    forbidden_opens = {float(bar["open"]) for bar in fixture[cutoff_index + 1:]}
+    captured_opens = {float(value) for value in fake.kwargs["df"]["open"]}
+    assert captured_x == expected_x
+    assert forbidden_dates.isdisjoint(captured_x)
+    assert forbidden_opens.isdisjoint(captured_opens)
+    assert len(fake.kwargs["df"]) == lookback
+    assert float(fake.kwargs["df"].iloc[-1]["close"]) == float(fixture[cutoff_index]["close"])
+    assert _as_dates(fake.kwargs["y_timestamp"]) == _next_trading_sessions(sessions[cutoff_index], horizon)
+    assert result["input_cutoff"] == fixture[cutoff_index]["session_date"]
+
+
+def test_generate_forecast_as_of_rejects_insufficient_pre_cutoff_history(monkeypatch):
+    sessions = _trading_days_ending(date(2026, 11, 6), 10)
+    fixture = _bars(sessions)
+    lookback = 5
+
+    def history(*args, **kwargs):
+        return {"bars": fixture}
+
+    monkeypatch.setattr("app.services.forecast_kronos.read_symbol_history", history)
+    with pytest.raises(ValueError) as caught:
+        _forecast(lookback=lookback, as_of=sessions[2])
+    assert str(caught.value) == "insufficient history: 3 cached session(s), 5 requested."
+
+
+def test_generate_forecast_without_as_of_matches_the_full_history_window(monkeypatch):
+    pd = pytest.importorskip("pandas")
+
+    sessions = _trading_days_ending(date(2026, 11, 6), 8)
+    fixture = _bars(sessions)
+    lookback = 3
+    horizon = 3
+    sample_count = 2
+    seen = {}
+
+    def history(*args, **kwargs):
+        seen["kwargs"] = kwargs
+        return {"bars": fixture}
+
+    fake = _fake_predictor(pd)
+    monkeypatch.setattr("app.services.forecast_kronos.read_symbol_history", history)
+    monkeypatch.setattr("app.services.forecast_kronos._load_predictor", lambda: fake)
+
+    omitted = _forecast(lookback=lookback, horizon=horizon, sample_count=sample_count)
+
+    window = fixture[-lookback:]
+    expected_x = [date.fromisoformat(bar["session_date"]) for bar in window]
+    expected_y = _next_trading_sessions(expected_x[-1], horizon)
+    assert seen["kwargs"]["symbol"] == "AAPL"
+    assert seen["kwargs"]["interval"] == "1d"
+    assert seen["kwargs"]["range_token"] == "2y"
+    assert seen["kwargs"]["provider"] == "yahoo"
+    assert seen["kwargs"]["adjustment_type"] == "raw"
+    assert len(fake.kwargs["df"]) == lookback
+    assert float(fake.kwargs["df"].iloc[0]["open"]) == float(window[0]["open"])
+    assert float(fake.kwargs["df"].iloc[-1]["close"]) == float(window[-1]["close"])
+    assert _as_dates(fake.kwargs["x_timestamp"]) == expected_x
+    assert _as_dates(fake.kwargs["y_timestamp"]) == expected_y
+    assert fake.kwargs["pred_len"] == horizon
+    assert fake.kwargs["sample_count"] == sample_count
+    assert fake.kwargs["verbose"] is False
+    assert omitted["input_cutoff"] == window[-1]["session_date"]
+    assert omitted["lookback"] == lookback
+    assert omitted["horizon"] == horizon
+    assert len(omitted["bars"]) == horizon
+    assert [bar["session_date"] for bar in omitted["bars"]] == [day.isoformat() for day in expected_y]
+    assert omitted["bars"][0]["open"] == 10.0
+    assert omitted["bars"][-1]["close"] == 10.5 + (horizon - 1)
+
+    explicit = _forecast(lookback=lookback, horizon=horizon, sample_count=sample_count, as_of=None)
+    omitted_comparable = {key: value for key, value in omitted.items() if key != "generated_at"}
+    explicit_comparable = {key: value for key, value in explicit.items() if key != "generated_at"}
+    assert omitted_comparable == explicit_comparable
+    assert _as_dates(fake.kwargs["x_timestamp"]) == expected_x

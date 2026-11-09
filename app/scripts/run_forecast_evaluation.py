@@ -4,19 +4,17 @@ Queries ``MarketBarDaily``, scores ``app.services.forecast_evaluation``, and
 writes one ``ForecastEvaluation`` row only when a real forecaster returns.
 Tests and CI do not run this script.
 
-Running it today exits non-zero and writes nothing. ``_kronos_forecaster`` is
-a stub: the bars loaded here are only ``session_date`` and ``close``, while
-``generate_forecast`` needs a database session, full OHLCV, and its own
-keyword signature, and it returns a dict of forecast bars rather than a list
-of closes. It also re-reads the latest cached history itself, so calling it
-on these windows would show each cutoff bars from after that cutoff. Wire a
-real adapter only after ``requirements-forecast.txt`` is installed and
-``forecast_kronos_enabled`` is on. Do not store a placeholder run as if the
-weights had been exercised.
+``_make_kronos_forecaster`` adapts ``generate_forecast`` to that callback.
+Each window's ``as_of`` is the last observed session, so the model re-read
+cannot include bars after the cutoff. Lookback is capped at
+``settings.forecast_kronos_max_lookback``. A real run still needs
+``requirements-forecast.txt`` installed and ``forecast_kronos_enabled`` on.
+Do not store a placeholder run as if the weights had been exercised.
 """
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +23,7 @@ if str(ROOT) not in sys.path:
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.market_bar_daily import MarketBarDaily
@@ -70,23 +69,26 @@ def _load_bars(db, *, symbol: str, provider: str, adjustment_type: str) -> list[
         if row.quality_status != "valid":
             continue
         bars.append({
-            "session_date": _session_text(row.session_date),
+            "open": float(row.open),
+            "high": float(row.high),
+            "low": float(row.low),
             "close": float(row.close),
+            "volume": float(row.volume),
+            "session_date": _session_text(row.session_date),
         })
     return bars
 
 
-def _kronos_forecaster(bars, horizon):
-    # bars here are the plain {"session_date", "close"} dicts this script built;
-    # generate_forecast needs real OHLCV, so this adapter is necessarily a stub —
-    # a real run needs the full bar shape. Document this limitation in the
-    # script's own docstring/comment rather than silently pretending it works.
-    _ = (bars, horizon, generate_forecast)
-    raise NotImplementedError(
-        "A real run needs full OHLCV bars adapted to generate_forecast's own "
-        "signature; wire this once requirements-forecast.txt is installed and "
-        "forecast_kronos_enabled is on."
-    )
+def _make_kronos_forecaster(db, symbol, provider, adjustment_type):
+    def forecaster(bars, horizon):
+        lookback = min(len(bars), settings.forecast_kronos_max_lookback)
+        as_of = date.fromisoformat(bars[-1]["session_date"])
+        result = generate_forecast(
+            db, symbol=symbol, provider=provider, adjustment_type=adjustment_type,
+            lookback=lookback, horizon=horizon, sample_count=1, as_of=as_of,
+        )
+        return [bar["close"] for bar in result["bars"]]
+    return forecaster
 
 
 def main() -> None:
@@ -116,15 +118,15 @@ def main() -> None:
                 bars,
                 horizon=args.horizon,
                 window_count=args.window_count,
-                forecaster=_kronos_forecaster,
+                forecaster=_make_kronos_forecaster(
+                    db, args.symbol, args.provider, args.adjustment_type,
+                ),
             )
-        except NotImplementedError:
+        except RuntimeError:
             print(
-                "A real evaluation requires wiring _kronos_forecaster to "
-                "generate_forecast with full OHLCV bars, and installing the "
-                "optional forecast dependencies (requirements-forecast.txt) "
-                "with forecast_kronos_enabled on. No ForecastEvaluation row "
-                "was written.",
+                "A real evaluation requires the optional forecast dependencies "
+                "(requirements-forecast.txt) with forecast_kronos_enabled on. "
+                "No ForecastEvaluation row was written.",
                 file=sys.stderr,
             )
             sys.exit(1)

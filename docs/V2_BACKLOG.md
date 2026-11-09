@@ -258,6 +258,25 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+2026-11-09, continuing further: fixed the specific blocker Phase 6's own
+`run_forecast_evaluation.py` docstring named — `generate_forecast`'s
+"always reads latest history" point-in-time leak. See
+[P6F_KRONOS_POINT_IN_TIME_CONTRACT.md](P6F_KRONOS_POINT_IN_TIME_CONTRACT.md)
+and [P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md](P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md).
+`generate_forecast` gained an optional `as_of` cutoff (default `None`,
+every existing caller unchanged); the evaluation script's
+`_kronos_forecaster` stub became a real closure adapter, with lookback
+correctly capped at `settings.forecast_kronos_max_lookback`. Caught and
+fixed a real bug before shipping: the script's `except NotImplementedError`
+needed to be `except RuntimeError`, since the real adapter raises that
+instead of the old stub's exception. Installed `pandas` (lightweight, not
+the heavy `torch`/weights boundary) specifically to exercise the
+previously-mocked-only tests for real: 12/12 passed; full suite 515
+passed/28 skipped. Still does not install `torch` or real Kronos weights
+or run a real model call — that remains a separate, heavier decision. This
+closes the specific wiring blocker; the adapter is now correct and ready
+for that decision whenever it's made.
+
 2026-11-09, continuing further: also used Docker to advance the
 "Disposable backup and restore" gate — see
 [P0B_LOCAL_RESTORE_VERIFICATION.md](P0B_LOCAL_RESTORE_VERIFICATION.md).
