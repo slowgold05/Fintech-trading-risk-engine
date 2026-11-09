@@ -182,6 +182,37 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 80](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/80) is ready
+with all CI checks green: roadmap section 6.3's walk-forward evaluation
+methodology — the roadmap's own named gate before any "broad exposure" of the
+Forecast Lab. Builds the evaluation **methodology itself** as real, tested code:
+non-overlapping rolling windows, point-in-time correctness, a
+last-observed-close baseline comparison, per-window error reporting — verified
+against four hand-derived reference numbers before implementation.
+`app/services/forecast_evaluation.py` is a **pure module with zero dependency on
+`torch` or any Kronos code**, always testable regardless of whether the optional
+forecast dependencies are installed. The Kronos adapter lives only in a new
+offline script (not CI-invoked), which **correctly identified and documented a
+real limitation rather than building a broken adapter**: `generate_forecast`
+always reads the *latest* cached history, not a point-in-time historical cutoff,
+so wiring it directly into this harness today would leak future data into every
+historical window — the script exits non-zero and writes nothing rather than
+storing a fake "real" result. `ForecastEvaluation` has no `user_id` column — a
+model-governance artifact like `grc/models/`'s own cards and reports, not a
+per-user resource — so `GET /forecasts/evaluations` lists every row to any
+authenticated user. No `POST` route to trigger an evaluation on demand;
+deliberately offline/administrative. Evidence:
+[P6E_FORECAST_EVALUATION_VERIFICATION.md](P6E_FORECAST_EVALUATION_VERIFICATION.md);
+design: [P6E_FORECAST_EVALUATION_CONTRACT.md](P6E_FORECAST_EVALUATION_CONTRACT.md).
+**With this PR, Phase 6's entire named API surface exists** — ten stacked PRs
+(#69-#80) so far this session, all independently-CI-green, none merged. Still
+fully open: the chart UI (no frontend for any of Phase 6's routes yet), and
+actually wiring/running a real evaluation against real Kronos weights (requires
+first fixing `generate_forecast`'s own "always reads latest history" limitation
+this unit's own offline script surfaced — not attempted by any unit so far). Per
+the user's own stated plan: once Phase 6 is fully done, next is Phase 0's formal
+baseline-audit wrap-up, then the rest of the roadmap in order (Phase 7).
+
 [PR 79](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/79) is ready
 with all CI checks green: `GET /forecasts/models`, a small read-only route. This
 app configures exactly one forecast model (Kronos, via settings), not a dynamic
