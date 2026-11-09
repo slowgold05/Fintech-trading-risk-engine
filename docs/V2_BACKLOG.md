@@ -182,6 +182,32 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 75](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/75) is ready
+with all CI checks green: the first frontend surface for any of Phase 5's six backend
+routes (PRs #69-#74) — a new `/research` page to queue a research job, watch its
+status, cancel a still-queued one, view a completed report, and browse personalized
+daily briefs. No backend changes — pure wiring against what already ships.
+**Deliberately no auto-polling** — the scheduler runs on a long configurable interval
+(default 24h), so a refetch timer would imply near-real-time processing the backend
+doesn't provide; manual "Refresh" buttons instead, consistent with this project's own
+prior UI-truthfulness correction. Job-report correlation is done client-side by
+matching `job_id` (the two resources are deliberately decoupled on the backend) — a
+completed job whose report hasn't appeared in a stale reports list yet gets an honest
+message and a refresh action, not a crash. Null report fields render the exact same
+"Unavailable" treatment already used on `/portfolio`'s `TradeImpactPreview`. Design/UX
+skills loaded and applied before implementation (`frontend-design`, `ui-ux-pro-max`,
+`web-design-guidelines`, `vercel-composition-patterns`, `vercel-react-best-practices`,
+`bencium-controlled-ux-designer`) — applied as accessibility/composition/performance
+guidance since this extends an already-established design system rather than making a
+new aesthetic decision; every visual choice reuses an existing component or class
+already shipped on `/portfolio`. Evidence:
+[P5_RESEARCH_DESK_FRONTEND_VERIFICATION.md](P5_RESEARCH_DESK_FRONTEND_VERIFICATION.md).
+**This gives every one of Phase 5's six backend routes (PRs #69-#75, seven stacked,
+independently-CI-green, none merged) a working frontend surface for the first time.**
+Still open: the actual TradingAgents multi-agent framework's point-in-time data
+adaptation, personalized-brief automatic refresh, and everything in Phase 6 (Kronos
+Forecast Lab) and Phase 7 (release hardening), both entirely unstarted.
+
 [PR 74](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/74) is ready
 with all CI checks green: TradingAgents (`TauricResearch/TradingAgents`, Apache-2.0,
 pinned `v0.7.1`) added as a second, **optional, heavier** synthesis backend alongside
