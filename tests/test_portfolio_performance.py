@@ -876,7 +876,7 @@ def test_range_must_be_one_or_two_years(client, auth_headers, db_session):
     headers = auth_headers("perf-range@example.com")
     user = db_session.query(User).one()
     detail = "range must be 1y or 2y."
-    for token in ("6mo", "3y", "1Y", ""):
+    for token in ("6mo", "3y", "1Y", "", "1m", "3m", "6m", "all"):
         response = client.get("/portfolio/performance", headers=headers, params={"range": token})
         assert response.status_code == 422, token
         assert response.json()["detail"] == detail

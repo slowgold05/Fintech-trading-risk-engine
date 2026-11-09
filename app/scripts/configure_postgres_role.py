@@ -77,6 +77,47 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("GRANT INSERT, UPDATE ON detection_cursors TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON scheduler_locks TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE, DELETE ON watchlists, watchlist_items TO fintech_app")
+            # Research and forecast writers. SQLAlchemy INSERT lists every mapped
+            # column without a server default, including nullable columns left as
+            # None (research error/token/duration fields and forecast error_message).
+            # Routes insert queued jobs and cancel only status/updated_at. Workers
+            # update those plus error_message and research token/duration columns,
+            # then insert one report or result. Briefs and evaluations are insert-only.
+            # Identity and timestamp server defaults stay omitted.
+            cursor.execute(
+                "GRANT INSERT (user_id, symbol, status, error_message, prompt_tokens, "
+                "completion_tokens, duration_ms) ON research_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT UPDATE (status, updated_at, error_message, prompt_tokens, "
+                "completion_tokens, duration_ms) ON research_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (job_id, user_id, symbol, sources, bull_case, bear_case, "
+                "synthesis, risks, model_version, prompt_version, backend_detail) "
+                "ON research_reports TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (user_id, brief_date, entries) ON research_briefs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (user_id, symbol, provider, adjustment_type, lookback, "
+                "horizon, sample_count, status, error_message) ON forecast_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT UPDATE (status, updated_at, error_message) ON forecast_jobs TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (job_id, user_id, symbol, provider, adjustment_type, "
+                "model_name, tokenizer_name, lookback, horizon, sample_count, "
+                "input_cutoff, generated_at, bars) ON forecast_results TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT INSERT (symbol, provider, adjustment_type, horizon, window_count, "
+                "model_mae, model_directional_accuracy, baseline_type, baseline_mae, "
+                "baseline_directional_accuracy, weights_exercised, notes) "
+                "ON forecast_evaluations TO fintech_app"
+            )
 
 
 def main() -> None:

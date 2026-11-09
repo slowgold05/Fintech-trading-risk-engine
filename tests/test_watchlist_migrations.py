@@ -460,8 +460,8 @@ def test_watchlist_migration_preserves_baseline_and_app_grants(isolated_watchlis
         "price_history_daily": 1,
         "market_bars_daily": 1,
     }
-    _prove_app_role(engine, owner_url, user_id, baseline, counts)
 
+    # Reversibility is a property of b73 itself. Run it before leaving that revision.
     command.downgrade(config, BASELINE)
     names = set(inspect(engine).get_table_names())
     assert _NEW_TABLES.isdisjoint(names)
@@ -469,3 +469,9 @@ def test_watchlist_migration_preserves_baseline_and_app_grants(isolated_watchlis
         assert db.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == BASELINE
     assert _digests(engine) == baseline
     assert _preserved_counts(engine) == counts
+
+    # configure_postgres_role grants the current head, including research_jobs.
+    command.upgrade(config, "head")
+    baseline = _digests(engine, only=set(baseline))
+    counts = _preserved_counts(engine)
+    _prove_app_role(engine, owner_url, user_id, baseline, counts)

@@ -203,11 +203,20 @@ def _quote_state(row, snapshot: datetime) -> dict:
     }
 
 
-def _value_portfolio(db: Session, user_id: int, email: str) -> dict:
-    try:
-        snapshot = snapshot_clock(db)
-    except SnapshotClockError as exc:
-        raise HTTPException(status_code=500, detail="Portfolio snapshot time is missing.") from exc
+def _value_portfolio(
+    db: Session,
+    user_id: int,
+    email: str,
+    clock: datetime | None = None,
+) -> dict:
+    """Value the book. A caller that already sampled the snapshot passes ``clock``."""
+    if clock is None:
+        try:
+            snapshot = snapshot_clock(db)
+        except SnapshotClockError as exc:
+            raise HTTPException(status_code=500, detail="Portfolio snapshot time is missing.") from exc
+    else:
+        snapshot = clock
     snapshot_stmt = (
         select(
             User.cash_balance,

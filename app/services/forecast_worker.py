@@ -33,6 +33,16 @@ def _claim_job(db: Session) -> ForecastJob | None:
     return job
 
 
+def _separate_session(db: Session) -> Session:
+    """Read session on the same engine. Its rollback must not release the claim.
+
+    A one-connection pool cannot keep that work off the claim transaction.
+    """
+    bind = db.get_bind()
+    engine = getattr(bind, "engine", bind)
+    return Session(bind=engine, autoflush=False, future=True)
+
+
 def process_one_job(db: Session) -> ForecastJob | None:
     job = _claim_job(db)
     if job is None:
@@ -40,15 +50,16 @@ def process_one_job(db: Session) -> ForecastJob | None:
     try:
         if not settings.forecast_kronos_enabled:
             raise RuntimeError("Kronos forecasting is disabled (forecast_kronos_enabled is false).")
-        result = generate_forecast(
-            db,
-            symbol=job.symbol,
-            provider=job.provider,
-            adjustment_type=job.adjustment_type,
-            lookback=job.lookback,
-            horizon=job.horizon,
-            sample_count=job.sample_count,
-        )
+        with _separate_session(db) as source:
+            result = generate_forecast(
+                source,
+                symbol=job.symbol,
+                provider=job.provider,
+                adjustment_type=job.adjustment_type,
+                lookback=job.lookback,
+                horizon=job.horizon,
+                sample_count=job.sample_count,
+            )
         forecast_result = ForecastResult(
             job_id=job.id,
             user_id=job.user_id,

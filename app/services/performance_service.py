@@ -56,7 +56,10 @@ among available days only:
     drawdown_pct(d) = ((peak(d) - account_value(d)) / peak(d)) * 100
 
 quantized to 4 decimal places, ``ROUND_HALF_UP``, as decimal text. A new
-high is ``"0.0000"``. A gap day is null and does not move the peak.
+high is ``"0.0000"``. A gap day is null and does not move the peak. A peak
+of zero has no defined decline, so ``drawdown_pct`` is null. A later positive
+value may start the peak. Zero is not stored as a peak and is not reported
+as ``"0.0000"``.
 
 ``money_weighted_return_pct`` is one Modified Dietz figure for the whole
 requested window, a sibling of ``status`` rather than a field on each series
@@ -69,6 +72,22 @@ Otherwise, with ``T`` and each flow's ``t`` in calendar days:
 
 quantized to ``DRAWDOWN_UNIT``, ``ROUND_HALF_UP``, as decimal text. A flow on
 ``base_date`` has weight 1. A flow on ``last_available_date`` has weight 0.
+A zero Modified Dietz denominator is undefined, so the figure is null. It is
+not reported as zero.
+
+Zero capital does not invent a growth rate. Dollar fields stay numeric,
+including zero: ``account_value``, ``daily_pnl``, and ``cumulative_pnl``.
+The growth chain is separate. A window that has not yet seen positive
+capital leaves ``twr_index`` null. The first positive ``account_value`` may
+establish ``twr_index`` ``1.000000``. Daily and cumulative dollars still use
+the prior available value, even when that value is zero. After that funded
+chain exists, a later interval whose prior available account is zero, or
+whose prior index is missing, nonpositive, or rounded to zero, cannot form
+a ratio. That interval and every later interval in the same window publish
+null. The chain does not restart at ``1.000000`` inside the window. A
+missing price is not this break: the next available day still chains from
+the last available value. The same rule applies to the SPY index, with the
+prior close and prior index as the denominators.
 
 ``benchmark_index`` is a fixed ``"SPY"`` price-return chain. It uses the same
 sub-period ratio and ``TWR_UNIT`` rounding as ``twr_index``, and no flow term,
@@ -109,7 +128,6 @@ from app.models.market_bar_daily import MarketBarDaily
 from app.models.user import User
 from app.services import exchange_calendar
 from app.services.market_history import (
-    SUPPORTED_RANGES,
     one_calendar_year_before,
     two_calendar_years_before,
 )
@@ -120,20 +138,44 @@ DRAWDOWN_UNIT = Decimal("0.0001")
 CENT = Decimal("0.01")
 # Fixed for this unit. A choice of benchmark is a later change.
 BENCHMARK_SYMBOL = "SPY"
+# Performance and risk windows. Chart ranges 1m, 3m, 6m, and all stay on
+# market_history.SUPPORTED_RANGES and are not accepted here.
+PERFORMANCE_RANGES = frozenset({"1y", "2y"})
+
+
+def require_performance_range(range_token: str) -> None:
+    """Reject every token other than ``1y`` and ``2y``, including chart ranges."""
+    if range_token not in PERFORMANCE_RANGES:
+        raise HTTPException(status_code=422, detail="range must be 1y or 2y.")
 
 
 def build_performance_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
-    if range_token not in SUPPORTED_RANGES:
-        raise HTTPException(status_code=422, detail="range must be 1y or 2y.")
+    require_performance_range(range_token)
     with consistent_read(db):
         return _performance(db, user_id, email, range_token)
 
 
-def _performance(db: Session, user_id: int, email: str, range_token: str) -> dict:
-    try:
-        clock = snapshot_clock(db)
-    except SnapshotClockError as exc:
-        raise HTTPException(status_code=500, detail="Portfolio snapshot time is missing.") from exc
+def _performance(
+    db: Session,
+    user_id: int,
+    email: str,
+    range_token: str,
+    clock: datetime | None = None,
+    portfolio: dict | None = None,
+) -> dict:
+    """Read the performance window. ``clock`` and ``portfolio`` reuse one outer snapshot.
+
+    Callers that already sampled ``snapshot_clock`` pass that instant. Passing
+    ``portfolio`` from ``_value_portfolio`` skips a second valuation in the
+    reconciliation. The public wrapper samples and values inside its own
+    ``consistent_read``.
+    """
+    require_performance_range(range_token)
+    if clock is None:
+        try:
+            clock = snapshot_clock(db)
+        except SnapshotClockError as exc:
+            raise HTTPException(status_code=500, detail="Portfolio snapshot time is missing.") from exc
 
     # Same 404 as today's valuation. Auth already rejected an unknown token.
     known = db.execute(select(User.id).where(User.id == user_id)).first()
@@ -171,6 +213,10 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
     peak: Decimal | None = None
     base_value: Decimal | None = None
     base_date: date | None = None
+    # Set only after a funded chain cannot form another ratio. Later capital
+    # in this window does not open a new index at 1.
+    index_sealed = False
+    index_established = False
     for session_day in series_days:
         cash, quantities = _state_as_of(states, session_day)
         raw_value, missing = _account_value(cash, quantities, symbols, closes, session_day)
@@ -178,10 +224,10 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
         # `missing`: the account chain and the SPY chain skip different days.
         benchmark_index = benchmark_by_date.get(session_day)
         if missing:
-            # A gap does not move the base or the running peak. The next
-            # available day chains from the last day that actually had a
-            # value, carrying any flow that landed during the gap forward
-            # (see _flow_since).
+            # A gap does not move the base, the running peak, or a sealed
+            # chain. The next available day chains from the last day that
+            # actually had a value, carrying any flow that landed during the
+            # gap forward (see _flow_since).
             series.append({
                 "session_date": session_day.isoformat(),
                 "status": "unavailable",
@@ -196,35 +242,42 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
             continue
         account = Decimal(_account_text(raw_value))
         if last_value is None:
-            index = Decimal("1.000000")
             # No prior available day yet, so there is nothing to diff.
             daily_pnl = None
             # Day zero of this series: a measured zero, not unknown.
             base_value = account
             base_date = session_day
             cumulative_pnl = Decimal("0.00")
+            index = _establish_index(account) if account > 0 else None
+            index_established = index is not None
         else:
             flow = _flow_since(flows, last_available_date, session_day)
-            index = (last_index * (account - flow) / last_value).quantize(TWR_UNIT, rounding=ROUND_HALF_UP)
-            # Same flow and still-unupdated last_value as the index above.
+            # Dollar change does not divide. A zero prior value stays numeric.
             daily_pnl = (account - flow - last_value).quantize(CENT, rounding=ROUND_HALF_UP)
             # Anchored at the base day, not last_available. A different window
             # than `flow` above, so this is a second call.
             cumulative_pnl = (
                 account - base_value - _flow_since(flows, base_date, session_day)
             ).quantize(CENT, rounding=ROUND_HALF_UP)
+            index, index_established, index_sealed = _next_twr_index(
+                account,
+                flow,
+                last_value,
+                last_index,
+                established=index_established,
+                sealed=index_sealed,
+            )
         last_value = account
         last_available_date = session_day
         last_index = index
-        peak = account if peak is None else max(peak, account)
-        drawdown = ((peak - account) / peak * 100).quantize(DRAWDOWN_UNIT, rounding=ROUND_HALF_UP)
+        drawdown, peak = _drawdown(account, peak)
         series.append({
             "session_date": session_day.isoformat(),
             "status": "available",
             "account_value": format(account, "f"),
             "unavailable_symbols": [],
-            "twr_index": format(index, "f"),
-            "drawdown_pct": format(drawdown, "f"),
+            "twr_index": None if index is None else format(index, "f"),
+            "drawdown_pct": None if drawdown is None else format(drawdown, "f"),
             "daily_pnl": None if daily_pnl is None else format(daily_pnl, "f"),
             "cumulative_pnl": format(cumulative_pnl, "f"),
             "benchmark_index": benchmark_index,
@@ -243,8 +296,56 @@ def _performance(db: Session, user_id: int, email: str, range_token: str) -> dic
             flows, base_date, base_value, last_available_date, last_value,
         ),
         "series": series,
-        "reconciliation": _reconciliation(db, user_id, email, clock, series),
+        "reconciliation": _reconciliation(
+            clock,
+            series,
+            portfolio if portfolio is not None else _value_portfolio(db, user_id, email, clock=clock),
+        ),
     }
+
+
+def _establish_index(account: Decimal) -> Decimal | None:
+    """First positive capital in the window. Zero does not fabricate a return."""
+    if account <= 0:
+        return None
+    return Decimal("1.000000")
+
+
+def _next_twr_index(
+    account: Decimal,
+    flow: Decimal,
+    last_value: Decimal,
+    last_index: Decimal | None,
+    *,
+    established: bool,
+    sealed: bool,
+) -> tuple[Decimal | None, bool, bool]:
+    """Next growth factor, plus whether the chain is established or sealed.
+
+    Before the first positive value, a later positive observation may still
+    start the index at 1. After the chain is funded, a zero prior account or
+    a missing, nonpositive, or rounded-zero prior index seals the rest of
+    the window instead of rebasing.
+    """
+    if sealed:
+        return None, established, True
+    if not established:
+        index = _establish_index(account)
+        return index, index is not None, False
+    if last_value <= 0 or last_index is None or last_index <= 0:
+        return None, True, True
+    index = (last_index * (account - flow) / last_value).quantize(TWR_UNIT, rounding=ROUND_HALF_UP)
+    return index, True, False
+
+
+def _drawdown(account: Decimal, peak: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
+    """Decline from a positive peak. A zero peak is undefined, not 0%."""
+    if account > 0 and (peak is None or account > peak):
+        peak = account
+    if peak is None or peak <= 0:
+        return None, peak
+    drawdown = ((peak - account) / peak * 100).quantize(DRAWDOWN_UNIT, rounding=ROUND_HALF_UP)
+    return drawdown, peak
 
 
 def _inception_at(entries: list[LedgerEntry]) -> datetime | None:
@@ -374,6 +475,9 @@ def _money_weighted_return_pct(
         return None
     numerator = last_value - base_value - total_flow
     denominator = base_value + weighted_flow
+    # Exact zero cannot be a rate. Do not substitute 0%.
+    if denominator == 0:
+        return None
     pct = (numerator / denominator * 100).quantize(DRAWDOWN_UNIT, rounding=ROUND_HALF_UP)
     return format(pct, "f")
 
@@ -436,13 +540,23 @@ def _benchmark_index_by_date(db: Session, series_days: list[date]) -> dict[date,
     indexed: dict[date, str] = {}
     last_spy_value: Decimal | None = None
     last_spy_index: Decimal | None = None
+    sealed = False
     for session_day in series_days:
         matches = closes.get((BENCHMARK_SYMBOL, session_day), [])
         if len(matches) != 1:
+            # A missing or ambiguous close does not move or restart the chain.
             continue
         close = matches[0]
+        if sealed:
+            continue
         if last_spy_value is None:
+            # A zero print does not establish the index. A later positive close may.
+            if close <= 0:
+                continue
             index = Decimal("1.000000")
+        elif last_spy_value <= 0 or last_spy_index is None or last_spy_index <= 0:
+            sealed = True
+            continue
         else:
             index = (last_spy_index * close / last_spy_value).quantize(TWR_UNIT, rounding=ROUND_HALF_UP)
         last_spy_value = close
@@ -483,11 +597,9 @@ def _account_text(value: Decimal) -> str:
 
 
 def _reconciliation(
-    db: Session,
-    user_id: int,
-    email: str,
     clock: datetime,
     series: list[dict],
+    portfolio: dict,
 ) -> dict | None:
     """Compare the series to today's valuation only when the series actually reaches today."""
     if not series:
@@ -498,7 +610,6 @@ def _reconciliation(
     last = series[-1]
     if last["session_date"] != today.isoformat() or last["status"] != "available":
         return None
-    portfolio = _value_portfolio(db, user_id, email)
     current = portfolio["summary"]["total_account_value"]
     latest_value = last["account_value"]
     if current is None:

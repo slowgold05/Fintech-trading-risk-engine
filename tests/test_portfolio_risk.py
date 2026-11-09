@@ -8,6 +8,9 @@ the service under test.
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
+import pytest
+from fastapi import HTTPException
+
 from app.models.user import User
 from app.services.portfolio_risk import build_risk_metrics_response
 from tests.test_portfolio_performance import (
@@ -47,23 +50,34 @@ _DEFAULT_ALLOCATION = {
 
 
 def _install_series(monkeypatch, series, positions=None, allocation=None):
-    """Stub all three black-box reads. An empty book yields ``correlations: None``."""
+    """Stub the snapshot readers. An empty book yields ``correlations: None``."""
+    from contextlib import contextmanager
+
     payload = {**_PASSTHROUGH, "series": series}
     held = [] if positions is None else positions
     allocation_payload = _DEFAULT_ALLOCATION if allocation is None else allocation
 
-    def fake_performance(_db, _user_id, _email, _range_token):
+    @contextmanager
+    def passthrough(db):
+        yield db
+
+    def fake_performance(_db, _user_id, _email, _range_token, clock=None, portfolio=None):
         return payload
 
-    def fake_portfolio(_db, _user_id, _email):
+    def fake_portfolio(_db, _user_id, _email, clock=None):
         return {"positions": held}
 
-    def fake_allocation(_db, _user_id, _email):
+    def fake_allocation(_db, _portfolio):
         return allocation_payload
 
-    monkeypatch.setattr("app.services.portfolio_risk.build_performance_response", fake_performance)
-    monkeypatch.setattr("app.services.portfolio_risk.build_portfolio_response", fake_portfolio)
-    monkeypatch.setattr("app.services.portfolio_risk.build_allocation_response", fake_allocation)
+    monkeypatch.setattr("app.services.portfolio_risk.consistent_read", passthrough)
+    monkeypatch.setattr(
+        "app.services.portfolio_risk.snapshot_clock",
+        lambda _db: datetime(2026, 3, 13, 18, 0),
+    )
+    monkeypatch.setattr("app.services.portfolio_risk._performance", fake_performance)
+    monkeypatch.setattr("app.services.portfolio_risk._value_portfolio", fake_portfolio)
+    monkeypatch.setattr("app.services.portfolio_risk.allocation_from_portfolio", fake_allocation)
     return payload
 
 
@@ -289,14 +303,21 @@ def test_var_99_is_null_below_one_hundred_returns(monkeypatch):
     assert body["expected_shortfall_99_pct"] is None
 
 
-def test_route_requires_authentication_and_rejects_an_invalid_range(client, auth_headers):
+def test_route_requires_authentication_and_rejects_an_invalid_range(client, auth_headers, db_session):
     anonymous = client.get("/portfolio/risk-metrics", params={"range": "1y"})
     assert anonymous.status_code == 401
 
     headers = auth_headers("risk-range@example.com")
-    rejected = client.get("/portfolio/risk-metrics", headers=headers, params={"range": "3y"})
-    assert rejected.status_code == 422
-    assert rejected.json()["detail"] == "range must be 1y or 2y."
+    detail = "range must be 1y or 2y."
+    user = db_session.query(User).one()
+    for token in ("3y", "1m", "3m", "6m", "all"):
+        rejected = client.get("/portfolio/risk-metrics", headers=headers, params={"range": token})
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"] == detail
+        with pytest.raises(HTTPException) as caught:
+            build_risk_metrics_response(db_session, user.id, user.email, token)
+        assert caught.value.status_code == 422
+        assert caught.value.detail == detail
 
 
 def test_route_end_to_end_with_a_real_seeded_account(client, auth_headers, db_session, monkeypatch):
@@ -425,14 +446,14 @@ def test_correlation_reference_vector_matches_the_contract(db_session, monkeypat
         "user": {"id": user.id, "email": user.email},
     }
 
-    def fake_performance(_db, _user_id, _email, _range_token):
+    def fake_performance(_db, _user_id, _email, _range_token, clock=None, portfolio=None):
         return payload
 
-    def fake_allocation(_db, _user_id, _email):
+    def fake_allocation(_db, _portfolio):
         return _DEFAULT_ALLOCATION
 
-    monkeypatch.setattr("app.services.portfolio_risk.build_performance_response", fake_performance)
-    monkeypatch.setattr("app.services.portfolio_risk.build_allocation_response", fake_allocation)
+    monkeypatch.setattr("app.services.portfolio_risk._performance", fake_performance)
+    monkeypatch.setattr("app.services.portfolio_risk.allocation_from_portfolio", fake_allocation)
     body = build_risk_metrics_response(db_session, user.id, user.email, "1y")
 
     assert body["return_count"] == 4

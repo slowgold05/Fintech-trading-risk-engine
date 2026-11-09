@@ -1,34 +1,40 @@
 """Historical volatility, maximum drawdown, portfolio beta, tail loss, correlation, stress loss, and risk contribution.
 
-Volatility, drawdown, beta, and tail loss come from a single
-``build_performance_response`` read. Volatility is the sample standard
-deviation of period-over-period ``twr_index`` returns, as a percentage at
-four decimal places, ``ROUND_HALF_UP``. It is per period, not annualized:
-an unavailable day is skipped, so the calendar gap between two available
-points is not one trading day. Maximum drawdown is the largest
-``drawdown_pct`` already published on an available day, unchanged at its
-existing four places. Portfolio beta is the sample covariance of paired
-account and benchmark returns divided by the sample variance of those
-benchmark returns, at the same four places. A day pairs only when the
-account day is available and ``benchmark_index`` is set. Historical VaR and
-Expected Shortfall are nearest-rank loss percentages on the same per-period
-returns volatility uses, not the benchmark pairs. Below 20 returns every
-tail field is null. From 20 through 99 returns only the 95% fields are
-published, so a short sample never reports the same number for both
-confidence levels.
+Volatility, drawdown, beta, and tail loss come from one performance read
+inside the same snapshot as valuation, allocation, and the close queries.
+Volatility is the sample standard deviation of period-over-period
+``twr_index`` returns, as a percentage at four decimal places,
+``ROUND_HALF_UP``. It is per period, not annualized: an unavailable day is
+skipped, so the calendar gap between two available points is not one trading
+day. A positive prior index is the only denominator. A current index of
+zero is a defined -100% return, then a barrier. A null or negative index
+forms no return. The next positive index does not divide across that
+barrier. Maximum drawdown is the largest published ``drawdown_pct``. A null
+drawdown is omitted, and an empty set stays null rather than becoming zero.
+Portfolio beta uses the same denominator rule on each paired series. A day
+pairs only when the account day is available and ``benchmark_index`` is set.
+A missing benchmark day is skipped and does not break the chain. A null or
+negative index on either side forms no pair. Historical VaR and Expected
+Shortfall are nearest-rank loss percentages on the same per-period returns
+volatility uses, not the benchmark pairs. ``return_count`` is the number of
+those defined ratios. Below 20 returns every tail field is null. From 20
+through 99 returns only the 95% fields are published, so a short sample
+never reports the same number for both confidence levels.
 
-Pairwise correlation is separate. It reads current non-zero holdings from
-``build_portfolio_response`` and one raw-close query. A ``(symbol, date)``
-with exactly one raw provider row is usable. Fewer than two holdings leaves
-``correlations`` null.
+Pairwise correlation uses the valuation already read in this snapshot and
+one raw-close query. A ``(symbol, date)`` with exactly one raw provider row
+is usable. Fewer than two holdings leaves ``correlations`` null. A missing
+close stays out of the common-day chain. A nonpositive close is a barrier
+and is not bridged by dropping it.
 
-Stress-test loss is a third black-box read, ``build_allocation_response``.
+Stress-test loss uses the allocation classified from that same valuation.
 Three fixed shocks apply to priced holdings: 10% of every security, 25% of
 those already classified Technology, and 30% of the single largest position.
 An incomplete allocation leaves ``stress_scenarios`` null. Cash is not
-shocked. Loss is cents. Loss percent is four places.
+shocked. Loss is cents. A zero dollar loss stays ``"0.00"``. Loss percent is
+four places, or null when account value is zero.
 
-Risk contribution reads that same allocation snapshot. It decomposes
+Risk contribution reads that same allocation. It decomposes
 portfolio variance across priced holdings: each share is that security's
 weight times its covariance row. A pair uses its own common usable days,
 and a security's diagonal is that security's own sample variance. One
@@ -42,13 +48,15 @@ from datetime import date
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Context, Decimal, localcontext
 from itertools import combinations
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.read_snapshot import SnapshotClockError, consistent_read, snapshot_clock
 from app.models.market_bar_daily import MarketBarDaily
-from app.services.performance_service import build_performance_response
-from app.services.portfolio_allocation import build_allocation_response
-from app.services.portfolio_valuation import build_portfolio_response
+from app.services.performance_service import _performance, require_performance_range
+from app.services.portfolio_allocation import allocation_from_portfolio
+from app.services.portfolio_valuation import _value_portfolio
 
 FOUR_PLACES = Decimal("0.0001")
 CENT = Decimal("0.01")
@@ -60,6 +68,77 @@ _WORST_HOLDING_SHOCK = Decimal("0.30")
 _WORST_HOLDING_SHOCK_TEXT = "-30.0000"
 
 
+def _optional_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(value)
+
+
+def _defined_index_returns(values: list[Decimal | None]) -> list[Decimal]:
+    """Growth ratios. Only a positive index may be a denominator.
+
+    A current zero after a positive prior is a -100% return (``0 / prior - 1``).
+    That zero is then a barrier, so the next point does not divide by it.
+    ``None`` and a negative index form no return. A later positive index may
+    start a new link. It does not reach back across the barrier.
+    """
+    returns: list[Decimal] = []
+    previous: Decimal | None = None
+    for value in values:
+        if previous is not None and previous > 0 and value is not None and value >= 0:
+            returns.append(value / previous - 1)
+        # Zero has been consumed as a numerator. It is not a later denominator.
+        if value is not None and value > 0:
+            previous = value
+        else:
+            previous = None
+    return returns
+
+
+def _paired_index_returns(
+    left: list[Decimal | None],
+    right: list[Decimal | None],
+) -> tuple[list[Decimal], list[Decimal]]:
+    """Paired ratios. Both prior denominators must be positive.
+
+    A zero on either side is a valid numerator, so a terminal zero still
+    produces that pair. A zero, null, or negative value cannot be the next
+    denominator, and the following positive pair does not bridge over it.
+    """
+    left_returns: list[Decimal] = []
+    right_returns: list[Decimal] = []
+    previous_left: Decimal | None = None
+    previous_right: Decimal | None = None
+    for left_value, right_value in zip(left, right, strict=True):
+        priors = (
+            previous_left is not None
+            and previous_right is not None
+            and previous_left > 0
+            and previous_right > 0
+        )
+        if (
+            priors
+            and left_value is not None
+            and right_value is not None
+            and left_value >= 0
+            and right_value >= 0
+        ):
+            left_returns.append(left_value / previous_left - 1)
+            right_returns.append(right_value / previous_right - 1)
+        if (
+            left_value is not None
+            and right_value is not None
+            and left_value > 0
+            and right_value > 0
+        ):
+            previous_left = left_value
+            previous_right = right_value
+        else:
+            previous_left = None
+            previous_right = None
+    return left_returns, right_returns
+
+
 def _max_drawdown_pct(drawdown_values: list[Decimal]) -> str | None:
     """Largest published drawdown. ``max`` keeps that exact ``Decimal``."""
     if not drawdown_values:
@@ -67,18 +146,15 @@ def _max_drawdown_pct(drawdown_values: list[Decimal]) -> str | None:
     return format(max(drawdown_values), "f")
 
 
-def _volatility_from_twr(twr_values: list[Decimal]) -> tuple[list[Decimal], str | None]:
+def _volatility_from_twr(twr_values: list[Decimal | None]) -> tuple[list[Decimal], str | None]:
     """Sample stdev of consecutive growth ratios, inside precision 50.
 
-    Fewer than two returns cannot form a sample variance. The caller still
-    receives the return list so its length can be checked against the
-    available-day count.
+    Fewer than two defined returns cannot form a sample variance. A zero
+    index after a positive prior counts as -100%. It does not become the next
+    denominator, and a null or negative index adds no return.
     """
     with localcontext(Context(prec=50)):
-        returns = [
-            twr_values[index] / twr_values[index - 1] - 1
-            for index in range(1, len(twr_values))
-        ]
+        returns = _defined_index_returns(twr_values)
         if len(returns) < 2:
             return returns, None
         count = len(returns)
@@ -90,23 +166,22 @@ def _volatility_from_twr(twr_values: list[Decimal]) -> tuple[list[Decimal], str 
         return returns, format(pct, "f")
 
 
-def _beta(paired_twr: list[Decimal], paired_benchmark: list[Decimal]) -> tuple[int, str | None]:
+def _beta(
+    paired_twr: list[Decimal | None],
+    paired_benchmark: list[Decimal | None],
+) -> tuple[int, str | None]:
     """Sample covariance of paired returns over sample variance of the benchmark's.
 
     `paired_twr`/`paired_benchmark` must already be the same length and in
-    the same order - one account `twr_index` and one `benchmark_index` per
-    day where both were actually available. Fewer than two return pairs, or
-    a benchmark with no variation across them, leaves beta undetermined.
+    the same order. A missing benchmark day is omitted by the caller, which
+    keeps the last-available link across that gap. A zero numerator with
+    positive priors is a defined pair, including a -100% leg. Zero is not the
+    next denominator. A null or negative index adds no pair and blocks the
+    next one. Fewer than two pairs, or a benchmark with no variation, leaves
+    beta null. Neither side is divided unless its prior index is positive.
     """
     with localcontext(Context(prec=50)):
-        p_returns = [
-            paired_twr[index] / paired_twr[index - 1] - 1
-            for index in range(1, len(paired_twr))
-        ]
-        s_returns = [
-            paired_benchmark[index] / paired_benchmark[index - 1] - 1
-            for index in range(1, len(paired_benchmark))
-        ]
+        p_returns, s_returns = _paired_index_returns(paired_twr, paired_benchmark)
         pair_count = len(p_returns)
         if pair_count < 2:
             return pair_count, None
@@ -203,6 +278,38 @@ def _single_provider_closes(
     return result
 
 
+def _paired_price_returns(
+    prices_a: list[Decimal],
+    prices_b: list[Decimal],
+) -> tuple[list[Decimal], list[Decimal]]:
+    """Simple returns on aligned closes. A nonpositive close does not bridge.
+
+    Missing sessions are already absent from the common-day list. That
+    last-available chain stays. A zero close cannot be a denominator, and the
+    following positive close does not reach back across it.
+    """
+    left: list[Decimal] = []
+    right: list[Decimal] = []
+    previous_left: Decimal | None = None
+    previous_right: Decimal | None = None
+    for price_a, price_b in zip(prices_a, prices_b, strict=True):
+        if (
+            previous_left is not None
+            and previous_right is not None
+            and previous_left > 0
+            and previous_right > 0
+        ):
+            left.append(price_a / previous_left - 1)
+            right.append(price_b / previous_right - 1)
+        if price_a > 0 and price_b > 0:
+            previous_left = price_a
+            previous_right = price_b
+        else:
+            previous_left = None
+            previous_right = None
+    return left, right
+
+
 def _pairwise_covariance(
     closes_a: dict[date, Decimal], closes_b: dict[date, Decimal]
 ) -> Decimal | None:
@@ -217,8 +324,7 @@ def _pairwise_covariance(
     prices_a = [closes_a[day] for day in common_days]
     prices_b = [closes_b[day] for day in common_days]
     with localcontext(Context(prec=50)):
-        returns_a = [prices_a[i] / prices_a[i - 1] - 1 for i in range(1, len(prices_a))]
-        returns_b = [prices_b[i] / prices_b[i - 1] - 1 for i in range(1, len(prices_b))]
+        returns_a, returns_b = _paired_price_returns(prices_a, prices_b)
         pair_return_count = len(returns_a)
         if pair_return_count < 2:
             return None
@@ -248,8 +354,7 @@ def _pairwise_correlation(
     prices_a = [closes_a[day] for day in common_days]
     prices_b = [closes_b[day] for day in common_days]
     with localcontext(Context(prec=50)):
-        returns_a = [prices_a[i] / prices_a[i - 1] - 1 for i in range(1, len(prices_a))]
-        returns_b = [prices_b[i] / prices_b[i - 1] - 1 for i in range(1, len(prices_b))]
+        returns_a, returns_b = _paired_price_returns(prices_a, prices_b)
         pair_return_count = len(returns_a)
         if pair_return_count < 2:
             return pair_return_count, None
@@ -276,10 +381,9 @@ def _pairwise_correlation(
 
 
 def _held_correlations(
-    db: Session, user_id: int, email: str, requested_start: date, requested_end: date
+    db: Session, portfolio: dict, requested_start: date, requested_end: date
 ) -> list[dict] | None:
     """One entry per held pair, or null when fewer than two symbols are held."""
-    portfolio = build_portfolio_response(db, user_id, email)
     held_symbols = sorted({position["symbol"] for position in portfolio["positions"]})
     if len(held_symbols) < 2:
         return None
@@ -323,7 +427,10 @@ def _scenario_loss(priced: list[dict], *, sector: str | None, shock: Decimal) ->
     return sum((Decimal(item["position_value"]) * shock for item in affected), Decimal(0))
 
 
-def _loss_pct(loss: Decimal, total_account_value: Decimal) -> str:
+def _loss_pct(loss: Decimal, total_account_value: Decimal) -> str | None:
+    """Percent of account value. Zero capital has no percentage. Dollar loss stays put."""
+    if total_account_value == 0:
+        return None
     pct = (loss / total_account_value * 100).quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
     return format(pct, "f")
 
@@ -441,46 +548,73 @@ def _risk_contributions(
         return results
 
 
-def build_risk_metrics_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
-    performance = build_performance_response(db, user_id, email, range_token)
-    available = [point for point in performance["series"] if point["status"] == "available"]
-    # A pair needs the account day and a SPY index. `available` does not
-    # filter `benchmark_index`, and that field is null independently of status.
-    paired_twr = []
-    paired_benchmark = []
-    for point in performance["series"]:
+def _beta_indexes(series: list[dict]) -> tuple[list[Decimal | None], list[Decimal | None]]:
+    """Paired indexes. A missing benchmark on a funded day stays a skip.
+
+    Unavailable price days are omitted. Their published indexes already chain
+    across that gap. A null portfolio index stays in the list as a barrier.
+    Zero stays in the list so a terminal total loss can be paired. It is not
+    reused as a denominator.
+    """
+    paired_twr: list[Decimal | None] = []
+    paired_benchmark: list[Decimal | None] = []
+    for point in series:
         if point["status"] != "available":
             continue
-        benchmark_index = point.get("benchmark_index")
-        if benchmark_index is None:
+        twr_index = _optional_decimal(point.get("twr_index"))
+        benchmark_index = _optional_decimal(point.get("benchmark_index"))
+        if benchmark_index is None and twr_index is not None and twr_index > 0:
             continue
-        paired_twr.append(Decimal(point["twr_index"]))
-        paired_benchmark.append(Decimal(benchmark_index))
+        if twr_index is None or benchmark_index is None:
+            paired_twr.append(None)
+            paired_benchmark.append(None)
+            continue
+        paired_twr.append(twr_index)
+        paired_benchmark.append(benchmark_index)
+    return paired_twr, paired_benchmark
+
+
+def build_risk_metrics_response(db: Session, user_id: int, email: str, range_token: str) -> dict:
+    require_performance_range(range_token)
+    with consistent_read(db):
+        try:
+            clock = snapshot_clock(db)
+        except SnapshotClockError as exc:
+            raise HTTPException(status_code=500, detail="Portfolio snapshot time is missing.") from exc
+        # One valuation feeds correlation symbols and allocation. Performance
+        # reuses this clock and this portfolio for reconciliation.
+        portfolio = _value_portfolio(db, user_id, email, clock=clock)
+        performance = _performance(
+            db, user_id, email, range_token, clock=clock, portfolio=portfolio,
+        )
+        allocation = allocation_from_portfolio(db, portfolio)
+        return _metrics_from_snapshot(db, performance, portfolio, allocation)
+
+
+def _metrics_from_snapshot(
+    db: Session,
+    performance: dict,
+    portfolio: dict,
+    allocation: dict,
+) -> dict:
+    available = [point for point in performance["series"] if point["status"] == "available"]
+    paired_twr, paired_benchmark = _beta_indexes(performance["series"])
     beta_pair_count, portfolio_beta = _beta(paired_twr, paired_benchmark)
     observed_periods = len(available)
-    drawdown_values = [Decimal(point["drawdown_pct"]) for point in available]
-    twr_values = [Decimal(point["twr_index"]) for point in available]
+    drawdown_values = [
+        Decimal(point["drawdown_pct"])
+        for point in available
+        if point.get("drawdown_pct") is not None
+    ]
+    twr_values = [_optional_decimal(point.get("twr_index")) for point in available]
     returns, historical_volatility_pct = _volatility_from_twr(twr_values)
-    # Contract count is observed days minus one. It must match the ratios above.
-    return_count = max(observed_periods - 1, 0)
-    if len(returns) != return_count:
-        raise AssertionError("return_count does not match the twr_index ratios")
-    # Same per-period twr returns as volatility, not the benchmark pairs beta uses.
+    # Count ratios that were actually defined. A sealed or empty index is not
+    # imputed, and it is not dropped so neighbors can be divided.
+    return_count = len(returns)
     tail = _historical_var_and_es(returns)
-    # One parse of the performance window. Correlation and risk contribution
-    # both read closes over these same two dates.
     requested_start = date.fromisoformat(performance["requested_start"])
     requested_end = date.fromisoformat(performance["requested_end"])
-    correlations = _held_correlations(
-        db,
-        user_id,
-        email,
-        requested_start,
-        requested_end,
-    )
-    # After the performance read. An invalid range still fails inside that
-    # call, before this third black-box snapshot.
-    allocation = build_allocation_response(db, user_id, email)
+    correlations = _held_correlations(db, portfolio, requested_start, requested_end)
     stress_scenarios = _stress_scenarios(allocation)
     risk_contributions = _risk_contributions(
         db, allocation, requested_start, requested_end

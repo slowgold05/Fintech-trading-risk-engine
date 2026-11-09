@@ -10,8 +10,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.read_snapshot import consistent_read
 from app.models.market_symbol import MarketSymbol
-from app.services.portfolio_valuation import build_portfolio_response
+from app.services.portfolio_valuation import _value_portfolio
 from app.services.sector_classifier import SECTOR_ORDER, infer_sector
 
 CENT = Decimal("0.01")
@@ -103,8 +104,8 @@ def _sector_payloads(classified: list[dict], total: Decimal) -> list[dict]:
     return payloads
 
 
-def build_allocation_response(db: Session, user_id: int, email: str) -> dict:
-    portfolio = build_portfolio_response(db, user_id, email)
+def allocation_from_portfolio(db: Session, portfolio: dict) -> dict:
+    """Classify one valuation. The caller owns the snapshot transaction."""
     summary = portfolio["summary"]
     classified = _classified_positions(db, portfolio["positions"])
     cash_balance = _cents(summary["cash_balance"])
@@ -136,3 +137,10 @@ def build_allocation_response(db: Session, user_id: int, email: str) -> dict:
     ]
     response["sectors"] = _sector_payloads(classified, total)
     return response
+
+
+def build_allocation_response(db: Session, user_id: int, email: str) -> dict:
+    """Public allocation read. Its snapshot is not shared with other callers."""
+    with consistent_read(db):
+        portfolio = _value_portfolio(db, user_id, email)
+        return allocation_from_portfolio(db, portfolio)

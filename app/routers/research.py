@@ -13,6 +13,7 @@ from app.models.research_report import ResearchReport
 from app.models.research_brief import ResearchBrief
 from app.models.user import User
 from app.schemas.research_job import ResearchJobCreate
+from app.services.job_admission import admission_transaction, lock_owner
 from app.services.sec_service import get_sec_company_filings
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -67,6 +68,7 @@ def create_research_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    owner_id = int(current_user.id)
     known = db.execute(
         select(MarketSymbol.symbol).where(
             MarketSymbol.symbol == payload.symbol, MarketSymbol.is_active.is_(True)
@@ -75,19 +77,21 @@ def create_research_job(
     if not known:
         raise HTTPException(status_code=400, detail=_UNKNOWN_SYMBOL)
 
-    pending = db.execute(
-        select(func.count(ResearchJob.id)).where(
-            ResearchJob.user_id == current_user.id,
-            ResearchJob.status.in_(("queued", "running")),
-        )
-    ).scalar_one()
-    if pending >= _JOB_CAP:
-        raise HTTPException(status_code=409, detail=_TOO_MANY_JOBS)
+    with admission_transaction(db):
+        lock_owner(db, owner_id)
+        pending = db.execute(
+            select(func.count(ResearchJob.id)).where(
+                ResearchJob.user_id == owner_id,
+                ResearchJob.status.in_(("queued", "running")),
+            )
+        ).scalar_one()
+        if pending >= _JOB_CAP:
+            raise HTTPException(status_code=409, detail=_TOO_MANY_JOBS)
 
-    job = ResearchJob(user_id=current_user.id, symbol=payload.symbol, status="queued")
-    db.add(job)
-    db.commit()
-    return _job_out(job)
+        job = ResearchJob(user_id=owner_id, symbol=payload.symbol, status="queued")
+        db.add(job)
+        db.flush()
+        return _job_out(job)
 
 
 @router.get("/jobs")

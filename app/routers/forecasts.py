@@ -13,6 +13,7 @@ from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.market_symbol import MarketSymbol
 from app.models.user import User
 from app.schemas.forecast_job import ForecastJobCreate
+from app.services.job_admission import admission_transaction, lock_owner
 from app.services.market_history import SUPPORTED_ADJUSTMENTS
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -58,6 +59,7 @@ def create_forecast_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    owner_id = int(current_user.id)
     known = db.execute(
         select(MarketSymbol.symbol).where(
             MarketSymbol.symbol == payload.symbol, MarketSymbol.is_active.is_(True)
@@ -84,28 +86,30 @@ def create_forecast_job(
             detail=f"sample_count must not exceed {settings.forecast_kronos_max_sample_count}.",
         )
 
-    pending = db.execute(
-        select(func.count(ForecastJob.id)).where(
-            ForecastJob.user_id == current_user.id,
-            ForecastJob.status.in_(("queued", "running")),
-        )
-    ).scalar_one()
-    if pending >= _JOB_CAP:
-        raise HTTPException(status_code=409, detail=_TOO_MANY_JOBS)
+    with admission_transaction(db):
+        lock_owner(db, owner_id)
+        pending = db.execute(
+            select(func.count(ForecastJob.id)).where(
+                ForecastJob.user_id == owner_id,
+                ForecastJob.status.in_(("queued", "running")),
+            )
+        ).scalar_one()
+        if pending >= _JOB_CAP:
+            raise HTTPException(status_code=409, detail=_TOO_MANY_JOBS)
 
-    job = ForecastJob(
-        user_id=current_user.id,
-        symbol=payload.symbol,
-        provider=payload.provider,
-        adjustment_type=payload.adjustment_type,
-        lookback=payload.lookback,
-        horizon=payload.horizon,
-        sample_count=payload.sample_count,
-        status="queued",
-    )
-    db.add(job)
-    db.commit()
-    return _job_out(job)
+        job = ForecastJob(
+            user_id=owner_id,
+            symbol=payload.symbol,
+            provider=payload.provider,
+            adjustment_type=payload.adjustment_type,
+            lookback=payload.lookback,
+            horizon=payload.horizon,
+            sample_count=payload.sample_count,
+            status="queued",
+        )
+        db.add(job)
+        db.flush()
+        return _job_out(job)
 
 
 @router.get("/jobs")

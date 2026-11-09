@@ -54,12 +54,23 @@ def _gather_sources(db: Session, symbol: str) -> list[dict]:
     return sources
 
 
+def _separate_session(db: Session) -> Session:
+    """Source session on the same engine. Its commit must not release the claim.
+
+    A one-connection pool cannot keep that work off the claim transaction.
+    """
+    bind = db.get_bind()
+    engine = getattr(bind, "engine", bind)
+    return Session(bind=engine, autoflush=False, future=True)
+
+
 def process_one_job(db: Session) -> ResearchJob | None:
     job = _claim_job(db)
     if job is None:
         return None
     try:
-        sources = _gather_sources(db, job.symbol)
+        with _separate_session(db) as source:
+            sources = _gather_sources(source, job.symbol)
         synthesis_fields = {
             "bull_case": None, "bear_case": None, "synthesis": None, "risks": None,
             "model_version": None, "prompt_version": None, "backend_detail": None,
