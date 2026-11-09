@@ -182,6 +182,40 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 76](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/76) is ready
+with all CI checks green: the first unit of roadmap Phase 6 (Experimental Forecast
+Lab) — the Kronos model wrapper only, no job queue, no API route, no chart UI yet
+(mirrors Phase 5's own decomposition into stacked units). Kronos
+(`shiyu-coder/Kronos`, MIT, pinned commit `67b630e`) is not pip-installable, so its
+three `model/` source files are vendored byte-identical under `app/vendor/kronos/`
+with the MIT license retained verbatim; heavy runtime deps (`torch`, `pandas`, etc.)
+live only in a new, separate `requirements-forecast.txt`, never `requirements.txt`.
+**Discovered and followed this app's existing model-governance process** rather than
+inventing a new one — `app/services/forecast.py`'s pre-existing honest `SM-FC-01`
+historical-volatility placeholder already has its own model card/validation
+report/inventory entry; this unit adds a second, separate `SM-FC-02` entry for
+Kronos following the same honesty discipline (explicitly pending model owner review,
+explicitly stating no walk-forward accuracy evaluation has been performed and real
+weights were not downloaded or exercised). Also closed the vendor-register gap this
+same discovery surfaced for Kronos itself (`grc/vendors/huggingface.md` + a
+`docs/vendors.md` row). Future forecast timestamps follow real NYSE trading sessions
+via the existing `exchange_calendar` module, verified against two hand-checked
+reference vectors. Caught and fixed one real gap during review (a bare `pandas`
+import left out of the dependency guard, masked locally because pandas happened to
+already be installed in this dev environment unrelated to the project) and one CI
+failure after that fix (the same gap meant one test needed `pandas` to build its own
+fixture and couldn't run without it — fixed via `pytest.importorskip`, the same
+convention this repo already uses for optional Selenium-dependent browser tests).
+Evidence: [P6A_KRONOS_WRAPPER_VERIFICATION.md](P6A_KRONOS_WRAPPER_VERIFICATION.md);
+design: [P6A_KRONOS_WRAPPER_CONTRACT.md](P6A_KRONOS_WRAPPER_CONTRACT.md). **Disclosed
+boundary**: no real Hugging Face download or real Kronos inference was run as part
+of building or verifying this unit. **Still open before Phase 6 is done**: the job
+queue, bounded worker, `/forecasts/*` routes, chart UI, and — the real gate — the
+roadmap's own 6.3 walk-forward historical validation against baselines, which this
+unit explicitly does not attempt. **Also still open**: the separately-discovered
+vendor-register gap in PR #74 (TradingAgents' own outbound Yahoo/SEC EDGAR/FRED calls
+lack a `grc/vendors/` entry), tracked as its own small follow-up, not fixed here.
+
 [PR 75](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/75) is ready
 with all CI checks green: the first frontend surface for any of Phase 5's six backend
 routes (PRs #69-#74) — a new `/research` page to queue a research job, watch its
