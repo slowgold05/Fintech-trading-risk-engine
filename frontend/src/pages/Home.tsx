@@ -324,7 +324,7 @@ export function Home() {
     <main className="min-h-[100dvh] bg-transparent">
       {/* Top navigation */}
       <header className="border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-[2200px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.25),0_0_20px_-6px_rgb(52_211_153_/_0.3)]">
               <span className="font-mono text-[11px] font-bold text-emerald-400">GY</span>
@@ -347,7 +347,7 @@ export function Home() {
 
       {/* Hero */}
       <div className="border-b border-slate-800/60 bg-gradient-to-b from-slate-900/30 to-transparent">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12">
+        <div className="mx-auto max-w-[2200px] px-4 py-10 sm:px-6 sm:py-12">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <span className="inline-flex items-center rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-400">
@@ -374,7 +374,7 @@ export function Home() {
         </div>
       </div>
 
-      <section className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 sm:py-8">
+      <section className="mx-auto max-w-[2200px] space-y-5 px-4 py-6 sm:px-6 sm:py-8">
         <div className="dashboard-card">
           <div className="dashboard-card-header">
             <div>
