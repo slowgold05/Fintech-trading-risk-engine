@@ -182,6 +182,26 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 79](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/79) is ready
+with all CI checks green: `GET /forecasts/models`, a small read-only route. This
+app configures exactly one forecast model (Kronos, via settings), not a dynamic
+catalog, so the response describes that one model's current state — enabled or not,
+its bounds, its pinned source commit and license — reading live settings rather
+than a hardcoded value (verified by a test that flips `forecast_kronos_enabled` and
+confirms the response changes accordingly). `source_commit` reuses the exact same
+literal value PR #76 vendored, not a second independently-typed copy. `GET
+/forecasts/evaluations` deliberately not built here — meaningless until roadmap
+6.3's walk-forward evaluation methodology exists and produces something to list.
+Evidence: [P6D_FORECAST_MODELS_VERIFICATION.md](P6D_FORECAST_MODELS_VERIFICATION.md);
+design: [P6D_FORECAST_MODELS_CONTRACT.md](P6D_FORECAST_MODELS_CONTRACT.md). **With
+this PR, every named Phase 6 route except `GET /forecasts/evaluations` exists** —
+nine stacked PRs (#69-#79) so far this session, all independently-CI-green, none
+merged. Still fully open: the chart UI, and — the real gate before any broad
+exposure — the roadmap's own 6.3 walk-forward historical validation against
+baselines, not attempted by any unit so far. Per the user's own stated plan: once
+Phase 6 is fully done, next is Phase 0's formal baseline-audit wrap-up, then the
+rest of the roadmap in order (Phase 7).
+
 [PR 78](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/78) is ready
 with all CI checks green: the bounded worker that actually drains the forecast job
 queue PR #77 built intake for, closely mirroring PR #71's own research-worker
