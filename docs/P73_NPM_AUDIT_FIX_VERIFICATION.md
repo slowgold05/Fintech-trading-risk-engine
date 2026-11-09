@@ -41,3 +41,15 @@ After the bump, re-ran the full frontend pipeline with no other change:
 
 Only `frontend/package-lock.json` changed. No application source file
 changed.
+
+## Backend dependencies, same roadmap item
+
+`pip-audit -r requirements.txt` and `pip-audit -r requirements-dev.txt`
+(run in the same temporary Python 3.11 venv used for this session's test
+runs): **no known vulnerabilities found** in either file. Not re-run against
+`requirements-research.txt` or `requirements-forecast.txt`, which install
+heavy optional dependencies (`torch`, the `tradingagents` package and its
+own transitive tree) not installed in this venv — auditing those is folded
+into the same "install on a machine that can afford the compute" step
+[FORECAST_LAB_OPEN_LIMITATIONS.md](FORECAST_LAB_OPEN_LIMITATIONS.md) already
+names, not repeated here.
