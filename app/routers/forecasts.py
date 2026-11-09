@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.forecast_job import ForecastJob
 from app.models.forecast_result import ForecastResult
+from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.market_symbol import MarketSymbol
 from app.models.user import User
 from app.schemas.forecast_job import ForecastJobCreate
@@ -218,6 +219,51 @@ def list_forecast_models(current_user: User = Depends(get_current_user)):
             }
         ]
     }
+
+
+def _evaluation_out(evaluation: ForecastEvaluation) -> dict:
+    return {
+        "id": evaluation.id,
+        "symbol": evaluation.symbol,
+        "provider": evaluation.provider,
+        "adjustment_type": evaluation.adjustment_type,
+        "horizon": evaluation.horizon,
+        "window_count": evaluation.window_count,
+        "model_mae": evaluation.model_mae,
+        "model_directional_accuracy": evaluation.model_directional_accuracy,
+        "baseline_type": evaluation.baseline_type,
+        "baseline_mae": evaluation.baseline_mae,
+        "baseline_directional_accuracy": evaluation.baseline_directional_accuracy,
+        "weights_exercised": evaluation.weights_exercised,
+        "notes": evaluation.notes,
+        "created_at": _iso_z(evaluation.created_at),
+    }
+
+
+# Registered before /{forecast_id}. That integer path matches "evaluations"
+# and answers 422 instead of falling through to this literal route.
+@router.get("/evaluations")
+def list_forecast_evaluations(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = db.execute(
+        select(ForecastEvaluation).order_by(ForecastEvaluation.id.desc()).limit(limit)
+    ).scalars().all()
+    return {"evaluations": [_evaluation_out(row) for row in rows]}
+
+
+@router.get("/evaluations/{evaluation_id}")
+def get_forecast_evaluation(
+    evaluation_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    evaluation = db.get(ForecastEvaluation, evaluation_id)
+    if evaluation is None:
+        raise HTTPException(status_code=404, detail="Forecast evaluation not found")
+    return _evaluation_out(evaluation)
 
 
 @router.get("/{forecast_id}")
