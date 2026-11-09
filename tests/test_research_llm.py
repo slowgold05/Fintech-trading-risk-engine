@@ -110,6 +110,9 @@ def test_generate_synthesis_returns_parsed_sections_and_versions(monkeypatch) ->
         **_ALL_FOUR,
         "model_version": settings.research_llm_model,
         "prompt_version": settings.research_prompt_version,
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "duration_ms": None,
     }
     assert captured["url"] == f"{settings.research_llm_base_url}/api/generate"
     assert captured["timeout"] == settings.research_llm_timeout_seconds
@@ -117,3 +120,29 @@ def test_generate_synthesis_returns_parsed_sections_and_versions(monkeypatch) ->
     assert captured["json"]["stream"] is False
     assert "AAPL" in captured["json"]["prompt"]
     assert "sec_fundamentals: ok (Apple Inc.)" in captured["json"]["prompt"]
+
+
+def test_generate_synthesis_converts_ollama_usage_fields(monkeypatch) -> None:
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "response": _WELL_FORMED,
+                "prompt_eval_count": 128,
+                "eval_count": 64,
+                "total_duration": 4_120_999_999,
+            }
+
+    def _post(url, json=None, timeout=None):
+        return _Response()
+
+    monkeypatch.setattr("app.services.research_llm.requests.post", _post)
+
+    result = generate_synthesis("AAPL", [])
+
+    assert result["bull_case"] == _BULL
+    assert result["prompt_tokens"] == 128
+    assert result["completion_tokens"] == 64
+    assert result["duration_ms"] == 4120

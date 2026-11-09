@@ -19,3 +19,6 @@ class ResearchJob(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now())
     error_message = Column(String(500), nullable=True)
+    prompt_tokens = Column(Integer, nullable=True)
+    completion_tokens = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)

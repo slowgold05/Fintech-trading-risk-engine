@@ -258,6 +258,60 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+2026-11-09, continuing further still (PRs 85 and 86 confirmed CI-green and
+marked ready — all 7 jobs passed on both, `gh pr ready` returned "already
+ready" for each): PR 87 (Phase 7.3, stacked on 86) adds AI usage
+instrumentation — [P73_AI_USAGE_CONTRACT.md](P73_AI_USAGE_CONTRACT.md) and
+[P73_AI_USAGE_VERIFICATION.md](P73_AI_USAGE_VERIFICATION.md). This closes
+the last open item in roadmap 7.3's "operational monitoring for data
+freshness, job age, retries, and AI cost" bullet.
+
+Leading finding: both of this app's LLM paths
+(`app/services/research_llm.py`, `app/services/research_tradingagents.py`)
+are hardcoded to a local Ollama model (`llm_provider = "ollama"`,
+`research_llm_base_url` defaulting to `localhost:11434`) — zero
+`openai`/`anthropic` imports or API-key settings exist anywhere in `app/`.
+There is no dollar AI cost to monitor today, and nothing was fabricated to
+pretend otherwise. What was added instead: capturing the token counts and
+latency Ollama's own `/api/generate` response already returns
+(`prompt_eval_count`, `eval_count`, `total_duration`) but this app was
+previously discarding, persisting them on `ResearchJob` via a new
+migration (3 nullable `Integer` columns), and surfacing a new `ai_usage`
+block on `GET /compliance/ops-health` (sums/averages over rows that have
+data; explicit zero, not an error, when none do). The TradingAgents
+synthesis path has no equivalent counts available and correctly keeps
+those columns `NULL` rather than guessing. `forecast_jobs` (the Kronos
+local-inference path) is untouched — out of scope, not an LLM call.
+
+Caught one real bug before dispatch: `research_worker.py`'s
+`ResearchReport(**synthesis_fields)` would have broken if the new keys
+were added straight to `generate_synthesis`'s return dict, since
+`ResearchReport` has no matching columns — the contract was corrected to
+`.pop()` the three keys off `synthesis_fields` and assign them onto `job`
+directly before that constructor call, and Grok's actual diff implements
+exactly that. Independently reran the three touched test files (27 passed)
+and the full suite (510 passed, 29 skipped, zero failures) after reviewing
+every file in the diff line-by-line against the contract.
+
+The migration itself was not applied against a live database — this
+project's test fixtures build schema via `Base.metadata.create_all`, never
+by running Alembic, for any migration in the repo, and Docker is still not
+running in this sandboxed environment (same disclosed boundary as Phase
+0's own re-check). Verified by code review against the existing
+migration-file style instead.
+
+Roadmap 7.3 is now fully addressed from what's reachable in this sandboxed
+environment: license review done, dependency vulnerabilities addressed
+(partially — the frontend's remaining 7 moderate findings need an unmade
+`typescript-eslint` v9 decision), data-provider usage rights already
+covered by `docs/PROVIDER_ACCESS_REVIEW.md`, and operational monitoring
+(freshness, job age, failures, AI usage) now has its first real endpoint.
+7.2 (browser pass) and 7.4 (staged rollout) remain explicitly open and
+unreachable from here. `main` is still unchanged at
+`be8ffdc19f78d2942b5e9922ce605d6a5de7d472`; PR 87, like every other open
+PR (#2 through #87), is not merged — none will be without the user's own
+explicit authorization.
+
 2026-11-09, continuing further: PR 86 (Phase 7.3, stacked on 85) adds
 `GET /compliance/ops-health` — [P73_OPS_HEALTH_CONTRACT.md](P73_OPS_HEALTH_CONTRACT.md)
 and [P73_OPS_HEALTH_VERIFICATION.md](P73_OPS_HEALTH_VERIFICATION.md). This is

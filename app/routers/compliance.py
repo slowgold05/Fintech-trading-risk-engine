@@ -545,6 +545,30 @@ def _job_queue_stats(db: Session, model, now: datetime) -> dict:
     }
 
 
+def _ai_usage(db: Session) -> dict:
+    count, prompt_tokens, completion_tokens, avg_duration = db.execute(
+        select(
+            func.count(),
+            func.coalesce(func.sum(ResearchJob.prompt_tokens), 0),
+            func.coalesce(func.sum(ResearchJob.completion_tokens), 0),
+            func.avg(ResearchJob.duration_ms),
+        ).select_from(ResearchJob).where(ResearchJob.prompt_tokens.is_not(None))
+    ).one()
+    if count == 0:
+        return {
+            "research_jobs_with_token_counts": 0,
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "avg_duration_ms": 0,
+        }
+    return {
+        "research_jobs_with_token_counts": int(count),
+        "total_prompt_tokens": int(prompt_tokens),
+        "total_completion_tokens": int(completion_tokens),
+        "avg_duration_ms": 0 if avg_duration is None else int(round(float(avg_duration))),
+    }
+
+
 @router.get("/ops-health")
 def get_ops_health(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
@@ -569,4 +593,5 @@ def get_ops_health(db: Session = Depends(get_db)):
             "research": _job_queue_stats(db, ResearchJob, now),
             "forecast": _job_queue_stats(db, ForecastJob, now),
         },
+        "ai_usage": _ai_usage(db),
     }

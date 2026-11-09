@@ -23,14 +23,14 @@ def _build_prompt(symbol: str, sources: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _call_local_model(prompt: str) -> str:
+def _call_local_model(prompt: str) -> dict:
     response = requests.post(
         f"{settings.research_llm_base_url}/api/generate",
         json={"model": settings.research_llm_model, "prompt": prompt, "stream": False},
         timeout=settings.research_llm_timeout_seconds,
     )
     response.raise_for_status()
-    return response.json()["response"]
+    return response.json()
 
 
 def _parse_sections(text: str) -> dict:
@@ -51,10 +51,15 @@ def _parse_sections(text: str) -> dict:
 
 def generate_synthesis(symbol: str, sources: list[dict]) -> dict:
     prompt = _build_prompt(symbol, sources)
-    text = _call_local_model(prompt)
+    body = _call_local_model(prompt)
+    text = body["response"]
     sections = _parse_sections(text)
+    total_duration_ns = body.get("total_duration")
     return {
         **sections,
         "model_version": settings.research_llm_model,
         "prompt_version": settings.research_prompt_version,
+        "prompt_tokens": body.get("prompt_eval_count"),
+        "completion_tokens": body.get("eval_count"),
+        "duration_ms": None if total_duration_ns is None else total_duration_ns // 1_000_000,
     }

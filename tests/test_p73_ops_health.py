@@ -99,3 +99,52 @@ def test_ops_health_empty_queue_age_is_null(client: TestClient, auth_headers, db
     body = response.json()
     assert body["job_queues"]["research"]["oldest_queued_age_seconds"] is None
     assert body["job_queues"]["forecast"]["oldest_queued_age_seconds"] is None
+
+
+def test_ops_health_ai_usage_sums_only_jobs_with_token_counts(
+    client: TestClient, auth_headers, db_session: Session,
+) -> None:
+    headers = _compliance_headers(auth_headers, db_session, "ops-ai-usage@example.com")
+    _seed_symbol(db_session)
+    user = db_session.query(User).filter_by(email="ops-ai-usage@example.com").one()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    common = dict(
+        user_id=user.id, symbol="AAPL", status="completed",
+        created_at=now, updated_at=now,
+    )
+    db_session.add(ResearchJob(**common, prompt_tokens=700, completion_tokens=400, duration_ms=4000))
+    db_session.add(ResearchJob(**common, prompt_tokens=750, completion_tokens=420, duration_ms=4240))
+    db_session.add(ResearchJob(**common))
+    db_session.commit()
+
+    response = client.get("/compliance/ops-health", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["ai_usage"] == {
+        "research_jobs_with_token_counts": 2,
+        "total_prompt_tokens": 1450,
+        "total_completion_tokens": 820,
+        "avg_duration_ms": 4120,
+    }
+
+
+def test_ops_health_ai_usage_is_zero_when_no_rows_have_data(
+    client: TestClient, auth_headers, db_session: Session,
+) -> None:
+    headers = _compliance_headers(auth_headers, db_session, "ops-ai-empty@example.com")
+    _seed_symbol(db_session)
+    user = db_session.query(User).filter_by(email="ops-ai-empty@example.com").one()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db_session.add(ResearchJob(
+        user_id=user.id, symbol="AAPL", status="completed",
+        created_at=now, updated_at=now,
+    ))
+    db_session.commit()
+
+    response = client.get("/compliance/ops-health", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["ai_usage"] == {
+        "research_jobs_with_token_counts": 0,
+        "total_prompt_tokens": 0,
+        "total_completion_tokens": 0,
+        "avg_duration_ms": 0,
+    }

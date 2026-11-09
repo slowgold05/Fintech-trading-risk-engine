@@ -76,6 +76,9 @@ def process_one_job(db: Session) -> ResearchJob | None:
                 else:
                     synthesis_fields = generate_synthesis(job.symbol, sources)
                     synthesis_fields["backend_detail"] = None
+                    job.prompt_tokens = synthesis_fields.pop("prompt_tokens", None)
+                    job.completion_tokens = synthesis_fields.pop("completion_tokens", None)
+                    job.duration_ms = synthesis_fields.pop("duration_ms", None)
                     source_type = "local_llm"
                     detail = f"synthesis generated via {settings.research_llm_model}"
                 sources.append({"type": source_type, "status": "ok", "detail": detail})

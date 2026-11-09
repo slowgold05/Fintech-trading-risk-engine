@@ -393,3 +393,43 @@ def test_simple_backend_still_produces_a_null_backend_detail(
     }
     assert all(source["type"] != "local_llm_tradingagents" for source in report["sources"])
 
+
+def test_completed_job_persists_ai_usage_from_synthesis(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    canned = {
+        "bull_case": "Services growth supports a higher multiple.",
+        "bear_case": "Hardware revenue is cyclical.",
+        "synthesis": "Cautiously constructive on the services mix.",
+        "risks": "Regulatory pressure on the app store.",
+        "model_version": "qwen3:14b",
+        "prompt_version": "v1",
+        "prompt_tokens": 700,
+        "completion_tokens": 400,
+        "duration_ms": 4000,
+    }
+
+    def _fake_generate(symbol, sources):
+        return dict(canned)
+
+    _seed(db_session, "AAPL")
+    _patch_sources(monkeypatch)
+    monkeypatch.setattr(settings, "research_synthesis_enabled", True)
+    monkeypatch.setattr("app.services.research_worker.generate_synthesis", _fake_generate)
+    headers = auth_headers("worker-ai-usage@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+
+    processed = process_pending_research_jobs(db_session, 5)
+    assert len(processed) == 1
+    job = processed[0]
+    db_session.refresh(job)
+    assert job.status == "completed"
+    assert job.prompt_tokens == 700
+    assert job.completion_tokens == 400
+    assert job.duration_ms == 4000
+
+    report = _report_for(client, headers)
+    assert report["bull_case"] == canned["bull_case"]
+    assert report["backend_detail"] is None
+
