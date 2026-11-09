@@ -16,6 +16,7 @@ Pending vendor-owner review. No SOC report is attached. The compliance console n
 | Alpaca | No. | [grc/vendors/alpaca.md](../grc/vendors/alpaca.md) |
 | OpenSanctions / yente | No. `YENTE_URL` is empty. | [grc/vendors/opensanctions.md](../grc/vendors/opensanctions.md) |
 | Hugging Face Hub | No, unless `forecast_kronos_enabled` is set. Downloads pinned Kronos model/tokenizer weights for local forecasting. | [grc/vendors/huggingface.md](../grc/vendors/huggingface.md) |
+| TradingAgents' own data vendors (yfinance, SEC EDGAR, FRED) | No, unless `research_tradingagents_enabled` is set. Called by the pinned third-party `tradingagents` package's own default data-vendor layer, not by this app's own `price_service.py`/`market.py`/`sec_service.py` paths. | [grc/vendors/tradingagents_data_vendors.md](../grc/vendors/tradingagents_data_vendors.md) |
 
 Provider permissions are distinct from API access and quota. Some request handlers call providers; cached overview and heatmap reads do not. The in-process `CallBudget` counts calls inside one job. It is not a shared rate limiter. [PROVIDER_ACCESS_REVIEW.md](PROVIDER_ACCESS_REVIEW.md) records the 2026-11-05 source review and the approvals still missing.
 
