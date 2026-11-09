@@ -258,6 +258,42 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+2026-11-09, continuing further still: PR 88 (Phase 7.1, stacked on 87)
+closes the remaining slice of roadmap 7.1's original scope — partial
+fills, rejections, and duplicate submissions chained inside a trader
+journey, not just covered in isolation. See
+[P71B_JOURNEY_EXTENSION_CONTRACT.md](P71B_JOURNEY_EXTENSION_CONTRACT.md)
+and [P71B_JOURNEY_EXTENSION_VERIFICATION.md](P71B_JOURNEY_EXTENSION_VERIFICATION.md).
+One new test function added to the existing
+`tests/test_p7a_trader_journey.py` (no other file touched, no application
+code changed): a market buy against a smaller resting limit sell confirms
+the real `place_order` partial-fill behavior (unfilled remainder
+`"canceled"`, not resting; portfolio shows only the filled quantity); an
+oversized limit buy sized from the buyer's own live buying power confirms
+a clean `400` rejection with buying power left untouched; and a fixed
+`Idempotency-Key` resubmitted with the same payload confirms a byte-for-byte
+replayed response with no second row written to `orders`/`trades`.
+Independently reran: both journey tests pass (2/2), full suite 511 passed,
+29 skipped, zero failures.
+
+FIFO lot allocation and realized P&L are deliberately not re-tested here —
+already covered in depth by `tests/test_portfolio_attribution.py`; this
+unit only adds the partial-fill/rejection/idempotency pieces the first 7.1
+test didn't chain together yet.
+
+With this, everything locally reachable in Phase 7 that doesn't require a
+live browser, AWS/staging access, or a product decision only the user can
+make (the `typescript-eslint` major-version bump) is now done: Phase 7.1
+(both units), Phase 7.3 (license review, dependency vulnerabilities,
+research-tool isolation confirmed clean, operational monitoring including
+AI usage). 7.2 and 7.4 remain explicitly open and unreachable from this
+sandboxed environment — `claude-in-chrome` was checked this session and
+confirmed to have no connected MCP tools (only the skill wrapper, which
+needs the user's own live browser extension), so a real browser pass
+genuinely cannot be attempted unattended. `main` is still unchanged at
+`be8ffdc19f78d2942b5e9922ce605d6a5de7d472`; PR 88, like every other open
+PR (#2 through #88), is not merged.
+
 2026-11-09, continuing further still (PRs 85 and 86 confirmed CI-green and
 marked ready — all 7 jobs passed on both, `gh pr ready` returned "already
 ready" for each): PR 87 (Phase 7.3, stacked on 86) adds AI usage
