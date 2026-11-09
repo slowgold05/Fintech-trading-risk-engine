@@ -258,6 +258,30 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+PRs 82, 83, and 84 are all ready with CI green, stacked on 81. PR 82 is the
+first Phase 7.1 unit (the consolidated trader-journey test). PR 83 and 84 are
+Phase 7.3 units: the TradingAgents vendor-doc gap, and a dependency-vulnerability
+pass (`npm audit fix` for the frontend's dev-only `typescript-eslint` chain,
+plus `pip-audit` confirming the backend's `requirements.txt`/`requirements-dev.txt`
+have no known vulnerabilities). Alongside those, a code-level review (not its
+own PR, since nothing needed to change) confirmed roadmap 7.3's "research
+tools cannot access order mutations or unrestricted secrets" item: both
+`app/services/research_llm.py`'s and `app/services/research_tradingagents.py`'s
+synthesis functions take only a symbol and a date, never a database session,
+a JWT secret, or any mutation function, and `generate_tradingagents_synthesis`'s
+own `final_trade_decision` field is LLM-generated text returned to the caller,
+never executed against `place_order` or any other mutation path — this was
+already true by the Phase 5 contract's own design, not a new fix.
+
+Still open in Phase 7.3, not done here: a license review of third-party
+dependencies (distinct from the vulnerability pass just done), and
+operational monitoring for data freshness/job age/retries/AI cost (roadmap
+7.3's last bullet) — this app has no observability stack today, and building
+one is a real feature, not a quick audit step; scoping that is a reasonable
+next unit, not attempted in this pass. 7.2 (a real browser/accessibility
+pass) and 7.4 (staged rollout) remain explicitly open and unreachable from
+this sandboxed dev environment, same as Phase 0's own still-blocked gates.
+
 With PR 81 ready (above) and the 2026-11-09 Phase 0 re-check recorded, Phase 6
 is fully built end to end, every PR from #2 through #81 is independently
 CI-green and ready, and `main` is still unchanged at
