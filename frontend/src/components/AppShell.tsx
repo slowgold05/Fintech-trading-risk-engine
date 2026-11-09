@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Brain,
+  ChartLineUp,
   ChartPieSlice,
   HouseLine,
   List,
@@ -24,6 +25,7 @@ const navigationItems: Array<{ label: string; to: string; Icon: Icon; end?: bool
   { label: "Portfolio", to: "/portfolio", Icon: ChartPieSlice },
   { label: "Risk", to: "/risk", Icon: TrendUp },
   { label: "Research", to: "/research", Icon: Brain },
+  { label: "Forecast Lab", to: "/forecasts", Icon: ChartLineUp },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {

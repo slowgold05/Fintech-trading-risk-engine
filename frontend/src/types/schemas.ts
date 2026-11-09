@@ -548,3 +548,71 @@ export interface ResearchBrief {
   created_at: string;
   entries: ResearchBriefEntry[];
 }
+
+export interface ForecastJob {
+  id: number;
+  symbol: string;
+  provider: string;
+  adjustment_type: string;
+  lookback: number;
+  horizon: number;
+  sample_count: number;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+}
+
+export interface ForecastBar {
+  session_date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface ForecastResult {
+  id: number;
+  job_id: number;
+  symbol: string;
+  provider: string;
+  adjustment_type: string;
+  model_name: string;
+  tokenizer_name: string;
+  lookback: number;
+  horizon: number;
+  sample_count: number;
+  input_cutoff: string;
+  generated_at: string;
+  bars: ForecastBar[];
+}
+
+export interface ForecastModel {
+  id: string;
+  model_name: string;
+  tokenizer_name: string;
+  enabled: boolean;
+  max_lookback: number;
+  max_horizon: number;
+  max_sample_count: number;
+  source_commit: string;
+  license: string;
+}
+
+export interface ForecastEvaluation {
+  id: number;
+  symbol: string;
+  provider: string;
+  adjustment_type: string;
+  horizon: number;
+  window_count: number;
+  model_mae: number;
+  model_directional_accuracy: number;
+  baseline_type: string;
+  baseline_mae: number;
+  baseline_directional_accuracy: number;
+  weights_exercised: boolean;
+  notes: string | null;
+  created_at: string;
+}
