@@ -20,6 +20,82 @@ Passing the SQLite suite is evidence for P0-A. It is not evidence that a later p
 
 P0-B progress on 2026-11-05 is recorded in [P0B_VERIFICATION.md](P0B_VERIFICATION.md): PostgreSQL proofs, isolated restore/upgrade/grants, local browser acceptance, hosted reconciliation/snapshot recovery, and active deployment image labels/digests. The revised browser guards and failure diagnostics passed review. Hosted frontend divergence remains recorded; image identity is verified, while source-commit build attestation is not established. [Provider source review](PROVIDER_ACCESS_REVIEW.md) is complete to its stated retrieval limits; actual data entitlements are not approved. The table below preserves the original P0-A state, not the latest P0-B status.
 
+## 2026-11-09 — Phase 0 wrap-up re-check, before starting Phase 7
+
+Re-verified the P0-B gates below against the current local branch
+(`codex/v2-forecast-lab-frontend-20261108`, 156 commits ahead of `main`,
+carrying every stacked, independently CI-green, still-unmerged PR from P1-A
+through Phase 6 — PR numbers run from #2 to #81). `main` itself is unchanged:
+still `be8ffdc19f78d2942b5e9922ce605d6a5de7d472`, the same commit
+[docs/PRODUCT_V2.md](PRODUCT_V2.md), [docs/FRONTEND_AUDIT.md](FRONTEND_AUDIT.md),
+and [docs/API_INVENTORY.md](API_INVENTORY.md) describe. Those three files are
+not rewritten here — Phases 1 through 6 are each independently contracted and
+verified in their own `docs/P*_CONTRACT.md`/`docs/P*_VERIFICATION.md` pair
+(listed in `ls docs/P*`), and this backlog file is the one kept current unit
+by unit; rewriting the three frozen baseline docs to re-describe all of that
+would just duplicate evidence that already exists elsewhere in more detail.
+
+Fresh evidence collected today, in a new temporary Python 3.11 virtualenv
+(`requirements.txt` + `requirements-dev.txt`, neither
+`requirements-research.txt` nor `requirements-forecast.txt`), with
+`AUDIT_DATABASE_URL` unset and a unique `--basetemp`:
+
+```text
+python -m pytest -q -rs --tb=line
+500 passed, 29 skipped, 353 warnings in 122.27s
+```
+
+The 29 skips are the same, already-understood categories as every prior run
+this session: 7 browser tests (no `selenium` installed in this venv), 1
+`test_forecast_kronos.py` case (no `pandas`, expected per
+[FORECAST_LAB_OPEN_LIMITATIONS.md](FORECAST_LAB_OPEN_LIMITATIONS.md)), and 21
+PostgreSQL-only proofs across `test_audit_postgres.py`,
+`test_daily_history_migrations.py`, `test_order_cancel_postgres.py`,
+`test_order_detail_postgres.py`, `test_order_preview_postgres.py`,
+`test_watchlist_migrations.py`, and `test_watchlists_postgres.py` (all
+`AUDIT_DATABASE_URL is not set`). One rerun without changes reproduced the
+same 500/29 split with zero failures; an earlier single run that same session
+had 1 unrelated transient failure that did not reproduce, consistent with
+this project's own established Windows-local-flake pattern, not a regression.
+
+```text
+cd frontend && npm test -- --run && npm run build && npm run lint
+Test Files  30 passed (30)
+     Tests  417 passed (417)
+vite build: exit 0 (same pre-existing >500kB chunk-size warning)
+eslint: exit 0
+```
+
+Re-checked whether the PostgreSQL gate below could finally be closed: Docker's
+daemon is still not running (`docker info` fails), there is still no
+`com.docker.service` Windows service registered, and no local PostgreSQL
+service was found. This is the same blocker recorded in P0-B and in every
+prior PR's CI-flake triage this session. Starting Docker Desktop (a GUI
+application) unattended, with the user away from the machine, was judged out
+of scope for this session to attempt unprompted — left open, not closed.
+
+No hosted/AWS check, authenticated browser journey, backup restore, or
+account reconciliation was attempted here, for the same reason as every prior
+entry in this file: none of that is reachable from this sandboxed dev
+environment. Phase 0 stays open on exactly the same five items the gate table
+already names. What changed today is confirmation, not closure: the
+already-huge amount of roadmap work built on top of this baseline (P1
+through Phase 6, now all local-only and unmerged) does not change any of
+Phase 0's own release-blocking gates, and does not promote any of it from
+"implemented locally" to "verified deployed."
+
+Per the user's own instruction, the next unit after this check is Phase 7
+("Validation, hardening, and release"), not a new P1-P6 feature. Phase 7
+itself names "Verified core Phases 0–4" as a dependency it does not yet have
+— so, same discipline as every phase before it, work done under Phase 7 in
+this session will be scoped to what is actually reachable locally (rerunning
+and recording suite results, exercising existing journeys in the test suite,
+reviewing for the security/data-integrity items that are code-level rather
+than infrastructure-level) and will explicitly flag, rather than silently
+skip, the staging/production/browser items that depend on access this
+session does not have (7.2's real-browser pass, 7.4's staged rollout, and any
+of 7.3's items that require a deployed environment).
+
 ## Gates that stay explicit
 
 | Gate | State after P0-A |
@@ -181,6 +257,25 @@ Separate slices after the core gate. P5 needs a pinned TradingAgents revision, o
 P1-A, P1-B, the signed-in truthfulness correction, and the public-data correction remain local, in the notes linked above. The P1-C snapshot correction is the verified local pass in [P1C_DATA_CONTRACT.md](P1C_DATA_CONTRACT.md): 25 focused tests passed; the full backend passed 190 with 1 skipped on a fresh disposable PostgreSQL 17.11; SQLite pins the schema page before the precise clock; putting back the old `SELECT 1` fails both WAL clock regressions. Those results verify the read corrections.
 
 ## Next task
+
+With PR 81 ready (above) and the 2026-11-09 Phase 0 re-check recorded, Phase 6
+is fully built end to end, every PR from #2 through #81 is independently
+CI-green and ready, and `main` is still unchanged at
+`be8ffdc19f78d2942b5e9922ce605d6a5de7d472`. Per the user's own instruction,
+the next unit is Phase 7 ("Validation, hardening, and release"), not a new
+feature phase. Phase 7 itself names "Verified core Phases 0–4" as a
+dependency it does not yet have (Phase 0's own five gates above are still
+open), so the plan is the same discipline every phase so far has used: scope
+one concrete, reachable-from-here Phase 7.1 unit — a consolidated,
+contract-first end-to-end regression test exercising the full documented
+trader journey (search → symbol → chart → preview → submit → order state →
+fill/cancel → portfolio, both market and limit orders, partial fills,
+rejections, reservations, duplicate submissions, and post-trade
+reconciliation of holdings/cash/realized P&L/FIFO lots/ledger) — rather than
+attempting 7.2's real-browser pass, 7.3's deployed-environment items, or
+7.4's staged rollout, none of which are reachable from this sandboxed dev
+environment without AWS/staging access this session does not have. Those
+stay explicitly open, the same way Phase 0's own gates do.
 
 [PR 81](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/81) is ready
 with all CI checks green: the Forecast Lab frontend — a new `/forecasts` page, the

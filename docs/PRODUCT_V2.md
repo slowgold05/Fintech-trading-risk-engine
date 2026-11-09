@@ -132,3 +132,14 @@ Signal review was executed locally with `review_account` on `grc/signals/account
 - `docs/security/AUDIT-001.md` high findings were not closed.
 
 Phase 0 stays open while backup restore, account reconciliation, the authenticated browser journey, and the PostgreSQL proofs remain unverified here.
+
+## 2026-11-09 note
+
+This file still describes the repository at `be8ffdc19f78d2942b5e9922ce605d6a5de7d472`,
+which is still `main`'s tip today. It is not rewritten to describe the much
+larger amount of roadmap work (Phases 1 through 6) built since, because that
+work lives on an unmerged local branch, not on `main`, and each of its units
+already has its own dated contract/verification pair under `docs/P*_*.md`.
+The current, actively maintained status for all of that work — including a
+fresh 2026-11-09 re-check of this file's own open Phase 0 items — is
+[V2_BACKLOG.md](V2_BACKLOG.md), not this file.

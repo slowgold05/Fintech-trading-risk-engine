@@ -145,3 +145,16 @@ Test files: `format.test.ts` (2), `client.test.ts` (1), `RiskBadge.test.tsx` (2)
 ## What a later browser pass still has to do
 
 Signed-out `/` and `/dashboard` on the deployed host, the top-right control, `/market`, a signed-in dashboard, an expired session on a protected page, and a trader opening `/compliance`. Desktop and a narrow viewport. Confirm fallback copy when the API fails, and confirm the interpolated chart is not presented as history. Record the URL, the bundle name, and the viewport.
+
+## 2026-11-09 note
+
+Still true: no browser pass has been run against the deployed host, so
+everything above the "What a later browser pass still has to do" line is
+still source inspection, Vitest/jsdom, and a local build — not browser
+acceptance. This file is not rewritten to cover the many new routes/pages
+added since (`/research`, `/forecasts`, watchlists, the daily history chart,
+the order ticket/lifecycle, and the Phase 4 portfolio/risk cards) because
+each shipped as its own dated, unmerged PR with its own
+`docs/P*_FRONTEND_VERIFICATION.md`. [V2_BACKLOG.md](V2_BACKLOG.md) is the
+current index of all of that; this file stays as the frozen P0-A route
+inventory for `be8ffdc19f78d2942b5e9922ce605d6a5de7d472`.

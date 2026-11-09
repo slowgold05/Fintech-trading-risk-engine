@@ -190,3 +190,16 @@ On 2026-11-05, `review_account` was run on the eight `accounts` entries:
 The YAML word `approved` does not satisfy `review_account`. Every seed fails because `approved_by` and `approved_at` are blank. The three `rejected` handles are `@leadlagreport.bsky.social`, `@watcher.guru`, and `@unusualwhalec.bsky.social`. They are not part of the eight.
 
 `link_tickers` accepts a cashtag only when the symbol is in a caller-supplied universe. Sentiment is a six-word lexicon. The manipulation label is the fixed string `unusual activity, needs review`. Tests: `test_signal_checks_ignore_bare_words_and_do_not_name_accounts` and `test_missing_approver_opens_a_finding_and_a_workpaper` in `tests/test_expansion.py`.
+
+## 2026-11-09 note
+
+This inventory still describes `be8ffdc19f78d2942b5e9922ce605d6a5de7d472`,
+still `main`'s tip. Many routes have since been added on an unmerged local
+branch — canonical daily history, watchlists, the order ticket/lifecycle,
+Phase 4's performance/allocation/attribution/risk-metrics/trade-impact/
+scenarios routes, Phase 5's research job/brief routes, and Phase 6's forecast
+job/result/model/evaluation routes (the "Roadmap routes compared with this
+commit" table above is accordingly stale for several rows). Each of those
+routes has its own dated contract in `docs/P*_CONTRACT.md`; the current index
+is [V2_BACKLOG.md](V2_BACKLOG.md). This file is not rewritten route-by-route
+here, to avoid duplicating that already-maintained evidence.
