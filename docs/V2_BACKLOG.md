@@ -182,6 +182,30 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 78](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/78) is ready
+with all CI checks green: the bounded worker that actually drains the forecast job
+queue PR #77 built intake for, closely mirroring PR #71's own research-worker
+shape, plus the result-reading routes PR #71 also added in the same PR (`GET
+/forecasts`, `GET /forecasts/{forecast_id}`). **Wires in
+`settings.forecast_kronos_enabled`** (declared in PR #76, never actually checked
+anywhere until now — there was no caller to gate before this unit existed). Unlike
+research jobs, where an optional synthesis addendum sits on top of an already-useful
+job, a forecast job's entire purpose is the Kronos call — so the worker does not
+silently skip disabled jobs (leaving them stuck `queued` forever); it fails them
+immediately with a specific, diagnosable `error_message`, distinct from a
+"dependencies not installed" error, landing in the same failure path as any other
+error. Every argument passed to `generate_forecast` is replayed unchanged from the
+job's own stored row. Wired into the scheduler as an eighth step, bounded by a new
+`scheduled_forecast_job_limit` setting defaulting to **1** — tighter than every
+other scheduled-step limit, reflecting that a single real Kronos job can plausibly
+take minutes. Evidence:
+[P6C_FORECAST_WORKER_VERIFICATION.md](P6C_FORECAST_WORKER_VERIFICATION.md); design:
+[P6C_FORECAST_WORKER_CONTRACT.md](P6C_FORECAST_WORKER_CONTRACT.md). **Still fully
+open for Phase 6**: the chart UI, `GET /forecasts/models`/`GET
+/forecasts/evaluations`, and — the real gate before any broad exposure — the
+roadmap's own 6.3 walk-forward historical validation against baselines, not
+attempted by any unit so far.
+
 [PR 77](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/77) is ready
 with all CI checks green: the job-queue **intake** surface for Phase 6 (Experimental
 Forecast Lab) — `POST /forecasts/jobs`, `GET /forecasts/jobs`, `GET
