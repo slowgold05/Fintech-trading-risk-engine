@@ -182,6 +182,32 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+[PR 81](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/81) is ready
+with all CI checks green: the Forecast Lab frontend — a new `/forecasts` page, the
+chart UI (roadmap section 6.2), closing out Phase 6's own checklist. Queue a
+forecast job, watch its status, cancel a still-queued one, view a completed
+forecast as a chart separating observed history (candlesticks) from the generated
+path (a dashed line, deliberately not a second candlestick series), see the
+configured model's status, and see whether it has ever been evaluated (honestly:
+not yet). No drawn vertical cutoff line (lightweight-charts v5 has no built-in
+primitive) — a text caption instead, disclosed as deliberate. No backend changes.
+`DailyHistory.tsx`/`DailyHistoryCanvas` confirmed byte-identical — the new chart
+component is fully independent. Evidence:
+[P6F_FORECAST_LAB_FRONTEND_VERIFICATION.md](P6F_FORECAST_LAB_FRONTEND_VERIFICATION.md);
+design: [P6F_FORECAST_LAB_FRONTEND_CONTRACT.md](P6F_FORECAST_LAB_FRONTEND_CONTRACT.md).
+**With this PR, Phase 6 (Experimental Forecast Lab) is fully built end to end** —
+model wrapper, job intake, worker, models/evaluations routes, walk-forward
+evaluation methodology, and now the chart UI — thirteen stacked PRs (#69-#81) so
+far this session, all independently-CI-green, none merged. The one thing
+explicitly NOT done, by design, across every Phase 6 unit: no real Hugging
+Face download, no real Kronos inference, no real walk-forward evaluation against
+real weights has ever been run — every test and governance artifact is shape/
+guard validation only, consistently disclosed. Per the user's own stated plan:
+next is Phase 0's formal baseline-audit wrap-up, then the rest of the roadmap in
+order (Phase 7). A separately-discovered small follow-up remains tracked but not
+yet done: PR #74 (TradingAgents) introduced outbound Yahoo/SEC EDGAR/FRED calls
+through its own internal data layer without a `grc/vendors/` entry.
+
 [PR 80](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/80) is ready
 with all CI checks green: roadmap section 6.3's walk-forward evaluation
 methodology — the roadmap's own named gate before any "broad exposure" of the
