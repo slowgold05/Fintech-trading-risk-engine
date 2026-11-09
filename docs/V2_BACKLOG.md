@@ -258,6 +258,31 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+2026-11-09, pausing here at the user's request (laptop going to sleep,
+work resumes later): CI on PRs 87, 88, and 89 came back with a genuine
+regression, not a flake — `backend`'s `test_audit_postgres.py` and
+`browser`'s `test_p0b_acceptance.py` both hardcode an expected Alembic
+head revision (`ALEMBIC_HEAD`/an inline assertion), and PR 87's new
+migration (`45d85a1871f0`) moved the real head forward without those two
+constants being updated. CI's disposable-PostgreSQL job caught it exactly
+as it should: `assert '45d85a1871f0' == 'c5a9e2d8b417'` — proof the
+migration itself applied cleanly against a real database, only the test
+constants were stale. Fixed by committing the two-line fix on PR 87's
+branch first, then merging it forward into PR 88's and PR 89's branches
+(clean merges, no conflicts) and pushing all three. CI was re-running on
+all three as of this note; not yet confirmed green — that's the first
+thing to check on resuming (`gh pr checks 87`, `88`, `89`).
+
+Everything else from this session stands: Phase 7.1 (both units) and
+Phase 7.3 (license review, dependency vulnerabilities, research-tool
+isolation, operational monitoring including AI usage) are done from what's
+reachable in this sandboxed environment; 7.2/7.4 remain explicitly open
+and unreachable without a live browser or AWS/staging access. PR 89 also
+picked up one genuinely-still-open small gap (risk metrics card's range
+selector). `main` is still unchanged at
+`be8ffdc19f78d2942b5e9922ce605d6a5de7d472`; none of PRs #2 through #89 are
+merged, and none should be without the user's own explicit authorization.
+
 2026-11-09, continuing further still: with Phase 7 now covering everything
 locally reachable, PR 89 (stacked on 88) picks up a genuinely still-open
 small gap flagged in an earlier backlog entry (the PR #60 paragraph
