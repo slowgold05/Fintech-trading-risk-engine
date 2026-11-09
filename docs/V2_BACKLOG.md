@@ -100,7 +100,7 @@ of 7.3's items that require a deployed environment).
 
 | Gate | State after P0-A |
 | --- | --- |
-| Disposable backup and restore | Documented in [docs/aws_deployment.md](aws_deployment.md). Not executed here. P0-B requires a successful restore into an isolated instance, not a backup listing |
+| Disposable backup and restore | **Local mechanism proven 2026-11-09** once Docker became available — see [P0B_LOCAL_RESTORE_VERIFICATION.md](P0B_LOCAL_RESTORE_VERIFICATION.md): the documented `pg_restore` command, full migration chain, and grant reapplication all verified end-to-end on synthetic data across two disposable containers. Hosted recovery itself was already proven separately in [docs/aws_deployment.md](aws_deployment.md) (2026-10-31) and is not re-verified here — no AWS access in this session |
 | Hosted account preservation and reconciliation | Documented for 2026-11-04 as 14 accounts. Not queried here. Authorized read-only operator checks stay separate from application login and browser mutations |
 | Authenticated browser journey | Not run. Vitest covers routes in jsdom. The hosted bundle is still the pre-PR #15 research console. Login writes session and audit rows, so the journey needs a named test account and a named environment |
 | Provider rights and access | Not reviewed. Yahoo is called by the scheduler path. Alpha Vantage is called by portfolio marks, immediate trades, trending, and research. Keys and terms were not inspected |
@@ -257,6 +257,27 @@ Separate slices after the core gate. P5 needs a pinned TradingAgents revision, o
 P1-A, P1-B, the signed-in truthfulness correction, and the public-data correction remain local, in the notes linked above. The P1-C snapshot correction is the verified local pass in [P1C_DATA_CONTRACT.md](P1C_DATA_CONTRACT.md): 25 focused tests passed; the full backend passed 190 with 1 skipped on a fresh disposable PostgreSQL 17.11; SQLite pins the schema page before the precise clock; putting back the old `SELECT 1` fails both WAL clock regressions. Those results verify the read corrections.
 
 ## Next task
+
+2026-11-09, continuing further: also used Docker to advance the
+"Disposable backup and restore" gate — see
+[P0B_LOCAL_RESTORE_VERIFICATION.md](P0B_LOCAL_RESTORE_VERIFICATION.md).
+Two fresh disposable containers (never the user's own dev container):
+seeded one with representative synthetic accounting data via the app's
+own ORM models, dumped it with the exact `pg_dump`/`pg_restore` flags
+`aws_deployment.md`'s own hosted rehearsal used, restored into a second
+fresh container, and confirmed an exact match — Alembic revision
+`45d85a1871f0` and every row count identical to the source — plus grant
+reapplication and a clean 7/7 on `tests/test_audit_postgres.py` against
+the restored instance. This proves the restore *mechanism* end-to-end for
+the first time this session; it does not re-prove hosted recovery (no AWS
+access here), which `aws_deployment.md` already covers separately.
+Containers and the local dump file were destroyed immediately after.
+
+Of the six original gates, two are now closed (PostgreSQL concurrency and
+grants; the local restore-mechanism proof above) and four remain
+genuinely blocked without hosted/browser access this sandboxed environment
+doesn't have (hosted account reconciliation, authenticated browser
+journey, provider rights review, hosted/local divergence).
 
 2026-11-09, resuming: the user started Docker Desktop and a local Ollama
 instance and said to proceed, resolving the single biggest standing
