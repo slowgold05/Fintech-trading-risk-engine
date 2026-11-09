@@ -198,6 +198,28 @@ def list_forecast_results(
     return {"results": [_result_out(result) for result in rows]}
 
 
+_KRONOS_SOURCE_COMMIT = "67b630e67f6a18c9e9be918d9b4337c960db1e9a"
+
+
+@router.get("/models")
+def list_forecast_models(current_user: User = Depends(get_current_user)):
+    return {
+        "models": [
+            {
+                "id": "kronos",
+                "model_name": settings.forecast_kronos_model_name,
+                "tokenizer_name": settings.forecast_kronos_tokenizer_name,
+                "enabled": settings.forecast_kronos_enabled,
+                "max_lookback": settings.forecast_kronos_max_lookback,
+                "max_horizon": settings.forecast_kronos_max_horizon,
+                "max_sample_count": settings.forecast_kronos_max_sample_count,
+                "source_commit": _KRONOS_SOURCE_COMMIT,
+                "license": "MIT",
+            }
+        ]
+    }
+
+
 @router.get("/{forecast_id}")
 def get_forecast_result(
     forecast_id: int = Path(gt=0),
@@ -212,3 +234,4 @@ def get_forecast_result(
     if result is None:
         raise HTTPException(status_code=404, detail="Forecast not found")
     return _result_out(result)
+
