@@ -258,6 +258,31 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+2026-11-09, continuing the same session: PR 85 (Phase 7.3, stacked on 84)
+adds [P73_LICENSE_REVIEW.md](P73_LICENSE_REVIEW.md), the license half of
+roadmap 7.3's "review third-party licenses, notices, dependency
+vulnerabilities, and data-provider usage rights" (the vulnerability half was
+already done in PR 84). Findings: 358 npm packages and 75 Python packages
+(`requirements.txt` + `requirements-dev.txt`) all carry permissive licenses
+(MIT/BSD/Apache-2.0/ISC family) with zero unknowns and zero copyleft beyond
+two unmodified, non-distributed LGPL-3.0/MPL-2.0 dependencies (`psycopg`,
+`certifi`, `hypothesis`) used exactly as their own licenses intend. The
+`tradingagents` git-pinned package (`v0.7.1`) is Apache-2.0 per GitHub's own
+repo metadata, checked without installing its heavy dependency tree.
+Installing a license-scanning CLI via `npx` was attempted first and declined
+by this session's own permission classifier (new unreviewed code execution,
+unattended); the review was redone by reading already-installed packages'
+own license metadata directly instead, which is a disclosed methodology
+note, not a coverage gap.
+
+This closes the license-review portion of roadmap 7.3. Still open in 7.3:
+operational monitoring for data freshness/job age/retries/AI cost (no
+observability stack exists today; building one is a real feature, scoping
+it is the natural next unit, not attempted in this pass). 7.2 (browser pass)
+and 7.4 (staged rollout) remain unreachable from this sandboxed environment.
+`main` is still unchanged at `be8ffdc19f78d2942b5e9922ce605d6a5de7d472`;
+PR 85 is not merged, same as every other open PR.
+
 PRs 82, 83, and 84 are all ready with CI green, stacked on 81. PR 82 is the
 first Phase 7.1 unit (the consolidated trader-journey test). PR 83 and 84 are
 Phase 7.3 units: the TradingAgents vendor-doc gap, and a dependency-vulnerability
