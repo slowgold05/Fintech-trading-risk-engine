@@ -20,7 +20,12 @@ from app.models.role_change_request import RoleChangeRequest
 from app.models.access_review import AccessReview
 from app.models.user import User
 from app.models.trading_halt import TradingHaltState, TradingHaltEvent
+from app.models.forecast_job import ForecastJob
+from app.models.market_quote_cache import MarketQuoteCache
+from app.models.market_symbol import MarketSymbol
+from app.models.research_job import ResearchJob
 from app.services.access_review_check import current_review_period
+from app.services.market_cache_service import _freshness
 from app.services.control_evidence import EVIDENCE_DIR, describe_payload, latest_database_evidence
 from app.services.aml_cases import (
     close_case as close_aml_case,
@@ -514,3 +519,54 @@ def get_findings(db: Session = Depends(get_db)):
 @router.get("/risk-brief")
 def get_risk_brief(db: Session = Depends(get_db)):
     return {"brief": latest_brief(db)}
+
+
+def _job_queue_stats(db: Session, model, now: datetime) -> dict:
+    naive_now = now.replace(tzinfo=None) if now.tzinfo else now
+    queued_count = db.execute(select(func.count()).select_from(model).where(model.status == "queued")).scalar_one()
+    running_count = db.execute(select(func.count()).select_from(model).where(model.status == "running")).scalar_one()
+    oldest_queued = db.execute(select(func.min(model.created_at)).where(model.status == "queued")).scalar_one()
+    failed_last_24h_count = db.execute(
+        select(func.count()).select_from(model).where(
+            model.status == "failed",
+            model.updated_at >= naive_now - timedelta(hours=24),
+        )
+    ).scalar_one()
+    if oldest_queued is None:
+        oldest_queued_age_seconds = None
+    else:
+        created = oldest_queued.replace(tzinfo=None) if oldest_queued.tzinfo else oldest_queued
+        oldest_queued_age_seconds = max(0, int((naive_now - created).total_seconds()))
+    return {
+        "queued_count": queued_count,
+        "running_count": running_count,
+        "oldest_queued_age_seconds": oldest_queued_age_seconds,
+        "failed_last_24h_count": failed_last_24h_count,
+    }
+
+
+@router.get("/ops-health")
+def get_ops_health(db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.query(MarketSymbol, MarketQuoteCache)
+        .join(MarketQuoteCache, MarketQuoteCache.symbol == MarketSymbol.symbol)
+        .filter(
+            MarketSymbol.is_active.is_(True),
+            MarketSymbol.is_test.is_(False),
+            MarketSymbol.is_etf.is_(False),
+        )
+        .all()
+    )
+    status_counts = {"live-ish": 0, "delayed": 0, "cached": 0, "stale": 0}
+    for symbol, quote in rows:
+        status, _age_seconds = _freshness(quote, symbol.refresh_tier, now)
+        status_counts[status] += 1
+    return {
+        "generated_at": now.isoformat().replace("+00:00", "Z"),
+        "market_data_freshness": status_counts,
+        "job_queues": {
+            "research": _job_queue_stats(db, ResearchJob, now),
+            "forecast": _job_queue_stats(db, ForecastJob, now),
+        },
+    }

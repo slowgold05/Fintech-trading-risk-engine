@@ -258,6 +258,35 @@ P1-A, P1-B, the signed-in truthfulness correction, and the public-data correctio
 
 ## Next task
 
+2026-11-09, continuing further: PR 86 (Phase 7.3, stacked on 85) adds
+`GET /compliance/ops-health` — [P73_OPS_HEALTH_CONTRACT.md](P73_OPS_HEALTH_CONTRACT.md)
+and [P73_OPS_HEALTH_VERIFICATION.md](P73_OPS_HEALTH_VERIFICATION.md). This is
+the first slice of roadmap 7.3's last bullet ("operational monitoring for
+data freshness, job age, retries, and AI cost"): one read-only,
+compliance-gated endpoint reusing the heatmap's existing `_freshness`
+classification for market-data staleness, plus queued/running/oldest-age/
+failed-24h counts for `ResearchJob` and `ForecastJob`. Deliberately does not
+add a `retries` field (neither job model nor worker has a retry mechanism to
+report on) or an AI-cost field (no LLM call site anywhere captures token or
+dollar cost yet) — both gaps are named in the contract rather than
+fabricated. No new metrics storage, no dashboard, no alerting; a single
+request-time read over existing tables. Implemented by Grok inside a
+two-file scope (`app/routers/compliance.py`, new
+`tests/test_p73_ops_health.py`), independently reviewed line-by-line against
+the contract and rerun: 5/5 new tests pass; full backend suite passed
+506/29-skipped clean on a second run after one unrelated, pre-existing
+timing-sensitive test (`test_market_history.py`'s clock-sample test, in a
+file this unit never touched) flaked once and then passed both isolated and
+in a second full run.
+
+This leaves roadmap 7.3 with only AI-cost instrumentation still unaddressed
+(a bigger, separate unit — would mean instrumenting every LLM call site to
+capture and persist usage data, not a monitoring read over data that
+doesn't exist yet). 7.2 (browser pass) and 7.4 (staged rollout) remain
+unreachable from this sandboxed environment. `main` is still unchanged at
+`be8ffdc19f78d2942b5e9922ce605d6a5de7d472`; PR 86, like every other open PR,
+is not merged.
+
 2026-11-09, continuing the same session: PR 85 (Phase 7.3, stacked on 84)
 adds [P73_LICENSE_REVIEW.md](P73_LICENSE_REVIEW.md), the license half of
 roadmap 7.3's "review third-party licenses, notices, dependency
