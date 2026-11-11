@@ -12,7 +12,7 @@
 - LSEG's own contact for pricing/licensing is `marketdata@lseg.com` — a sales conversation, not a self-service signup.
 - Third-party redistributors (Finnhub, EODHD, Twelve Data) do offer LSE price history through their own APIs, and every one found in this search describes its own LSE license as **personal use** (one redistributor's own terms: "a limited, personal, non-transferable, non-exclusive licence"). What "personal use" means for an automated private backend (vs. a human looking at a UI) was not established by this search — that is exactly the open question for a private project, not a solved one.
 
-**Recommendation, unchanged in substance:** before building an LSE adapter, get a direct, dated answer — either from LSEG itself, or from whichever third-party redistributor's key is actually used — on whether its personal-use terms cover an automated backend for a private, non-public deployment. This is a cheap question to ask directly and a much more expensive one to get wrong after building the adapter. Sequencing this check before Stage 3's adapter code (as the roadmap already requires) still applies.
+**Resolved by the user directly, 2026-11-11:** the user stated this project's actual intent and took explicit responsibility for the classification — it is not intended to redistribute data, is not itself a data source for anyone else, and only displays data and demonstrates what can be built with it. That is squarely display/demonstration use, not redistribution, which is the specific ambiguity this file kept flagging. This is the user's own decision, recorded here, not a new independent legal finding.
 
 **Criticality:** N/A — nothing built, nothing live.
 
@@ -20,4 +20,4 @@
 
 **Exit:** N/A — there is nothing to disconnect.
 
-**Approval:** Pending vendor-owner review — specifically, a direct, dated confirmation that the intended access path's terms cover a private, automated backend use case.
+**Approval:** The redistribution/display classification above is resolved by the user. A real LSE adapter would still need its own ordinary provider setup (an actual account/key, rate limits, cost) before being built — that is a separate, mechanical task, not a licensing blocker.
