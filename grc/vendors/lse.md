@@ -1,16 +1,18 @@
-# London Stock Exchange (LSE/LSEG) — draft assessment, likely blocked as scoped
+# London Stock Exchange (LSE/LSEG) — draft assessment
 
-**Status:** Pending vendor-owner review, with a specific concern flagged below that may make the current delivery sequence's Stage 3 plan ("LSE as a whole-series fallback") infeasible without a real commercial contract. This is a roadmap name for Stage 1 ([Sentinel_Markets_2_0_Roadmap.md](../../Sentinel_Markets_2_0_Roadmap.md#1-baseline-and-permissions)). No LSE adapter exists anywhere in this repository today — this is a new vendor, not an existing fixture-only path like Massive or Finnhub.
+**Status:** Pending vendor-owner review. This is a roadmap name for Stage 1 ([Sentinel_Markets_2_0_Roadmap.md](../../Sentinel_Markets_2_0_Roadmap.md#1-baseline-and-permissions)). No LSE adapter exists anywhere in this repository today — this is a new vendor, not an existing fixture-only path like Massive or Finnhub.
 
 **Used by:** Nothing yet. No code references LSE/LSEG anywhere in `app/`.
 
+**Update, 2026-11-11:** this project is confirmed private, not a public résumé-style deployment. The original version of this file assessed the risk assuming public display/redistribution, where a personal-use-only license would be a clear violation. That specific framing no longer applies as written — but this does **not** mean personal-use terms are automatically fine for this use case either. The actual question for a private project is narrower and still unanswered: do the personal-use terms found below cover *this* use (a privately-hosted app, not public, but still a deployed service pulling data programmatically on a schedule, not a single individual manually checking quotes)? That distinction matters to some providers' terms and has not been checked.
+
 **Terms review, 2026-11-11 (public search only, not a signed-contract confirmation):**
 
-- LSEG (London Stock Exchange Group) does not appear to offer a simple, self-serve developer API for historical daily OHLCV bars. Its own documented products are either enterprise data platforms (Refinitiv Data Platform — "a premium service" requiring "appropriate license") or file-delivery products (End of Day Summary, delivered via Managed File Transfer), aimed at licensed institutional customers, not a public app's backend.
+- LSEG (London Stock Exchange Group) does not appear to offer a simple, self-serve developer API for historical daily OHLCV bars. Its own documented products are either enterprise data platforms (Refinitiv Data Platform — "a premium service" requiring "appropriate license") or file-delivery products (End of Day Summary, delivered via Managed File Transfer), aimed at licensed institutional customers.
 - LSEG's own contact for pricing/licensing is `marketdata@lseg.com` — a sales conversation, not a self-service signup.
-- Third-party redistributors (Finnhub, EODHD, Twelve Data) do offer LSE price history through their own APIs, but every one found in this search describes its own LSE license as **personal use** (one redistributor's own terms: "a limited, personal, non-transferable, non-exclusive licence"). None of these grant public/commercial redistribution rights for LSE data as part of a public-facing product.
+- Third-party redistributors (Finnhub, EODHD, Twelve Data) do offer LSE price history through their own APIs, and every one found in this search describes its own LSE license as **personal use** (one redistributor's own terms: "a limited, personal, non-transferable, non-exclusive licence"). What "personal use" means for an automated private backend (vs. a human looking at a UI) was not established by this search — that is exactly the open question for a private project, not a solved one.
 
-**This is a real, specific risk, not a formality:** as currently scoped, "LSE as a whole-series fallback" for a public-facing paper-trading app most likely requires a direct, negotiated LSEG commercial license (through `marketdata@lseg.com`), not a third-party API key. Building an LSE adapter against a personal-use-licensed key and then displaying that data publicly would violate the license terms found in this search, pending the vendor-owner's own direct confirmation with LSEG. **Recommend re-scoping Stage 3 to drop LSE as a fallback, or securing a real LSEG commercial agreement, before building any LSE adapter code** — building the adapter first and discovering the licensing problem after is the wrong order for exactly the reason the current delivery sequence itself gives for sequencing entitlement checks before data-pipeline code (Stage 1 before Stage 3).
+**Recommendation, unchanged in substance:** before building an LSE adapter, get a direct, dated answer — either from LSEG itself, or from whichever third-party redistributor's key is actually used — on whether its personal-use terms cover an automated backend for a private, non-public deployment. This is a cheap question to ask directly and a much more expensive one to get wrong after building the adapter. Sequencing this check before Stage 3's adapter code (as the roadmap already requires) still applies.
 
 **Criticality:** N/A — nothing built, nothing live.
 
@@ -18,4 +20,4 @@
 
 **Exit:** N/A — there is nothing to disconnect.
 
-**Approval:** Pending vendor-owner review, with the specific personal-use-license concern above needing a direct answer from LSEG (not a third-party redistributor's key) before any LSE adapter is built.
+**Approval:** Pending vendor-owner review — specifically, a direct, dated confirmation that the intended access path's terms cover a private, automated backend use case.
