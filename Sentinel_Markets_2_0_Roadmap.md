@@ -1307,10 +1307,10 @@ Upstream pages were consulted on November 5, 2026. This was not a code audit, li
 
 **Added 2026-11-11, from the current delivery sequence:**
 
-- [ ] What are Massive's, LSE's, and Finnhub's actual entitlement terms — rate limit, storage rights, and public-display rights — for this project's use case? (Stage 1)
-- [ ] Which dated source is authoritative for S&P 500 constituents, and which four indices are the read-only benchmarks? (Stage 1/2)
-- [ ] Does Tauric's own shared-report terms permit the caching behavior Stage 5 describes, and at what refresh cadence? (Stage 5)
-- [ ] Which exact 12 stocks make up the fixed Kronos-featured list, and who is the named model-owner reviewer? (Stage 6)
-- [ ] Does the existing `GET /compliance/ops-health` endpoint get extended for the new data/forecast workers, or does a separate monitoring surface get built? (Stage 7)
+- [x] What are Massive's, LSE's, and Finnhub's actual entitlement terms — rate limit, storage rights, and public-display rights — for this project's use case? (Stage 1) — **Resolved 2026-11-11, by the user directly, not a new independent legal finding:** this is a private project, display/demonstration only, never redistributes data, never acts as a data source for anyone else. Recorded verbatim in `grc/vendors/massive.md`, `grc/vendors/finnhub.md`, `grc/vendors/lse.md`.
+- [x] Which dated source is authoritative for S&P 500 constituents, and which four indices are the read-only benchmarks? (Stage 1/2) — **Resolved:** Wikipedia revision `oldid=1384572480`, fetched verbatim; S&P 500, Nasdaq Composite, Dow Jones Industrial Average, Russell 2000 as the four benchmarks. See `docs/sp500_constituents_2026-11-11.md`.
+- [x] Does Tauric's own shared-report terms permit the caching behavior Stage 5 describes, and at what refresh cadence? (Stage 5) — **Resolved, as a correction, not a terms answer:** there is no separate hosted "shared report" to cache. `https://github.com/TauricResearch/TradingAgents` is the exact self-run package already vendored into this codebase (`app/services/research_tradingagents.py`). Stage 5 continues operating that existing path; no new integration or caching terms question applies.
+- [ ] Which exact 12 stocks make up the fixed Kronos-featured list, and who is the named model-owner reviewer? (Stage 6) — still open; the user's call, not implementation's.
+- [x] Does the existing `GET /compliance/ops-health` endpoint get extended for the new data/forecast workers, or does a separate monitoring surface get built? (Stage 7) — **Resolved:** extended, per the roadmap's own stated preference. See `massive_ingestion` and `kronos_worker` keys added in `docs/P9J_STAGE7_OPS_HEALTH_MASSIVE_VERIFICATION.md` and `docs/P9M_STAGE7_OPS_HEALTH_KRONOS_RESOURCE_VERIFICATION.md`.
 
 **Document completion is not implementation completion.** Keep checklists open until verified evidence supports closing them.
