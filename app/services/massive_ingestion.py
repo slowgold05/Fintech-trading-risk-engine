@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.models.market_bar_daily import MarketBarDaily
 from app.services.exchange_calendar import expected_session_dates
 from app.services.market_history import two_calendar_years_before
-from app.services.market_providers import fetch_massive_grouped
+from app.services.market_providers import ProviderUnavailable, fetch_massive_grouped
 from app.services.market_quality import Bar, check_bars
 from app.services.massive_client import http_get_massive
 
@@ -88,9 +88,24 @@ def backfill_two_years(db, symbols, api_key, *, http_get=http_get_massive, today
     """
     end = date.today() if today is None else today
     sessions = expected_session_dates(two_calendar_years_before(end), end)
+    requested = [str(symbol).upper() for symbol in symbols]
     per_day = []
     for session_day in sessions:
-        per_day.append(ingest_one_day(db, session_day, symbols, api_key, http_get=http_get))
+        try:
+            per_day.append(ingest_one_day(db, session_day, symbols, api_key, http_get=http_get))
+        except ProviderUnavailable as exc:
+            # One bad day must not abort a two-year backfill. Record it as a
+            # fully-missing session (every requested symbol in its gaps) and
+            # move on to the next day.
+            per_day.append({
+                "day": session_day.isoformat(),
+                "requested": len(symbols),
+                "written_valid": 0,
+                "written_flagged": 0,
+                "rejected": [],
+                "missing": list(dict.fromkeys(requested)),
+                "error": str(exc),
+            })
     return _coverage(symbols, per_day)
 
 
@@ -109,6 +124,7 @@ def _coverage(symbols, per_day: list[dict]) -> dict:
         "sessions_with_data": sum(
             1 for report in per_day if report["written_valid"] or report["written_flagged"]
         ),
+        "sessions_failed": sum(1 for report in per_day if "error" in report),
         "symbols_fully_covered": [symbol for symbol in unique if not gaps[symbol]],
         "symbols_with_gaps": {symbol: days for symbol, days in gaps.items() if days},
         "per_day": per_day,

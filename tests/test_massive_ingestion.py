@@ -191,6 +191,40 @@ def test_backfill_two_years_attempts_every_expected_session(db_session, monkeypa
     assert report["symbols_with_gaps"] == {}
 
 
+def test_backfill_two_years_survives_a_provider_outage_on_one_day(db_session):
+    today = date(2026, 11, 11)
+    expected_days = expected_session_dates(two_calendar_years_before(today), today)
+    _seed_symbols(db_session, ["AAPL"])
+    outage_day = expected_days[len(expected_days) // 2]
+    payload = _grouped([_ticker("AAPL", 10, open_=10, high=11, low=9)])
+
+    def http_get(kind, arg, key):
+        assert kind == "massive"
+        if arg == outage_day:
+            raise ProviderUnavailable("massive returned 503")
+        return payload
+
+    report = backfill_two_years(
+        db_session,
+        ["AAPL"],
+        "test-key",
+        http_get=http_get,
+        today=today,
+    )
+
+    assert report["sessions_attempted"] == len(expected_days)
+    assert len(report["per_day"]) == len(expected_days)
+    assert report["sessions_failed"] == 1
+    assert report["sessions_with_data"] == len(expected_days) - 1
+    assert report["symbols_with_gaps"] == {"AAPL": [outage_day.isoformat()]}
+    failed_report = next(r for r in report["per_day"] if r["day"] == outage_day.isoformat())
+    assert failed_report["error"] == "massive returned 503"
+    assert failed_report["missing"] == ["AAPL"]
+    stored_days = {row.session_date for row in db_session.query(MarketBarDaily).all()}
+    assert outage_day not in stored_days
+    assert len(stored_days) == len(expected_days) - 1
+
+
 def test_http_get_massive_puts_the_day_and_key_in_the_url_and_rejects_non_200(monkeypatch):
     day = date(2026, 11, 10)
     seen = []
