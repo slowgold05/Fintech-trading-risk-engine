@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -10,6 +11,7 @@ class OrderCreate(BaseModel):
     order_type: Literal["limit", "market"] = "limit"
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
     limit_price: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
+    expected_quote_observed_at: datetime | None = None
 
     @model_validator(mode="after")
     def price_matches_type(self):

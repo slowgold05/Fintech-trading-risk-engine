@@ -43,6 +43,14 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
     symbol = db.execute(select(MarketSymbol).where(MarketSymbol.symbol == payload.symbol, MarketSymbol.is_active.is_(True)).with_for_update()).scalar_one_or_none()
     if symbol is None:
         raise HTTPException(status_code=400, detail="Unknown or inactive stock symbol")
+    if payload.expected_quote_observed_at is not None:
+        quote = db.get(MarketQuoteCache, payload.symbol)
+        if quote is None:
+            raise HTTPException(status_code=400, detail="No current quote available to confirm against")
+        # quote_at is stored naive. A client Z suffix arrives timezone-aware; drop tz before comparing.
+        expected_quote_at = payload.expected_quote_observed_at.replace(tzinfo=None)
+        if quote.quote_at != expected_quote_at:
+            raise HTTPException(status_code=400, detail="Quote has changed since preview; request a new preview")
     require_price_in_band(db, payload.symbol, payload.limit_price)
 
     asset = db.execute(select(Asset).where(Asset.symbol == payload.symbol)).scalar_one_or_none()
