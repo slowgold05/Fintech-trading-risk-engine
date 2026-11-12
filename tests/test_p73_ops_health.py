@@ -1,9 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.forecast_job import ForecastJob
+from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.research_job import ResearchJob
@@ -147,4 +149,70 @@ def test_ops_health_ai_usage_is_zero_when_no_rows_have_data(
         "total_prompt_tokens": 0,
         "total_completion_tokens": 0,
         "avg_duration_ms": 0,
+    }
+
+
+def _seed_massive_bar(
+    db: Session,
+    symbol: str,
+    session_date: date,
+    *,
+    quality_status: str,
+) -> None:
+    db.add(MarketBarDaily(
+        symbol=symbol,
+        session_date=session_date,
+        provider="massive",
+        adjustment_type="raw",
+        open=Decimal("100"),
+        high=Decimal("100"),
+        low=Decimal("100"),
+        close=Decimal("100"),
+        volume=100,
+        fetched_at=datetime(session_date.year, session_date.month, session_date.day, tzinfo=timezone.utc),
+        quality_status=quality_status,
+    ))
+
+
+def test_ops_health_reports_massive_symbols_covered_and_latest_session(
+    client: TestClient, auth_headers, db_session: Session,
+) -> None:
+    headers = _compliance_headers(auth_headers, db_session, "ops-massive-covered@example.com")
+    _seed_symbol(db_session, "AAPL")
+    _seed_symbol(db_session, "MSFT")
+    _seed_massive_bar(db_session, "AAPL", date(2026, 11, 9), quality_status="valid")
+    _seed_massive_bar(db_session, "MSFT", date(2026, 11, 10), quality_status="valid")
+    db_session.commit()
+
+    response = client.get("/compliance/ops-health", headers=headers)
+    assert response.status_code == 200, response.text
+    massive = response.json()["massive_ingestion"]
+    assert massive["symbols_covered"] == 2
+    assert massive["latest_session_date"] == "2026-11-10"
+
+
+def test_ops_health_massive_flagged_last_30_days_only(
+    client: TestClient, auth_headers, db_session: Session,
+) -> None:
+    headers = _compliance_headers(auth_headers, db_session, "ops-massive-flagged@example.com")
+    _seed_symbol(db_session, "AAPL")
+    _seed_massive_bar(db_session, "AAPL", date.today() - timedelta(days=5), quality_status="flagged")
+    _seed_massive_bar(db_session, "AAPL", date.today() - timedelta(days=40), quality_status="flagged")
+    db_session.commit()
+
+    response = client.get("/compliance/ops-health", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["massive_ingestion"]["flagged_last_30d_count"] == 1
+
+
+def test_ops_health_massive_ingestion_is_empty_by_default(
+    client: TestClient, auth_headers, db_session: Session,
+) -> None:
+    headers = _compliance_headers(auth_headers, db_session, "ops-massive-empty@example.com")
+    response = client.get("/compliance/ops-health", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["massive_ingestion"] == {
+        "symbols_covered": 0,
+        "latest_session_date": None,
+        "flagged_last_30d_count": 0,
     }
