@@ -25,6 +25,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.compose}
       CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
       SCHEDULED_JOBS_ENABLED: "false"
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:

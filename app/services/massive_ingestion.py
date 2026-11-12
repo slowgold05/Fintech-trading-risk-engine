@@ -93,8 +93,10 @@ def backfill_two_years(db, symbols, api_key, *, http_get=http_get_massive, today
     for session_day in sessions:
         try:
             per_day.append(ingest_one_day(db, session_day, symbols, api_key, http_get=http_get))
-        except ProviderUnavailable as exc:
-            # One bad day must not abort a two-year backfill. Record it as a
+        except (ProviderUnavailable, ValueError) as exc:
+            # A malformed/incomplete payload (parse_massive_grouped) raises
+            # ValueError, not ProviderUnavailable. Either way, one bad day
+            # must not abort the whole two-year backfill. Record it as a
             # fully-missing session (every requested symbol in its gaps) and
             # move on to the next day.
             per_day.append({
