@@ -61,6 +61,48 @@ presented as an independent second check):
   downloads concurrently on this machine — a load correlation, not a
   logic regression traced to any changed file.
 
+## Addendum — the real walk-forward evaluation script also runs end to end now
+
+Beyond the single inference call above, `app/scripts/run_forecast_evaluation.py`
+itself (built in an earlier unit, P6F, but — like every other Kronos-touching
+unit — never actually run against the real model) was run for real, for
+the first time: a fresh, explicit, file-backed SQLite database (not the
+project's own real local dev database — a brand-new temp file, created
+and seeded from scratch, never touched by this script before), seeded
+with 500 synthetic (never real-market) daily bars for a throwaway
+symbol, then:
+
+```
+python -m app.scripts.run_forecast_evaluation --symbol KRNEVAL --horizon 5 --window-count 3
+```
+
+Completed in **3.0 seconds total** (3 real walk-forward windows, each
+calling the real model once), and wrote a real `ForecastEvaluation` row
+with `weights_exercised=True` — the first such row ever genuinely
+exercising real weights, as opposed to every prior `ForecastEvaluation`
+row this project has ever written, which used the mock predictor.
+Neither `run_forecast_evaluation.py` nor `app/services/forecast_evaluation.py`
+needed any further fix — both already worked correctly once Defects 1
+and 2 above were fixed (this script calls `generate_forecast` through
+the same `_make_kronos_forecaster` closure the P6F unit already built
+and tested with mocks).
+
+**Result, reported honestly, not spun:** `model_mae=1.397` was *worse*
+than `baseline_mae=1.159` (the naive last-observed-close baseline) on
+this synthetic random-walk input. This is an expected, informative
+result for genuinely random-walk data — the last-close baseline is
+close to theoretically optimal for a true random walk, and beating it
+is a high bar for any model. **This is not a forecast-quality claim one
+way or the other** — the input was synthetic, not real market data, and
+a single 3-window run on one throwaway symbol proves nothing about real
+predictive skill. It does prove the evaluation *mechanism* — scoring,
+baseline comparison, and `ForecastEvaluation` persistence — all work
+correctly end to end with a real model in the loop, which is exactly
+what this slice of Stage 6 needed proven.
+
+This temporary database and its one row were never committed or pushed
+anywhere; they lived only in this session's own scratchpad directory.
+
 ## What this does not do
 
 Does not run the walk-forward evaluation harness against the real
