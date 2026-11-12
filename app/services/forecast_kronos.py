@@ -108,10 +108,10 @@ def generate_forecast(
         "close": [float(bar["close"]) for bar in window],
         "volume": [float(bar["volume"]) for bar in window],
     })
-    x_timestamp = pd.Series([date.fromisoformat(bar["session_date"]) for bar in window])
+    x_timestamp = pd.to_datetime(pd.Series([date.fromisoformat(bar["session_date"]) for bar in window]))
     last_date = date.fromisoformat(window[-1]["session_date"])
     future_sessions = _next_trading_sessions(last_date, horizon)
-    y_timestamp = pd.Series(future_sessions)
+    y_timestamp = pd.to_datetime(pd.Series(future_sessions))
 
     predictor = _load_predictor()
     if seed is not None:
