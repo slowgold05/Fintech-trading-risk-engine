@@ -2,6 +2,8 @@
 
 As verified on 2026-10-31, the public demo is <https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/>. It uses the AWS-provided HTTPS hostname; no custom domain is configured. All regional resources are in the project's selected Region, `us-east-2`. Confirm that Region in AWS Settings > View all projects > Overview > Additional Info > Region. Check project credit and spend status in AWS Settings > Billing.
 
+A 9 November 2026 release is in progress and is **not** a replacement of the sections below. Deployment 7 remains the last verified active deployment. See [2026-11-09 release in progress](#2026-11-09-release-in-progress) and [docs/RELEASE_2026-11-09.md](RELEASE_2026-11-09.md). The resource table and the 4 November section stay the historical record.
+
 ## Running resources
 
 | Resource | Name and configuration | Purpose |
@@ -45,6 +47,28 @@ Live HTTP checks passed home and deep links, database health, disabled API docs,
 The scheduler refreshed 180 quotes and inserted evidence for 23 application controls. The exported payload hashes verified, the scheduler lease was released, and `next_due` was stored for `2026-11-05T22:17:33.000666` UTC. The first scheduled status snapshot was 10 pass, 12 `no_sample`, one fail (SM-AC-04, incomplete optional MFA enrollment), and five `not_run` controls outside the scheduled runner. These are operating results, not a claim that every control passed. The new smoke account also needs a quarterly access-review decision. No AML or surveillance rule was activated.
 
 The temporary runner was deleted after verification, along with temporary local SSH credentials and the unused migration-startup specification. The existing application service, private database, and recovery snapshot were retained. All 134 backend tests, including the PostgreSQL race and grant proofs, passed locally; frontend lint, 9 tests, and build passed. All six release CI gates passed. Browser click-through was not possible because the browser/computer-use service was unavailable; the live checks above used HTTP clients.
+
+## 2026-11-09 release in progress
+
+This section is only the 9 November release. It does not amend the 31 October resource table or the 4 November deployment 7 record. Selected Region remains `us-east-2`.
+
+Prepared detail is in [RELEASE_2026-11-09.md](RELEASE_2026-11-09.md). Summary of what is already true:
+
+- Merged source is [PR 92](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/92), commit `a99fbd78036eb1294b880d7f8628aadd0753aae0`, tree-identical to reviewed release `b7ea1e103d3a294c70948cac842fee92a6a772d7`.
+- CI on that pull request, run [42689491609](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42689491609), passed all seven jobs. Merged `main` run [42690312847](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42690312847) also passed all seven. Those runs are not hosted acceptance.
+- Manual snapshot `fintechapp-prerelease-20261109` is available. The 31 October snapshot listed above is a different, older recovery point.
+- Schema movement on the private hosted database used a **separate privileged temporary runner**, not the API process. Cleanup of that runner is **PENDING**. Do not describe it as deleted.
+- A restored read-only dump was checked before the live migration was treated as complete: 14 accounts, 0 reconciliation failures; revision `f3a8c2d7e961` to `45d85a1871f0`; all 39 pre-existing application-table original-column digests equal; latest grant proof passed.
+- The **live** migration is complete with the same 14 accounts, 0 failures, and the same 39 digests unchanged. Application-role and ledger rewrite restrictions passed. The hosted database stays private. The existing JWT secret was preserved. This runbook does not record passwords, secret-bearing URLs, account positions, or document snapshot contents.
+- Registered images, not yet verified as the active deployment: `:fintechapp-preview.api.5` digest `sha256:f16c7b5ddd1c52e67965c9f3af3ab48a64a632583d4e6e93cec6a1b6bd3776ac`; `:fintechapp-preview.web.6` digest `sha256:ccace42f6b4fa56b01269d72d0b423d95fab953978aec59ffba7b434c89abd53`. Frontend asset in the web image: `index-yZmufGJq.js`, SHA-256 `e40a8094ac6a5b26cbe35de851ecd16c162b948e927868fd0dd3237e64124002`.
+- Deployment **8** is **ACTIVATING**. It is not verified `ACTIVE`. The initial specification set the scheduler off, research synthesis off, Kronos off, `MFA_REQUIRED=false`, and `RUN_DB_SETUP=false`. No owner or migration URL was placed on the API. `MIGRATION_DATABASE_URL` and the master password stay out of the API deployment, as in the procedure above.
+- Browser, API, cash, and order acceptance are **PENDING**. The scheduler's final state is **PENDING**. A follow-up will record those facts when they exist. Until then, deployment 7 is the last verified active release.
+
+`market_bars_daily` is a new empty table on the host. The app has no ingestion writer. Writing canonical history still depends on a written provider decision, tracked in [P1C_EXCHANGE_CALENDAR_VERIFICATION.md](P1C_EXCHANGE_CALENDAR_VERIFICATION.md). When the scheduler is enabled, it refreshes the legacy quote and daily cache. It does not backfill canonical two-year history. Do not invent that backfill. Exact public data status is not confirmed in this section.
+
+### Recovery for this schema
+
+The new revision is additive. The deployment 7 images remain compatible with the additive schema. Do not downgrade by deleting history or by pointing an older image at a database whose new history has been stripped. If `fintechapp-prerelease-20261109` must be restored, restore it to a **new isolated database**, verify that database, and only then plan a connection cutover. Do not overwrite the running database as part of reading this note. The general restore rule in [Database cutover and recovery](#database-cutover-and-recovery) still applies: a snapshot restore creates a new Lightsail database.
 
 ## Earlier operating checks
 

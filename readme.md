@@ -4,9 +4,11 @@ Sentinel Markets combines a paper-trading terminal, portfolio analytics, optiona
 
 > Simulated cash and orders only, with no live broker connection. This is not investment advice or a compliance certification. Research notes and forecasts do not place orders or change hard risk limits.
 
-**Source and the hosted release are different.** This repository contains the API and the frontend. The last recorded host release is deployment **7** (`fintechapp-preview.api.3`, `fintechapp-preview.web.4`, Alembic `f3a8c2d7e961`). That record is not a verification of the host today, and hosted parity with this branch was not rechecked.
+**Merged source and the verified host are still different.** [PR 92](https://github.com/slowgold05/Fintech-trading-risk-engine/pull/92) is merged at `a99fbd78036eb1294b880d7f8628aadd0753aae0` (same tree as reviewed release `b7ea1e103d3a294c70948cac842fee92a6a772d7`). Deployment **8** (`:fintechapp-preview.api.5`, `:fintechapp-preview.web.6`, Alembic `45d85a1871f0`) is **ACTIVATING** in `us-east-2`. It is not verified `ACTIVE`. Browser, API, cash, and order acceptance are pending, and the scheduler's final state is pending. The last verified active release remains deployment **7** (`fintechapp-preview.api.3`, `fintechapp-preview.web.4`, Alembic `f3a8c2d7e961`). Prepared facts: [9 November 2026 release record](docs/RELEASE_2026-11-09.md).
 
-**[Last recorded hosted preview](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/)** · **[Preview API health](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/api/health)** · [Control matrix](grc/control_matrix.csv) · [Security summary](Security.md)
+**[Hosted preview](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/)** · **[Preview API health](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/api/health)** · [Control matrix](grc/control_matrix.csv) · [Security summary](Security.md)
+
+The preview links are the existing hostname. They are not proof that deployment 8 is the version serving traffic.
 
 ## Workspaces
 
@@ -39,6 +41,8 @@ Charts use Lightweight Charts 5.2.1: candle, line, and area series, volume, and 
 
 The quote path is a cached provider. Adjustment policy is explicit. The standard NYSE calendar has documented coverage limits. There is no intraday feed and no claim of a continuous provider entitlement.
 
+Cached charts and long-history portfolio metrics can be honestly unavailable. On the host, the new canonical `market_bars_daily` table is empty. No ingestion writer ships in the app. Provider ingestion stays gated on a written provider decision ([exchange-calendar verification](docs/P1C_EXCHANGE_CALENDAR_VERIFICATION.md)). The scheduler, when enabled, refreshes the legacy quote and daily cache. It does not fill canonical two-year history. This README does not claim two-year hosted coverage. Exact public data status is still to be confirmed.
+
 ## Trading, ledger, and access
 
 Market and limit orders match against actual opposing liquidity. Partial fills, cancellation, and buying-power checks are implemented. Preview is explicit and non-binding; confirmation is a separate step.
@@ -49,13 +53,15 @@ Existing cash locking, hash-chained ledger postings, role approval versus privil
 
 ## Portfolio analytics and risk
 
-The supported contract windows for `GET /portfolio/performance` are `1y` and `2y`. The endpoint reports flow-adjusted time-weighted return, daily and cumulative P&L, drawdown, an SPY price benchmark, and Modified Dietz money-weighted return. Security and sector allocation and point-in-time P&L attribution are included. An open bug accepts `1m`, `3m`, `6m`, and `all` and still computes `2y`.
+The supported contract windows for `GET /portfolio/performance` are `1y` and `2y` only. Chart tokens such as `1m`, `3m`, `6m`, and `all` stay valid for charts and are rejected here. The endpoint reports flow-adjusted time-weighted return, daily and cumulative P&L, drawdown, an SPY price benchmark, and Modified Dietz money-weighted return. Security and sector allocation and point-in-time P&L attribution are included.
 
-Risk metrics, when history is long enough, include volatility as a **sample per period** (not annualized), beta, historical VaR and expected shortfall at 95% and 99%, correlations, variance contributions, and fixed stresses. Scarce history returns unavailable or null. Numbers are not filled in.
+A zero-capital period returns null percentages. A defined terminal loss of 100% is still reported when that is the real result. Known cash and dollar P&L stay populated. The app does not substitute a fabricated zero return.
+
+Risk metrics, when history is long enough, include volatility as a **sample per period** (not annualized), beta, historical VaR and expected shortfall at 95% and 99%, correlations, variance contributions, and fixed stresses. Scarce history returns unavailable or null. The risk response is composed from one clock and one snapshot. Numbers are not filled in. If canonical daily history has not been ingested, a long window can still be unavailable.
 
 `/portfolio/trade-impact` and `/risk/scenarios` are **read-only what-ifs**. They do not execute or approve anything. Trade impact ignores fees, slippage, margin, and open-order reservations. Order preview is non-binding: it applies the pre-trade checks, submission revalidates current state, and execution is authoritative.
 
-**Open follow-ups, not fixed by this file:** the performance range bug above, divide-by-zero on a zero-value account in TWR, drawdown, Modified Dietz, and stress, and multiple separate reads on the risk-metric endpoints. Details are for [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md).
+The 9 November review recorded these analytics issues while they were open. The later source fix and CI evidence are in [docs/RELEASE_2026-11-09.md](docs/RELEASE_2026-11-09.md). The review text itself stays the historical record: [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md).
 
 ## Research Desk
 
@@ -65,7 +71,7 @@ Optional local synthesis uses Ollama. `research_synthesis_enabled` defaults to *
 
 Optional TradingAgents **v0.7.1** is listed in `requirements-research.txt`. Set `research_synthesis_backend` to `tradingagents` to use its Ollama backend. That upstream package can fetch Yahoo, SEC, and FRED itself. It is not an offline-only stack.
 
-Worker states are `queued`, `running`, `completed`, `failed`, and `cancelled`. Cancellation applies to queued jobs only. Scheduler limits exist. This README does not claim crash-safe job leases, a hard concurrent-cap guarantee, or a hard wall-clock bound. An open review issue is a count-then-insert race on the research cap (10) and the forecast cap (5).
+Worker states are `queued`, `running`, `completed`, `failed`, and `cancelled`. Cancellation applies to queued jobs only. Pending intake is capped at 10 research jobs and 5 forecast jobs per owner, serialized with an owner lock. Releasing a worker claim uses a separate source session, so a helper commit or rollback does not release that claim. True isolation of that session is an independent database connection; the PostgreSQL proof is the one that establishes it. This README does not claim a hard wall-clock bound or real-model accuracy.
 
 Prompt tokens, completion tokens, and duration are recorded for simple Ollama research jobs and summarized in operator ops health. That is not complete model-cost accounting, and it does not bill TradingAgents or Kronos tokens. A real local Ollama call is recorded in [docs/P73_AI_USAGE_VERIFICATION.md](docs/P73_AI_USAGE_VERIFICATION.md) and the [backlog](docs/V2_BACKLOG.md). That record is not new inference proof for this review, and it is not Kronos proof.
 
@@ -97,7 +103,7 @@ The images below illustrate the **last documented hosted layout**. Research and 
 
 [Light PNG](docs/diagrams/sentinel-markets-stack.png) · [Dark PNG](docs/diagrams/sentinel-markets-stack-dark.png) · [Self-contained HTML](docs/diagrams/sentinel-markets-stack.html) · [Diagram sources and notices](docs/diagrams/NOTICE.md)
 
-On that hosted layout, Nginx serves the React app and proxies `/api/` to FastAPI. PostgreSQL is private. The scheduler runs inside the API process. Schema changes used a separate temporary migration runner. Operations for that release are in [docs/aws_deployment.md](docs/aws_deployment.md). This file does not publish a new deployment.
+On that hosted layout, Nginx serves the React app and proxies `/api/` to FastAPI. PostgreSQL is private. The scheduler runs inside the API process. Schema changes used a separate temporary migration runner. Operations are in [docs/aws_deployment.md](docs/aws_deployment.md). The diagram stays the layout reference. It is not evidence that deployment 8 is active. The 9 November images and the still-activating deployment are recorded in [docs/RELEASE_2026-11-09.md](docs/RELEASE_2026-11-09.md).
 
 | Layer | Technology |
 | --- | --- |
@@ -109,16 +115,17 @@ On that hosted layout, Nginx serves the React app and proxies `/api/` to FastAPI
 | Local and host packaging | Docker, Nginx, Docker Compose |
 | CI | GitHub Actions, seven jobs covering tests and security |
 
-## Verification on 9 November 2026
+## Verification
 
-Do not read this table as an all-green release. The manager record is [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md). Historical unit logs are in [docs/V2_BACKLOG.md](docs/V2_BACKLOG.md).
+Merged-source CI is green. Hosted acceptance of deployment 8 is not. Counts below are separate runs. Do not add them into one total. The prepared record is [docs/RELEASE_2026-11-09.md](docs/RELEASE_2026-11-09.md). The earlier same-day review, including its open-finding verdict, stays [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md). Historical unit logs are in [docs/V2_BACKLOG.md](docs/V2_BACKLOG.md).
 
 | Run | Result |
 | --- | --- |
-| Local root, Python 3.14.6, `AUDIT_DATABASE_URL` unset | 515 passed, 28 skipped, 125.29s. Skips are 21 PostgreSQL proofs and 7 Selenium modules. This run is not PostgreSQL proof. The fresh pandas stub tests, 12 of 12, are included in this 515. They do not load real Kronos weights. |
-| Review code `1ceee43`, GitHub Actions run [42667916677](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42667916677) | All seven jobs passed. Backend: 533 passed, 10 skipped, 192.68s, including fresh PostgreSQL proofs. The 10 skips are 7 browser modules and 3 pandas-dependent Kronos tests (pandas is not installed in that CI job). |
-| Frontend, fresh root run the same day | 417 tests in 30 files. Lint and the production build passed. The main bundle is 635.65 kB, with the existing size warning. |
-| Linux browser job, same review-code CI | 10 passed, 1 hosted case excluded, 141.19s. This verifies the existing disposable-stack journeys and the watchlist readiness correction; it does not prove hosted parity or real-model inference. |
+| PR 92 CI [42689491609](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42689491609) | All seven jobs passed. Backend: 557 passed, 12 skipped, 174.82s. The 12 skips are 7 browser modules (Selenium not installed), 3 Kronos tests (pandas not installed), and 2 new forecast-claim PostgreSQL proofs (pandas not installed). Frontend: 417 tests in 30 files; lint and production build passed. Security jobs passed. A separate browser job: 10 passed, 1 hosted case excluded, 149.28s. |
+| Merged `main` CI [42690312847](https://github.com/slowgold05/Fintech-trading-risk-engine/actions/runs/42690312847) | All seven jobs passed. |
+| Hosted deployment 8 | **ACTIVATING.** Browser, API, cash, and order acceptance are pending. |
+
+These runs do not exercise real Kronos weights or establish forecast accuracy. They do not prove that deployment 8 is the live serving version.
 
 ## Run locally
 
@@ -172,12 +179,13 @@ Set `AUDIT_DATABASE_URL` only to a **fresh isolated container**. A fresh databas
 - [Sentinel Markets 2.0 roadmap](Sentinel_Markets_2_0_Roadmap.md) — scope of the expansion. Not every phase is complete.
 - [V2 backlog](docs/V2_BACKLOG.md) — historical unit log.
 - [Codex and Grok workflow](docs/GROK_CODEX_WORKFLOW.md) — how changes are scoped and reviewed.
-- [Review, 9 November 2026](docs/REVIEW_2026-11-09.md) — findings and evidence. The manager creates this note and will fill final CI evidence after the pipeline. This README does not claim an all-green release.
+- [Release record, 9 November 2026](docs/RELEASE_2026-11-09.md) — merged source, CI, migration, and the still-activating deployment. Hosted acceptance is pending.
+- [Review, 9 November 2026](docs/REVIEW_2026-11-09.md) — dated historical findings. A banner points at the later fix status. The finding text is unchanged.
 - [Security.md](Security.md) — access, MFA, secrets, and control boundaries.
 - [Control matrix](grc/control_matrix.csv)
 - [Forecast Lab limitations](docs/FORECAST_LAB_OPEN_LIMITATIONS.md) and [point-in-time verification](docs/P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md)
 - [Research extras](requirements-research.txt) · [Forecast extras](requirements-forecast.txt)
-- [Hosted release runbook](docs/aws_deployment.md) — last documented deployment only.
+- [Hosted release runbook](docs/aws_deployment.md) — deployment 7 remains the last verified active record. The 9 November section is separate and still in progress.
 - [Diagram notices and third-party marks](docs/diagrams/NOTICE.md)
 
 ## Repository map
@@ -196,6 +204,8 @@ requirements*.txt     Core install, plus optional research and forecast extras
 ## Limits that remain
 
 - Paper trading only. No broker, no real funds, no compliance certification.
-- The last recorded host release is deployment 7. Hosted parity with this branch was not rechecked.
-- Optional models stay off unless someone installs the extra requirements and points the worker at a model server. Enabling them is a separate decision. This README does not do it.
-- Open review items include the performance-range bug, zero-account division, job-cap races, and multi-read risk metrics. None of those are closed here.
+- Deployment 8 is activating. It is not verified active. Browser, API, cash, order acceptance, and the scheduler's final state are pending. Deployment 7 is the last verified active release.
+- Cached charts and long-history metrics may be unavailable until an approved ingestion writes canonical daily bars. `market_bars_daily` on the host is a new empty table. There is no two-year hosted-history claim.
+- Optional research synthesis and Kronos stay inactive on the deployment 8 specification. Enabling them is a separate decision. This README does not claim real-model inference or forecast accuracy.
+- New product pages are in the merged source and in the images registered for deployment 8. That does not mean the roadmap is complete.
+- The expansion was not re-audited line by line. The dated review was focused, not an exhaustive pass over the roughly thirty-thousand-line growth.
