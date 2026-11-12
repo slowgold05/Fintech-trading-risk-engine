@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query
 import requests
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -43,6 +43,20 @@ _NOT_QUEUED = "Research job is no longer queued."
 _JOB_CAP = 10
 
 
+def _process_one_job_in_background() -> None:
+    from app.core.database import SessionLocal
+    from app.services.research_worker import process_pending_research_jobs
+
+    db = SessionLocal()
+    try:
+        process_pending_research_jobs(db, max_jobs=1)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _iso_z(value):
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
@@ -65,6 +79,7 @@ def _job_out(job: ResearchJob) -> dict:
 @router.post("/jobs", status_code=201)
 def create_research_job(
     payload: ResearchJobCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -91,6 +106,7 @@ def create_research_job(
         job = ResearchJob(user_id=owner_id, symbol=payload.symbol, status="queued")
         db.add(job)
         db.flush()
+        background_tasks.add_task(_process_one_job_in_background)
         return _job_out(job)
 
 

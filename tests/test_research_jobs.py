@@ -33,6 +33,40 @@ def test_create_job_returns_queued_status(client: TestClient, auth_headers, db_s
     assert body["updated_at"].endswith("Z")
 
 
+def test_create_job_kicks_off_processing_in_the_background(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    """The 201 returns the queued job; TestClient then runs the background task."""
+    _seed(db_session, "AAPL")
+    headers = auth_headers("jobs-background@example.com")
+    seen: list[int] = []
+
+    class _Session:
+        def commit(self) -> None:
+            return None
+
+        def rollback(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    def fake_process(db, max_jobs: int):
+        seen.append(max_jobs)
+        return []
+
+    monkeypatch.setattr("app.core.database.SessionLocal", lambda: _Session())
+    monkeypatch.setattr(
+        "app.services.research_worker.process_pending_research_jobs",
+        fake_process,
+    )
+
+    response = _create(client, headers)
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "queued"
+    assert seen == [1]
+
+
 def test_create_job_rejects_unknown_or_inactive_symbol(client: TestClient, auth_headers, db_session: Session) -> None:
     _seed(db_session, "DEAD", active=False)
     headers = auth_headers("jobs-unknown@example.com")
