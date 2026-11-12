@@ -5,9 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.forecast_job import ForecastJob
 from app.models.forecast_result import ForecastResult
 from app.models.market_symbol import MarketSymbol
-from app.services.forecast_worker import process_pending_forecast_jobs
+from app.services.forecast_worker import _claim_job, process_pending_forecast_jobs
 
 _MISSING = {"detail": "Forecast not found"}
 _DISABLED = "Kronos forecasting is disabled (forecast_kronos_enabled is false)."
@@ -207,6 +208,32 @@ def test_worker_still_processes_the_next_job_after_one_fails_mid_batch(
     assert processed[1].status == "completed"
     assert len(_results_for(db_session, second_id)) == 1
     assert _results_for(db_session, first_id) == []
+
+
+def test_a_crashed_worker_leaves_its_claimed_job_re_queued_not_stuck(
+    client: TestClient, auth_headers, db_session: Session
+) -> None:
+    _seed(db_session, "AAPL")
+    headers = auth_headers("forecast-worker-crash@example.com")
+    created = _create(client, headers)
+    assert created.status_code == 201, created.text
+    job_id = created.json()["id"]
+
+    job = _claim_job(db_session)
+    assert job is not None
+    assert job.status == "running"
+
+    # The claim is only flushed. A crash before process_one_job's commit
+    # rolls that transaction back, so the row must return to queued.
+    db_session.rollback()
+
+    reloaded = db_session.query(ForecastJob).filter(ForecastJob.id == job_id).one()
+    assert reloaded.status == "queued"
+
+    processed = process_pending_forecast_jobs(db_session, 5)
+    assert len(processed) == 1
+    assert processed[0].id == job_id
+    assert processed[0].status == "failed"
 
 
 def test_worker_replays_the_job_s_own_stored_parameters(
