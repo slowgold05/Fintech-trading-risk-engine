@@ -67,9 +67,20 @@ def test_module_imports_without_torch_installed():
     assert hasattr(module, "generate_forecast")
 
 
-def test_missing_dependencies_raises_a_clear_runtime_error():
+def test_missing_dependencies_raises_a_clear_runtime_error(monkeypatch):
     import app.services.forecast_kronos as module
 
+    # Simulate absence directly rather than relying on the venv not having
+    # torch/pandas/kronos installed -- this test must hold either way.
+    # _import_kronos itself converts ImportError to this RuntimeError; since
+    # this replaces _import_kronos wholesale, it must raise that conversion's
+    # own result directly, matching its real message.
+    def _raise_runtime_error():
+        raise RuntimeError(
+            "pandas, torch, and/or the vendored kronos model package are not installed"
+        )
+
+    monkeypatch.setattr(module, "_import_kronos", _raise_runtime_error)
     module._predictor_cache.clear()
     with pytest.raises(RuntimeError, match="torch"):
         module._load_predictor()

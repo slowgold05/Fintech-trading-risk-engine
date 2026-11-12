@@ -14,6 +14,9 @@ __pycache__/
 .venv/
 venv/
 
+# Local model/weight caches (forecast_kronos_cache_dir default)
+var/
+
 # OS junk
 .DS_Store
 Thumbs.db
