@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query
 import requests
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.market_symbol import MarketSymbol
@@ -13,7 +14,9 @@ from app.models.research_report import ResearchReport
 from app.models.research_brief import ResearchBrief
 from app.models.user import User
 from app.schemas.research_job import ResearchJobCreate
+from app.services.finnhub_news import fetch_company_news
 from app.services.job_admission import admission_transaction, lock_owner
+from app.services.market_providers import ProviderUnavailable
 from app.services.sec_service import get_sec_company_filings
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -43,6 +46,42 @@ _NOT_QUEUED = "Research job is no longer queued."
 _JOB_CAP = 10
 
 
+@router.get("/news/{symbol}")
+def research_news(
+    symbol: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Headlines for one active symbol. A missing Finnhub key is an empty result, not an error status."""
+    normalized = symbol.upper().strip()
+    known = db.execute(
+        select(MarketSymbol.symbol).where(
+            MarketSymbol.symbol == normalized, MarketSymbol.is_active.is_(True)
+        )
+    ).first()
+    if not known:
+        raise HTTPException(status_code=400, detail=_UNKNOWN_SYMBOL)
+    try:
+        articles = fetch_company_news(normalized, settings.finnhub_api_key)
+    except ProviderUnavailable as exc:
+        return {"symbol": normalized, "articles": [], "error": str(exc)}
+    return {"symbol": normalized, "articles": articles, "error": None}
+
+
+def _process_one_job_in_background() -> None:
+    from app.core.database import SessionLocal
+    from app.services.research_worker import process_pending_research_jobs
+
+    db = SessionLocal()
+    try:
+        process_pending_research_jobs(db, max_jobs=1)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _iso_z(value):
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
@@ -67,6 +106,7 @@ def create_research_job(
     payload: ResearchJobCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    background_tasks: BackgroundTasks = None,
 ):
     owner_id = int(current_user.id)
     known = db.execute(
@@ -91,6 +131,8 @@ def create_research_job(
         job = ResearchJob(user_id=owner_id, symbol=payload.symbol, status="queued")
         db.add(job)
         db.flush()
+        if background_tasks is not None:
+            background_tasks.add_task(_process_one_job_in_background)
         return _job_out(job)
 
 

@@ -443,6 +443,38 @@ export interface MarketResearchResponse {
   }>;
 }
 
+export interface ResearchFiling {
+  form: string | null;
+  filing_date: string | null;
+  report_date: string | null;
+  accession_number: string;
+  primary_document: string;
+  document_url: string;
+}
+
+export interface ResearchFilingsResponse {
+  symbol: string;
+  cik: string;
+  name: string | null;
+  filings: ResearchFiling[];
+  source: string;
+  fetched_at: string;
+}
+
+export interface ResearchNewsArticle {
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published_at: string;
+}
+
+export interface ResearchNewsResponse {
+  symbol: string;
+  articles: ResearchNewsArticle[];
+  error: string | null;
+}
+
 export interface TradeImpactLevel {
   cash_balance: string | null;
   buying_power: string | null;
