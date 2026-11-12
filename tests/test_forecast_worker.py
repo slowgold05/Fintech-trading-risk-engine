@@ -179,6 +179,36 @@ def test_processing_a_queued_job_with_kronos_enabled_but_failing_fails_the_job(
     assert "TimeoutError" in job.json()["error_message"]
 
 
+def test_worker_still_processes_the_next_job_after_one_fails_mid_batch(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch
+) -> None:
+    calls = []
+
+    def fail_then_succeed(db, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise TimeoutError("TimeoutError: kronos predictor failed")
+        return _canned()
+
+    _seed(db_session, "AAPL")
+    _enable(monkeypatch, fail_then_succeed)
+    headers = auth_headers("forecast-worker-mid-batch@example.com")
+    first = _create(client, headers)
+    second = _create(client, headers)
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    first_id = first.json()["id"]
+    second_id = second.json()["id"]
+
+    processed = process_pending_forecast_jobs(db_session, 5)
+    assert len(processed) == 2
+    assert processed[0].status == "failed"
+    assert "TimeoutError" in processed[0].error_message
+    assert processed[1].status == "completed"
+    assert len(_results_for(db_session, second_id)) == 1
+    assert _results_for(db_session, first_id) == []
+
+
 def test_worker_replays_the_job_s_own_stored_parameters(
     client: TestClient, auth_headers, db_session: Session, monkeypatch
 ) -> None:
