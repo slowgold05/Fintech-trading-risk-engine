@@ -318,3 +318,52 @@ def test_generate_forecast_without_as_of_matches_the_full_history_window(monkeyp
     explicit_comparable = {key: value for key, value in explicit.items() if key != "generated_at"}
     assert omitted_comparable == explicit_comparable
     assert _as_dates(fake.kwargs["x_timestamp"]) == expected_x
+
+
+def test_generate_forecast_widens_high_low_to_the_raw_envelope(monkeypatch):
+    """A real run showed raw model output can have open > high. high/low are
+    widened to the true min/max of all four raw values; open/close are never
+    altered -- only the envelope is corrected, never the model's own point
+    predictions."""
+    pd = pytest.importorskip("pandas")
+
+    sessions = _trading_days_ending(date(2026, 11, 6), 8)
+    fixture = _bars(sessions)
+    lookback = 3
+    horizon = 2
+
+    def history(*args, **kwargs):
+        return {"bars": fixture}
+
+    class InconsistentPredictor:
+        def predict(self, df, x_timestamp, y_timestamp, pred_len, T=1.0, top_k=0, top_p=0.9, sample_count=1, verbose=True):
+            # First bar: open (192) exceeds high (191.8) -- exactly the shape
+            # seen in a real run. Second bar: already self-consistent.
+            return pd.DataFrame({
+                "open": [192.0, 180.0],
+                "high": [191.8, 183.0],
+                "low": [179.6, 179.8],
+                "close": [181.6, 182.4],
+                "volume": [100.0, 101.0],
+            })
+
+    fake = InconsistentPredictor()
+    monkeypatch.setattr("app.services.forecast_kronos.read_symbol_history", history)
+    monkeypatch.setattr("app.services.forecast_kronos._load_predictor", lambda: fake)
+
+    result = _forecast(lookback=lookback, horizon=horizon)
+
+    first, second = result["bars"]
+    assert first["open"] == 192.0
+    assert first["close"] == 181.6
+    assert first["high"] == 192.0
+    assert first["low"] == 179.6
+    assert first["low"] <= first["open"] <= first["high"]
+    assert first["low"] <= first["close"] <= first["high"]
+
+    assert second["open"] == 180.0
+    assert second["close"] == 182.4
+    assert second["high"] == 183.0
+    assert second["low"] == 179.8
+    assert second["low"] <= second["open"] <= second["high"]
+    assert second["low"] <= second["close"] <= second["high"]

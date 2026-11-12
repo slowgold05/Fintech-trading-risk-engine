@@ -122,17 +122,25 @@ def generate_forecast(
         pred_len=horizon, sample_count=sample_count, verbose=False,
     )
 
-    forecast_bars = [
-        {
+    forecast_bars = []
+    for index, session in enumerate(future_sessions):
+        raw_open = float(pred_df.iloc[index]["open"])
+        raw_high = float(pred_df.iloc[index]["high"])
+        raw_low = float(pred_df.iloc[index]["low"])
+        raw_close = float(pred_df.iloc[index]["close"])
+        forecast_bars.append({
             "session_date": session.isoformat(),
-            "open": float(pred_df.iloc[index]["open"]),
-            "high": float(pred_df.iloc[index]["high"]),
-            "low": float(pred_df.iloc[index]["low"]),
-            "close": float(pred_df.iloc[index]["close"]),
+            "open": raw_open,
+            # The raw model output is a generative sample with no hard OHLC
+            # ordering guarantee (confirmed by a real run: 1/10 bars violated
+            # it). high/low are widened to the true envelope of all four raw
+            # values rather than fabricated or clamped away from what the
+            # model actually predicted. open/close are never altered.
+            "high": max(raw_open, raw_high, raw_low, raw_close),
+            "low": min(raw_open, raw_high, raw_low, raw_close),
+            "close": raw_close,
             "volume": float(pred_df.iloc[index]["volume"]),
-        }
-        for index, session in enumerate(future_sessions)
-    ]
+        })
 
     return {
         "symbol": symbol,
