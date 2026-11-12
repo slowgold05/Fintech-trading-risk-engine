@@ -16,6 +16,7 @@
 
 ## Contents
 
+- [Current delivery sequence (2026-11-11)](#current-delivery-sequence-2026-11-11)
 - [Implementation status and evidence](#implementation-status-and-evidence)
 - [Product scope](#product-scope)
 - [Implementation priorities](#implementation-priorities)
@@ -33,6 +34,156 @@
 - [Dependencies and priority ordering](#dependencies-and-priority-ordering)
 - [Delivery evidence and release checklist](#delivery-evidence-and-release-checklist)
 - [References and open decisions](#references-and-open-decisions)
+
+## Current delivery sequence (2026-11-11)
+
+**This section is a roadmap documentation update only. No feature below is marked complete by writing this; no application code changes with this edit.**
+
+Everything from here through "References and open decisions" is the **original planning baseline**, prepared 2026-11-05, before Phase 0 verification or any Phase 1–7 implementation work existed. It used a "core trading product first, AI and forecasting afterward" ordering, and its Phases 2–3 (frontend redesign, trading terminal) were scheduled early — before full data-pipeline, research, and forecasting work. That ordering is **superseded** by the sequence below for one specific decision: **where product/interface work sits in the delivery order.** It now comes last, after data, trading, research, forecasting, and operational foundations are ready — not because the frontend doesn't matter, but because building UI against unfinished, unverified, or unlicensed backend foundations produced rework in this project's own history (see the 2026-11-09 review, [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md), which found real analytics bugs — an unguarded range allowlist, divide-by-zero on zero-capital accounts, inconsistent risk snapshots, a non-atomic job-admission race — only after a large expansion had already shipped UI against that code). Every other baseline statement, status table, checkbox, and open decision below this section stays as written; this section does not reopen or re-verify them.
+
+**What has already changed since the 2026-11-05 baseline, for context, not as a completion claim:** Phases 0–7 as originally scoped were implemented, independently reviewed, and (for the fixes from that review) merged into `main` and deployed to the hosted preview as of 2026-11-09 — see [docs/V2_BACKLOG.md](docs/V2_BACKLOG.md) for the full unit-by-unit history, [docs/REVIEW_2026-11-09.md](docs/REVIEW_2026-11-09.md) for the independent review, and [docs/RELEASE_2026-11-09.md](docs/RELEASE_2026-11-09.md) for what merged and what's still pending on the host (deployment 8 was `ACTIVATING`, not yet confirmed `ACTIVE`, as of that record). That work used a broad Nasdaq-listed universe, Yahoo/Alpha Vantage/SEC for data, a self-run `TradingAgents`/Ollama research path, and a from-scratch Kronos point-in-time evaluation harness — all still true and still present. The sequence below **narrows and extends** that foundation (a curated S&P 500 + index-benchmark universe, Massive/LSE/Finnhub as the primary data vendors, consuming Tauric's own shared daily report instead of only self-running the agent debate, and a fixed 12-stock Kronos scope) rather than replacing it. Where this sequence names something as not yet built, that was checked directly against the current source tree before writing this, not assumed: `grc/vendors/massive.md` and the Finnhub parsers in `app/services/market_providers.py` are fixture-only today (no live key, no real calls); there is no LSE adapter anywhere in the repository; there is no S&P 500 constituent list (only a single hardcoded `SPY` display row in `app/routers/market.py`); and there is no code path that reads a Tauric-hosted shared report — only the self-run `TradingAgents` package.
+
+Each stage below states its prerequisites, numbered implementation steps, what happens on failure (never invent or silently substitute a value), its test requirement, and its exit gate. **Local completion and public/hosted deployment are tracked separately in every stage** — a stage's local exit gate does not imply the hosted preview reflects it, and vice versa.
+
+### 1. Baseline and permissions
+
+**Prerequisites:** None — this is the entry gate for everything below.
+
+**Steps:**
+1. Record the current commit, the hosted images actually serving traffic, the hosted schema (Alembic revision), and a real authenticated browser journey against the host — not a local proxy for the host.
+2. Reconcile hosted account data (cash, holdings, trades) against the ledger; record any discrepancy rather than silently accepting the host's numbers.
+3. Establish one dated S&P 500 constituent list (with its source and as-of date recorded) and four read-only index benchmarks (e.g. S&P 500, Nasdaq Composite, Dow, Russell 2000 — name and source each explicitly; do not invent a benchmark price).
+4. For every market-data provider already referenced in this codebase or this plan (Massive, Finnhub, LSE, Yahoo, Alpha Vantage, SEC, Tauric) record: entitlement/plan tier, rate limit, whether storage of historical bars is permitted, and whether public (unauthenticated) display of that data is permitted. A provider without a recorded, dated answer to all four stays disabled.
+
+**Failure behavior:** An unrecorded or ambiguous entitlement answer means that provider's data stays out of any public-facing surface — do not infer permission from a provider's marketing page.
+
+**Tests:** A reproducible script or documented manual check per fact above, with its output committed as evidence (not just asserted in prose).
+
+**Exit gate:** Every fact above has a dated, sourced answer in a committed document. Public exposure of Massive, Finnhub, and LSE data stays blocked until each has its own recorded permission.
+
+### 2. Focused market universe
+
+**Prerequisites:** Stage 1's dated S&P 500 list and index benchmarks.
+
+**Steps:**
+1. Replace "whole Nasdaq-listed market" as the product's discovery target with the S&P 500 list plus the four read-only index benchmarks, each clearly labeled as an index, not a tradeable security.
+2. Keep every symbol a user actually holds readable and tradeable even if it leaves the S&P 500 (an index reconstitution must never strand a real position).
+3. Separately label ETF proxies (e.g. an S&P 500 ETF) from the index itself — an index is not directly tradeable; the ETF is.
+
+**Failure behavior:** A symbol search or discovery view must say explicitly when a result is outside the featured universe, never silently omit it if the user already holds it.
+
+**Tests:** Discovery and search return exactly the S&P 500 + benchmark set for new users; an existing held position outside that set still renders correctly end to end (chart, order ticket, portfolio).
+
+**Exit gate:** Local: the narrowed universe passes its own test suite. Public: the hosted discovery surface reflects the same narrowed universe, verified in a real browser.
+
+### 3. Multi-source historical and quote data pipeline
+
+**Prerequisites:** Stage 1's recorded Massive/LSE/Finnhub entitlements.
+
+**Steps:**
+1. Build a real (non-fixture) Massive adapter for primary two-year daily OHLCV backfill and the overnight heatmap refresh, within its recorded rate limit.
+2. Build a real LSE adapter as a whole-series fallback when Massive is unavailable or incomplete for a symbol.
+3. Normalize timestamps, price basis (raw vs. adjusted), data-quality flags, and provider error states into the existing canonical bar schema — do not add a second, parallel schema.
+4. Validate session alignment, OHLC internal consistency, duplicate bars, gaps, and cross-provider disagreement before any bar is marked `valid`.
+5. Run incremental overnight refreshes with retries and a coverage report (symbols attempted, symbols succeeded, symbols still gapped).
+
+**Failure behavior:** A missing or rejected bar is reported as missing — never interpolated, carried forward, or invented. A chart or metric built on a gapped series says so.
+
+**Tests:** Backfill correctness against a known-good reference window for a sample of symbols; gap/duplicate/disagreement detection has its own unit tests; an outage or malformed-response simulation for each provider proves the pipeline degrades to "missing," not a fabricated value.
+
+**Exit gate:** Local: two full years of validated daily OHLCV exist for the Stage 2 universe plus every currently-held symbol, with a coverage report showing the gap rate. Public: the same coverage report is reproduced against the hosted database, not just a local one.
+
+### 4. Quotes and paper-trade behavior
+
+**Prerequisites:** Stage 3's normalized quote/bar pipeline.
+
+**Steps:**
+1. Normalize Finnhub quotes, a Tauric quote fallback, and a dated daily-close fallback into one cached quote contract carrying its source and observation time.
+2. Add a trade preview tied to the exact quote shown on screen; confirmation re-checks that quote's identity (not just its price) and forces a new preview if it changed.
+3. Preserve every existing cash-lock, idempotency, risk-control, and ledger-posting behavior already in the codebase — this stage adds a preview/recheck step, it does not rebuild order execution.
+4. Record the quote source and observation time on every new fill, and label a fill that used an old quote as a historical-price simulation, not a live fill.
+5. Keep match-only (counterparty) orders in an "Advanced" surface and explain to the user why an order that found no match was canceled rather than silently disappearing.
+
+**Failure behavior:** If the confirmation-time quote recheck fails or the quote is stale beyond a defined threshold, the order is rejected with an explicit reason, never silently executed against a stale price.
+
+**Tests:** A quote-changed-between-preview-and-confirm race test; idempotent duplicate-submission tests (already exist — must still pass unchanged); a match-only order with no counterparty resolves to a clearly explained cancellation, not a hang.
+
+**Exit gate:** Local: the full preview→recheck→confirm→fill cycle passes, including the race and duplicate-submission cases, with zero change to existing ledger/FIFO/cash behavior. Public: the same cycle is walked in a real authenticated browser session against the host.
+
+### 5. AI research
+
+**Prerequisites:** Stage 1's recorded Tauric/TradingAgents entitlement and outbound-vendor review.
+
+**Steps:**
+1. Read and cache Tauric's own shared daily report (not a self-run report) for supported stocks, within whatever caching behavior its terms permit — do not re-run a report per visitor if the terms don't allow that.
+2. Retain and display each cached report's evidence date, validity window, and a visible Tauric attribution; make an unavailable or withdrawn report an explicit state, never a silently stale one.
+3. Keep the existing self-run `TradingAgents` path as a separately labeled, optional comparison — disabled by default until its own dependencies, outbound data vendors (already partially documented in [grc/vendors/tradingagents_data_vendors.md](grc/vendors/tradingagents_data_vendors.md)), and runtime cost are reviewed.
+4. Research output, from either path, never places, modifies, or cancels an order — this is the same boundary already enforced and verified for the existing research/forecast synthesis functions (see [docs/P73_AI_USAGE_VERIFICATION.md](docs/P73_AI_USAGE_VERIFICATION.md)'s research-tool-isolation finding), extended to the new Tauric-shared-report path.
+
+**Failure behavior:** A withdrawn, missing, or unparseable Tauric report renders as "unavailable," never a stale cached copy presented as current.
+
+**Tests:** Cache-freshness and evidence-date display tests; a test asserting the research code path has no reference to any order-mutation function, mirroring the existing isolation check.
+
+**Exit gate:** Local: both research paths (Tauric-shared and self-run) render correctly with accurate evidence dates and attribution, and the mutation-isolation test passes. Public: the Tauric-shared path is live on the host only after its terms are confirmed to permit the caching behavior actually implemented.
+
+### 6. Kronos forecasting
+
+**Prerequisites:** Stage 3's validated two-year OHLCV for the 12 featured stocks; the point-in-time fix already shipped in [docs/P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md](docs/P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md).
+
+**Steps:**
+1. Install the optional `torch`/Kronos dependencies and pinned weights on a separate worker (not the API process) — not attempted anywhere in this codebase yet, by design, per [docs/FORECAST_LAB_OPEN_LIMITATIONS.md](docs/FORECAST_LAB_OPEN_LIMITATIONS.md).
+2. Prove one real inference call against real canonical bars before anything else depends on it.
+3. Run the existing walk-forward evaluation harness against a fixed list of exactly 12 featured stocks, with historical cutoffs and the existing last-observed-close baseline; record weak or negative results, not only favorable ones.
+4. Obtain a named model-owner review of that evaluation before any forecast reaches a user-visible surface.
+5. Only after that review: precompute 10-session forecasts for the 12 stocks after each new daily bar, on a bounded runtime and a single worker slot (matching the existing `forecast_kronos_max_lookback`-style bounds already in `app/core/config.py`).
+6. Publish only reviewed outputs, each carrying its input cutoff, generation time, model version, and evaluation result. A forecast is never fed into order execution or any hard risk limit.
+
+**Failure behavior:** An evaluation that fails its own quality bar is recorded and blocks publication — it is not retried silently or hidden in favor of a better-looking run.
+
+**Tests:** The existing point-in-time cutoff tests (already passing per the verification doc above) plus new tests asserting the 12-stock scope is enforced and that an unreviewed evaluation cannot reach the publish path.
+
+**Exit gate:** Local: real inference proven, walk-forward evaluation complete and reviewed for all 12 stocks, one documented model-owner sign-off. Public: forecasts appear on the host only after that local exit gate, and only for the 12 named stocks — never a general "any symbol" forecast.
+
+### 7. Operational verification
+
+**Prerequisites:** Stages 3–6 complete locally.
+
+**Steps:**
+1. Test provider outages, refresh retries, a quote change arriving mid-confirmation, worker restarts, account isolation, PostgreSQL concurrency, ledger reconciliation, and a full restore-and-rollback cycle — extending the disposable-Postgres proofs already done in [docs/P0C_POSTGRES_CONCURRENCY_VERIFICATION.md](docs/P0C_POSTGRES_CONCURRENCY_VERIFICATION.md) and [docs/P0B_LOCAL_RESTORE_VERIFICATION.md](docs/P0B_LOCAL_RESTORE_VERIFICATION.md) to the new Massive/LSE/Kronos code paths.
+2. Define freshness, job-age, error-rate, and resource-consumption monitoring for the new data and forecast workers, extending the existing `GET /compliance/ops-health` endpoint rather than building a second monitoring surface.
+3. Keep every provider and every AI feature independently enableable — a Massive outage must not disable Finnhub quotes, and a Kronos problem must not disable Tauric research.
+4. Record the exact commit, images, migration revision, and which features are enabled, exactly as [docs/RELEASE_2026-11-09.md](docs/RELEASE_2026-11-09.md) already does for the prior release.
+
+**Failure behavior:** A monitoring gap or an unrecorded enabled-feature flag blocks this stage's exit gate — "we forgot to check" is not an acceptable state at release time.
+
+**Tests:** Each named failure scenario above has its own reproducible test or drill, not just a design description.
+
+**Exit gate:** Local: every drill above passes or has a recorded, accepted limitation. Public: the same release-record discipline (commit, images, migration, enabled features, limitations) is produced for whatever host deployment follows this stage.
+
+### 8. Product and interface — last
+
+**Prerequisites:** Stages 1–7 complete and locally exited; this is deliberately the last stage, not an early one.
+
+**Steps:**
+1. Use Impeccable and the Taste Skill to design the complete site against real data constraints established by Stages 1–7 — not against placeholder or invented data.
+2. Implement search and discovery (Stage 2's universe), index/ETF separation, real stock charts, Tauric research display, reviewed Kronos overlays (Stage 6), clear paper-trade previews (Stage 4), truthful portfolio history, and the remaining signed-in pages.
+3. Draw on Robinhood's clarity and TradingView's chart controls as references, not as a license to copy their exact UI.
+4. Use Chrome DevTools MCP to inspect desktop, tablet, and mobile layouts, accessibility, loading/stale states, and the full hosted browser journey — not just a local dev-server check.
+5. Render a forecast as a visibly separate, dashed path on the chart — never as a historical price line, and never with an implied confidence band that the evaluation in Stage 6 doesn't actually support.
+
+**Failure behavior:** A page that cannot get real data from Stages 1–7 shows an explicit, honest unavailable state — it does not fall back to a fabricated number or a hidden placeholder, the same discipline already established and verified throughout this project's existing frontend work.
+
+**Tests:** The existing frontend test suite, extended for every new page; a full Chrome DevTools pass across desktop/tablet/mobile/keyboard/error states; a real authenticated hosted-browser journey, not only a local one.
+
+**Exit gate:** Local: every page in this stage renders real data or an honest unavailable state, confirmed by the test suite and a DevTools pass. Public: the same journey is walked and recorded against the actual hosted deployment, with its commit, images, and migration revision named — matching the discipline already used for every prior hosted release in this project.
+
+### Acceptance and assumptions for this sequence
+
+The final gate across all eight stages requires: real data on every featured-universe stock page with correct source/age labels, a successful paper buy/sell and replay, reconciled cash and holdings, understandable Advanced (match-only) order behavior, and working desktop and mobile journeys — all against the actual hosted deployment, not only a local build. Deployment records must identify the exact images, migration, enabled providers, and remaining limitations, exactly as the existing [docs/RELEASE_2026-11-09.md](docs/RELEASE_2026-11-09.md) already does.
+
+This assumes a public résumé-style project: simulated trades, Tauric's own shared research reports (not a per-visitor self-run report), and precomputed Kronos forecasts for exactly 12 featured stocks. It does not assume real-money execution, autonomous trading, or any new regulatory scope beyond what [Product scope](#product-scope) below already excludes.
+
+**Open risk carried forward from this planning pass:** public market-data permissions for Massive, LSE, and Finnhub are not yet obtained (see Stage 1), and Kronos forecast quality against real weights has not been evaluated (see Stage 6). Both remain release gates, not implementation details to work around.
 
 ## Implementation status and evidence
 
@@ -82,9 +233,11 @@ This scope is intentional. The previous expansion became too broad, and a strict
 
 ## Implementation priorities
 
-**Recommended delivery rule:** Phases 0–4 form the core trading product. Phases 5–6 add advanced functionality. Phase 7 is the final release gate, although testing and security review must happen throughout.
+**Original planning baseline (2026-11-05).** **Recommended delivery rule:** Phases 0–4 form the core trading product. Phases 5–6 add advanced functionality. Phase 7 is the final release gate, although testing and security review must happen throughout.
 
 The public frontend must become useful before spending significant resources on LLM orchestration or machine-learning inference.
+
+**Superseded ordering note (2026-11-11):** The sentence above — frontend usefulness before AI/ML spend — is no longer the sequencing rule. See [Current delivery sequence (2026-11-11)](#current-delivery-sequence-2026-11-11): product/interface work (that section's Stage 8) now comes *after* data, trading, research, forecasting, and operational foundations, not before the AI/ML work. The phase-numbered content below (Phases 0–7) still describes real feature scope and is not rewritten by this note; only the delivery order changed.
 
 ---
 
@@ -995,6 +1148,8 @@ Reuse the existing authenticated order creation, cancellation, order-state, and 
 
 ## Dependencies and priority ordering
 
+**This diagram is the original 2026-11-05 planning baseline and is preserved as historical evidence, not edited here.** It runs Phase 2 (design/shell) in parallel with Phase 1, early in the sequence. The [Current delivery sequence (2026-11-11)](#current-delivery-sequence-2026-11-11) instead runs its Stage 8 (product/interface) strictly last, after Stages 1–7. Treat the new sequence as authoritative for ordering; this diagram still describes real phase dependencies (e.g. Phase 4 needing Phase 1's data, Phase 6 needing charts and clean OHLCV), just not the order those phases should start in.
+
 ### Critical path
 
 ```text
@@ -1067,6 +1222,8 @@ Suggested tracker fields:
 
 ### First implementation batch
 
+**This list is the original 2026-11-05 baseline, preserved unchanged.** It still orders "approve one dashboard and terminal design" and two vertical-slice/watchlist UI items ahead of AI infrastructure, but ahead of the full data/research/forecasting/operational sequence that [Current delivery sequence (2026-11-11)](#current-delivery-sequence-2026-11-11) now specifies. For new work, follow that section's eight stages in order instead of this list's ordering; the individual tasks below remain valid work items, most now with their own evidence elsewhere in this repository (`docs/V2_BACKLOG.md`), just not in this list's original sequence.
+
 - [ ] Establish Phase 0 feature/API inventory and reproducible baseline checks.
 - [ ] Back up and verify account data and restore procedure.
 - [ ] Fix bulk snapshot pricing for portfolio valuation after confirming the reported defect.
@@ -1122,5 +1279,13 @@ Upstream pages were consulted on November 5, 2026. This was not a code audit, li
 - [ ] What queue and worker arrangement fits the existing deployment?
 - [ ] Does Kronos meet evaluation, license, latency, and cost gates for user exposure?
 - [ ] Is Strategy Lab commissioned as a follow-up, or left outside this release?
+
+**Added 2026-11-11, from the current delivery sequence:**
+
+- [ ] What are Massive's, LSE's, and Finnhub's actual entitlement terms — rate limit, storage rights, and public-display rights — for this project's use case? (Stage 1)
+- [ ] Which dated source is authoritative for S&P 500 constituents, and which four indices are the read-only benchmarks? (Stage 1/2)
+- [ ] Does Tauric's own shared-report terms permit the caching behavior Stage 5 describes, and at what refresh cadence? (Stage 5)
+- [ ] Which exact 12 stocks make up the fixed Kronos-featured list, and who is the named model-owner reviewer? (Stage 6)
+- [ ] Does the existing `GET /compliance/ops-health` endpoint get extended for the new data/forecast workers, or does a separate monitoring surface get built? (Stage 7)
 
 **Document completion is not implementation completion.** Keep checklists open until verified evidence supports closing them.
