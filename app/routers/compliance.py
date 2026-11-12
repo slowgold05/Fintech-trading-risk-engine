@@ -598,6 +598,16 @@ def _massive_ingestion_health(db: Session, now: datetime) -> dict:
     }
 
 
+def _kronos_worker_health() -> dict:
+    cache_dir = Path(settings.forecast_kronos_cache_dir)
+    if not cache_dir.is_dir():
+        return {"weights_cache_dir_exists": False, "weights_cache_bytes": 0}
+    total_bytes = sum(
+        path.stat().st_size for path in cache_dir.rglob("*") if path.is_file()
+    )
+    return {"weights_cache_dir_exists": True, "weights_cache_bytes": total_bytes}
+
+
 @router.get("/ops-health")
 def get_ops_health(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
@@ -624,4 +634,5 @@ def get_ops_health(db: Session = Depends(get_db)):
         },
         "ai_usage": _ai_usage(db),
         "massive_ingestion": _massive_ingestion_health(db, now),
+        "kronos_worker": _kronos_worker_health(),
     }

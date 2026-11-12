@@ -4,6 +4,7 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.forecast_job import ForecastJob
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_quote_cache import MarketQuoteCache
@@ -215,4 +216,36 @@ def test_ops_health_massive_ingestion_is_empty_by_default(
         "symbols_covered": 0,
         "latest_session_date": None,
         "flagged_last_30d_count": 0,
+    }
+
+
+def test_ops_health_reports_zero_kronos_cache_when_the_directory_does_not_exist(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch, tmp_path,
+) -> None:
+    headers = _compliance_headers(auth_headers, db_session, "ops-kronos-missing@example.com")
+    monkeypatch.setattr(settings, "forecast_kronos_cache_dir", str(tmp_path / "nonexistent-kronos-cache"))
+
+    response = client.get("/compliance/ops-health", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["kronos_worker"] == {
+        "weights_cache_dir_exists": False,
+        "weights_cache_bytes": 0,
+    }
+
+
+def test_ops_health_reports_real_kronos_cache_directory_size(
+    client: TestClient, auth_headers, db_session: Session, monkeypatch, tmp_path,
+) -> None:
+    headers = _compliance_headers(auth_headers, db_session, "ops-kronos-cache@example.com")
+    cache_dir = tmp_path / "kronos-cache"
+    cache_dir.mkdir()
+    (cache_dir / "weights.bin").write_bytes(b"a" * 100)
+    (cache_dir / "tokenizer.bin").write_bytes(b"b" * 50)
+    monkeypatch.setattr(settings, "forecast_kronos_cache_dir", str(cache_dir))
+
+    response = client.get("/compliance/ops-health", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["kronos_worker"] == {
+        "weights_cache_dir_exists": True,
+        "weights_cache_bytes": 150,
     }
