@@ -1,13 +1,17 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import { fetchMarketResearch } from "../api/market";
 import {
   cancelResearchJob,
   createResearchJob,
+  fetchResearchFilings,
+  fetchResearchNews,
   listResearchBriefs,
   listResearchJobs,
   listResearchReports,
 } from "../api/research";
+import { DailyHistory } from "../components/DailyHistory";
 import { PageHeader } from "../components/PageHeader";
 import {
   DashboardCard,
@@ -348,6 +352,146 @@ function ReportBody({ report }: { report: ResearchReport }) {
   );
 }
 
+function ReportPriceHeader({ symbol }: { symbol: string }) {
+  const query = useQuery({
+    queryKey: ["research-price", symbol],
+    queryFn: () => fetchMarketResearch(symbol),
+  });
+
+  if (query.isPending) return <SkeletonBlock className="h-10" />;
+  if (query.isError || query.data.price == null) return null;
+
+  const isUp = (query.data.change_percent ?? 0) >= 0;
+  return (
+    <div className="flex items-baseline gap-3">
+      <span className="font-mono text-2xl font-semibold text-slate-100">
+        ${query.data.price.toFixed(2)}
+      </span>
+      {query.data.change_percent != null ? (
+        <span className={isUp ? "text-sm text-emerald-400" : "text-sm text-rose-400"}>
+          {isUp ? "+" : ""}
+          {query.data.change_percent.toFixed(2)}%
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ReportChart({ symbol }: { symbol: string }) {
+  return <DailyHistory value={symbol} />;
+}
+
+function ReportFilings({ symbol }: { symbol: string }) {
+  const query = useQuery({
+    queryKey: ["research-filings", symbol],
+    queryFn: () => fetchResearchFilings(symbol),
+  });
+
+  let body: ReactNode;
+  if (query.isPending) {
+    body = <LoadingRows />;
+  } else if (query.isError) {
+    body = (
+      <QueryError
+        message={requestErrorMessage(query.error, "SEC filings could not be loaded.")}
+        onRetry={() => {
+          void query.refetch();
+        }}
+      />
+    );
+  } else if (query.data.filings.length === 0) {
+    body = <EmptyState message="No recent SEC filings." />;
+  } else {
+    body = (
+      <ul className="space-y-2">
+        {query.data.filings.map((filing) => (
+          <li className="flex items-center justify-between gap-3 text-sm" key={filing.accession_number}>
+            <span className="text-slate-300">
+              {filing.form ?? "Filing"} — {filing.filing_date ?? "Unknown date"}
+            </span>
+            <a
+              className="text-xs font-semibold text-sky-300 hover:underline"
+              href={filing.document_url}
+              rel="noreferrer"
+              target="_blank"
+            >
+              View
+            </a>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        SEC filings
+      </div>
+      <div className="mt-2">{body}</div>
+    </div>
+  );
+}
+
+function ReportNews({ symbol }: { symbol: string }) {
+  const query = useQuery({
+    queryKey: ["research-news", symbol],
+    queryFn: () => fetchResearchNews(symbol),
+  });
+
+  let body: ReactNode;
+  if (query.isPending) {
+    body = <LoadingRows />;
+  } else if (query.isError) {
+    body = (
+      <QueryError
+        message={requestErrorMessage(query.error, "News could not be loaded.")}
+        onRetry={() => {
+          void query.refetch();
+        }}
+      />
+    );
+  } else if (query.data.articles.length === 0) {
+    body = (
+      <EmptyState
+        message={query.data.error ?? "No recent news for this symbol."}
+      />
+    );
+  } else {
+    body = (
+      <ul className="space-y-3">
+        {query.data.articles.map((article) => (
+          <li className="rounded border border-slate-800 bg-slate-900/60 p-3" key={article.url}>
+            <a
+              className="text-sm font-semibold text-slate-100 hover:underline"
+              href={article.url}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {article.headline}
+            </a>
+            <div className="mt-1 text-xs text-slate-500">
+              {article.source} · {formatDateTime(article.published_at)}
+            </div>
+            {article.summary ? (
+              <p className="mt-2 text-sm text-slate-300">{article.summary}</p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        News
+      </div>
+      <div className="mt-2">{body}</div>
+    </div>
+  );
+}
+
 function ResearchReportCard({ jobId, onClose }: { jobId: number; onClose: () => void }) {
   const reportsQuery = useQuery({
     queryKey: ["research-reports"],
@@ -382,7 +526,15 @@ function ResearchReportCard({ jobId, onClose }: { jobId: number; onClose: () => 
       </div>
     );
   } else {
-    body = <ReportBody report={report} />;
+    body = (
+      <div className="space-y-5">
+        <ReportPriceHeader symbol={report.symbol} />
+        <ReportChart symbol={report.symbol} />
+        <ReportBody report={report} />
+        <ReportFilings symbol={report.symbol} />
+        <ReportNews symbol={report.symbol} />
+      </div>
+    );
   }
 
   return (
