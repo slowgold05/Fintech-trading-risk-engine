@@ -17,6 +17,7 @@ from app.services.price_service import (
 )
 from app.services.sec_service import get_sec_company_fundamentals
 from app.services.sector_classifier import infer_sector
+from app.services.sp500_constituents import load_sp500_constituents
 
 router = APIRouter()
 
@@ -213,7 +214,9 @@ def market_universe(
     search: str | None = Query(default=None, max_length=50),
     db: Session = Depends(get_db),
 ):
+    sp500_tickers = {row["ticker"] for row in load_sp500_constituents()}
     query = db.query(MarketSymbol).filter(MarketSymbol.is_active.is_(True))
+    query = query.filter(MarketSymbol.symbol.in_(sp500_tickers))
     if search:
         pattern = f"%{search.strip()}%"
         query = query.filter(
