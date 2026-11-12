@@ -104,8 +104,13 @@ walk-forward result exists and has actually been reviewed.
 
 ## Also still open, unrelated to Kronos specifically
 
-PR #74 (TradingAgents, Phase 5) introduced outbound calls to Yahoo Finance/SEC
-EDGAR/FRED through its own internal data-vendor layer, without a corresponding
-`grc/vendors/` entry or `docs/vendors.md` row — a gap discovered while building
-Phase 6's own Hugging Face vendor entry, tracked here as a reminder, not yet
-fixed.
+**Resolved, 11 November 2026 — this section was stale, left unupdated when
+the 9 November update above already said it was fixed.** PR #74
+(TradingAgents, Phase 5) introduced outbound calls to Yahoo Finance/SEC
+EDGAR/FRED through its own internal data-vendor layer. That gap is recorded
+in [grc/vendors/tradingagents_data_vendors.md](../grc/vendors/tradingagents_data_vendors.md)
+(confirmed present and covering all three vendors). What remains genuinely
+open in that entry: vendor-owner review is still pending, and the actual
+override (pointing the library's data-vendor layer at this app's own cached
+data instead of its defaults) is still not done — both disclosed in that
+file itself, not new findings here.
