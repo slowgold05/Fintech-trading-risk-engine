@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import { fetchMarketOverview } from "../api/market";
 import { fetchOrders } from "../api/orders";
 import { fetchPortfolio } from "../api/portfolio";
 import { fetchRisk } from "../api/risk";
@@ -62,6 +63,14 @@ export function Dashboard() {
     queryFn: fetchOrders,
   });
 
+  // Same key as Home so a visit to /market and /dashboard share one cache entry.
+  const marketQuery = useQuery({
+    queryKey: ["market", "overview"],
+    queryFn: fetchMarketOverview,
+    refetchInterval: 300000,
+    retry: false,
+  });
+
   const tradeMutation = useMutation({
     mutationFn: createTrade,
     onSuccess: async (result) => {
@@ -97,6 +106,7 @@ export function Dashboard() {
   const recentTrades = mapRecentTrades(trades);
   const recentOrders = ordersQuery.data?.orders.slice(0, 5) ?? null;
   const positions = mapPortfolioPositions(portfolio);
+  const marketTrends = marketQuery.data?.trends ?? [];
   const valuationRead =
     formatUtcDateTime(portfolio?.snapshot_read_at) ?? "Unavailable";
   const riskFailed = riskQuery.isError;
@@ -164,6 +174,46 @@ export function Dashboard() {
           Some dashboard data could not be loaded. Check the API server and authentication state.
         </p>
       )}
+
+      {marketQuery.isLoading ? (
+        <div
+          aria-busy="true"
+          aria-label="Market pulse"
+          className="flex flex-wrap items-center gap-2"
+          role="region"
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Market pulse
+          </span>
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="h-6 w-32" />
+        </div>
+      ) : marketTrends.length > 0 ? (
+        <div
+          aria-label="Market pulse"
+          className="flex flex-wrap items-center gap-2"
+          role="region"
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Market pulse
+          </span>
+          {marketTrends.map((trend) => (
+            <div
+              className="status-badge inline-flex items-center gap-1.5 border-slate-700 bg-slate-900 font-mono text-slate-300"
+              key={trend.source_symbol}
+            >
+              <span className="text-slate-100">{trend.source_symbol}</span>
+              <span className="font-sans text-slate-400">{trend.name}</span>
+              <span>{formatCurrency(trend.value)}</span>
+              <span className={trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                {formatSignedPercent(trend.change_percent)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
