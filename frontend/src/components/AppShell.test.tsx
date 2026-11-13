@@ -120,3 +120,18 @@ describe("mobile shell", () => {
     expect(document.body.style.overflow).not.toBe("hidden");
   });
 });
+
+describe("desktop shell", () => {
+  it("shows the formatted date and signed-in identity in the top bar", async () => {
+    desktop = true;
+    api.fetchMe.mockResolvedValue({ role: "trader", email: "ada@example.com" });
+    renderShell();
+    const header = screen.getByRole("banner");
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+    expect(header).toHaveTextContent(new Intl.DateTimeFormat("en-US", {
+      weekday: "long", month: "long", day: "numeric",
+    }).format(new Date()));
+    expect(await within(header).findByText("ada@example.com")).toBeInTheDocument();
+    expect(within(header).getByText("trader")).toBeInTheDocument();
+  });
+});
