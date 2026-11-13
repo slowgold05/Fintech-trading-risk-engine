@@ -8,6 +8,7 @@ import { fetchAttribution } from "../api/attribution";
 import { fetchPortfolio } from "../api/portfolio";
 import { fetchRiskMetrics } from "../api/riskMetrics";
 import { useToast } from "../context/useToast";
+import { AllocationRing } from "../components/AllocationRing";
 import { PageHeader } from "../components/PageHeader";
 import {
   DashboardCard,
@@ -562,11 +563,19 @@ export function Portfolio() {
                 message="Sector allocation unavailable"
               />
             ) : (
-              <SectorAllocationTable
-                cashBalance={allocationQuery.data.cash_balance}
-                cashWeightPct={allocationQuery.data.cash_weight_pct}
-                sectors={allocationQuery.data.sectors ?? []}
-              />
+              <div className="space-y-4">
+                <AllocationRing
+                  cashBalance={allocationQuery.data.cash_balance}
+                  cashWeightPct={allocationQuery.data.cash_weight_pct}
+                  sectors={allocationQuery.data.sectors ?? []}
+                  totalAccountValue={allocationQuery.data.total_account_value}
+                />
+                <SectorAllocationTable
+                  cashBalance={allocationQuery.data.cash_balance}
+                  cashWeightPct={allocationQuery.data.cash_weight_pct}
+                  sectors={allocationQuery.data.sectors ?? []}
+                />
+              </div>
             )}
           </DashboardCard>
 
