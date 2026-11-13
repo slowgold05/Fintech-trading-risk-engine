@@ -1,13 +1,63 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SurveillanceCaseResponse, SurveillanceRuleResponse } from "../types/schemas";
+import type { OpsHealthResponse, SurveillanceCaseResponse, SurveillanceRuleResponse } from "../types/schemas";
 import { Compliance } from "./Compliance";
 
 const surveillance = vi.hoisted(() => ({
   fetchSurveillanceRules: vi.fn(() => Promise.resolve({ rules: [] as SurveillanceRuleResponse[] })),
   fetchSurveillanceCases: vi.fn(() => Promise.resolve({ cases: [] as SurveillanceCaseResponse[] })),
+}));
+
+const opsHealthSample: OpsHealthResponse = {
+  generated_at: "2026-11-13T02:00:00Z",
+  market_data_freshness: { "live-ish": 0, delayed: 12, cached: 3, stale: 1 },
+  job_queues: {
+    research: { queued_count: 0, running_count: 0, oldest_queued_age_seconds: null, failed_last_24h_count: 0 },
+    forecast: { queued_count: 1, running_count: 0, oldest_queued_age_seconds: 340, failed_last_24h_count: 2 },
+  },
+  ai_usage: {
+    research_jobs_with_token_counts: 5,
+    total_prompt_tokens: 1200,
+    total_completion_tokens: 800,
+    avg_duration_ms: 4300,
+  },
+  massive_ingestion: {
+    symbols_covered: 503,
+    latest_session_date: "2026-11-12",
+    flagged_last_30d_count: 0,
+  },
+  kronos_worker: {
+    weights_cache_dir_exists: false,
+    weights_cache_bytes: 0,
+  },
+};
+
+const opsHealthApi = vi.hoisted(() => ({
+  fetchOpsHealth: vi.fn(() => Promise.resolve({
+    generated_at: "2026-11-13T02:00:00Z",
+    market_data_freshness: { "live-ish": 0, delayed: 12, cached: 3, stale: 1 },
+    job_queues: {
+      research: { queued_count: 0, running_count: 0, oldest_queued_age_seconds: null, failed_last_24h_count: 0 },
+      forecast: { queued_count: 1, running_count: 0, oldest_queued_age_seconds: 340, failed_last_24h_count: 2 },
+    },
+    ai_usage: {
+      research_jobs_with_token_counts: 5,
+      total_prompt_tokens: 1200,
+      total_completion_tokens: 800,
+      avg_duration_ms: 4300,
+    },
+    massive_ingestion: {
+      symbols_covered: 503,
+      latest_session_date: "2026-11-12",
+      flagged_last_30d_count: 0,
+    },
+    kronos_worker: {
+      weights_cache_dir_exists: false,
+      weights_cache_bytes: 0,
+    },
+  })),
 }));
 
 vi.mock("../api/compliance", () => ({
@@ -45,6 +95,7 @@ vi.mock("../api/compliance", () => ({
     { id: "R-04", title: "Erroneous orders", owner: "Operations", inherent_rating: "high",
       residual_rating: "high", controls: ["SM-PT-02"], control_health: "unverified" },
   ] }),
+  fetchOpsHealth: opsHealthApi.fetchOpsHealth,
 }));
 vi.mock("../api/auth", () => ({ fetchMe: () => Promise.resolve({ id: 1, email: "auditor@example.com", role: "auditor" }) }));
 
@@ -72,6 +123,7 @@ describe("Compliance", () => {
     expect(screen.getByText("No findings.")).toBeInTheDocument();
     expect(screen.getByText("No risk brief.")).toBeInTheDocument();
     expect(screen.getByText(/docs\/vendors.md/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Operational health" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve intent" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Request AML activation" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open incident" })).not.toBeInTheDocument();
@@ -95,6 +147,62 @@ describe("Compliance", () => {
     expect(screen.getByText("NVDA")).toBeInTheDocument();
     expect(screen.getByText("Offsetting fills")).toBeInTheDocument();
     expect(screen.queryByText("No surveillance cases.")).not.toBeInTheDocument();
+    client.clear();
+  });
+
+  function metricValue(scope: HTMLElement, label: string) {
+    const tile = within(scope).getByText(label).parentElement;
+    const value = tile?.querySelector(".font-mono");
+    if (!value) throw new Error(`missing value for ${label}`);
+    return value.textContent;
+  }
+
+  it("shows operational health counts", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><Compliance /></QueryClientProvider>);
+
+    const heading = await screen.findByRole("heading", { name: "Operational health" });
+    const card = heading.closest("section");
+    if (!card) throw new Error("missing operational health card");
+    await within(card).findByText("live-ish");
+    expect(metricValue(card, "live-ish")).toBe("0");
+    expect(metricValue(card, "delayed")).toBe("12");
+    expect(metricValue(card, "cached")).toBe("3");
+    expect(metricValue(card, "stale")).toBe("1");
+    const forecast = within(card).getByText("Forecast").parentElement;
+    if (!forecast) throw new Error("missing forecast queue");
+    expect(metricValue(forecast, "Queued")).toBe("1");
+    expect(metricValue(card, "Symbols covered")).toBe("503");
+    expect(within(card).getByText("No cached weights")).toBeInTheDocument();
+    expect(within(card).getByText("2026-11-12")).toBeInTheDocument();
+    expect(within(card).getByText(/As of /)).toBeInTheDocument();
+    expect(opsHealthSample.kronos_worker.weights_cache_dir_exists).toBe(false);
+    client.clear();
+  });
+
+  it("shows a skeleton while operational health is loading", async () => {
+    opsHealthApi.fetchOpsHealth.mockReturnValueOnce(new Promise(() => {}));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><Compliance /></QueryClientProvider>);
+
+    expect(await screen.findByText("Price band")).toBeInTheDocument();
+    const card = screen.getByRole("heading", { name: "Operational health" }).closest("section");
+    expect(card?.querySelector(".skeleton")).toBeTruthy();
+    expect(screen.queryByText("No cached weights")).not.toBeInTheDocument();
+    expect(screen.queryByText("Operational health could not be loaded.")).not.toBeInTheDocument();
+    client.clear();
+  });
+
+  it("shows an error when operational health cannot be loaded", async () => {
+    opsHealthApi.fetchOpsHealth.mockRejectedValueOnce(new Error("unavailable"));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><Compliance /></QueryClientProvider>);
+
+    expect(await screen.findByText("Operational health could not be loaded.")).toBeInTheDocument();
+    const card = screen.getByRole("heading", { name: "Operational health" }).closest("section");
+    expect(card?.querySelector(".skeleton")).toBeNull();
+    expect(screen.queryByText("No cached weights")).not.toBeInTheDocument();
+    expect(screen.queryByText("503")).not.toBeInTheDocument();
     client.clear();
   });
 });
