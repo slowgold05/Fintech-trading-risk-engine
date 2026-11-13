@@ -17,6 +17,7 @@ import {
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { fetchMe } from "../api/auth";
+import type { UserResponse } from "../types/schemas";
 
 const navigationItems: Array<{ label: string; to: string; Icon: Icon; end?: boolean }> = [
   { label: "Market", to: "/market", Icon: HouseLine, end: true },
@@ -27,6 +28,20 @@ const navigationItems: Array<{ label: string; to: string; Icon: Icon; end?: bool
   { label: "Research", to: "/research", Icon: Brain },
   { label: "Forecast Lab", to: "/forecasts", Icon: ChartLineUp },
 ];
+
+const shellDateFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+});
+
+const roleTone: Record<UserResponse["role"], string> = {
+  trader: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
+  analyst: "border-sky-400/30 bg-sky-400/10 text-sky-300",
+  compliance_officer: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  admin: "border-sky-400/30 bg-sky-400/10 text-sky-300",
+  auditor: "border-slate-600 bg-slate-800 text-slate-300",
+};
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
   const { signOut, token } = useAuth();
@@ -113,6 +128,8 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 }
 
 export function AppShell() {
+  const { token } = useAuth();
+  const me = useQuery({ queryKey: ["me", token], queryFn: fetchMe, enabled: Boolean(token) });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -201,6 +218,19 @@ export function AppShell() {
             <span className="text-sm font-semibold text-slate-100">getrichyesterday</span>
           </div>
         </header>}
+
+        {desktop && (
+          <header className="sticky top-0 z-20 flex min-h-11 items-center gap-3 border-b border-slate-800/80 bg-slate-950/95 px-4 py-3 sm:px-6">
+            <p className="text-sm font-medium text-slate-300">{shellDateFormatter.format(new Date())}</p>
+            <div className="flex-1" />
+            {me.data && (
+              <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800/80 bg-slate-900/50 px-2.5 py-1">
+                <span className="truncate text-xs font-medium text-slate-200">{me.data.email}</span>
+                <span className={["status-badge shrink-0", roleTone[me.data.role]].join(" ")}>{me.data.role}</span>
+              </div>
+            )}
+          </header>
+        )}
 
         <main className="flex-1 overflow-auto" id="main-content">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
