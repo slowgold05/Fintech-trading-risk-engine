@@ -112,6 +112,45 @@ export interface SurveillanceCaseResponse {
   closed_at: string | null;
 }
 
+export interface OpsHealthResponse {
+  generated_at: string;
+  market_data_freshness: {
+    "live-ish": number;
+    delayed: number;
+    cached: number;
+    stale: number;
+  };
+  job_queues: {
+    research: {
+      queued_count: number;
+      running_count: number;
+      oldest_queued_age_seconds: number | null;
+      failed_last_24h_count: number;
+    };
+    forecast: {
+      queued_count: number;
+      running_count: number;
+      oldest_queued_age_seconds: number | null;
+      failed_last_24h_count: number;
+    };
+  };
+  ai_usage: {
+    research_jobs_with_token_counts: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    avg_duration_ms: number;
+  };
+  massive_ingestion: {
+    symbols_covered: number;
+    latest_session_date: string | null;
+    flagged_last_30d_count: number;
+  };
+  kronos_worker: {
+    weights_cache_dir_exists: boolean;
+    weights_cache_bytes: number;
+  };
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;

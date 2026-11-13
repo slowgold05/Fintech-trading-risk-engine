@@ -2,10 +2,11 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 
-import { approveAmlActivation, approveIntent, approveRoleChange, approveSurveillanceActivation, downloadEvidenceBundle, fetchAccessReview, fetchAmlCases, fetchAmlRules, fetchControlStatuses, fetchFindings, fetchIncidents, fetchIntents, fetchKris, fetchRegisteredRisks, fetchRiskBrief, fetchRoleChanges, fetchRoleRequests, fetchSurveillanceCases, fetchSurveillanceRules, fetchTradingHalt, fetchTradingHaltEvents, openIncident, requestAmlActivation, requestRoleChange, requestSurveillanceActivation, setTradingHalt, submitAccessReview } from "../api/compliance";
+import { approveAmlActivation, approveIntent, approveRoleChange, approveSurveillanceActivation, downloadEvidenceBundle, fetchAccessReview, fetchAmlCases, fetchAmlRules, fetchControlStatuses, fetchFindings, fetchIncidents, fetchIntents, fetchKris, fetchOpsHealth, fetchRegisteredRisks, fetchRiskBrief, fetchRoleChanges, fetchRoleRequests, fetchSurveillanceCases, fetchSurveillanceRules, fetchTradingHalt, fetchTradingHaltEvents, openIncident, requestAmlActivation, requestRoleChange, requestSurveillanceActivation, setTradingHalt, submitAccessReview } from "../api/compliance";
 import { fetchMe } from "../api/auth";
 import { PageHeader } from "../components/PageHeader";
 import { DashboardCard, SkeletonBlock } from "../features/dashboard/components";
+import type { OpsHealthResponse } from "../types/schemas";
 import { formatDateTime } from "../utils/format";
 import { useToast } from "../context/useToast";
 
@@ -17,6 +18,56 @@ const statusTone: Record<string, string> = {
   evidence_error: "border-rose-400/40 bg-rose-400/10 text-rose-300",
   unknown: "border-slate-600 bg-slate-800 text-slate-300",
 };
+
+function formatQueuedAge(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  if (whole < 60) return `${whole}s`;
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  if (minutes < 60) return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`;
+  const hours = Math.floor(minutes / 60);
+  const remMin = minutes % 60;
+  return remMin === 0 ? `${hours}h` : `${hours}h ${remMin}m`;
+}
+
+function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 1000) return `${Math.round(ms)} ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) {
+    const shown = seconds >= 10 ? String(Math.round(seconds)) : seconds.toFixed(1);
+    return `${shown} s`;
+  }
+  return formatQueuedAge(Math.round(seconds));
+}
+
+function formatByteSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes))} B`;
+  const units = ["KB", "MB", "GB", "TB"] as const;
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const shown = value >= 10 ? String(Math.round(value)) : value.toFixed(1);
+  return `${shown} ${units[unitIndex]}`;
+}
+
+function JobQueueSummary({ label, queue }: { label: string; queue: OpsHealthResponse["job_queues"]["research"] }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-slate-100">{label}</p>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="metric-tile"><p className="text-xs text-slate-400">Queued</p><p className="mt-2 font-mono text-xl text-slate-100">{queue.queued_count}</p></div>
+        <div className="metric-tile"><p className="text-xs text-slate-400">Running</p><p className="mt-2 font-mono text-xl text-slate-100">{queue.running_count}</p></div>
+        <div className="metric-tile"><p className="text-xs text-slate-400">Failed last 24h</p><p className="mt-2 font-mono text-xl text-slate-100">{queue.failed_last_24h_count}</p></div>
+      </div>
+      {queue.oldest_queued_age_seconds != null ? (
+        <p className="text-xs text-slate-400">Oldest queued {formatQueuedAge(queue.oldest_queued_age_seconds)}</p>
+      ) : null}
+    </div>
+  );
+}
 
 export function Compliance() {
   const queryClient = useQueryClient();
@@ -40,6 +91,7 @@ export function Compliance() {
   const intents = useQuery({ queryKey: ["trade-intents"], queryFn: fetchIntents });
   const tradingHalt = useQuery({ queryKey: ["trading-halt"], queryFn: fetchTradingHalt });
   const haltEvents = useQuery({ queryKey: ["trading-halt-events"], queryFn: fetchTradingHaltEvents });
+  const opsHealth = useQuery({ queryKey: ["ops-health"], queryFn: fetchOpsHealth });
   const haltMutation = useMutation({
     mutationFn: setTradingHalt,
     onSuccess: () => { setHaltReason(""); showToast("success", "Trading state updated.");
@@ -161,6 +213,60 @@ export function Compliance() {
                     <p key={event.id}>{formatDateTime(event.changed_at)} · {event.halted ? "Halted" : "Resumed"} · {event.reason}</p>
                   ))}
                 </div> : null}
+              </div>
+            )}
+          </DashboardCard>
+          <DashboardCard title="Operational health">
+            {opsHealth.isLoading ? <SkeletonBlock className="h-28" /> : opsHealth.isError ? (
+              <p className="text-sm text-rose-300">Operational health could not be loaded.</p>
+            ) : opsHealth.data && (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-400">As of {formatDateTime(opsHealth.data.generated_at)}</p>
+                <div>
+                  <p className="mb-2 text-xs text-slate-400">Market data freshness</p>
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <div className="metric-tile"><p className="text-xs text-slate-400">live-ish</p><p className="mt-2 font-mono text-2xl text-emerald-300">{opsHealth.data.market_data_freshness["live-ish"]}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">delayed</p><p className="mt-2 font-mono text-2xl text-amber-300">{opsHealth.data.market_data_freshness.delayed}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">cached</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.market_data_freshness.cached}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">stale</p><p className="mt-2 font-mono text-2xl text-rose-300">{opsHealth.data.market_data_freshness.stale}</p></div>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs text-slate-400">Job queues</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <JobQueueSummary label="Research" queue={opsHealth.data.job_queues.research} />
+                    <JobQueueSummary label="Forecast" queue={opsHealth.data.job_queues.forecast} />
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs text-slate-400">AI usage</p>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="metric-tile"><p className="text-xs text-slate-400">Prompt tokens</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.ai_usage.total_prompt_tokens}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">Completion tokens</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.ai_usage.total_completion_tokens}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">Avg duration</p><p className="mt-2 font-mono text-2xl text-slate-100">{formatDurationMs(opsHealth.data.ai_usage.avg_duration_ms)}</p></div>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs text-slate-400">Massive ingestion</p>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="metric-tile"><p className="text-xs text-slate-400">Symbols covered</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.massive_ingestion.symbols_covered}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">Latest session</p><p className="mt-2 font-mono text-sm text-slate-100">{opsHealth.data.massive_ingestion.latest_session_date ?? "Never ingested"}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">Flagged last 30d</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.massive_ingestion.flagged_last_30d_count}</p></div>
+                  </div>
+                </div>
+                <div className="metric-tile">
+                  <p className="text-xs text-slate-400">Kronos worker</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className={`status-badge ${opsHealth.data.kronos_worker.weights_cache_dir_exists ? statusTone.pass : statusTone.no_sample}`}>
+                      {opsHealth.data.kronos_worker.weights_cache_dir_exists ? "cache present" : "cache missing"}
+                    </span>
+                    <p className="text-sm text-slate-100">
+                      {opsHealth.data.kronos_worker.weights_cache_dir_exists
+                        ? formatByteSize(opsHealth.data.kronos_worker.weights_cache_bytes)
+                        : "No cached weights"}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
           </DashboardCard>
