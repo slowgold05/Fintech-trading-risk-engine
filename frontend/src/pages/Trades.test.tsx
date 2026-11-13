@@ -3,14 +3,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OrderDetailResponse, OrderFill } from "../api/orderDetails";
-import type { OrderResponse, TradeResponse } from "../types/schemas";
+import type { OrderResponse, TradeResponse, TradeRiskAssessment } from "../types/schemas";
 import { Trades } from "./Trades";
 
-const { fetchOrders, cancelOrder, fetchOrderDetail, fetchTrades, showToast } = vi.hoisted(() => ({
+const { fetchOrders, cancelOrder, fetchOrderDetail, fetchTrades, fetchTradeRisk, showToast } = vi.hoisted(() => ({
   fetchOrders: vi.fn(),
   cancelOrder: vi.fn(),
   fetchOrderDetail: vi.fn(),
   fetchTrades: vi.fn(),
+  fetchTradeRisk: vi.fn(),
   showToast: vi.fn(),
 }));
 
@@ -20,6 +21,7 @@ vi.mock("../api/orderDetails", async () => {
   return { ...actual, fetchOrderDetail };
 });
 vi.mock("../api/trades", () => ({ fetchTrades }));
+vi.mock("../api/risk", () => ({ fetchTradeRisk }));
 vi.mock("../context/useToast", () => ({ useToast: () => ({ showToast, dismissToast: vi.fn(), toasts: [] }) }));
 vi.mock("../components/OrderTicket", () => ({ OrderTicket: () => <div>Order ticket stub</div> }));
 
@@ -32,6 +34,7 @@ afterEach(() => {
   cancelOrder.mockReset();
   fetchOrderDetail.mockReset();
   fetchTrades.mockReset();
+  fetchTradeRisk.mockReset();
   showToast.mockReset();
 });
 
@@ -50,6 +53,40 @@ function renderTrades() {
     </QueryClientProvider>,
   );
   return { client, invalidate };
+}
+
+function trade(patch: Partial<TradeResponse> = {}): TradeResponse {
+  return {
+    id: 45,
+    symbol: "AAPL",
+    asset_type: "stock",
+    side: "buy",
+    quantity: 10,
+    price_at_execution: 190.25,
+    notional: 1902.5,
+    realized_pnl: 0,
+    realized_pnl_pct: 0,
+    executed_at: "2026-11-13T00:00:00Z",
+    ...patch,
+  };
+}
+
+function tradeRisk(patch: Partial<TradeRiskAssessment> = {}): TradeRiskAssessment {
+  return {
+    assessment_id: 12,
+    trade_id: 45,
+    risk_score: 23,
+    created_at: "2026-11-13T00:00:00",
+    alerts: [
+      {
+        rule_code: "CONCENTRATION_LIMIT",
+        severity: "medium",
+        reason: "Position exceeds 20% of account value.",
+        created_at: "2026-11-13T00:00:00",
+      },
+    ],
+    ...patch,
+  };
 }
 
 function order(patch: Partial<OrderResponse> = {}): OrderResponse {
@@ -507,5 +544,78 @@ describe("orders list states", () => {
     gate.resolve(detail({ quantity: "1.000000", filled_quantity: "0.000000", remaining_quantity: "1.000000", total_fill_count: 0, fills: [] }));
     expect(await screen.findByText("No recorded fills.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+});
+
+describe("trade risk detail", () => {
+  it("expands a row, fetches risk, and shows the score and alerts", async () => {
+    fetchTrades.mockResolvedValue({ trades: [trade()] });
+    fetchOrders.mockResolvedValue({ orders: [] });
+    fetchTradeRisk.mockResolvedValue(tradeRisk());
+    renderTrades();
+    const trigger = await screen.findByRole("button", { name: "Risk for AAPL trade 45" });
+    expect(fetchTradeRisk).not.toHaveBeenCalled();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    await waitFor(() => expect(fetchTradeRisk).toHaveBeenCalledWith(45));
+    const region = await screen.findByRole("region", { name: "Risk for AAPL trade 45" });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(await within(region).findByText("23")).toBeInTheDocument();
+    expect(within(region).getByText("CONCENTRATION_LIMIT")).toBeInTheDocument();
+    expect(within(region).getByText("medium")).toBeInTheDocument();
+    expect(within(region).getByText("Position exceeds 20% of account value.")).toBeInTheDocument();
+  });
+
+  it("shows the no-assessment message", async () => {
+    fetchTrades.mockResolvedValue({ trades: [trade()] });
+    fetchOrders.mockResolvedValue({ orders: [] });
+    fetchTradeRisk.mockResolvedValue({ message: "No risk assessment found for this trade." });
+    renderTrades();
+    fireEvent.click(await screen.findByRole("button", { name: "Risk for AAPL trade 45" }));
+    expect(await screen.findByText("No risk assessment found for this trade.")).toBeInTheDocument();
+    expect(screen.queryByText("No alerts triggered.")).not.toBeInTheDocument();
+  });
+
+  it("shows No alerts triggered when the assessment has zero alerts", async () => {
+    fetchTrades.mockResolvedValue({ trades: [trade()] });
+    fetchOrders.mockResolvedValue({ orders: [] });
+    fetchTradeRisk.mockResolvedValue(tradeRisk({ alerts: [] }));
+    renderTrades();
+    fireEvent.click(await screen.findByRole("button", { name: "Risk for AAPL trade 45" }));
+    const region = await screen.findByRole("region", { name: "Risk for AAPL trade 45" });
+    expect(await within(region).findByText("23")).toBeInTheDocument();
+    expect(within(region).getByText("No alerts triggered.")).toBeInTheDocument();
+    expect(within(region).queryByText("CONCENTRATION_LIMIT")).not.toBeInTheDocument();
+  });
+
+  it("collapses the detail and re-expands from the cached query", async () => {
+    fetchTrades.mockResolvedValue({ trades: [trade()] });
+    fetchOrders.mockResolvedValue({ orders: [] });
+    fetchTradeRisk.mockResolvedValue(tradeRisk());
+    renderTrades();
+    const trigger = await screen.findByRole("button", { name: "Risk for AAPL trade 45" });
+    fireEvent.click(trigger);
+    expect(await screen.findByText("CONCENTRATION_LIMIT")).toBeInTheDocument();
+    expect(fetchTradeRisk).toHaveBeenCalledTimes(1);
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("region", { name: "Risk for AAPL trade 45" })).not.toBeInTheDocument();
+    expect(screen.queryByText("CONCENTRATION_LIMIT")).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(await screen.findByText("CONCENTRATION_LIMIT")).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("shows loading while the per-trade query is in flight", async () => {
+    fetchTrades.mockResolvedValue({ trades: [trade()] });
+    fetchOrders.mockResolvedValue({ orders: [] });
+    const gate = deferred<ReturnType<typeof tradeRisk>>();
+    fetchTradeRisk.mockImplementation(() => gate.promise);
+    renderTrades();
+    fireEvent.click(await screen.findByRole("button", { name: "Risk for AAPL trade 45" }));
+    expect(await screen.findByText("Loading...")).toBeInTheDocument();
+    gate.resolve(tradeRisk());
+    expect(await screen.findByText("CONCENTRATION_LIMIT")).toBeInTheDocument();
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
   });
 });

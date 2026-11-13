@@ -380,6 +380,23 @@ export interface RiskResponse {
   assessments: RiskAssessmentResponse[];
 }
 
+export interface TradeRiskAlert {
+  rule_code: string;
+  severity: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface TradeRiskAssessment {
+  assessment_id: number;
+  trade_id: number;
+  risk_score: number;
+  created_at: string;
+  alerts: TradeRiskAlert[];
+}
+
+export type TradeRiskResponse = TradeRiskAssessment | { message: string };
+
 export interface MarketTrendResponse {
   symbol: string;
   source_symbol: string;
