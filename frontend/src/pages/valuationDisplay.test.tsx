@@ -884,15 +884,17 @@ describe("valuation display", () => {
     renderPage(<Portfolio />);
 
     const card = (await screen.findByRole("heading", { name: "Sector allocation" })).closest("section") as HTMLElement;
-    expect(await within(card).findByText("$1,000")).toBeInTheDocument();
-    expect(within(card).getByText("Cash")).toBeInTheDocument();
-    expect(within(card).getByText("62.50%")).toBeInTheDocument();
-    expect(within(card).getByText("Technology")).toBeInTheDocument();
-    expect(within(card).getByText("$300")).toBeInTheDocument();
-    expect(within(card).getByText("18.75%")).toBeInTheDocument();
-    expect(within(card).getByText("Financials")).toBeInTheDocument();
-    expect(within(card).getByText("$200")).toBeInTheDocument();
-    expect(within(card).getByText("12.50%")).toBeInTheDocument();
+    // The ring legend repeats these labels. Assert the table, which is this card's data check.
+    const table = await within(card).findByRole("table");
+    expect(within(table).getByText("$1,000")).toBeInTheDocument();
+    expect(within(table).getByText("Cash")).toBeInTheDocument();
+    expect(within(table).getByText("62.50%")).toBeInTheDocument();
+    expect(within(table).getByText("Technology")).toBeInTheDocument();
+    expect(within(table).getByText("$300")).toBeInTheDocument();
+    expect(within(table).getByText("18.75%")).toBeInTheDocument();
+    expect(within(table).getByText("Financials")).toBeInTheDocument();
+    expect(within(table).getByText("$200")).toBeInTheDocument();
+    expect(within(table).getByText("12.50%")).toBeInTheDocument();
     expect(within(card).queryByText("Sector allocation unavailable")).not.toBeInTheDocument();
   });
 
