@@ -15,6 +15,17 @@ const api = vi.hoisted(() => ({
   cancelResearchJob: vi.fn(),
   listResearchReports: vi.fn(),
   listResearchBriefs: vi.fn(),
+  fetchResearchFilings: vi.fn(),
+  fetchResearchNews: vi.fn(),
+}));
+
+const market = vi.hoisted(() => ({
+  fetchMarketResearch: vi.fn(),
+}));
+
+const historyApi = vi.hoisted(() => ({
+  fetchCachedSeries: vi.fn(),
+  fetchDailyHistory: vi.fn(),
 }));
 
 vi.mock("../api/research", () => ({
@@ -23,7 +34,15 @@ vi.mock("../api/research", () => ({
   cancelResearchJob: api.cancelResearchJob,
   listResearchReports: api.listResearchReports,
   listResearchBriefs: api.listResearchBriefs,
+  fetchResearchFilings: api.fetchResearchFilings,
+  fetchResearchNews: api.fetchResearchNews,
 }));
+
+vi.mock("../api/market", () => ({
+  fetchMarketResearch: market.fetchMarketResearch,
+}));
+
+vi.mock("../api/history", () => historyApi);
 
 const clients: QueryClient[] = [];
 
@@ -100,6 +119,37 @@ describe("Research desk", () => {
     api.listResearchJobs.mockResolvedValue({ jobs: [] });
     api.listResearchReports.mockResolvedValue({ reports: [] });
     api.listResearchBriefs.mockResolvedValue({ briefs: [] });
+    api.fetchResearchFilings.mockReset();
+    api.fetchResearchNews.mockReset();
+    market.fetchMarketResearch.mockReset();
+    historyApi.fetchCachedSeries.mockReset();
+    historyApi.fetchDailyHistory.mockReset();
+    api.fetchResearchFilings.mockResolvedValue({
+      symbol: "AAPL",
+      cik: "0000320193",
+      name: "Apple Inc.",
+      filings: [],
+      source: "SEC EDGAR",
+      fetched_at: "2026-11-08T16:00:00Z",
+    });
+    api.fetchResearchNews.mockResolvedValue({
+      symbol: "AAPL",
+      articles: [],
+      error: null,
+    });
+    market.fetchMarketResearch.mockResolvedValue({
+      symbol: "AAPL",
+      price: null,
+      change_percent: null,
+      errors: [],
+    });
+    historyApi.fetchCachedSeries.mockResolvedValue({
+      read_at: "2026-11-08T16:00:00Z",
+      collection: "disabled",
+      coverage_status: "not_verified",
+      expected_session_count: null,
+      canonical_history: { series: [] },
+    });
   });
 
   afterEach(() => {
@@ -204,6 +254,76 @@ describe("Research desk", () => {
     expect(screen.getByText("The base case is balanced growth.")).toBeInTheDocument();
     expect(screen.getByText("A regulatory ruling could delay the launch.")).toBeInTheDocument();
     expect(api.listResearchReports).toHaveBeenCalledTimes(1);
+  });
+
+  it("test_created_job_report_shows_filings_and_a_news_headline", async () => {
+    let listed: ResearchJob[] = [];
+    api.listResearchJobs.mockImplementation(async () => ({ jobs: listed }));
+    api.createResearchJob.mockImplementation(async (symbol: string) => {
+      const created = job({ id: 11, symbol, status: "completed" });
+      listed = [created];
+      return created;
+    });
+    api.listResearchReports.mockResolvedValue({
+      reports: [report({ id: 80, job_id: 11 })],
+    });
+    api.fetchResearchFilings.mockResolvedValue({
+      symbol: "AAPL",
+      cik: "0000320193",
+      name: "Apple Inc.",
+      filings: [
+        {
+          form: "10-K",
+          filing_date: "2026-01-01",
+          report_date: "2025-12-31",
+          accession_number: "0000320193-26-000001",
+          primary_document: "aapl-20251231.htm",
+          document_url:
+            "https://www.sec.gov/Archives/edgar/data/320193/000032019326000001/aapl-20251231.htm",
+        },
+      ],
+      source: "SEC EDGAR",
+      fetched_at: "2026-11-08T16:00:00Z",
+    });
+    api.fetchResearchNews.mockResolvedValue({
+      symbol: "AAPL",
+      articles: [
+        {
+          headline: "Apple outlines a new product cycle",
+          summary: "The company discussed demand.",
+          source: "Reuters",
+          url: "https://example.com/apple-news",
+          published_at: "2026-11-08T12:00:00Z",
+        },
+      ],
+      error: null,
+    });
+    market.fetchMarketResearch.mockResolvedValue({
+      symbol: "AAPL",
+      price: 190.25,
+      change_percent: 1.2,
+      errors: [],
+    });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Symbol"), { target: { value: "AAPL" } });
+    fireEvent.click(screen.getByRole("button", { name: "Queue job" }));
+
+    await waitFor(() => {
+      expect(api.createResearchJob).toHaveBeenCalledWith("AAPL");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "View report" }));
+
+    expect(await screen.findByText("10-K — 2026-01-01")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View" })).toHaveAttribute(
+      "href",
+      "https://www.sec.gov/Archives/edgar/data/320193/000032019326000001/aapl-20251231.htm",
+    );
+    expect(screen.getByText("Apple outlines a new product cycle")).toBeInTheDocument();
+    expect(screen.getByText("$190.25")).toBeInTheDocument();
+    expect(api.fetchResearchFilings).toHaveBeenCalledWith("AAPL");
+    expect(api.fetchResearchNews).toHaveBeenCalledWith("AAPL");
+    expect(market.fetchMarketResearch).toHaveBeenCalledWith("AAPL");
   });
 
   it("test_view_report_handles_a_report_not_yet_in_the_list", async () => {

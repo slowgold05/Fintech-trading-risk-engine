@@ -86,6 +86,15 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute(
                 "GRANT UPDATE (cik, payload, fetched_at) ON market_filings_cache TO fintech_app"
             )
+            # News helper inserts a row (Python source default finnhub is
+            # emitted) and later refreshes payload and fetched_at only.
+            cursor.execute(
+                "GRANT INSERT (symbol, payload, source, fetched_at) "
+                "ON market_news_cache TO fintech_app"
+            )
+            cursor.execute(
+                "GRANT UPDATE (payload, fetched_at) ON market_news_cache TO fintech_app"
+            )
             # Research and forecast writers. SQLAlchemy INSERT lists every mapped
             # column without a server default, including nullable columns left as
             # None (research error/token/duration fields and forecast error_message).

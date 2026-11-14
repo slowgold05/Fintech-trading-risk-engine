@@ -2,6 +2,14 @@ import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import {
+  ShieldCheck,
+  TrendDown,
+  TrendUp,
+  Wallet,
+  type Icon,
+} from "@phosphor-icons/react";
+import { fetchMarketOverview } from "../api/market";
 import { fetchOrders } from "../api/orders";
 import { fetchPortfolio } from "../api/portfolio";
 import { fetchRisk } from "../api/risk";
@@ -9,6 +17,7 @@ import { createTrade, fetchTrades } from "../api/trades";
 import {
   DashboardCard,
   EmptyState,
+  IconBadge,
   PnlValue,
   PositionsTable,
   QuickTradePanel,
@@ -17,6 +26,7 @@ import {
   RiskScoreCard,
   SkeletonBlock,
 } from "../features/dashboard/components";
+import type { IconBadgeTone } from "../features/dashboard/components/IconBadge";
 import {
   getTotalPnl,
   getUnrealizedPnlPercent,
@@ -36,6 +46,29 @@ import {
   formatUtcDateTime,
 } from "../utils/format";
 import { getRiskTone } from "../utils/riskTone";
+
+const riskBadgeTone = {
+  Low: "emerald",
+  Medium: "amber",
+  High: "rose",
+} as const satisfies Record<ReturnType<typeof getRiskTone>["level"], IconBadgeTone>;
+
+function assessmentTone(score: number | null): IconBadgeTone {
+  if (score == null) {
+    return "slate";
+  }
+  return riskBadgeTone[getRiskTone(score).level];
+}
+
+function pricedMove(value: number | null): { Icon: Icon; tone: IconBadgeTone } {
+  if (value == null) {
+    return { Icon: TrendUp, tone: "slate" };
+  }
+  if (value < 0) {
+    return { Icon: TrendDown, tone: "rose" };
+  }
+  return { Icon: TrendUp, tone: "emerald" };
+}
 
 export function Dashboard() {
   const pendingTrade = useRef<{ payload: string; key: string } | null>(null);
@@ -60,6 +93,14 @@ export function Dashboard() {
   const ordersQuery = useQuery({
     queryKey: ["orders"],
     queryFn: fetchOrders,
+  });
+
+  // Same key as Home so a visit to /market and /dashboard share one cache entry.
+  const marketQuery = useQuery({
+    queryKey: ["market", "overview"],
+    queryFn: fetchMarketOverview,
+    refetchInterval: 300000,
+    retry: false,
   });
 
   const tradeMutation = useMutation({
@@ -97,6 +138,7 @@ export function Dashboard() {
   const recentTrades = mapRecentTrades(trades);
   const recentOrders = ordersQuery.data?.orders.slice(0, 5) ?? null;
   const positions = mapPortfolioPositions(portfolio);
+  const marketTrends = marketQuery.data?.trends ?? [];
   const valuationRead =
     formatUtcDateTime(portfolio?.snapshot_read_at) ?? "Unavailable";
   const riskFailed = riskQuery.isError;
@@ -105,6 +147,8 @@ export function Dashboard() {
   const isPortfolioLoading = portfolioQuery.isLoading;
   const isTradesLoading = tradesQuery.isLoading;
   const isRiskLoading = riskQuery.isLoading;
+  const totalPnlMove = pricedMove(totalPnl);
+  const unrealizedMove = pricedMove(unrealizedPnlPercent);
   const hasDashboardError =
     portfolioQuery.isError || tradesQuery.isError || riskQuery.isError;
 
@@ -165,6 +209,46 @@ export function Dashboard() {
         </p>
       )}
 
+      {marketQuery.isLoading ? (
+        <div
+          aria-busy="true"
+          aria-label="Market pulse"
+          className="flex flex-wrap items-center gap-2"
+          role="region"
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Market pulse
+          </span>
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="h-6 w-36" />
+          <SkeletonBlock className="h-6 w-32" />
+        </div>
+      ) : marketTrends.length > 0 ? (
+        <div
+          aria-label="Market pulse"
+          className="flex flex-wrap items-center gap-2"
+          role="region"
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Market pulse
+          </span>
+          {marketTrends.map((trend) => (
+            <div
+              className="status-badge inline-flex items-center gap-1.5 border-slate-700 bg-slate-900 font-mono text-slate-300"
+              key={trend.source_symbol}
+            >
+              <span className="text-slate-100">{trend.source_symbol}</span>
+              <span className="font-sans text-slate-400">{trend.name}</span>
+              <span>{formatCurrency(trend.value)}</span>
+              <span className={trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                {formatSignedPercent(trend.change_percent)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div
@@ -173,7 +257,8 @@ export function Dashboard() {
             riskScore == null ? "border-slate-700/80" : getRiskTone(riskScore).metric,
           ].join(" ")}
         >
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <IconBadge Icon={ShieldCheck} tone={assessmentTone(riskScore)} />
             Latest assessment
           </div>
           <div className="mt-2 flex items-baseline justify-between gap-2">
@@ -195,7 +280,8 @@ export function Dashboard() {
         </div>
 
         <div className="metric-tile">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <IconBadge Icon={totalPnlMove.Icon} tone={totalPnlMove.tone} />
             Total P&amp;L
           </div>
           <div className="mt-2 text-base font-semibold">
@@ -208,7 +294,8 @@ export function Dashboard() {
         </div>
 
         <div className="metric-tile">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <IconBadge Icon={unrealizedMove.Icon} tone={unrealizedMove.tone} />
             Unrealized P&amp;L %
           </div>
           <div className={[
@@ -224,7 +311,8 @@ export function Dashboard() {
         </div>
 
         <div className="metric-tile">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <IconBadge Icon={Wallet} tone="slate" />
             Cash
           </div>
           <div className="mt-2 font-mono text-base font-semibold text-slate-200">

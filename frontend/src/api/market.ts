@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type {
   MarketHeatmapResponse,
+  MarketNewsResponse,
   MarketOverviewResponse,
   MarketResearchResponse,
   MarketTrendingResponse,
@@ -32,5 +33,10 @@ export async function fetchMarketResearch(
   const response = await apiClient.get<MarketResearchResponse>(
     `/market/research/${encodeURIComponent(symbol)}`,
   );
+  return response.data;
+}
+
+export async function fetchMarketNews(): Promise<MarketNewsResponse> {
+  const response = await apiClient.get<MarketNewsResponse>("/market/news");
   return response.data;
 }

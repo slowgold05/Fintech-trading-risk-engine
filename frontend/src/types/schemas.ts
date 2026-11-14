@@ -112,6 +112,45 @@ export interface SurveillanceCaseResponse {
   closed_at: string | null;
 }
 
+export interface OpsHealthResponse {
+  generated_at: string;
+  market_data_freshness: {
+    "live-ish": number;
+    delayed: number;
+    cached: number;
+    stale: number;
+  };
+  job_queues: {
+    research: {
+      queued_count: number;
+      running_count: number;
+      oldest_queued_age_seconds: number | null;
+      failed_last_24h_count: number;
+    };
+    forecast: {
+      queued_count: number;
+      running_count: number;
+      oldest_queued_age_seconds: number | null;
+      failed_last_24h_count: number;
+    };
+  };
+  ai_usage: {
+    research_jobs_with_token_counts: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    avg_duration_ms: number;
+  };
+  massive_ingestion: {
+    symbols_covered: number;
+    latest_session_date: string | null;
+    flagged_last_30d_count: number;
+  };
+  kronos_worker: {
+    weights_cache_dir_exists: boolean;
+    weights_cache_bytes: number;
+  };
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -341,6 +380,23 @@ export interface RiskResponse {
   assessments: RiskAssessmentResponse[];
 }
 
+export interface TradeRiskAlert {
+  rule_code: string;
+  severity: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface TradeRiskAssessment {
+  assessment_id: number;
+  trade_id: number;
+  risk_score: number;
+  created_at: string;
+  alerts: TradeRiskAlert[];
+}
+
+export type TradeRiskResponse = TradeRiskAssessment | { message: string };
+
 export interface MarketTrendResponse {
   symbol: string;
   source_symbol: string;
@@ -441,6 +497,51 @@ export interface MarketResearchResponse {
     source?: string;
     detail: string | null;
   }>;
+}
+
+export interface ResearchFiling {
+  form: string | null;
+  filing_date: string | null;
+  report_date: string | null;
+  accession_number: string;
+  primary_document: string;
+  document_url: string;
+}
+
+export interface ResearchFilingsResponse {
+  symbol: string;
+  cik: string;
+  name: string | null;
+  filings: ResearchFiling[];
+  source: string;
+  fetched_at: string;
+}
+
+export interface MarketNewsArticle {
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published_at: string;
+}
+
+export interface MarketNewsResponse {
+  articles: MarketNewsArticle[];
+  as_of: string | null;
+}
+
+export interface ResearchNewsArticle {
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published_at: string;
+}
+
+export interface ResearchNewsResponse {
+  symbol: string;
+  articles: ResearchNewsArticle[];
+  error: string | null;
 }
 
 export interface TradeImpactLevel {

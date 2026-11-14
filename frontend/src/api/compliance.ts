@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { AccessReviewAccountResponse, ControlStatusResponse, RegisteredRiskResponse, RoleChangeResponse, RoleRequestResponse, SurveillanceCaseResponse, SurveillanceRuleResponse, TradingHaltResponse, TradingHaltEventResponse } from "../types/schemas";
+import type { AccessReviewAccountResponse, ControlStatusResponse, OpsHealthResponse, RegisteredRiskResponse, RoleChangeResponse, RoleRequestResponse, SurveillanceCaseResponse, SurveillanceRuleResponse, TradingHaltResponse, TradingHaltEventResponse } from "../types/schemas";
 
 export async function fetchTradingHalt(): Promise<TradingHaltResponse> {
   const response = await apiClient.get<TradingHaltResponse>("/compliance/trading-halt");
@@ -182,6 +182,11 @@ export async function fetchFindings(): Promise<{ findings: FindingResponse[] }> 
 
 export async function fetchRiskBrief(): Promise<{ brief: RiskBriefResponse | null }> {
   const response = await apiClient.get<{ brief: RiskBriefResponse | null }>("/compliance/risk-brief");
+  return response.data;
+}
+
+export async function fetchOpsHealth(): Promise<OpsHealthResponse> {
+  const response = await apiClient.get<OpsHealthResponse>("/compliance/ops-health");
   return response.data;
 }
 

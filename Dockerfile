@@ -24,7 +24,7 @@ COPY grc/signals/accounts.yaml grc/signals/accounts.yaml
 COPY deploy/us-east-2-bundle.pem deploy/us-east-2-bundle.pem
 COPY deploy/entrypoint.sh deploy/entrypoint.sh
 ENV PGSSLROOTCERT=/app/deploy/us-east-2-bundle.pem
-RUN chmod 755 deploy/entrypoint.sh && mkdir -p grc/evidence && chown -R app:app /app
+RUN sed -i 's/\r$//' deploy/entrypoint.sh && chmod 755 deploy/entrypoint.sh && mkdir -p grc/evidence && chown -R app:app /app
 
 USER app
 EXPOSE 8000

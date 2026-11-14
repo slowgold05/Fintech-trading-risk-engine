@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { fetchTrades } from "../api/trades";
+import { fetchTradeRisk } from "../api/risk";
 import { cancelOrder, fetchOrders } from "../api/orders";
 import { OrderDetails } from "../components/OrderDetails";
 import { OrderTicket } from "../components/OrderTicket";
@@ -18,10 +19,175 @@ import {
   formatCurrency,
   formatQuantity,
 } from "../utils/format";
-import type { TradeResponse } from "../types/schemas";
+import { getRiskTone } from "../utils/riskTone";
+import type { TradeResponse, TradeRiskResponse } from "../types/schemas";
 
 function getTradeStatus(trade: TradeResponse) {
   return trade.id ? "Executed" : "Pending";
+}
+
+function hasNoAssessment(
+  data: TradeRiskResponse,
+): data is { message: string } {
+  return "message" in data;
+}
+
+function TradeHistoryRow({ trade }: { trade: TradeResponse }) {
+  const [expanded, setExpanded] = useState(false);
+  const panelId = `trade-risk-${trade.id}`;
+  const riskQuery = useQuery({
+    queryKey: ["trade-risk", trade.id],
+    queryFn: () => fetchTradeRisk(trade.id),
+    enabled: expanded,
+  });
+
+  return (
+    <>
+      <tr
+        className={[
+          "border-l-2",
+          trade.side === "buy"
+            ? "border-l-emerald-400/70"
+            : "border-l-rose-400/70",
+        ].join(" ")}
+      >
+        <td>
+          <div className="font-mono text-sm font-semibold text-slate-100">
+            {trade.symbol}
+          </div>
+          <div className="font-mono text-[11px] uppercase text-slate-500">
+            {trade.asset_type}
+          </div>
+        </td>
+        <td>
+          <span
+            className={[
+              "risk-chip",
+              trade.side === "buy"
+                ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                : "border-rose-400/40 bg-rose-400/10 text-rose-300",
+            ].join(" ")}
+          >
+            {trade.side}
+          </span>
+        </td>
+        <td className="text-right font-mono tabular-nums">
+          {formatQuantity(trade.quantity)}
+        </td>
+        <td className="text-right font-mono tabular-nums">
+          {formatCurrency(trade.price_at_execution)}
+        </td>
+        <td className="text-right font-mono tabular-nums text-slate-400">
+          {formatDateTime(trade.executed_at)}
+        </td>
+        <td className="text-right">
+          <span className="status-badge border-slate-700 bg-slate-900 text-slate-300">
+            {getTradeStatus(trade)}
+          </span>
+        </td>
+        <td className="text-right">
+          {Number.isFinite(trade.realized_pnl) ? (
+            <PnlValue value={trade.realized_pnl} />
+          ) : (
+            <span className="font-mono text-slate-500">--</span>
+          )}
+        </td>
+        <td className="text-right">
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center px-2 text-sm text-emerald-300 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+            aria-expanded={expanded}
+            aria-controls={panelId}
+            aria-label={`Risk for ${trade.symbol} trade ${trade.id}`}
+            onClick={() => setExpanded((open) => !open)}
+          >
+            Risk
+          </button>
+        </td>
+      </tr>
+      {expanded ? (
+        <tr>
+          <td className="bg-slate-950/40 px-4 py-3" colSpan={8}>
+            <div
+              aria-busy={riskQuery.isLoading}
+              aria-label={`Risk for ${trade.symbol} trade ${trade.id}`}
+              id={panelId}
+              role="region"
+            >
+              <TradeRiskDetail
+                data={riskQuery.data}
+                isError={riskQuery.isError}
+                isLoading={riskQuery.isLoading}
+              />
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
+function TradeRiskDetail({
+  data,
+  isError,
+  isLoading,
+}: {
+  data: TradeRiskResponse | undefined;
+  isError: boolean;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return <p className="text-sm text-slate-400">Loading...</p>;
+  }
+
+  if (isError) {
+    return (
+      <p className="text-sm text-rose-200">
+        Risk detail could not be loaded.
+      </p>
+    );
+  }
+
+  if (data == null) {
+    return null;
+  }
+
+  if (hasNoAssessment(data)) {
+    return <p className="text-sm text-slate-300">{data.message}</p>;
+  }
+
+  const tone = getRiskTone(data.risk_score);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Risk score
+        </span>
+        <span className={["risk-chip", tone.chip].join(" ")}>
+          {data.risk_score}
+        </span>
+      </div>
+      {data.alerts.length === 0 ? (
+        <p className="text-sm text-slate-400">No alerts triggered.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {data.alerts.map((alert) => (
+            <li
+              className="text-sm text-slate-300"
+              key={`${alert.rule_code}-${alert.created_at}-${alert.reason}`}
+            >
+              <span className="font-mono text-slate-100">{alert.rule_code}</span>
+              <span className="mx-2 font-mono text-xs uppercase text-slate-500">
+                {alert.severity}
+              </span>
+              <span>{alert.reason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 type CancelNotice = {
@@ -201,61 +367,12 @@ export function Trades() {
                     <th className="text-right">Timestamp</th>
                     <th className="text-right">Status</th>
                     <th className="text-right">P&L</th>
+                    <th className="text-right">Risk</th>
                   </tr>
                 </thead>
                 <tbody>
                   {trades.map((trade) => (
-                    <tr
-                      className={[
-                        "border-l-2",
-                        trade.side === "buy"
-                          ? "border-l-emerald-400/70"
-                          : "border-l-rose-400/70",
-                      ].join(" ")}
-                      key={trade.id}
-                    >
-                      <td>
-                        <div className="font-mono text-sm font-semibold text-slate-100">
-                          {trade.symbol}
-                        </div>
-                        <div className="font-mono text-[11px] uppercase text-slate-500">
-                          {trade.asset_type}
-                        </div>
-                      </td>
-                      <td>
-                        <span
-                          className={[
-                            "risk-chip",
-                            trade.side === "buy"
-                              ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                              : "border-rose-400/40 bg-rose-400/10 text-rose-300",
-                          ].join(" ")}
-                        >
-                          {trade.side}
-                        </span>
-                      </td>
-                      <td className="text-right font-mono tabular-nums">
-                        {formatQuantity(trade.quantity)}
-                      </td>
-                      <td className="text-right font-mono tabular-nums">
-                        {formatCurrency(trade.price_at_execution)}
-                      </td>
-                      <td className="text-right font-mono tabular-nums text-slate-400">
-                        {formatDateTime(trade.executed_at)}
-                      </td>
-                      <td className="text-right">
-                        <span className="status-badge border-slate-700 bg-slate-900 text-slate-300">
-                          {getTradeStatus(trade)}
-                        </span>
-                      </td>
-                      <td className="text-right">
-                        {Number.isFinite(trade.realized_pnl) ? (
-                          <PnlValue value={trade.realized_pnl} />
-                        ) : (
-                          <span className="font-mono text-slate-500">--</span>
-                        )}
-                      </td>
-                    </tr>
+                    <TradeHistoryRow key={trade.id} trade={trade} />
                   ))}
                 </tbody>
               </table>

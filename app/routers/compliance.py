@@ -21,6 +21,7 @@ from app.models.access_review import AccessReview
 from app.models.user import User
 from app.models.trading_halt import TradingHaltState, TradingHaltEvent
 from app.models.forecast_job import ForecastJob
+from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.research_job import ResearchJob
@@ -569,6 +570,44 @@ def _ai_usage(db: Session) -> dict:
     }
 
 
+def _massive_ingestion_health(db: Session, now: datetime) -> dict:
+    naive_now = now.replace(tzinfo=None) if now.tzinfo else now
+    symbols_covered = db.execute(
+        select(func.count(func.distinct(MarketBarDaily.symbol))).where(
+            MarketBarDaily.provider == "massive"
+        )
+    ).scalar_one()
+    latest_session_date = db.execute(
+        select(func.max(MarketBarDaily.session_date)).where(
+            MarketBarDaily.provider == "massive"
+        )
+    ).scalar_one()
+    flagged_last_30d_count = db.execute(
+        select(func.count()).select_from(MarketBarDaily).where(
+            MarketBarDaily.provider == "massive",
+            MarketBarDaily.quality_status == "flagged",
+            MarketBarDaily.session_date >= (naive_now - timedelta(days=30)).date(),
+        )
+    ).scalar_one()
+    return {
+        "symbols_covered": symbols_covered,
+        "latest_session_date": (
+            latest_session_date.isoformat() if latest_session_date is not None else None
+        ),
+        "flagged_last_30d_count": flagged_last_30d_count,
+    }
+
+
+def _kronos_worker_health() -> dict:
+    cache_dir = Path(settings.forecast_kronos_cache_dir)
+    if not cache_dir.is_dir():
+        return {"weights_cache_dir_exists": False, "weights_cache_bytes": 0}
+    total_bytes = sum(
+        path.stat().st_size for path in cache_dir.rglob("*") if path.is_file()
+    )
+    return {"weights_cache_dir_exists": True, "weights_cache_bytes": total_bytes}
+
+
 @router.get("/ops-health")
 def get_ops_health(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
@@ -594,4 +633,6 @@ def get_ops_health(db: Session = Depends(get_db)):
             "forecast": _job_queue_stats(db, ForecastJob, now),
         },
         "ai_usage": _ai_usage(db),
+        "massive_ingestion": _massive_ingestion_health(db, now),
+        "kronos_worker": _kronos_worker_health(),
     }

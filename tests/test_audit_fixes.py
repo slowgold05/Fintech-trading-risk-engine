@@ -347,6 +347,62 @@ def test_only_one_scheduler_runs_the_cycle(monkeypatch):
         engine.dispose()
 
 
+def test_a_failing_step_does_not_block_the_rest_of_the_cycle(monkeypatch):
+    with TemporaryDirectory() as directory:
+        engine = create_engine(
+            f"sqlite:///{Path(directory) / 'scheduler_isolation.db'}",
+            connect_args={"check_same_thread": False},
+            poolclass=NullPool,
+        )
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine, future=True)
+        monkeypatch.setattr(scheduled_jobs, "SessionLocal", Session)
+        calls = []
+        guard = threading.Lock()
+
+        def record(name, value):
+            def inner(db):
+                time.sleep(0.05)
+                with guard:
+                    calls.append(name)
+                return value
+            return inner
+
+        def record_briefs(db, limit):
+            with guard:
+                calls.append("briefs")
+            return []
+
+        def record_forecasts(db, limit):
+            with guard:
+                calls.append("forecasts")
+            return []
+
+        def fail_research(db, limit):
+            with guard:
+                calls.append("research")
+            raise RuntimeError("simulated research outage")
+
+        monkeypatch.setattr(scheduled_jobs, "refresh_market_caches", record("refresh", {}))
+        monkeypatch.setattr(scheduled_jobs, "run_app_controls", record("controls", []))
+        monkeypatch.setattr(scheduled_jobs, "backfill_missing_file_evidence", record("backfill", []))
+        monkeypatch.setattr(scheduled_jobs, "run_live_surveillance", record("surveillance", {"opened": 0, "rules": 0}))
+        monkeypatch.setattr(scheduled_jobs, "run_live_aml", record("aml", {"opened": 0, "rules": 0}))
+        monkeypatch.setattr(scheduled_jobs, "build_daily_briefs", record_briefs)
+        monkeypatch.setattr(scheduled_jobs, "process_pending_forecast_jobs", record_forecasts)
+        monkeypatch.setattr(scheduled_jobs, "process_pending_research_jobs", fail_research)
+
+        scheduled_jobs.run_scheduled_cycle()
+        assert calls == ["refresh", "controls", "backfill", "surveillance", "aml", "research", "briefs", "forecasts"]
+        with Session() as db:
+            lock = db.get(SchedulerLock, 1)
+            assert lock.owner is None
+            assert lock.acquired_at is None
+            assert lock.next_due is not None
+            assert lock.next_due > datetime.now(timezone.utc).replace(tzinfo=None)
+        engine.dispose()
+
+
 def test_a_stale_scheduler_lease_can_be_taken_over():
     with TemporaryDirectory() as directory:
         engine = create_engine(f"sqlite:///{Path(directory) / 'lease.db'}", poolclass=NullPool)

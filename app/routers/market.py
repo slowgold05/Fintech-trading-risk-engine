@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.services.market_cache_service import get_cached_heatmap
+from app.services.market_news_service import get_market_news
 from app.services.price_service import (
     get_company_overview,
     get_stock_quote,
@@ -17,6 +19,7 @@ from app.services.price_service import (
 )
 from app.services.sec_service import get_sec_company_fundamentals
 from app.services.sector_classifier import infer_sector
+from app.services.sp500_constituents import load_sp500_constituents
 
 router = APIRouter()
 
@@ -176,6 +179,11 @@ def market_overview(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/news")
+def market_news(db: Session = Depends(get_db)):
+    return get_market_news(db, settings.finnhub_api_key)
+
+
 @router.get("/trending")
 def market_trending():
     try:
@@ -213,7 +221,9 @@ def market_universe(
     search: str | None = Query(default=None, max_length=50),
     db: Session = Depends(get_db),
 ):
+    sp500_tickers = {row["ticker"] for row in load_sp500_constituents()}
     query = db.query(MarketSymbol).filter(MarketSymbol.is_active.is_(True))
+    query = query.filter(MarketSymbol.symbol.in_(sp500_tickers))
     if search:
         pattern = f"%{search.strip()}%"
         query = query.filter(

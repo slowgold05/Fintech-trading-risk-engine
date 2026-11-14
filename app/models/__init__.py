@@ -10,6 +10,7 @@ from app.models.market_bar_daily import MarketBarDaily
 from app.models.lot import Lot
 from app.models.market_fundamentals_cache import MarketFundamentalsCache
 from app.models.market_filings_cache import MarketFilingsCache
+from app.models.market_news_cache import MarketNewsCache
 from app.models.research_job import ResearchJob
 from app.models.research_report import ResearchReport
 from app.models.research_brief import ResearchBrief

@@ -2,6 +2,8 @@
 
 **Update, 9 November 2026:** this is a historical limitations record. The session-date cutoff and real evaluation adapter described as missing in section 4 are now implemented; see [the verification](P6F_KRONOS_POINT_IN_TIME_VERIFICATION.md). That adapter still reads the current two-year cache and does not reconstruct historical data vintages. The TradingAgents data-vendor documentation mentioned as missing below is now [recorded](../grc/vendors/tradingagents_data_vendors.md). Pandas was installed for local predictor-stub tests; the default installation and CI still omit the optional forecasting stack. Actual Kronos weights, real inference/evaluation, and model-owner approval remain unverified. See [the current project review](REVIEW_2026-11-09.md).
 
+**Update, 11 November 2026 — "nothing has ever been run against a real model" is no longer true.** Section 1's dependencies were installed for real and a real inference call was actually made — see [P9E_STAGE6_KRONOS_REAL_INFERENCE_CONTRACT.md](P9E_STAGE6_KRONOS_REAL_INFERENCE_CONTRACT.md). This surfaced and fixed two real defects that had silently blocked this from ever working at all: a broken vendored import (`app/vendor/kronos/kronos.py`) and a pandas dtype bug in `generate_forecast`'s own timestamp construction — neither was ever caught by the mocked test suite, exactly why this gate existed. A third, genuine finding was recorded, not fixed: raw model output has no hard OHLC-ordering guarantee (1 of 10 bars violated it in one real run). Real inference itself is now proven reachable (~2.2s per call on CPU, both weights small enough to download in ~7s). **This still does not mean Kronos is approved or evaluated** — the walk-forward evaluation against real weights, model-owner review, and the fixed 12-stock scope decision are all still open, exactly as before. `FORECAST_KRONOS_ENABLED` remains `false` everywhere, including the hosted deployment.
+
 Everything in roadmap Phase 6 (PRs #76-#81) is built and tested, but **nothing has
 ever been run against a real model**. This doc is the single place to come back to
 before actually turning this feature on. Each item below is a real, specific
@@ -102,8 +104,13 @@ walk-forward result exists and has actually been reviewed.
 
 ## Also still open, unrelated to Kronos specifically
 
-PR #74 (TradingAgents, Phase 5) introduced outbound calls to Yahoo Finance/SEC
-EDGAR/FRED through its own internal data-vendor layer, without a corresponding
-`grc/vendors/` entry or `docs/vendors.md` row — a gap discovered while building
-Phase 6's own Hugging Face vendor entry, tracked here as a reminder, not yet
-fixed.
+**Resolved, 11 November 2026 — this section was stale, left unupdated when
+the 9 November update above already said it was fixed.** PR #74
+(TradingAgents, Phase 5) introduced outbound calls to Yahoo Finance/SEC
+EDGAR/FRED through its own internal data-vendor layer. That gap is recorded
+in [grc/vendors/tradingagents_data_vendors.md](../grc/vendors/tradingagents_data_vendors.md)
+(confirmed present and covering all three vendors). What remains genuinely
+open in that entry: vendor-owner review is still pending, and the actual
+override (pointing the library's data-vendor layer at this app's own cached
+data instead of its defaults) is still not done — both disclosed in that
+file itself, not new findings here.

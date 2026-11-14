@@ -61,8 +61,8 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
     ]
     fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
     db_session.add(MarketSymbol(
-        symbol="JRNY",
-        company_name="JRNY",
+        symbol="SNA",
+        company_name="SNA",
         exchange="NYSE",
         sector=None,
         is_etf=False,
@@ -73,7 +73,7 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
     db_session.flush()
     for session_date, close_price in zip(_recent_nyse_sessions(len(closes)), closes):
         db_session.add(MarketBarDaily(
-            symbol="JRNY",
+            symbol="SNA",
             session_date=session_date,
             provider="yahoo",
             adjustment_type="raw",
@@ -86,7 +86,7 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
             quality_status="valid",
         ))
     db_session.add(MarketQuoteCache(
-        symbol="JRNY",
+        symbol="SNA",
         price=QUOTE_PRICE,
         change_amount=0,
         change_percent=0,
@@ -99,12 +99,12 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
     buyer = auth_headers("journey-buyer@example.com", "password123")
     seller = auth_headers("journey-seller@example.com", "password123")
 
-    search = client.get("/market/universe", headers=buyer, params={"search": "JRNY"})
+    search = client.get("/market/universe", headers=buyer, params={"search": "SNA"})
     assert search.status_code == 200, search.text
-    assert any(item["symbol"] == "JRNY" for item in search.json()["items"])
+    assert any(item["symbol"] == "SNA" for item in search.json()["items"])
 
     history = client.get(
-        "/market/symbols/JRNY/history",
+        "/market/symbols/SNA/history",
         headers=buyer,
         params={
             "interval": "1d",
@@ -119,7 +119,7 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
     expected_closes = [format(price.quantize(PRICE_QUANTUM), "f") for price in closes]
     assert [bar["close"] for bar in bars] == expected_closes
 
-    buy_payload = {"symbol": "JRNY", "side": "buy", "quantity": FILL_QUANTITY, "limit_price": MATCH_LIMIT}
+    buy_payload = {"symbol": "SNA", "side": "buy", "quantity": FILL_QUANTITY, "limit_price": MATCH_LIMIT}
     before_preview = _ledger_counts(db_session)
     preview = client.post("/orders/preview", headers=buyer, json=buy_payload)
     assert preview.status_code == 200, preview.text
@@ -131,7 +131,7 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
         "/trades/",
         headers={**seller, "Idempotency-Key": str(uuid4())},
         json={
-            "symbol": "JRNY",
+            "symbol": "SNA",
             "asset_type": "stock",
             "side": "buy",
             "quantity": SELLER_OPENING_QUANTITY,
@@ -142,7 +142,7 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
     sell = client.post(
         "/orders/",
         headers={**seller, "Idempotency-Key": str(uuid4())},
-        json={"symbol": "JRNY", "side": "sell", "quantity": FILL_QUANTITY, "limit_price": MATCH_LIMIT},
+        json={"symbol": "SNA", "side": "sell", "quantity": FILL_QUANTITY, "limit_price": MATCH_LIMIT},
     )
     assert sell.status_code == 200, sell.text
     sell_order_id = sell.json()["id"]
@@ -166,7 +166,7 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
     resting = client.post(
         "/orders/",
         headers={**buyer, "Idempotency-Key": str(uuid4())},
-        json={"symbol": "JRNY", "side": "buy", "quantity": FILL_QUANTITY, "limit_price": RESTING_LIMIT},
+        json={"symbol": "SNA", "side": "buy", "quantity": FILL_QUANTITY, "limit_price": RESTING_LIMIT},
     )
     assert resting.status_code == 200, resting.text
     resting_id = resting.json()["id"]
@@ -186,13 +186,13 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
     assert released == Decimal(FILL_QUANTITY) * Decimal(RESTING_LIMIT)
 
     buyer_portfolio = after_cancel.json()
-    buyer_position = _position(buyer_portfolio, "JRNY")
+    buyer_position = _position(buyer_portfolio, "SNA")
     assert buyer_position["quantity"] == FILL_QUANTITY
     assert buyer_position["avg_cost"] == MATCH_LIMIT
 
     buyer_trades = client.get("/trades/", headers=buyer)
     assert buyer_trades.status_code == 200, buyer_trades.text
-    matched = [row for row in buyer_trades.json()["trades"] if row["symbol"] == "JRNY"]
+    matched = [row for row in buyer_trades.json()["trades"] if row["symbol"] == "SNA"]
     assert len(matched) == 1
     assert matched[0]["side"] == "buy"
     assert matched[0]["quantity"] == FILL_QUANTITY
@@ -201,13 +201,13 @@ def test_full_trader_journey_search_to_portfolio(client, auth_headers, db_sessio
 
     seller_portfolio = client.get("/portfolio/", headers=seller)
     assert seller_portfolio.status_code == 200, seller_portfolio.text
-    seller_position = _position(seller_portfolio.json(), "JRNY")
+    seller_position = _position(seller_portfolio.json(), "SNA")
     assert seller_position["quantity"] == SELLER_OPENING_QUANTITY - FILL_QUANTITY
     assert seller_position["avg_cost"] == QUOTE_PRICE
 
 
 def test_journey_partial_fill_rejection_and_duplicate_resubmission(client, auth_headers, db_session):
-    symbol = "JRN2"
+    symbol = "NDSN"
     seller_qty = 3
     resting_sell_qty = 2
     buyer_market_qty = 5
