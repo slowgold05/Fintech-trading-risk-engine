@@ -474,17 +474,18 @@ export function Home() {
   const researchRiskScore = hasResearchInputs ? research.research_risk_score : null;
   const stockHeatmapGroups = groupStockHeatmap(heatmapQuery.data?.items ?? []);
   const cachedHeatmapCount = heatmapQuery.data?.items.length ?? 0;
-  const returnedSectorProxies = marketQuery.data?.sectors ?? [];
+  const returnedSectorProxies = sectors;
+  // A failed background refetch sets isError while keeping the last successful
+  // data. Count those proxies first so the header matches the tiles.
+  const sectorStatusLabel = returnedSectorProxies.length > 0
+    ? `${returnedSectorProxies.length} returned ${returnedSectorProxies.length === 1 ? "sector proxy" : "sector proxies"}`
+    : marketQuery.isLoading
+      ? "Loading sector cache"
+      : "Sector quotes unavailable";
   const heatmapHeader = heatmapView === "sectors"
     ? {
-        label: marketQuery.isLoading
-          ? "Loading sector cache"
-          : marketQuery.isError
-            ? "Sector quotes unavailable"
-            : returnedSectorProxies.length > 0
-              ? `${returnedSectorProxies.length} returned ${returnedSectorProxies.length === 1 ? "sector proxy" : "sector proxies"}`
-              : "No cached sector proxies",
-        loading: marketQuery.isLoading,
+        label: sectorStatusLabel,
+        loading: marketQuery.isLoading && returnedSectorProxies.length === 0,
       }
     : {
         label: heatmapQuery.isLoading
@@ -797,10 +798,10 @@ export function Home() {
               </div>
             </div>
             <div className="dashboard-card-body">
-              {sectors.length === 0 ? (
-                <EmptyState message={marketQuery.isLoading ? "Loading sector cache" : "Sector quotes unavailable"} />
+              {returnedSectorProxies.length === 0 ? (
+                <EmptyState message={sectorStatusLabel} />
               ) : (
-                <SectorProxyTiles scale="compact" sectors={sectors} />
+                <SectorProxyTiles scale="compact" sectors={returnedSectorProxies} />
               )}
             </div>
           </div>
@@ -1008,10 +1009,10 @@ export function Home() {
                   <p className="mb-3 text-xs text-slate-400">
                     Sector ETF proxies from the market cache. No separate sector history is available.
                   </p>
-                  {sectors.length === 0 ? (
-                    <EmptyState message={marketQuery.isLoading ? "Loading sector cache" : "Sector quotes unavailable"} />
+                  {returnedSectorProxies.length === 0 ? (
+                    <EmptyState message={sectorStatusLabel} />
                   ) : (
-                    <SectorProxyTiles scale={heatmapScale} sectors={sectors} />
+                    <SectorProxyTiles scale={heatmapScale} sectors={returnedSectorProxies} />
                   )}
                 </div>
               ) : (

@@ -35,6 +35,7 @@ vi.mock("../components/Watchlists", () => ({
 function open() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><MemoryRouter><Home /></MemoryRouter></QueryClientProvider>);
+  return client;
 }
 
 function historyResponse(
@@ -519,6 +520,31 @@ describe("public market data truth", () => {
     expect(within(heatmap).getByRole("status")).not.toHaveTextContent("Loading cache");
   });
 
+  it("keeps the sector proxy count when a later overview refetch fails", async () => {
+    api.fetchMarketOverview.mockResolvedValueOnce({
+      as_of: "2026-11-04T00:00:00Z",
+      errors: [],
+      trends: [],
+      sectors: [{ symbol: "XLK", sector: "Technology", change_percent: 1.25, weight: "large", leaders: ["AAPL"] }],
+    });
+    api.fetchMarketHeatmap.mockResolvedValue({ items: [] });
+    const client = open();
+    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(heatmap).findByText("No cached quotes")).toBeInTheDocument();
+    fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
+    expect(await within(heatmap).findByText("1 returned sector proxy")).toBeInTheDocument();
+    expect(within(heatmap).getByText("XLK")).toBeInTheDocument();
+
+    await client.refetchQueries({ queryKey: ["market", "overview"] }).catch(() => undefined);
+
+    await waitFor(() => {
+      expect(within(heatmap).getByRole("status")).toHaveTextContent("1 returned sector proxy");
+    });
+    expect(within(heatmap).getByRole("status")).not.toHaveTextContent("Sector quotes unavailable");
+    expect(within(heatmap).getByText("XLK")).toBeInTheDocument();
+    expect(within(heatmap).queryByText("No cached sector proxies")).not.toBeInTheDocument();
+  });
+
   it("keeps the heatmap header on the sector query while stocks are still loading", async () => {
     let resolveHeatmap: (value: { items: [] }) => void = () => undefined;
     api.fetchMarketHeatmap.mockReturnValue(new Promise((resolve) => {
@@ -560,7 +586,11 @@ describe("public market data truth", () => {
     expect(await within(heatmap).findByText("ONLY")).toBeInTheDocument();
     fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
     expect(within(heatmap).getByRole("button", { name: "Sectors" })).toHaveAttribute("aria-pressed", "true");
-    expect(await within(heatmap).findByText("Sector quotes unavailable")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(heatmap).getByRole("status")).toHaveTextContent("Sector quotes unavailable");
+    });
+    expect(within(heatmap).getAllByText("Sector quotes unavailable")).toHaveLength(2);
+    expect(within(heatmap).queryByText("No cached sector proxies")).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("ONLY")).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
