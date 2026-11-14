@@ -460,6 +460,7 @@ describe("public market data truth", () => {
     expect(stocks).toHaveAttribute("aria-pressed", "true");
     expect(sectors).toHaveAttribute("aria-pressed", "false");
     expect(await within(heatmap).findByText("ONLY")).toBeInTheDocument();
+    expect(within(heatmap).getByText("1 returned quote")).toBeInTheDocument();
     expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
     expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveAttribute("aria-pressed", "true");
     expect(within(heatmap).getByRole("group", { name: "Heatmap size" }).className).toContain("max-w-full");
@@ -476,8 +477,38 @@ describe("public market data truth", () => {
     expect(within(heatmap).getByText("AAPL")).toBeInTheDocument();
     expect(within(heatmap).getByText("UP +1.25%")).toBeInTheDocument();
     expect(within(heatmap).queryByText("ONLY")).not.toBeInTheDocument();
+    expect(within(heatmap).queryByText("No cached quotes")).not.toBeInTheDocument();
+    expect(within(heatmap).queryByText("Loading cache")).not.toBeInTheDocument();
+    expect(within(heatmap).getByText("1 returned sector proxy")).toBeInTheDocument();
     expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
     expect(within(screen.getByRole("heading", { name: "Sector ETF heatmap" }).closest(".dashboard-card") as HTMLElement).getByText("XLK")).toBeInTheDocument();
+  });
+
+  it("keeps the heatmap header on the sector query while stocks are still loading", async () => {
+    let resolveHeatmap: (value: { items: [] }) => void = () => undefined;
+    api.fetchMarketHeatmap.mockReturnValue(new Promise((resolve) => {
+      resolveHeatmap = resolve;
+    }));
+    api.fetchMarketOverview.mockResolvedValue({
+      as_of: "2026-11-04T00:00:00Z",
+      errors: [],
+      trends: [],
+      sectors: [{ symbol: "XLK", sector: "Technology", change_percent: 1.25, weight: "large", leaders: ["AAPL"] }],
+    });
+    open();
+    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    expect(within(heatmap).getByText("Loading cache")).toBeInTheDocument();
+    fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
+    expect(within(heatmap).queryByText("Loading cache")).not.toBeInTheDocument();
+    expect(within(heatmap).queryByText("No cached quotes")).not.toBeInTheDocument();
+    expect(await within(heatmap).findByText("1 returned sector proxy")).toBeInTheDocument();
+    expect(within(heatmap).getByText("XLK")).toBeInTheDocument();
+    resolveHeatmap({ items: [] });
+    await waitFor(() => {
+      expect(within(heatmap).queryByText("Loading cache")).not.toBeInTheDocument();
+    });
+    expect(within(heatmap).getByText("1 returned sector proxy")).toBeInTheDocument();
+    expect(within(heatmap).queryByText("No cached quotes")).not.toBeInTheDocument();
   });
 
   it("shows no invented sector tiles when the sector view has no returned proxies", async () => {

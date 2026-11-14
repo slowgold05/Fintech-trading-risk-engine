@@ -474,6 +474,13 @@ export function Home() {
   const researchRiskScore = hasResearchInputs ? research.research_risk_score : null;
   const stockHeatmapGroups = groupStockHeatmap(heatmapQuery.data?.items ?? []);
   const cachedHeatmapCount = heatmapQuery.data?.items.length ?? 0;
+  const heatmapHeaderLoading = heatmapView === "sectors" ? marketQuery.isLoading : heatmapQuery.isLoading;
+  const heatmapHeaderCount = heatmapView === "sectors" ? sectors.length : cachedHeatmapCount;
+  const heatmapHeaderLoadingLabel = heatmapView === "sectors" ? "Loading sector cache" : "Loading cache";
+  const heatmapHeaderEmptyLabel = heatmapView === "sectors" ? "No cached sector proxies" : "No cached quotes";
+  const heatmapHeaderCountLabel = heatmapView === "sectors"
+    ? `${heatmapHeaderCount} returned ${heatmapHeaderCount === 1 ? "sector proxy" : "sector proxies"}`
+    : `${heatmapHeaderCount} returned ${heatmapHeaderCount === 1 ? "quote" : "quotes"}`;
   const latestQuoteAt = marketQuery.data?.as_of;
   const articles = newsQuery.data?.articles ?? [];
 
@@ -925,14 +932,14 @@ export function Home() {
                 </p>
               </div>
               <div className="flex min-w-0 max-w-full flex-col items-start gap-2 sm:items-end">
-                {heatmapQuery.isLoading ? (
+                {heatmapHeaderLoading ? (
                   <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
-                    Loading cache
+                    {heatmapHeaderLoadingLabel}
                   </span>
-                ) : cachedHeatmapCount > 0 ? (
-<span className="text-xs text-slate-400">{cachedHeatmapCount} returned {cachedHeatmapCount === 1 ? "quote" : "quotes"}</span>
+                ) : heatmapHeaderCount > 0 ? (
+                  <span className="text-xs text-slate-400">{heatmapHeaderCountLabel}</span>
                 ) : (
-                  <span className="text-xs text-slate-400">No cached quotes</span>
+                  <span className="text-xs text-slate-400">{heatmapHeaderEmptyLabel}</span>
                 )}
                 <div aria-label="Heatmap view" className="flex max-w-full flex-wrap rounded-xl border border-slate-800 bg-slate-950 p-1" role="group">
                   <button
