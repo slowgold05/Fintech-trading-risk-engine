@@ -111,7 +111,7 @@ jobs:
           format: cyclonedx
           output: api-sbom.cdx.json
           exit-code: '0'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-sbom
           path: api-sbom.cdx.json
@@ -162,7 +162,7 @@ jobs:
       - run: python -m alembic upgrade head
       - run: python -c "import os; from sqlalchemy.engine import make_url; from app.scripts.configure_postgres_role import configure; configure(os.environ['MIGRATION_DATABASE_URL'], make_url(os.environ['P0B_APP_DATABASE_URL']).password)"
       - run: python -m pytest -q -ra tests/browser -k 'not hosted'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: browser-screenshots
