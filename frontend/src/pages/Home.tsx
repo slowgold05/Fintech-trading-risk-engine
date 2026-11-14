@@ -491,7 +491,7 @@ export function Home() {
     <main className="min-h-[100dvh] bg-transparent">
       {/* Top navigation */}
       <header className="relative z-30 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[2200px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-[2200px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.25),0_0_20px_-6px_rgb(52_211_153_/_0.3)]">
               <span className="font-mono text-[11px] font-bold text-emerald-400">GY</span>
@@ -503,7 +503,7 @@ export function Home() {
               <div className="hidden text-[10px] text-slate-500 sm:block">Market dashboard</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <button
               aria-controls="public-market-menu"
               aria-expanded={menuOpen}
