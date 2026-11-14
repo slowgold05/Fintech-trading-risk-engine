@@ -16,11 +16,11 @@ const originalDialogMethods = ["showModal", "close"].map((name) => ({
   name, descriptor: Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, name),
 }));
 
-function renderShell() {
+function renderShell(initialPath = "/dashboard") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/dashboard"]}>
+      <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/dashboard" element={<button>Page action</button>} />
@@ -119,6 +119,28 @@ describe("mobile shell", () => {
     expect(within(screen.getByLabelText("Sidebar")).getByRole("link", { name: "Compliance" })).toBeInTheDocument();
     expect(document.body.style.overflow).not.toBe("hidden");
   });
+
+  it("keeps the persistent mobile header to navigation and brand", async () => {
+    api.fetchMe.mockResolvedValue({ role: "trader", email: "ada@example.com" });
+    renderShell();
+    const header = screen.getByRole("banner");
+    const formattedDate = new Intl.DateTimeFormat("en-US", {
+      weekday: "long", month: "long", day: "numeric",
+    }).format(new Date());
+    expect(within(header).getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    expect(within(header).getByText("Sentinel Markets")).toBeInTheDocument();
+    expect(header.firstElementChild).toHaveClass("h-14");
+    expect(within(header).queryByRole("link", { name: "Search markets" })).not.toBeInTheDocument();
+    expect(within(header).queryByRole("status")).not.toBeInTheDocument();
+    expect(within(header).queryByText("ada@example.com")).not.toBeInTheDocument();
+    expect(header).not.toHaveTextContent(formattedDate);
+    const main = screen.getByRole("main");
+    expect(main).toHaveTextContent(formattedDate);
+    expect(within(main).getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
+    expect(within(main).getByRole("status")).toHaveTextContent("Notifications unavailable");
+    expect(await within(main).findByText("ada@example.com")).toBeInTheDocument();
+    expect(within(main).getByText("trader")).toBeInTheDocument();
+  });
 });
 
 describe("desktop shell", () => {
@@ -133,5 +155,43 @@ describe("desktop shell", () => {
     }).format(new Date()));
     expect(await within(header).findByText("ada@example.com")).toBeInTheDocument();
     expect(within(header).getByText("trader")).toBeInTheDocument();
+    expect(header.querySelector("span[aria-hidden='true']")).toHaveTextContent("A");
+    expect(within(header).getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
+    expect(within(header).getByRole("status")).toHaveTextContent("Notifications unavailable");
+    expect(within(header).queryByRole("button", { name: /notification/i })).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("Sidebar")).getByText("Sentinel Markets")).toBeInTheDocument();
+    expect(screen.queryByText("getrichyesterday")).not.toBeInTheDocument();
+    expect(screen.queryByText("GY")).not.toBeInTheDocument();
+  });
+
+  it("toggles the desktop sidebar between expanded and collapsed widths", async () => {
+    desktop = true;
+    api.fetchMe.mockResolvedValue({ role: "trader", email: "ada@example.com" });
+    renderShell("/portfolio");
+    const sidebar = screen.getByLabelText("Sidebar");
+    expect(sidebar).toHaveClass("w-60");
+    expect(sidebar).not.toHaveClass("w-[72px]");
+    const collapse = within(sidebar).getByRole("button", { name: "Collapse sidebar" });
+    expect(collapse).toHaveAttribute("type", "button");
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    const trades = await within(sidebar).findByRole("link", { name: "Trades" });
+    expect(within(sidebar).getByRole("link", { name: "Portfolio" }).querySelector("span")).not.toHaveClass("sr-only");
+    expect(trades.querySelector("span")).not.toHaveClass("sr-only");
+    fireEvent.click(collapse);
+    expect(sidebar).toHaveClass("w-[72px]");
+    expect(sidebar).not.toHaveClass("w-60");
+    const expand = within(sidebar).getByRole("button", { name: "Expand sidebar" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    for (const name of ["Market", "Dashboard", "Trades", "Portfolio", "Risk", "Research", "Forecast Lab"]) {
+      const link = within(sidebar).getByRole("link", { name });
+      expect(link.querySelector("span")).toHaveClass("sr-only");
+    }
+    expect(within(sidebar).queryByRole("link", { name: "Compliance" })).not.toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(within(sidebar).getByText("Sentinel Markets")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Portfolio destination" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Holdings & Valuation" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Open positions, cost basis, and exposure.")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
   });
 });
