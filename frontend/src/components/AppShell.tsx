@@ -17,7 +17,7 @@ import {
   X,
   type Icon,
 } from "@phosphor-icons/react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { fetchMe } from "../api/auth";
 import type { UserResponse } from "../types/schemas";
@@ -31,33 +31,6 @@ const navigationItems: Array<{ label: string; to: string; Icon: Icon; end?: bool
   { label: "Research", to: "/research", Icon: Brain },
   { label: "Forecast Lab", to: "/forecasts", Icon: ChartLineUp },
 ];
-
-const routeCopy: Record<string, { title: string; subtitle: string }> = {
-  "/trades": {
-    title: "Order Management",
-    subtitle: "Submit orders and review execution history.",
-  },
-  "/portfolio": {
-    title: "Holdings & Valuation",
-    subtitle: "Open positions, cost basis, and exposure.",
-  },
-  "/risk": {
-    title: "Risk Engine",
-    subtitle: "Latest trade assessment and assessed notionals.",
-  },
-  "/research": {
-    title: "Research Desk",
-    subtitle: "Research notes for a symbol. This does not place trades.",
-  },
-  "/forecasts": {
-    title: "Forecast Lab",
-    subtitle: "Model paths from cached history. This places no trades.",
-  },
-  "/compliance": {
-    title: "Control Status",
-    subtitle: "Control evidence, access approvals, and review.",
-  },
-};
 
 const shellDateFormatter = new Intl.DateTimeFormat("en-US", {
   weekday: "long",
@@ -186,8 +159,6 @@ function Sidebar({
 export function AppShell() {
   const { token } = useAuth();
   const me = useQuery({ queryKey: ["me", token], queryFn: fetchMe, enabled: Boolean(token) });
-  const { pathname } = useLocation();
-  const page = routeCopy[pathname];
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
@@ -284,12 +255,6 @@ export function AppShell() {
                   <span className="truncate text-sm font-semibold text-ink">Sentinel Markets</span>
                 </div>
               </>
-            )}
-            {page && (
-              <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
-                <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[28px] sm:leading-9">{page.title}</h1>
-                <p className="mt-1 hidden text-sm leading-6 text-copy sm:block">{page.subtitle}</p>
-              </div>
             )}
             <p className="text-sm text-copy lg:ml-auto">{shellDateFormatter.format(new Date())}</p>
             <Link

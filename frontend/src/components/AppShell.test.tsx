@@ -167,7 +167,9 @@ describe("desktop shell", () => {
     expect(within(sidebar).queryByRole("link", { name: "Compliance" })).not.toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Sign out" })).toBeInTheDocument();
     expect(within(sidebar).getByText("Sentinel Markets")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Holdings & Valuation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Portfolio destination" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Holdings & Valuation" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Open positions, cost basis, and exposure.")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
   });
 });
