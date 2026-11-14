@@ -219,11 +219,11 @@ describe("public market data truth", () => {
     expect(menuButton).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("navigation", { name: "Page sections" });
     const links: Array<[string, string, string]> = [
+      ["Trending movers", "#trending-movers", "Trending movers"],
       ["Market pulse", "#market-pulse", "Market pulse"],
-      ["Stock heatmap", "#stock-heatmap", "Stock heatmap"],
       ["Sector ETF heatmap", "#sector-etf-heatmap", "Sector ETF heatmap"],
       ["Company research", "#company-research", "Company research"],
-      ["Trending movers", "#trending-movers", "Trending movers"],
+      ["Stock heatmap", "#stock-heatmap", "Stock heatmap"],
       ["Market news", "#market-news", "Market news"],
       ["Daily history chart", "#daily-price-history-title", "Daily price history"],
     ];
@@ -231,6 +231,12 @@ describe("public market data truth", () => {
       expect(within(menu).getByRole("link", { name })).toHaveAttribute("href", href);
       expect(document.getElementById(href.slice(1))).toHaveTextContent(heading);
     }
+    expect(within(menu).getAllByRole("link").map((link) => link.getAttribute("href")).slice(0, links.length)).toEqual(
+      links.map(([, href]) => href),
+    );
+    expect(menuButton).not.toHaveClass("sm:hidden");
+    expect(menu).not.toHaveClass("sm:hidden");
+    expect(menuButton.compareDocumentPosition(document.getElementById("trending-movers") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(menu).getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
     expect(within(menu).getByRole("button", { name: "Close menu" })).toHaveClass("min-h-11");
 
@@ -384,5 +390,115 @@ describe("public market data truth", () => {
     const newsCard = screen.getByRole("heading", { name: "Market news" }).closest(".dashboard-card") as HTMLElement;
     expect(await within(newsCard).findByText("No market headlines")).toBeInTheDocument();
     expect(within(newsCard).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("keeps one row-major copy of each market panel above watchlists and history", () => {
+    open();
+    const ids = [
+      "trending-movers",
+      "market-pulse",
+      "sector-etf-heatmap",
+      "company-research",
+      "stock-heatmap",
+      "market-news",
+    ];
+    const cards = ids.map((id) => {
+      const matches = document.querySelectorAll(`#${id}`);
+      expect(matches).toHaveLength(1);
+      return matches[0].closest(".dashboard-card") as HTMLElement;
+    });
+    const grid = cards[0].parentElement;
+    expect(grid?.className).toContain("gap-6");
+    expect(grid?.className).toContain("xl:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)_minmax(260px,1fr)]");
+    const placements = [
+      ["xl:col-start-1", "xl:row-start-1"],
+      ["xl:col-start-2", "xl:row-start-1"],
+      ["xl:col-start-3", "xl:row-start-1"],
+      ["xl:col-start-1", "xl:row-start-2"],
+      ["xl:col-start-2", "xl:row-start-2"],
+      ["xl:col-start-3", "xl:row-start-2"],
+    ];
+    cards.forEach((card, index) => {
+      expect(card.parentElement).toBe(grid);
+      for (const placement of placements[index]) {
+        expect(card.className).toContain(placement);
+      }
+      if (index > 0) {
+        expect(cards[index - 1].compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+    });
+    const section = grid?.closest("section");
+    expect(section?.className).toContain("px-4");
+    expect(section?.className).toContain("sm:px-6");
+    expect(section?.className).toContain("lg:px-10");
+    const watchlist = screen.getByRole("button", { name: "Use MSFT in research" });
+    const historyTitle = document.getElementById("daily-price-history-title");
+    expect(historyTitle).not.toBeNull();
+    expect(cards[5].compareDocumentPosition(watchlist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(watchlist.compareDocumentPosition(historyTitle as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Open menu" })).toHaveLength(1);
+  });
+
+  it("switches the heatmap between returned stocks and returned sector proxies", async () => {
+    api.fetchMarketOverview.mockResolvedValue({
+      as_of: "2026-11-04T00:00:00Z",
+      errors: [],
+      trends: [],
+      sectors: [{ symbol: "XLK", sector: "Technology", change_percent: 1.25, weight: "large", leaders: ["AAPL"] }],
+    });
+    api.fetchMarketHeatmap.mockResolvedValue({
+      items: [{
+        symbol: "ONLY", company: "Fixture", sector: "Technology", price: 10, change_percent: 0,
+        volume: 100, size: "large", refresh_tier: "daily", data_status: "delayed", source: "fixture",
+        age_seconds: 60, as_of: "2026-11-04T00:00:00Z",
+      }],
+    });
+    open();
+    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const stocks = within(heatmap).getByRole("button", { name: "Stocks" });
+    const sectors = within(heatmap).getByRole("button", { name: "Sectors" });
+    expect(stocks).toHaveAttribute("aria-pressed", "true");
+    expect(sectors).toHaveAttribute("aria-pressed", "false");
+    expect(await within(heatmap).findByText("ONLY")).toBeInTheDocument();
+    expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
+    expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(within(heatmap).getByRole("button", { name: "Set heatmap size to compact" }));
+    expect(stocks).toHaveAttribute("aria-pressed", "true");
+    expect(within(heatmap).getByText("ONLY")).toBeInTheDocument();
+
+    fireEvent.click(sectors);
+    expect(sectors).toHaveAttribute("aria-pressed", "true");
+    expect(stocks).toHaveAttribute("aria-pressed", "false");
+    expect(within(heatmap).getByText("XLK")).toBeInTheDocument();
+    expect(within(heatmap).getByText("AAPL")).toBeInTheDocument();
+    expect(within(heatmap).getByText("UP +1.25%")).toBeInTheDocument();
+    expect(within(heatmap).queryByText("ONLY")).not.toBeInTheDocument();
+    expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("heading", { name: "Sector ETF heatmap" }).closest(".dashboard-card") as HTMLElement).getByText("XLK")).toBeInTheDocument();
+  });
+
+  it("shows no invented sector tiles when the sector view has no returned proxies", async () => {
+    api.fetchMarketOverview.mockResolvedValue({ as_of: null, errors: [], trends: [], sectors: [] });
+    api.fetchMarketHeatmap.mockResolvedValue({
+      items: [{
+        symbol: "ONLY", company: "Fixture", sector: "Technology", price: 10, change_percent: 0,
+        volume: 100, size: "small", refresh_tier: "daily", data_status: "delayed", source: "fixture",
+        age_seconds: 60, as_of: "2026-11-04T00:00:00Z",
+      }],
+    });
+    open();
+    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(heatmap).findByText("ONLY")).toBeInTheDocument();
+    fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
+    expect(within(heatmap).getByRole("button", { name: "Sectors" })).toHaveAttribute("aria-pressed", "true");
+    expect(await within(heatmap).findByText("Sector quotes unavailable")).toBeInTheDocument();
+    expect(within(heatmap).queryByText("ONLY")).not.toBeInTheDocument();
+    expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
+    expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
+    expect(within(heatmap).queryByRole("img")).not.toBeInTheDocument();
+    const sectorCard = screen.getByRole("heading", { name: "Sector ETF heatmap" }).closest(".dashboard-card") as HTMLElement;
+    expect(within(sectorCard).getByText("Sector quotes unavailable")).toBeInTheDocument();
+    expect(within(sectorCard).queryByText("XLK")).not.toBeInTheDocument();
   });
 });
