@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight } from "@phosphor-icons/react";
+import { ArrowRight, TrendDown, TrendUp } from "@phosphor-icons/react";
 import {
   fetchMarketHeatmap,
   fetchMarketOverview,
@@ -10,6 +10,7 @@ import {
 } from "../api/market";
 import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
+import { IconBadge } from "../features/dashboard/components";
 import { DailyHistory } from "../components/DailyHistory";
 import { Watchlists } from "../components/Watchlists";
 import { FreshnessBadge } from "../components/FreshnessBadge";
@@ -394,7 +395,13 @@ export function Home() {
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {trends.map((trend) => (
                     <div className="metric-tile" key={trend.source_symbol}>
-                      <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
+                      <div className="flex items-center gap-2">
+                        <IconBadge
+                          Icon={trend.change_percent >= 0 ? TrendUp : TrendDown}
+                          tone={trend.change_percent >= 0 ? "emerald" : "rose"}
+                        />
+                        <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
+                      </div>
                       <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
                       <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
                       <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
