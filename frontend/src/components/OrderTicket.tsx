@@ -404,7 +404,6 @@ export function OrderTicket() {
     confirmLockRef.current = true;
     let generation = 0;
     let requestStarted = false;
-    let confirmed = false;
 
     try {
       const accepted = previewRef.current;
@@ -488,7 +487,6 @@ export function OrderTicket() {
       setPreviewConfirmable(false);
       setFieldErrors((current) => (current.stepUp ? { ...current, stepUp: undefined } : current));
       const message = orderStatusMessage(result);
-      confirmed = true;
       setSuccessMessage(message);
       try {
         showToast("success", message);
@@ -502,7 +500,7 @@ export function OrderTicket() {
       }
     }
 
-    if (!confirmed || !mountedRef.current || generation !== confirmGenerationRef.current) return;
+    if (!mountedRef.current || generation !== confirmGenerationRef.current) return;
     try {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
