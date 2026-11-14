@@ -1,5 +1,6 @@
 export { DashboardCard } from "./DashboardCard";
 export { EmptyState } from "./EmptyState";
+export { IconBadge } from "./IconBadge";
 export { PnlValue } from "./PnlValue";
 export { PositionsTable } from "./PositionsTable";
 export { QuickTradePanel } from "./QuickTradePanel";

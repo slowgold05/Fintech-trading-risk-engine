@@ -22,7 +22,7 @@ from tests.test_massive_ingestion import _grouped, _http_get, _ticker
 pytestmark = pytest.mark.skipif(not os.environ.get("AUDIT_DATABASE_URL"), reason="AUDIT_DATABASE_URL is not set")
 
 _DAY = date(2026, 11, 10)
-_HEAD = "45d85a1871f0"
+_HEAD = "8f3a1c6d9e20"
 _CHECKS = {
     "ck_market_bars_daily_adjustment",
     "ck_market_bars_daily_ohlc",

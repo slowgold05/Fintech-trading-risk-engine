@@ -57,7 +57,7 @@ DISPOSABLE_DATABASE = "p0b_browser"
 DISPOSABLE_PORT = 54331
 API_PORT = 8000
 WEB_PORT = 4173
-ALEMBIC_HEAD = "45d85a1871f0"
+ALEMBIC_HEAD = "8f3a1c6d9e20"
 DISPOSABLE_JWT_SECRET = "p0b-browser-jwt-secret-value-32b"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACCESS_EVENT = re.compile(r'"([A-Z]+) ([^"\s]+) HTTP/[0-9.]+" (\d{3})')
@@ -474,8 +474,13 @@ def _money_after(driver: webdriver.Chrome, label: str) -> str:
     return driver.execute_script(
         """
         const label = arguments[0];
+        const ownText = (node) => Array.from(node.childNodes)
+          .filter((child) => child.nodeType === Node.TEXT_NODE)
+          .map((child) => child.textContent)
+          .join("")
+          .trim();
         const nodes = Array.from(document.querySelectorAll("div"));
-        const match = nodes.find((node) => node.childElementCount === 0 && node.textContent.trim() === label);
+        const match = nodes.find((node) => ownText(node) === label);
         if (!match) { return ""; }
         const next = match.nextElementSibling;
         return next ? next.textContent.trim() : "";
