@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -201,29 +201,30 @@ function PreviewFact({
 
 export function OrderTicket() {
   const [searchParams] = useSearchParams();
-  const persistedAttemptRef = useRef(readPersistedOrderAttempt());
-  const [side, setSide] = useState<TradeSide>(persistedAttemptRef.current?.preview.side ?? "buy");
+  // Read once on mount. An unresolved attempt seeds the ticket and its idempotency key.
+  const [persistedAttempt] = useState(readPersistedOrderAttempt);
+  const [side, setSide] = useState<TradeSide>(persistedAttempt?.preview.side ?? "buy");
   const [orderType, setOrderType] = useState<OrderType>(
-    persistedAttemptRef.current?.preview.order_type ?? "limit",
+    persistedAttempt?.preview.order_type ?? "limit",
   );
   const [symbol, setSymbol] = useState(
-    persistedAttemptRef.current?.preview.symbol ?? initialSymbolFromSearch(searchParams),
+    persistedAttempt?.preview.symbol ?? initialSymbolFromSearch(searchParams),
   );
-  const [quantity, setQuantity] = useState(persistedAttemptRef.current?.preview.quantity ?? "");
+  const [quantity, setQuantity] = useState(persistedAttempt?.preview.quantity ?? "");
   const [limitPrice, setLimitPrice] = useState(
-    persistedAttemptRef.current?.preview.limit_price ?? "",
+    persistedAttempt?.preview.limit_price ?? "",
   );
   const [stepUpCode, setStepUpCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [preview, setPreview] = useState<OrderPreviewResponse | null>(
-    persistedAttemptRef.current?.preview ?? null,
+    persistedAttempt?.preview ?? null,
   );
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewPending, setPreviewPending] = useState(false);
   const [previewConfirmable, setPreviewConfirmable] = useState(false);
   const [confirmPending, setConfirmPending] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const [outcomeUnknown, setOutcomeUnknown] = useState(persistedAttemptRef.current !== null);
+  const [outcomeUnknown, setOutcomeUnknown] = useState(persistedAttempt !== null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
@@ -233,7 +234,7 @@ export function OrderTicket() {
     retry: false,
   });
 
-  const attemptRef = useRef<PersistedAttempt | null>(null);
+  const attemptRef = useRef<PersistedAttempt | null>(persistedAttempt?.attempt ?? null);
   const previewRevisionRef = useRef(0);
   const confirmGenerationRef = useRef(0);
   const confirmLockRef = useRef(false);
@@ -251,14 +252,15 @@ export function OrderTicket() {
   });
 
   const draft: DraftValues = { symbol, quantity, limitPrice, side, orderType };
-  draftRef.current = draft;
-  previewRef.current = preview;
-  previewConfirmableRef.current = previewConfirmable;
-  outcomeUnknownRef.current = outcomeUnknown;
-  stepUpCodeRef.current = stepUpCode;
-  if (persistedAttemptRef.current !== null) {
-    attemptRef.current = persistedAttemptRef.current.attempt;
-  }
+  // Handlers read these refs to see the latest committed values. Sync them at commit,
+  // before any handler can run, so a discarded render never leaks into a confirmation.
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+    previewRef.current = preview;
+    previewConfirmableRef.current = previewConfirmable;
+    outcomeUnknownRef.current = outcomeUnknown;
+    stepUpCodeRef.current = stepUpCode;
+  });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -465,7 +467,6 @@ export function OrderTicket() {
           return;
         }
         attemptRef.current = null;
-        persistedAttemptRef.current = null;
         outcomeUnknownRef.current = false;
         previewConfirmableRef.current = false;
         clearPersistedOrderAttempt();
@@ -478,7 +479,6 @@ export function OrderTicket() {
 
       if (!mountedRef.current || generation !== confirmGenerationRef.current) return;
       attemptRef.current = null;
-      persistedAttemptRef.current = null;
       stepUpCodeRef.current = "";
       outcomeUnknownRef.current = false;
       previewConfirmableRef.current = false;

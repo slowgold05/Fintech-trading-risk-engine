@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as authApi from "../api/auth";
 import * as apiClient from "../api/client";
@@ -50,7 +51,10 @@ function open(search = "") {
   const invalidate = vi.spyOn(client, "invalidateQueries");
   const navigateRef: { current: ReturnType<typeof useNavigate> | null } = { current: null };
   function QueryProbe() {
-    navigateRef.current = useNavigate();
+    const navigate = useNavigate();
+    useLayoutEffect(() => {
+      navigateRef.current = navigate;
+    });
     return null;
   }
   const view = render(
