@@ -51,14 +51,18 @@ def _submit(driver, symbol, adjustment="raw"):
     harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))
 
 
-def _history_reads(driver):
+def _history_reads(driver, symbol=None):
     return driver.execute_script("""
+        const symbol = arguments[0];
         return performance.getEntriesByType('resource').filter(entry => {
           const url = new URL(entry.name);
-          return url.pathname.startsWith('/market/symbols/')
-            && url.pathname.endsWith('/history') && entry.responseEnd > 0;
+          if (!(url.pathname.startsWith('/market/symbols/')
+            && url.pathname.endsWith('/history') && entry.responseEnd > 0)) {
+            return false;
+          }
+          return !symbol || url.pathname === `/market/symbols/${symbol}/history`;
         }).length;
-    """)
+    """, symbol)
 
 
 def _capture(driver, target, path):
@@ -114,7 +118,7 @@ def test_cached_daily_chart(chart_api):
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
         driver.get(chart_api.web_url + "/market")
         harness._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "#daily-history-series option[value]:not([value=''])"))
-        assert _history_reads(driver) == 0
+        assert _history_reads(driver, "P3HISTORY") == 0
         assert _no_plot(driver)
         assert driver.execute_script("return !performance.getEntriesByType('resource').some(e => e.name.includes('lightweight-charts.production'))")
 
@@ -166,9 +170,9 @@ def test_cached_daily_chart(chart_api):
         harness._wait(driver).until(lambda current: "52.500000" in _section(current).text)
         assert "105.000000" not in _section(driver).text
         canvas = harness._wait(driver).until(_plot)
-        canvas_id, reads = canvas.id, _history_reads(driver)
+        canvas_id, reads = canvas.id, _history_reads(driver, "P3HISTORY")
         _submit(driver, "P3HISTORY", "split_adjusted")
-        harness._wait(driver).until(lambda current: _history_reads(current) > reads)
+        harness._wait(driver).until(lambda current: _history_reads(current, "P3HISTORY") > reads)
         driver.execute_async_script("const done = arguments[arguments.length - 1]; requestAnimationFrame(() => requestAnimationFrame(() => done(true)));")
         assert harness._wait(driver).until(_plot).id == canvas_id
 

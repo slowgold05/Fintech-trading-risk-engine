@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.services.market_cache_service import get_cached_heatmap
+from app.services.market_news_service import get_market_news
 from app.services.price_service import (
     get_company_overview,
     get_stock_quote,
@@ -175,6 +177,11 @@ def market_overview(db: Session = Depends(get_db)):
         "sectors": sectors,
         "errors": errors,
     }
+
+
+@router.get("/news")
+def market_news(db: Session = Depends(get_db)):
+    return get_market_news(db, settings.finnhub_api_key)
 
 
 @router.get("/trending")

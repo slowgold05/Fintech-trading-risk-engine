@@ -1,16 +1,20 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight } from "@phosphor-icons/react";
+import { ArrowRight, List, TrendDown, TrendUp, X } from "@phosphor-icons/react";
 import {
   fetchMarketHeatmap,
+  fetchMarketNews,
   fetchMarketOverview,
   fetchMarketResearch,
   fetchMarketTrending,
 } from "../api/market";
+import { fetchDailyHistory, type HistoryRange } from "../api/history";
 import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
+import { IconBadge } from "../features/dashboard/components";
 import { DailyHistory } from "../components/DailyHistory";
+import { Sparkline } from "../components/Sparkline";
 import { Watchlists } from "../components/Watchlists";
 import { FreshnessBadge } from "../components/FreshnessBadge";
 import type {
@@ -23,12 +27,32 @@ import {
   formatPercent,
   formatQuantity,
   formatSignedPercent,
+  formatUtcDateTime,
 } from "../utils/format";
 import { getRiskTone as getSharedRiskTone } from "../utils/riskTone";
 
 type HeatmapScale = "compact" | "standard" | "expanded";
+type SparkRange = Extract<HistoryRange, "1m" | "3m" | "6m" | "1y">;
 
 const heatmapScales: HeatmapScale[] = ["compact", "standard", "expanded"];
+const sparkRanges: SparkRange[] = ["1m", "3m", "6m", "1y"];
+const sparkRangeLabels: Record<SparkRange, string> = {
+  "1m": "1M",
+  "3m": "3M",
+  "6m": "6M",
+  "1y": "1Y",
+};
+const pageSections = [
+  { id: "market-pulse", label: "Market pulse" },
+  { id: "stock-heatmap", label: "Stock heatmap" },
+  { id: "sector-etf-heatmap", label: "Sector ETF heatmap" },
+  { id: "company-research", label: "Company research" },
+  { id: "trending-movers", label: "Trending movers" },
+  { id: "market-news", label: "Market news" },
+  { id: "daily-price-history-title", label: "Daily history chart" },
+] as const;
+const HISTORY_PROVIDER = "massive";
+const HISTORY_ADJUSTMENT = "split_adjusted";
 const stockSectorOrder = [
   "Technology",
   "Communication",
@@ -249,6 +273,103 @@ function formatOptionalPercent(value?: number | null) {
   return value === null || value === undefined ? "--" : formatPercent(value * 100);
 }
 
+function formatNewsTime(value: string) {
+  return formatUtcDateTime(value) ?? value;
+}
+
+function sparkRangeLabel(range: HistoryRange) {
+  return range in sparkRangeLabels ? sparkRangeLabels[range as SparkRange] : range.toUpperCase();
+}
+
+function closingPrices(bars: readonly { session_date: string; close: string }[]) {
+  return [...bars]
+    .sort((left, right) => left.session_date.localeCompare(right.session_date))
+    .map((bar) => Number(bar.close))
+    .filter((value) => Number.isFinite(value));
+}
+
+function TimeframeToggle({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (range: SparkRange) => void;
+  value: SparkRange;
+}) {
+  return (
+    <div
+      aria-label={label}
+      className="flex flex-wrap rounded border border-slate-800 bg-slate-950 p-1"
+      role="group"
+    >
+      {sparkRanges.map((range) => {
+        const selected = value === range;
+        return (
+          <button
+            aria-label={`${label} ${sparkRangeLabels[range]}`}
+            aria-pressed={selected}
+            className={[
+              "min-h-11 min-w-11 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition duration-150 motion-reduce:transition-none motion-reduce:active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-950 active:translate-y-px",
+              selected
+                ? "bg-emerald-400 text-slate-950"
+                : "text-slate-200 hover:bg-slate-900 hover:text-slate-50",
+            ].join(" ")}
+            key={range}
+            onClick={() => onChange(range)}
+            type="button"
+          >
+            {sparkRangeLabels[range]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SymbolSparkline({
+  className,
+  empty = "hidden",
+  range,
+  symbol,
+}: {
+  className?: string;
+  empty?: "hidden" | "dash";
+  range: HistoryRange;
+  symbol: string;
+}) {
+  const historyQuery = useQuery({
+    queryKey: ["market", "history", symbol, HISTORY_PROVIDER, HISTORY_ADJUSTMENT, range],
+    queryFn: () => fetchDailyHistory(symbol, HISTORY_PROVIDER, HISTORY_ADJUSTMENT, range),
+    enabled: symbol.trim().length > 0,
+    retry: false,
+    staleTime: 300000,
+  });
+  const closes = historyQuery.isSuccess && historyQuery.data.status !== "unavailable"
+    ? closingPrices(historyQuery.data.bars)
+    : [];
+
+  if (closes.length >= 2) {
+    return (
+      <Sparkline
+        className={className}
+        label={`${symbol} closing prices over ${sparkRangeLabel(range)}`}
+        values={closes}
+      />
+    );
+  }
+
+  if (empty === "dash" && (historyQuery.isError || historyQuery.isSuccess)) {
+    return (
+      <span aria-label={`No closing prices for ${symbol}`} className="font-mono text-sm text-slate-300">
+        —
+      </span>
+    );
+  }
+
+  return null;
+}
+
 export function Home() {
   const { isAuthenticated } = useAuth();
   const [symbolInput, setSymbolInput] = useState("NVDA");
@@ -256,6 +377,12 @@ export function Home() {
   const [historyDraft, setHistoryDraft] = useState("");
   const [heatmapScale, setHeatmapScale] =
     useState<HeatmapScale>("standard");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pulseRange, setPulseRange] = useState<SparkRange>("1m");
+  const [researchRange, setResearchRange] = useState<SparkRange>("1m");
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuPanelRef = useRef<HTMLElement>(null);
+  const closeMenuRef = useRef<HTMLButtonElement>(null);
   const marketQuery = useQuery({
     queryKey: ["market", "overview"],
     queryFn: fetchMarketOverview,
@@ -279,6 +406,12 @@ export function Home() {
     queryFn: () => fetchMarketResearch(researchSymbol),
     retry: false,
   });
+  const newsQuery = useQuery({
+    queryKey: ["market", "news"],
+    queryFn: fetchMarketNews,
+    refetchInterval: 300000,
+    retry: false,
+  });
 
   const trends = marketQuery.data?.trends ?? [];
   const sectors = marketQuery.data?.sectors ?? [];
@@ -292,6 +425,41 @@ export function Home() {
   const stockHeatmapGroups = groupStockHeatmap(heatmapQuery.data?.items ?? []);
   const cachedHeatmapCount = heatmapQuery.data?.items.length ?? 0;
   const latestQuoteAt = marketQuery.data?.as_of;
+  const articles = newsQuery.data?.articles ?? [];
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    closeMenuRef.current?.focus();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setMenuOpen(false);
+      menuButtonRef.current?.focus();
+    }
+
+    function onMouseDown(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (menuButtonRef.current?.contains(target) || menuPanelRef.current?.contains(target)) {
+        return;
+      }
+      setMenuOpen(false);
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onMouseDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [menuOpen]);
 
   function handleResearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -323,8 +491,8 @@ export function Home() {
   return (
     <main className="min-h-[100dvh] bg-transparent">
       {/* Top navigation */}
-      <header className="border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[2200px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      <header className="relative z-30 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
+        <div className="mx-auto flex max-w-[2200px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.25),0_0_20px_-6px_rgb(52_211_153_/_0.3)]">
               <span className="font-mono text-[11px] font-bold text-emerald-400">GY</span>
@@ -336,13 +504,72 @@ export function Home() {
               <div className="hidden text-[10px] text-slate-500 sm:block">Market dashboard</div>
             </div>
           </div>
-          <Link
-            className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:bg-slate-800/80 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 active:translate-y-px"
-            to={isAuthenticated ? "/dashboard" : "/login"}
-          >
-            {isAuthenticated ? "Open dashboard →" : "Log in"}
-          </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              aria-controls="public-market-menu"
+              aria-expanded={menuOpen}
+              aria-label="Open menu"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 motion-reduce:transition-none sm:hidden"
+              onClick={() => setMenuOpen((open) => !open)}
+              ref={menuButtonRef}
+              type="button"
+            >
+              <List aria-hidden="true" className="size-5" weight="light" />
+            </button>
+            <Link
+              className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:bg-slate-800/80 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 active:translate-y-px"
+              to={isAuthenticated ? "/dashboard" : "/login"}
+            >
+              {isAuthenticated ? "Open dashboard →" : "Log in"}
+            </Link>
+          </div>
         </div>
+        {menuOpen ? (
+          <nav
+            aria-label="Page sections"
+            className="absolute left-0 right-0 top-full z-40 border-b border-slate-800 bg-slate-950 px-4 py-3 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.8)] motion-safe:transition-opacity motion-safe:duration-150 motion-reduce:transition-none sm:hidden"
+            id="public-market-menu"
+            ref={menuPanelRef}
+          >
+            <div className="mx-auto flex max-w-[2200px] items-center justify-between gap-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">On this page</p>
+              <button
+                aria-label="Close menu"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                onClick={() => {
+                  setMenuOpen(false);
+                  menuButtonRef.current?.focus();
+                }}
+                ref={closeMenuRef}
+                type="button"
+              >
+                <X aria-hidden="true" className="size-5" weight="bold" />
+              </button>
+            </div>
+            <ul className="mx-auto mt-2 max-w-[2200px] space-y-1">
+              {pageSections.map((section) => (
+                <li key={section.id}>
+                  <a
+                    className="flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-slate-100 hover:bg-slate-900 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                    href={`#${section.id}`}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {section.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="mx-auto mt-2 max-w-[2200px]">
+              <Link
+                className="flex min-h-11 items-center rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 text-sm font-semibold text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                onClick={() => setMenuOpen(false)}
+                to={isAuthenticated ? "/dashboard" : "/login"}
+              >
+                {isAuthenticated ? "Open dashboard →" : "Log in"}
+              </Link>
+            </div>
+          </nav>
+        ) : null}
       </header>
 
       {/* Hero */}
@@ -376,14 +603,17 @@ export function Home() {
 
       <section className="mx-auto max-w-[2200px] space-y-5 px-4 py-6 sm:px-6 sm:py-8">
         <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-100">Market pulse</h2>
+          <div className="dashboard-card-header flex-wrap gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-100" id="market-pulse">Market pulse</h2>
               <p className="mt-1 text-xs text-slate-400">Cached ETF proxy quotes. Historical trends are unavailable.</p>
             </div>
-            <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
-              {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <TimeframeToggle label="Market pulse range" onChange={setPulseRange} value={pulseRange} />
+              <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
+                {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
+              </span>
+            </div>
           </div>
           <div className="dashboard-card-body">
             {trends.length === 0 ? (
@@ -394,12 +624,19 @@ export function Home() {
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {trends.map((trend) => (
                     <div className="metric-tile" key={trend.source_symbol}>
-                      <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
+                      <div className="flex items-center gap-2">
+                        <IconBadge
+                          Icon={trend.change_percent >= 0 ? TrendUp : TrendDown}
+                          tone={trend.change_percent >= 0 ? "emerald" : "rose"}
+                        />
+                        <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
+                      </div>
                       <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
                       <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
                       <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
                         Provider change {formatSignedPercent(trend.change_percent)}
                       </div>
+                      <SymbolSparkline className="mt-3 h-8 w-full" range={pulseRange} symbol={trend.source_symbol} />
                     </div>
                   ))}
                 </div>
@@ -415,7 +652,7 @@ export function Home() {
           <div className="dashboard-card">
             <div className="dashboard-card-header flex-col items-stretch sm:flex-row sm:items-center">
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100" id="stock-heatmap">
                   Stock heatmap
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
@@ -537,7 +774,7 @@ export function Home() {
           <div className="dashboard-card">
             <div className="dashboard-card-header">
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100" id="sector-etf-heatmap">
                   Sector ETF heatmap
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
@@ -590,7 +827,7 @@ export function Home() {
           <div className="dashboard-card">
             <div className="dashboard-card-header">
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100" id="company-research">
                   Company research
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
@@ -678,6 +915,22 @@ export function Home() {
                   </div>
                 </div>
 
+                {hasResearchInputs ? (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-[11px] uppercase tracking-[0.12em] text-slate-300">
+                        Price history
+                      </div>
+                      <TimeframeToggle
+                        label="Company research range"
+                        onChange={setResearchRange}
+                        value={researchRange}
+                      />
+                    </div>
+                    <SymbolSparkline className="h-24 w-full" range={researchRange} symbol={research.symbol} />
+                  </div>
+                ) : null}
+
                 <div className="mt-4 space-y-2">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                     Risk notes
@@ -707,7 +960,7 @@ export function Home() {
         <div className="dashboard-card">
           <div className="dashboard-card-header">
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">
+              <h2 className="text-sm font-semibold text-slate-100" id="trending-movers">
                 Trending movers
               </h2>
               <p className="mt-1 text-xs text-slate-500">
@@ -730,6 +983,7 @@ export function Home() {
                     <th className="text-right">Price</th>
                     <th className="text-right">Change</th>
                     <th className="text-right">Volume</th>
+                    <th className="text-right">Trend</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -754,11 +1008,65 @@ export function Home() {
                       <td className="text-right font-mono">
                         {mover.volume == null ? "Unavailable" : formatQuantity(mover.volume)}
                       </td>
+                      <td className="w-28 text-right">
+                        <SymbolSparkline
+                          className="ml-auto h-6 w-24"
+                          empty="dash"
+                          range="1m"
+                          symbol={mover.symbol}
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            )}
+          </div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100" id="market-news">
+                Market news
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Headlines for the major index ETFs.
+              </p>
+            </div>
+            <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
+              {newsQuery.isLoading ? "Loading" : articles.length ? "Cached headlines" : "Unavailable"}
+            </span>
+          </div>
+          <div className="dashboard-card-body">
+            {articles.length === 0 ? (
+              <EmptyState
+                message={newsQuery.isLoading ? "Loading market news" : newsQuery.isError ? "Market news unavailable" : "No market headlines"}
+              />
+            ) : (
+              <ul aria-label="Market headlines" className="divide-y divide-slate-800/80">
+                {articles.map((article, index) => (
+                  <li className="py-3 first:pt-0 last:pb-0" key={`${article.url}-${article.published_at}-${index}`}>
+                    <a
+                      className="inline-flex min-h-11 items-center rounded-md text-sm font-semibold text-slate-50 underline decoration-slate-500 underline-offset-4 hover:text-emerald-200 hover:decoration-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                      href={article.url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      {article.headline}
+                    </a>
+                    {article.summary ? (
+                      <p className="mt-1 text-xs leading-5 text-slate-300">{article.summary}</p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-slate-300">
+                      <span className="font-semibold text-slate-100">{article.source}</span>
+                      <span aria-hidden="true"> · </span>
+                      <time dateTime={article.published_at}>{formatNewsTime(article.published_at)}</time>
+                    </p>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </div>
