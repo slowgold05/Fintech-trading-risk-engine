@@ -484,6 +484,41 @@ describe("public market data truth", () => {
     expect(within(screen.getByRole("heading", { name: "Sector ETF heatmap" }).closest(".dashboard-card") as HTMLElement).getByText("XLK")).toBeInTheDocument();
   });
 
+  it("shows the sector proxy count when stock items are empty", async () => {
+    api.fetchMarketHeatmap.mockResolvedValue({ items: [] });
+    api.fetchMarketOverview.mockResolvedValue({
+      as_of: "2026-11-04T00:00:00Z",
+      errors: [],
+      trends: [],
+      sectors: [{ symbol: "XLK", sector: "Technology", change_percent: 1.25, weight: "large", leaders: ["AAPL"] }],
+    });
+    open();
+    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(heatmap).findByText("No cached quotes")).toBeInTheDocument();
+    fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
+    await waitFor(() => {
+      expect(within(heatmap).getByRole("status")).toHaveTextContent("1 returned sector proxy");
+    });
+    expect(within(heatmap).getByRole("status")).not.toHaveTextContent("No cached quotes");
+    expect(within(heatmap).getByRole("status")).not.toHaveTextContent("Loading cache");
+    expect(within(heatmap).getByText("XLK")).toBeInTheDocument();
+    expect(within(heatmap).queryByText("ONLY")).not.toBeInTheDocument();
+  });
+
+  it("shows the overview error in the heatmap header when sectors are selected", async () => {
+    api.fetchMarketOverview.mockRejectedValue(new Error("overview down"));
+    api.fetchMarketHeatmap.mockResolvedValue({ items: [] });
+    open();
+    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(heatmap).findByText("No cached quotes")).toBeInTheDocument();
+    fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
+    await waitFor(() => {
+      expect(within(heatmap).getByRole("status")).toHaveTextContent("Sector quotes unavailable");
+    });
+    expect(within(heatmap).getByRole("status")).not.toHaveTextContent("No cached quotes");
+    expect(within(heatmap).getByRole("status")).not.toHaveTextContent("Loading cache");
+  });
+
   it("keeps the heatmap header on the sector query while stocks are still loading", async () => {
     let resolveHeatmap: (value: { items: [] }) => void = () => undefined;
     api.fetchMarketHeatmap.mockReturnValue(new Promise((resolve) => {
