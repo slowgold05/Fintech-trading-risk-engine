@@ -517,6 +517,19 @@ export interface ResearchFilingsResponse {
   fetched_at: string;
 }
 
+export interface MarketNewsArticle {
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published_at: string;
+}
+
+export interface MarketNewsResponse {
+  articles: MarketNewsArticle[];
+  as_of: string | null;
+}
+
 export interface ResearchNewsArticle {
   headline: string;
   summary: string;
