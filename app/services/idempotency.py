@@ -12,10 +12,24 @@ from sqlalchemy.orm import Session
 from app.models.order_request import OrderRequest
 
 
+def request_fingerprint(operation: str, payload: BaseModel) -> str:
+    body = {"operation": operation, "payload": payload.model_dump(mode="json")}
+    return sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+
+
+def stored_response(db: Session, user_id: int, key: str, operation: str, payload: BaseModel) -> dict | None:
+    prior = db.execute(select(OrderRequest).where(OrderRequest.user_id == user_id,
+                                                   OrderRequest.idempotency_key == key)).scalar_one_or_none()
+    if prior is None or prior.response is None:
+        return None
+    if prior.request_hash != request_fingerprint(operation, payload):
+        raise HTTPException(status_code=409, detail="Idempotency key was used for a different request")
+    return prior.response
+
+
 def execute_once(db: Session, user_id: int, key: str, operation: str,
                  payload: BaseModel, execute: Callable[[], dict]) -> dict:
-    fingerprint = sha256(json.dumps({"operation": operation, "payload": payload.model_dump(mode="json")},
-                                    sort_keys=True).encode()).hexdigest()
+    fingerprint = request_fingerprint(operation, payload)
 
     def replay() -> dict | None:
         prior = db.execute(select(OrderRequest).where(OrderRequest.user_id == user_id,

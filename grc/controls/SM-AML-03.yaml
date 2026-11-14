@@ -1,0 +1,13 @@
+id: SM-AML-03
+title: AML cases stay inside their SLA
+objective: Detect an AML case that is still open after its due time or was closed late.
+type: detective, automated
+owner: Compliance (second line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_phase5_aml.py; tests/test_phase6_pack.py
+evidence: grc/evidence/SM-AML-03/<run-id>.json
+threshold: Every AML case is closed by its due time. A book with no cases is no_sample.
+mappings:
+  nydfs_500: "500.07"
+risks:
+  - Repeated cash movements can hide structuring or rapid movement

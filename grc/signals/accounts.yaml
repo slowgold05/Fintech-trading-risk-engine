@@ -1,0 +1,106 @@
+# Curated feed registry. This file is not a live connection to Bluesky.
+# Provisional rows still need the onboarding check. Rejected rows stay out of the feed.
+accounts:
+  - handle: "@financialtimes.com"
+    platform: bluesky
+    did: ""
+    tier: newswire
+    status: approved
+    identity: domain
+    posted_recently: true
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: Domain handle. Approver is still blank, so review_account does not pass this row.
+  - handle: "@reuters.com"
+    platform: bluesky
+    did: ""
+    tier: newswire
+    status: approved
+    identity: domain
+    posted_recently: true
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: Domain handle. Approver is still blank.
+  - handle: "@yahoofinance.com"
+    platform: bluesky
+    did: ""
+    tier: newswire
+    status: approved
+    identity: domain
+    posted_recently: true
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: Domain handle. Approver is still blank.
+  - handle: "@barrons.com"
+    platform: bluesky
+    did: ""
+    tier: newswire
+    status: approved
+    identity: domain
+    posted_recently: true
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: Domain handle. Approver is still blank.
+  - handle: "@unusualwhales.bsky.social"
+    platform: bluesky
+    did: "did:plc:7l75ck5g4b5k6gxqaq5rejit"
+    tier: curated
+    status: approved
+    identity: website
+    posted_recently: true
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: DID from the expansion note. Approver is still blank. Show only ticker-linked posts.
+  - handle: "@bencarlson007.bsky.social"
+    platform: bluesky
+    did: ""
+    tier: analyst
+    status: approved
+    identity: ""
+    posted_recently: true
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: Named in the expansion note. Identity and approver are not confirmed here.
+  - handle: "@hmeisler.bsky.social"
+    platform: bluesky
+    did: ""
+    tier: analyst
+    status: provisional
+    identity: ""
+    posted_recently: false
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: Provisional until a recent post is confirmed.
+  - handle: "@walterdeemer.bsky.social"
+    platform: bluesky
+    did: ""
+    tier: analyst
+    status: provisional
+    identity: ""
+    posted_recently: false
+    conflict: false
+    lookalike: false
+    approved_by: ""
+    approved_at: ""
+    why: Provisional until a recent post is confirmed.
+rejected:
+  - handle: "@leadlagreport.bsky.social"
+    why: Promotes products the account is connected to. Excluded.
+  - handle: "@watcher.guru"
+    why: Not added. Shown only as a link-out if a person asks. No X API calls.
+  - handle: "@unusualwhalec.bsky.social"
+    why: Look-alike. The registry keys on DID, and this handle has none on the approved row.

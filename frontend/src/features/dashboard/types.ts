@@ -18,18 +18,20 @@ export type Position = {
   symbol: string;
   name: string;
   quantity: number;
-  marketValue: number;
-  weight: number;
-  pnl: number;
-  changePercent: number;
-  risk: "Low" | "Medium" | "High";
+  marketValue: number | null;
+  weight: number | null;
+  pnl: number | null;
+  changePercent: number | null;
+  risk: "Low" | "Medium" | "High" | null;
+  unavailableReason?: string | null;
+  quoteAt?: string | null;
 };
 
 export type DashboardData = {
   isLoading: boolean;
-  portfolioValue: number;
-  dayPnl: number;
-  dayPnlPercent: number;
+  portfolioValue: number | null;
+  dayPnl: number | null;
+  dayPnlPercent: number | null;
   cash: number;
   riskScore: number;
   riskLabel: string;

@@ -1,0 +1,12 @@
+id: SM-PT-06
+title: Buying-power reservation invariant
+objective: Detect an account whose open buy orders reserve more cash than the account holds.
+type: detective, automated
+owner: Trading Operations (first line)
+frequency: per order and daily
+test: python -m app.scripts.run_controls; tests/test_phase2_controls.py
+evidence: grc/evidence/SM-PT-06/<run-id>.json
+threshold: Reserved cash for open buy orders does not exceed the account cash balance.
+mappings: {}
+risks:
+  - Paper order spends more than available buying power

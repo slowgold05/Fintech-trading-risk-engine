@@ -8,15 +8,36 @@ import { SkeletonBlock } from "./SkeletonBlock";
 import type { Trade } from "../types";
 
 type RecentTradesTableProps = {
-  trades: Trade[];
+  trades: Trade[] | null;
   isLoading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
 };
 
 export function RecentTradesTable({
   trades,
   isLoading,
+  isError = false,
+  onRetry,
 }: RecentTradesTableProps) {
-  if (isLoading) {
+  if (isError) {
+    return (
+      <div className="rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+        <p>Trades could not be loaded.</p>
+        {onRetry ? (
+          <button
+            className="mt-3 rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-1.5 text-xs font-semibold text-slate-100 transition duration-200 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+            onClick={onRetry}
+            type="button"
+          >
+            Retry trades
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (isLoading || trades == null) {
     return (
       <div className="space-y-3">
         {[0, 1, 2, 3].map((item) => (
@@ -29,8 +50,8 @@ export function RecentTradesTable({
   if (trades.length === 0) {
     return (
       <EmptyState
-        detail="Submit a quick trade or use the Trades page to create activity."
-        message="No trades have been executed today."
+        detail="Newest executions appear here after an order fills."
+        message="No executed trades"
       />
     );
   }

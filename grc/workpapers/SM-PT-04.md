@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-29
 **Control owner:** Trading Operations (first line)
-**Status:** Design tested; live operating sample pending
+**Status:** Design tested. One hosted retry left a single open order on 2026-11-03. The control runner has not recorded that population.
 
 ## Risk and control
 
@@ -14,7 +14,7 @@ Reviewed the unique constraint on `(user_id, idempotency_key)`, `app/services/id
 
 ## Test of operating effectiveness
 
-The latest local control run checked zero committed request records and found the unique constraint present. It correctly reported `no_sample`: `grc/evidence/SM-PT-04/02874363272f4e479585faf2a00fc689.json`, SHA-256 `e4fa34f9af602efaed86cfe9e86d0249aa5d0402750793594163da2007a6c036`. This is not evidence that a live retry occurred.
+The latest local control run checked zero committed request records and found the unique constraint present. It correctly reported `no_sample`: `grc/evidence/SM-PT-04/02874363272f4e479585faf2a00fc689.json`, SHA-256 `e4fa34f9af602efaed86cfe9e86d0249aa5d0402750793594163da2007a6c036`. This is not evidence that a live retry occurred. On 2026-11-03 hosted NVDA order 1, a one-share buy at $184.18, was submitted twice with the same idempotency key. The account's order list contained that one open order after the retry. Both HTTP responses were 500 because the running image raises after a successful rate-limited write. The list is the evidence that the retry did not create a second order. The control runner still has to see a committed response before SM-PT-04 can pass.
 
 ## Limits and follow-up
 

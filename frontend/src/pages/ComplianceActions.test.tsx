@@ -24,6 +24,23 @@ vi.mock("../api/compliance", () => ({
   requestRoleChange: actions.requestRoleChange,
   submitAccessReview: actions.submitAccessReview,
   approveRoleChange: vi.fn(),
+  fetchSurveillanceRules: () => Promise.resolve({ rules: [] }),
+  fetchSurveillanceCases: () => Promise.resolve({ cases: [] }),
+  requestSurveillanceActivation: vi.fn(),
+  approveSurveillanceActivation: vi.fn(),
+  fetchAmlRules: () => Promise.resolve({ rules: [] }),
+  fetchAmlCases: () => Promise.resolve({ cases: [] }),
+  requestAmlActivation: vi.fn(),
+  approveAmlActivation: vi.fn(),
+  fetchIncidents: () => Promise.resolve({ incidents: [] }),
+  openIncident: vi.fn(),
+  fetchKris: () => Promise.resolve({ kris: [] }),
+  fetchIntents: () => Promise.resolve({ intents: [] }),
+  approveIntent: vi.fn(),
+  fetchFindings: () => Promise.resolve({ findings: [] }),
+  fetchRiskBrief: () => Promise.resolve({ brief: null }),
+  fetchOpsHealth: () => Promise.resolve({ generated_at: "2026-11-13T00:00:00Z", market_data_freshness: { "live-ish": 0, delayed: 0, cached: 0, stale: 0 }, job_queues: { research: { queued_count: 0, running_count: 0, oldest_queued_age_seconds: null, failed_last_24h_count: 0 }, forecast: { queued_count: 0, running_count: 0, oldest_queued_age_seconds: null, failed_last_24h_count: 0 } }, ai_usage: { research_jobs_with_token_counts: 0, total_prompt_tokens: 0, total_completion_tokens: 0, avg_duration_ms: 0 }, massive_ingestion: { symbols_covered: 0, latest_session_date: null, flagged_last_30d_count: 0 }, kronos_worker: { weights_cache_dir_exists: false, weights_cache_bytes: 0 } }),
+  downloadEvidenceBundle: vi.fn(),
 }));
 
 describe("Compliance actions", () => {

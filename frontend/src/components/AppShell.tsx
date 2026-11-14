@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Brain,
+  ChartLineUp,
   ChartPieSlice,
   HouseLine,
   List,
@@ -15,14 +17,31 @@ import {
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { fetchMe } from "../api/auth";
+import type { UserResponse } from "../types/schemas";
 
 const navigationItems: Array<{ label: string; to: string; Icon: Icon; end?: boolean }> = [
-  { label: "Home", to: "/", Icon: HouseLine, end: true },
+  { label: "Market", to: "/market", Icon: HouseLine, end: true },
   { label: "Dashboard", to: "/dashboard", Icon: SquaresFour },
   { label: "Trades", to: "/trades", Icon: Swap },
   { label: "Portfolio", to: "/portfolio", Icon: ChartPieSlice },
   { label: "Risk", to: "/risk", Icon: TrendUp },
+  { label: "Research", to: "/research", Icon: Brain },
+  { label: "Forecast Lab", to: "/forecasts", Icon: ChartLineUp },
 ];
+
+const shellDateFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+});
+
+const roleTone: Record<UserResponse["role"], string> = {
+  trader: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
+  analyst: "border-sky-400/30 bg-sky-400/10 text-sky-300",
+  compliance_officer: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  admin: "border-sky-400/30 bg-sky-400/10 text-sky-300",
+  auditor: "border-slate-600 bg-slate-800 text-slate-300",
+};
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
   const { signOut, token } = useAuth();
@@ -47,6 +66,12 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
           </div>
           <div className="mt-0.5 truncate text-[10px] text-slate-500">Trading & Operations</div>
         </div>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="Close navigation"
+            className="ml-auto flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">
+            <X className="size-5" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
@@ -87,11 +112,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 
       <div className="space-y-2 border-t border-slate-800/80 px-3 py-4">
         <div className="flex items-center gap-2.5 rounded-xl border border-slate-800/80 bg-slate-900/50 px-3 py-2.5">
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="animate-ping-slow absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-          </span>
-          <span className="text-[11px] font-medium text-slate-400">System live</span>
+          <span className="text-xs font-medium text-slate-300">Paper trading</span>
         </div>
         <button
           onClick={handleSignOut}
@@ -107,7 +128,33 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 }
 
 export function AppShell() {
+  const { token } = useAuth();
+  const me = useQuery({ queryKey: ["me", token], queryFn: fetchMe, enabled: Boolean(token) });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const change = () => {
+      setDesktop(media.matches);
+      if (media.matches) setSidebarOpen(false);
+    };
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !sidebarOpen || desktop) return;
+    const previousOverflow = document.body.style.overflow;
+    dialog.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (dialog.open) dialog.close();
+    };
+  }, [sidebarOpen, desktop]);
 
   return (
     <div className="flex min-h-[100dvh]">
@@ -118,41 +165,51 @@ export function AppShell() {
         Skip to main content
       </a>
 
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-slate-950/75 backdrop-blur-sm md:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
+      {desktop && (
+        <aside className="sticky top-0 flex h-[100dvh] w-[220px] shrink-0 flex-col border-r border-slate-800/80 bg-[#040b14]" aria-label="Sidebar">
+          <Sidebar />
+        </aside>
       )}
 
-      <aside
-        className={[
-          "flex w-[220px] shrink-0 flex-col",
-          "border-r border-slate-800/80 bg-[#040b14]",
-          "fixed inset-y-0 left-0 z-40",
-          "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          "md:static md:z-auto md:translate-x-0",
-        ].join(" ")}
-        aria-label="Sidebar"
-      >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
-      </aside>
+      <dialog ref={dialogRef} id="mobile-navigation" aria-label="Mobile navigation"
+        onClose={() => setSidebarOpen(false)}
+        onCancel={() => setSidebarOpen(false)}
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const controls = event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not([disabled])");
+          const first = controls[0];
+          const last = controls[controls.length - 1];
+          const next = event.shiftKey && document.activeElement === first
+            ? last : !event.shiftKey && document.activeElement === last ? first : null;
+          if (next) {
+            event.preventDefault();
+            next.focus();
+          }
+        }}
+        onClick={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+            setSidebarOpen(false);
+          }
+        }}
+        className="fixed inset-y-0 left-0 m-0 h-[100dvh] max-h-none w-[min(320px,100vw)] max-w-none border-0 border-r border-slate-800 bg-[#040b14] p-0 text-slate-100 backdrop:bg-slate-950/75">
+        <div className="flex h-full flex-col">
+          <Sidebar onClose={() => setSidebarOpen(false)} />
+        </div>
+      </dialog>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-800/80 bg-slate-950/95 px-4 py-3 backdrop-blur md:hidden">
+        {!desktop && <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-800/80 bg-slate-950/95 px-4 py-3">
           <button
-            className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
-            onClick={() => setSidebarOpen((v) => !v)}
-            aria-label={sidebarOpen ? "Close navigation" : "Open navigation"}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-300 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open navigation"
+            aria-expanded={sidebarOpen}
+            aria-controls="mobile-navigation"
             type="button"
           >
-            {sidebarOpen ? (
-              <X className="size-5" weight="light" />
-            ) : (
-              <List className="size-5" weight="light" />
-            )}
+            <List className="size-5" weight="light" aria-hidden="true" />
           </button>
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.2)]">
@@ -160,7 +217,20 @@ export function AppShell() {
             </div>
             <span className="text-sm font-semibold text-slate-100">getrichyesterday</span>
           </div>
-        </header>
+        </header>}
+
+        {desktop && (
+          <header className="sticky top-0 z-20 flex min-h-11 items-center gap-3 border-b border-slate-800/80 bg-slate-950/95 px-4 py-3 sm:px-6">
+            <p className="text-sm font-medium text-slate-300">{shellDateFormatter.format(new Date())}</p>
+            <div className="flex-1" />
+            {me.data && (
+              <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800/80 bg-slate-900/50 px-2.5 py-1">
+                <span className="truncate text-xs font-medium text-slate-200">{me.data.email}</span>
+                <span className={["status-badge shrink-0", roleTone[me.data.role]].join(" ")}>{me.data.role}</span>
+              </div>
+            )}
+          </header>
+        )}
 
         <main className="flex-1 overflow-auto" id="main-content">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">

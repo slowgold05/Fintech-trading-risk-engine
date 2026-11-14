@@ -14,13 +14,29 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_audit
+          POSTGRES_PASSWORD: ci-only-test
+          POSTGRES_DB: ci_audit
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U ci_audit -d ci_audit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AUDIT_DATABASE_URL: postgresql+psycopg://ci_audit:ci-only-test@127.0.0.1:5432/ci_audit
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt -r requirements-dev.txt
-      - run: python -m pytest -q
+      - run: python -m pytest -q -ra
 
   frontend:
     runs-on: ubuntu-latest
@@ -100,3 +116,66 @@ jobs:
           name: api-sbom
           path: api-sbom.cdx.json
           retention-days: 30
+
+  browser:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_browser
+          POSTGRES_PASSWORD: ci-only-browser
+          POSTGRES_DB: p0b_browser
+        ports:
+          - "127.0.0.1:54331:5432"
+        options: >-
+          --health-cmd "pg_isready -U ci_browser -d p0b_browser"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      P0B_BROWSER: "1"
+      P0B_TRADER_EMAIL: designatedemail@example.com
+      P0B_TRADER_PASSWORD: Ci-browser-test-2026!
+      P0B_WEB_URL: http://127.0.0.1:4173
+      P0B_API_URL: http://127.0.0.1:8000
+      P0B_DISPOSABLE_DATABASE_URL: postgresql+psycopg://ci_browser:ci-only-browser@127.0.0.1:54331/p0b_browser
+      P0B_APP_DATABASE_URL: postgresql+psycopg://fintech_app:ci-only-app@127.0.0.1:54331/p0b_browser
+      DATABASE_URL: postgresql+psycopg://ci_browser:ci-only-browser@127.0.0.1:54331/p0b_browser
+      MIGRATION_DATABASE_URL: postgresql+psycopg://ci_browser:ci-only-browser@127.0.0.1:54331/p0b_browser
+      JWT_SECRET: test-secret-value-with-at-least-32-chars
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt selenium==4.52.0
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: python -m alembic upgrade head
+      - run: python -c "import os; from sqlalchemy.engine import make_url; from app.scripts.configure_postgres_role import configure; configure(os.environ['MIGRATION_DATABASE_URL'], make_url(os.environ['P0B_APP_DATABASE_URL']).password)"
+      - run: python -m pytest -q -ra tests/browser -k 'not hosted'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-screenshots
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            .local-tools/public-browser/*.png
+            .local-tools/p1a-browser/*.png
+            .local-tools/p2-shell/*.png
+            .local-tools/p2-overview/*.png
+            .local-tools/p3a-history/*.png
+            .local-tools/p3a-indicators-ui/*.png
+            .local-tools/p3b-ticket/*.png
+            .local-tools/p3b-lifecycle/*.png
+            .local-tools/p3b-chart-ticket/*.png
+            .local-tools/p3b-watchlists-ui/*.png

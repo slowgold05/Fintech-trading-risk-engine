@@ -1,6 +1,6 @@
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -16,6 +16,7 @@ from app.services.trade_execution import CENT, SIX_PLACES, execute_fill, notiona
 from app.models.holding import Holding
 from app.services.pretrade_controls import require_stock_concentration, require_trading_open
 from app.services.idempotency import execute_once
+from app.services.order_step_up import require_notional_step_up
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -57,25 +58,22 @@ def list_trades(
 @limiter.limit("60/minute")
 def create_trade(
     request: Request,
+    response: Response,
     payload: TradeCreate,
     idempotency_key: str = Header(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
+    step_up_code: str | None = Header(default=None, alias="X-Step-Up-Code"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_trader),
 ):
     return execute_once(db, current_user.id, idempotency_key, "trade", payload,
-                        lambda: _execute_trade(db, current_user, payload))
+                        lambda: _execute_trade(db, current_user, payload, step_up_code))
 
 
-def _execute_trade(db: Session, current_user: User, payload: TradeCreate) -> dict:
+def _execute_trade(db: Session, current_user: User, payload: TradeCreate, step_up_code: str | None = None) -> dict:
     require_trading_open(db)
     user_id = current_user.id
 
     symbol = payload.symbol
-
-    # Serialize this account's orders, including buys and sells of new holdings.
-    current_user = db.execute(
-        select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True)
-    ).scalar_one()
 
     # 1) Get / create asset
     asset = db.execute(
@@ -100,7 +98,13 @@ def _execute_trade(db: Session, current_user: User, payload: TradeCreate) -> dic
             raise ValueError("Invalid price quote.")
     except (ValueError, InvalidOperation) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if payload.side == "buy" and notional_amount(payload.quantity, price) > current_user.cash_balance - reserved_cash(db, user_id):
+    trade_notional = notional_amount(payload.quantity, price)
+    require_notional_step_up(db, current_user, trade_notional, step_up_code)
+    # Factor lock, when a code is required, is already held. Take the account next.
+    current_user = db.execute(
+        select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True)
+    ).scalar_one()
+    if payload.side == "buy" and trade_notional > current_user.cash_balance - reserved_cash(db, user_id):
         raise HTTPException(status_code=400, detail="Insufficient buying power")
     if payload.side == "buy" and payload.asset_type == "stock":
         require_stock_concentration(db, current_user, asset, payload.quantity, price, price)

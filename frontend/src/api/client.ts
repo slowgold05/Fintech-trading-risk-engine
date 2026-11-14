@@ -55,9 +55,7 @@ apiClient.interceptors.response.use(
       clearAuthToken();
       unauthorizedHandler?.();
 
-      if (window.location.pathname !== "/login") {
-        window.location.assign("/login");
-      }
+      // ProtectedRoute handles sign-in; public dashboards remain accessible.
     }
 
     return Promise.reject(error);

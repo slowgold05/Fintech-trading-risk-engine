@@ -15,6 +15,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=True)
     role = Column(String(24), nullable=False, server_default=text("'trader'"))
     cash_balance = Column(Numeric(18, 2), nullable=False, default=100000)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)

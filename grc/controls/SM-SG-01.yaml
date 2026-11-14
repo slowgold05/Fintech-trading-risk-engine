@@ -1,0 +1,13 @@
+id: SM-SG-01
+title: Injection text cannot remain a proposal
+objective: Detect a proposed intent whose rationale or source text matched the injection scan.
+type: preventive and detective, automated
+owner: Security Operations (second line)
+frequency: per intent and daily
+test: python -m app.scripts.run_controls; tests/test_expansion.py
+evidence: grc/evidence/SM-SG-01/<run-id>.json
+threshold: Injection text is stored only as a rejected intent. No intents is no_sample.
+mappings:
+  nist_csf: "protective-technology"
+risks:
+  - Untrusted text reaches an agent and changes a proposal

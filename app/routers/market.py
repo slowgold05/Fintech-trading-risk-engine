@@ -1,14 +1,17 @@
 from datetime import datetime, timezone
+from math import isfinite
 
 import requests
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.services.market_cache_service import get_cached_heatmap
+from app.services.market_news_service import get_market_news
 from app.services.price_service import (
     get_company_overview,
     get_stock_quote,
@@ -16,6 +19,7 @@ from app.services.price_service import (
 )
 from app.services.sec_service import get_sec_company_fundamentals
 from app.services.sector_classifier import infer_sector
+from app.services.sp500_constituents import load_sp500_constituents
 
 router = APIRouter()
 
@@ -52,22 +56,25 @@ def _to_float(value) -> float | None:
     if value in (None, "", "None", "-"):
         return None
     try:
-        return float(str(value).replace("%", ""))
+        number = float(str(value).replace("%", ""))
+        return number if isfinite(number) else None
     except ValueError:
         return None
 
 
 def _format_mover(item: dict) -> dict:
+    price = _to_float(item.get("price"))
+    volume = str(item.get("volume", "")).strip()
     return {
         "symbol": item.get("ticker", ""),
-        "price": _to_float(item.get("price")) or 0.0,
-        "change_amount": _to_float(item.get("change_amount")) or 0.0,
-        "change_percent": _to_float(item.get("change_percentage")) or 0.0,
-        "volume": int(_to_float(item.get("volume")) or 0),
+        "price": price if price is not None and price > 0 else None,
+        "change_amount": _to_float(item.get("change_amount")),
+        "change_percent": _to_float(item.get("change_percentage")),
+        "volume": int(volume) if volume.isdecimal() else None,
     }
 
 
-def _score_company_research(overview: dict, quote: dict | None) -> tuple[int, str, list[str]]:
+def _score_company_research(overview: dict, quote: dict | None) -> tuple[int | None, str | None, list[str]]:
     score = 50
     factors = []
     pe_ratio = _to_float(overview.get("PERatio"))
@@ -75,6 +82,9 @@ def _score_company_research(overview: dict, quote: dict | None) -> tuple[int, st
     beta = _to_float(overview.get("Beta"))
     analyst_target = _to_float(overview.get("AnalystTargetPrice"))
     current_price = _to_float(quote.get("price")) if quote else None
+    has_target_comparison = analyst_target is not None and analyst_target > 0 and current_price is not None and current_price > 0
+    if not ((pe_ratio is not None and pe_ratio > 0) or profit_margin is not None or beta is not None or has_target_comparison):
+        return None, None, []
 
     if pe_ratio is not None:
         if pe_ratio > 45:
@@ -100,7 +110,7 @@ def _score_company_research(overview: dict, quote: dict | None) -> tuple[int, st
             score -= 4
             factors.append("Lower beta volatility")
 
-    if analyst_target and current_price:
+    if has_target_comparison:
         upside = ((analyst_target - current_price) / current_price) * 100
         if upside < -10:
             score += 8
@@ -169,6 +179,11 @@ def market_overview(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/news")
+def market_news(db: Session = Depends(get_db)):
+    return get_market_news(db, settings.finnhub_api_key)
+
+
 @router.get("/trending")
 def market_trending():
     try:
@@ -206,7 +221,9 @@ def market_universe(
     search: str | None = Query(default=None, max_length=50),
     db: Session = Depends(get_db),
 ):
+    sp500_tickers = {row["ticker"] for row in load_sp500_constituents()}
     query = db.query(MarketSymbol).filter(MarketSymbol.is_active.is_(True))
+    query = query.filter(MarketSymbol.symbol.in_(sp500_tickers))
     if search:
         pattern = f"%{search.strip()}%"
         query = query.filter(
@@ -255,9 +272,10 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
         errors.append({"source": "SEC EDGAR", "detail": str(exc)})
 
     quote, quote_error = _quote_or_error(normalized_symbol)
-    scoring_overview = dict(overview)
-    if not scoring_overview.get("ProfitMargin") and sec_fundamentals.get("profit_margin") is not None:
-        scoring_overview["ProfitMargin"] = sec_fundamentals["profit_margin"]
+    profit_margin = _to_float(sec_fundamentals.get("profit_margin"))
+    if profit_margin is None:
+        profit_margin = _to_float(overview.get("ProfitMargin"))
+    scoring_overview = dict(overview, ProfitMargin=profit_margin)
     score, label, factors = _score_company_research(scoring_overview, quote)
     if quote_error:
         errors.append({"source": "Alpha Vantage quote", "detail": quote_error})
@@ -270,7 +288,7 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
         "industry": overview.get("Industry"),
         "market_cap": _to_float(overview.get("MarketCapitalization")),
         "pe_ratio": _to_float(overview.get("PERatio")),
-        "profit_margin": sec_fundamentals.get("profit_margin") or _to_float(overview.get("ProfitMargin")),
+        "profit_margin": profit_margin,
         "beta": _to_float(overview.get("Beta")),
         "analyst_target_price": _to_float(overview.get("AnalystTargetPrice")),
         "price": quote.get("price") if quote else None,

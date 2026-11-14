@@ -1,18 +1,40 @@
 import type {
-  PortfolioPnlResponse,
   PortfolioResponse,
   RiskResponse,
   TradesResponse,
+  UnavailableReason,
 } from "../../types/schemas";
 import { formatDateTime } from "../../utils/format";
-import type { PortfolioPoint, Position, Trade } from "./types";
+import type { Position, Trade } from "./types";
 
-export function getPortfolioValue(portfolio?: PortfolioResponse) {
-  return (
-    portfolio?.summary.total_account_value ??
-    portfolio?.summary.total_portfolio_value ??
-    0
-  );
+const REASON_LABELS: Record<UnavailableReason, string> = {
+  missing: "Quote missing",
+  invalid: "Quote invalid",
+  stale: "Quote stale",
+  unsupported_asset: "Unsupported asset",
+};
+
+export function valuationReasonLabel(reason: string | null | undefined): string | null {
+  if (
+    reason === "missing" ||
+    reason === "invalid" ||
+    reason === "stale" ||
+    reason === "unsupported_asset"
+  ) {
+    return REASON_LABELS[reason];
+  }
+  return null;
+}
+
+function isComplete(portfolio?: PortfolioResponse): portfolio is PortfolioResponse {
+  return portfolio?.valuation_status === "complete";
+}
+
+export function getPortfolioValue(portfolio?: PortfolioResponse): number | null {
+  if (!isComplete(portfolio) || portfolio.summary.total_account_value == null) {
+    return null;
+  }
+  return portfolio.summary.total_account_value;
 }
 
 export function getCashBalance(portfolio?: PortfolioResponse) {
@@ -23,89 +45,92 @@ export function getBuyingPower(portfolio?: PortfolioResponse) {
   return portfolio?.summary.buying_power ?? getCashBalance(portfolio);
 }
 
-export function getDayPnl(portfolio?: PortfolioResponse) {
-  return portfolio?.summary.total_pnl ?? 0;
+export function getTotalPnl(portfolio?: PortfolioResponse): number | null {
+  if (!isComplete(portfolio) || portfolio.summary.total_pnl == null) {
+    return null;
+  }
+  return portfolio.summary.total_pnl;
 }
 
-export function getDayPnlPercent(portfolio?: PortfolioResponse) {
-  const summary = portfolio?.summary;
-  if (!summary || summary.total_cost_basis <= 0) {
-    return 0;
+export function getUnrealizedPnlPercent(portfolio?: PortfolioResponse): number | null {
+  if (!isComplete(portfolio)) {
+    return null;
   }
-
-  return (summary.total_pnl / summary.total_cost_basis) * 100;
+  return portfolio.summary.total_unrealized_pnl_pct;
 }
 
-export function getPortfolioChartPoints(
-  portfolio?: PortfolioResponse,
-  pnl?: PortfolioPnlResponse,
-): PortfolioPoint[] {
-  if (pnl?.points?.length) {
-    return pnl.points.map((point) => ({
-      label: point.label,
-      value: point.value,
-    }));
+function positionRisk(changePercent: number | null): Position["risk"] {
+  if (changePercent == null) {
+    return null;
   }
-
-  if (!portfolio) {
-    return [];
+  const magnitude = Math.abs(changePercent);
+  if (magnitude >= 10) {
+    return "High";
   }
-
-  const { total_cost_basis, total_pnl } = portfolio.summary;
-  const totalValue = getPortfolioValue(portfolio);
-  const step = (totalValue - total_cost_basis) / 4;
-
-  return [
-    { label: "Cost", value: total_cost_basis },
-    { label: "25%", value: total_cost_basis + step },
-    { label: "50%", value: total_cost_basis + step * 2 },
-    { label: "75%", value: total_cost_basis + step * 3 },
-    { label: total_pnl >= 0 ? "Gain" : "Loss", value: totalValue },
-  ];
+  if (magnitude >= 3) {
+    return "Medium";
+  }
+  return "Low";
 }
 
 export function mapPortfolioPositions(
   portfolio?: PortfolioResponse,
 ): Position[] {
-  const totalValue = portfolio?.summary.total_portfolio_value ?? 0;
+  const complete = isComplete(portfolio);
+  const totalValue = complete ? portfolio.summary.total_portfolio_value : null;
 
   return (
-    portfolio?.positions.map((position) => ({
-      symbol: position.symbol,
-      name: position.asset_type.toUpperCase(),
-      quantity: position.quantity,
-      marketValue: position.position_value,
-      weight:
-        totalValue > 0 ? (position.position_value / totalValue) * 100 : 0,
-      pnl: position.unrealized_pnl,
-      changePercent: position.unrealized_pnl_pct,
-      risk:
-        Math.abs(position.unrealized_pnl_pct) >= 10
-          ? "High"
-          : Math.abs(position.unrealized_pnl_pct) >= 3
-            ? "Medium"
-            : "Low",
-    })) ?? []
+    portfolio?.positions.map((position) => {
+      const marketValue = position.position_value;
+      const changePercent = position.unrealized_pnl_pct;
+      const weight =
+        !complete || marketValue == null || totalValue == null
+          ? null
+          : totalValue > 0
+            ? (marketValue / totalValue) * 100
+            : 0;
+      return {
+        symbol: position.symbol,
+        name: position.asset_type.toUpperCase(),
+        quantity: position.quantity,
+        marketValue,
+        weight,
+        pnl: position.unrealized_pnl,
+        changePercent,
+        risk: complete ? positionRisk(changePercent) : null,
+        unavailableReason:
+          position.price_status === "unavailable"
+            ? valuationReasonLabel(position.unavailable_reason)
+            : null,
+        quoteAt: position.quote_at,
+      };
+    }) ?? []
   );
 }
 
-export function mapRecentTrades(trades?: TradesResponse): Trade[] {
-  return (
-    trades?.trades.map((trade) => ({
-      id: `TRD-${trade.id}`,
-      symbol: trade.symbol,
-      side: trade.side.toUpperCase() as "BUY" | "SELL",
-      quantity: trade.quantity,
-      price: trade.price_at_execution,
-      value: trade.notional,
-      pnl: trade.realized_pnl,
-      time: formatDateTime(trade.executed_at),
-    })) ?? []
-  );
+export function mapRecentTrades(trades?: TradesResponse): Trade[] | null {
+  if (!trades) {
+    return null;
+  }
+
+  return trades.trades.map((trade) => ({
+    id: `TRD-${trade.id}`,
+    symbol: trade.symbol,
+    side: trade.side.toUpperCase() as "BUY" | "SELL",
+    quantity: trade.quantity,
+    price: trade.price_at_execution,
+    value: trade.notional,
+    pnl: trade.realized_pnl,
+    time: formatDateTime(trade.executed_at),
+  }));
 }
 
-export function getRiskScore(risk?: RiskResponse) {
-  return risk?.assessments[0]?.risk_score ?? 0;
+export function getRiskScore(risk?: RiskResponse): number | null {
+  const score = risk?.assessments[0]?.risk_score;
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return null;
+  }
+  return score;
 }
 
 export function getRiskLabel(score: number) {
@@ -117,9 +142,5 @@ export function getRiskLabel(score: number) {
     return "Medium";
   }
 
-  if (score > 0) {
-    return "Low";
-  }
-
-  return "No activity";
+  return "Low";
 }

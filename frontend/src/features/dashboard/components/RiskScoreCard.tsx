@@ -10,7 +10,6 @@ export function RiskScoreCard({ score, label }: RiskScoreCardProps) {
   const circumference = 2 * Math.PI * 42;
   const progress = circumference * (score / 100);
   const tone = getRiskTone(score);
-  const remaining = Math.max(100 - score, 0);
 
   return (
     <DashboardCard
@@ -23,7 +22,12 @@ export function RiskScoreCard({ score, label }: RiskScoreCardProps) {
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="relative h-28 w-28 shrink-0">
-          <svg className="h-28 w-28 -rotate-90" viewBox="0 0 100 100">
+          <svg
+            aria-label={`Risk score ${score} of 100, ${label}`}
+            className="h-28 w-28 -rotate-90"
+            role="img"
+            viewBox="0 0 100 100"
+          >
             <circle
               cx="50"
               cy="50"
@@ -51,34 +55,13 @@ export function RiskScoreCard({ score, label }: RiskScoreCardProps) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-6 text-slate-400">
-            Latest score from the backend risk engine. Review alerts before
-            increasing position size.
+            Latest scored trade. Score scale: 0–100.
           </p>
           <div className="mt-4 h-2 overflow-hidden rounded bg-slate-900">
             <div
               className="h-full rounded bg-current"
               style={{ color: tone.stroke, width: `${score}%` }}
             />
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-            <div className="rounded border border-slate-800 bg-slate-900/70 p-2.5">
-              <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
-                Status
-              </div>
-              <div className="mt-1 font-mono text-slate-100">{label}</div>
-            </div>
-            <div className="rounded border border-slate-800 bg-slate-900/70 p-2.5">
-              <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
-                Limit
-              </div>
-              <div className="mt-1 font-mono text-slate-100">100</div>
-            </div>
-            <div className="rounded border border-slate-800 bg-slate-900/70 p-2.5">
-              <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
-                Buffer
-              </div>
-              <div className="mt-1 font-mono text-slate-100">{remaining}</div>
-            </div>
           </div>
         </div>
       </div>

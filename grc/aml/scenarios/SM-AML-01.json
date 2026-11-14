@@ -1,0 +1,50 @@
+{
+  "rule_id": "SM-AML-01",
+  "scenarios": [
+    {
+      "id": "three-deposits-under-the-threshold",
+      "label": true,
+      "events": [
+        {"event_id": "cash-1", "at": "2026-11-04T12:00:00Z", "user_id": 1, "kind": "deposit", "amount": "4000"},
+        {"event_id": "cash-2", "at": "2026-11-04T13:00:00Z", "user_id": 1, "kind": "deposit", "amount": "4000"},
+        {"event_id": "cash-3", "at": "2026-11-04T14:00:00Z", "user_id": 1, "kind": "deposit", "amount": "4000"}
+      ]
+    },
+    {
+      "id": "four-withdrawals-under-the-threshold",
+      "label": true,
+      "events": [
+        {"event_id": "cash-4", "at": "2026-11-04T12:00:00Z", "user_id": 2, "kind": "withdrawal", "amount": "3000"},
+        {"event_id": "cash-5", "at": "2026-11-04T15:00:00Z", "user_id": 2, "kind": "withdrawal", "amount": "3000"},
+        {"event_id": "cash-6", "at": "2026-11-04T18:00:00Z", "user_id": 2, "kind": "withdrawal", "amount": "3000"},
+        {"event_id": "cash-7", "at": "2026-11-04T20:00:00Z", "user_id": 2, "kind": "withdrawal", "amount": "3000"}
+      ]
+    },
+    {
+      "id": "only-two-deposits",
+      "label": false,
+      "events": [
+        {"event_id": "cash-8", "at": "2026-11-04T12:00:00Z", "user_id": 3, "kind": "deposit", "amount": "6000"},
+        {"event_id": "cash-9", "at": "2026-11-04T13:00:00Z", "user_id": 3, "kind": "deposit", "amount": "6000"}
+      ]
+    },
+    {
+      "id": "three-deposits-sum-below-the-threshold",
+      "label": false,
+      "events": [
+        {"event_id": "cash-10", "at": "2026-11-04T12:00:00Z", "user_id": 4, "kind": "deposit", "amount": "2000"},
+        {"event_id": "cash-11", "at": "2026-11-04T13:00:00Z", "user_id": 4, "kind": "deposit", "amount": "2000"},
+        {"event_id": "cash-12", "at": "2026-11-04T14:00:00Z", "user_id": 4, "kind": "deposit", "amount": "2000"}
+      ]
+    },
+    {
+      "id": "single-amounts-at-the-threshold",
+      "label": false,
+      "events": [
+        {"event_id": "cash-13", "at": "2026-11-04T12:00:00Z", "user_id": 5, "kind": "deposit", "amount": "10000"},
+        {"event_id": "cash-14", "at": "2026-11-04T13:00:00Z", "user_id": 5, "kind": "deposit", "amount": "10000"},
+        {"event_id": "cash-15", "at": "2026-11-04T14:00:00Z", "user_id": 5, "kind": "deposit", "amount": "10000"}
+      ]
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 import { type FormEvent, useState } from "react";
 import { Check, Lock, User } from "@phosphor-icons/react";
 import { isAxiosError } from "axios";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { login, register } from "../api/auth";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { completeLoginMfa, confirmMfaEnrollment, enrollMfa, login, register } from "../api/auth";
 import { useAuth } from "../context/useAuth";
 
 const features = [
@@ -13,6 +13,37 @@ const features = [
 ];
 
 type AuthMode = "login" | "register";
+type Stage = "password" | "code" | "enroll";
+
+function hasControlOrBackslash(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 32 || code === 127 || value[index] === "\\") return true;
+  }
+  return false;
+}
+
+function safeAppFrom(state: unknown): string {
+  if (typeof state !== "object" || state === null) return "/dashboard";
+  const from = "from" in state ? state.from : undefined;
+  if (typeof from !== "object" || from === null) return "/dashboard";
+  const pathname = "pathname" in from ? from.pathname : undefined;
+  const search = "search" in from ? from.search : undefined;
+  if (typeof pathname !== "string") return "/dashboard";
+  if (
+    !pathname.startsWith("/") ||
+    pathname.startsWith("//") ||
+    pathname.includes("?") ||
+    pathname.includes("#") ||
+    hasControlOrBackslash(pathname)
+  ) {
+    return "/dashboard";
+  }
+  if (search === undefined || search === "") return pathname;
+  if (typeof search !== "string") return "/dashboard";
+  if (!search.startsWith("?") || hasControlOrBackslash(search)) return "/dashboard";
+  return `${pathname}${search}`;
+}
 
 function passwordStrength(password: string, username: string) {
   const categories = [
@@ -42,16 +73,18 @@ function passwordStrength(password: string, username: string) {
 
 export function Login() {
   const [mode, setMode] = useState<AuthMode>("login");
+  const [stage, setStage] = useState<Stage>("password");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [challengeId, setChallengeId] = useState<number | null>(null);
+  const [enrollSecret, setEnrollSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from =
-    (location.state as { from?: { pathname?: string } } | null)?.from
-      ?.pathname ?? "/dashboard";
+  const from = safeAppFrom(location.state);
 
   if (isAuthenticated) {
     return <Navigate to={from} replace />;
@@ -62,15 +95,43 @@ export function Login() {
     setError(null);
     setIsSubmitting(true);
     try {
+      if (stage === "code" && challengeId !== null) {
+        const completed = await completeLoginMfa({ challenge_id: challengeId, code: otp.trim() });
+        signIn(completed.access_token);
+        navigate(from, { replace: true });
+        return;
+      }
+      if (stage === "enroll") {
+        if (!enrollSecret) {
+          const enrollment = await enrollMfa({ email: username, password });
+          setEnrollSecret(enrollment.secret);
+          setOtp("");
+          return;
+        }
+        await confirmMfaEnrollment({ email: username, password, code: otp.trim() });
+        setEnrollSecret(null);
+        setOtp("");
+        setStage("password");
+        setError("Authenticator saved. Sign in with a new code.");
+        return;
+      }
       if (mode === "register") {
         await register({ email: username, password });
       }
       const tokenResponse = await login({ username, password });
+      if (tokenResponse.mfa_required) {
+        setChallengeId(tokenResponse.challenge_id);
+        setStage("code");
+        setOtp("");
+        return;
+      }
       signIn(tokenResponse.access_token);
       navigate(from, { replace: true });
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 401) {
         setError("Invalid username or password.");
+      } else if (isAxiosError(err) && err.response?.status === 403) {
+        setError("This sign-in needs an authenticator. Set one up before trying again.");
       } else if (isAxiosError(err) && err.response?.status === 400) {
         setError("That email is already registered.");
       } else if (isAxiosError(err) && err.response?.status === 422) {
@@ -150,6 +211,9 @@ export function Login() {
       {/* Right panel — login form */}
       <div className="flex flex-1 items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-md">
+          <Link to="/" className="mb-6 inline-flex text-sm text-slate-400 transition hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">
+            Back to dashboard
+          </Link>
           {/* Mobile logo */}
           <div className="mb-8 flex items-center gap-3 md:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.25)]">
@@ -253,6 +317,41 @@ export function Login() {
                 </div>
               )}
 
+              {stage === "code" && (
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Authenticator code
+                  </span>
+                  <input
+                    aria-label="Sign-in code"
+                    autoComplete="one-time-code"
+                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-700/90 bg-slate-900/80 px-3 text-sm text-slate-100 outline-none focus:border-emerald-400"
+                    inputMode="numeric"
+                    maxLength={6}
+                    onChange={(event) => setOtp(event.target.value)}
+                    required
+                    value={otp}
+                  />
+                </label>
+              )}
+
+              {stage === "enroll" && enrollSecret && (
+                <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-300">
+                  <p>Add this secret to an authenticator app, then enter the current code.</p>
+                  <p aria-label="Authenticator secret" className="mt-2 break-all font-mono text-emerald-300">{enrollSecret}</p>
+                  <input
+                    aria-label="Enrollment code"
+                    autoComplete="one-time-code"
+                    className="mt-3 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+                    inputMode="numeric"
+                    maxLength={6}
+                    onChange={(event) => setOtp(event.target.value)}
+                    required
+                    value={otp}
+                  />
+                </div>
+              )}
+
               {error && (
                 <p
                   className="rounded-xl border border-rose-500/30 bg-rose-950/50 px-3 py-2.5 text-sm text-rose-200"
@@ -263,7 +362,7 @@ export function Login() {
               )}
 
               <button
-                aria-label={isRegistering ? "Create account" : "Sign in"}
+                aria-label={stage === "code" ? "Verify code" : stage === "enroll" ? "Save authenticator" : isRegistering ? "Create account" : "Sign in"}
                 className="primary-action mt-2"
                 disabled={isSubmitting || (isRegistering && !strength.passesMinimum)}
                 type="submit"
@@ -281,6 +380,18 @@ export function Login() {
               className="mt-4 w-full text-center text-xs font-medium text-slate-400 transition hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
               onClick={() => {
                 setError(null);
+                setEnrollSecret(null);
+                setStage((current) => (current === "enroll" ? "password" : "enroll"));
+              }}
+              type="button"
+            >
+              {stage === "enroll" ? "Back to sign in" : "Set up an authenticator"}
+            </button>
+            <button
+              className="mt-2 w-full text-center text-xs font-medium text-slate-400 transition hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
+              onClick={() => {
+                setError(null);
+                setStage("password");
                 setMode((current) => (current === "login" ? "register" : "login"));
               }}
               type="button"

@@ -1,44 +1,58 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight } from "@phosphor-icons/react";
+import { ArrowRight, List, TrendDown, TrendUp, X } from "@phosphor-icons/react";
 import {
   fetchMarketHeatmap,
+  fetchMarketNews,
   fetchMarketOverview,
   fetchMarketResearch,
   fetchMarketTrending,
 } from "../api/market";
+import { fetchDailyHistory, type HistoryRange } from "../api/history";
 import { useAuth } from "../context/useAuth";
-import {
-  fallbackResearch,
-  fallbackTrending,
-  marketTrends,
-  sectorHeatmap,
-  stockHeatmapUniverse,
-  type SectorHeatmapItem,
-  type StockHeatmapItem,
-} from "../features/publicMarket/marketSnapshot";
+import { EmptyState } from "../features/dashboard/components/EmptyState";
+import { IconBadge } from "../features/dashboard/components";
+import { DailyHistory } from "../components/DailyHistory";
+import { Sparkline } from "../components/Sparkline";
+import { Watchlists } from "../components/Watchlists";
 import { FreshnessBadge } from "../components/FreshnessBadge";
 import type {
-  MarketMoverResponse,
   MarketHeatmapItemResponse,
   MarketResearchResponse,
   MarketSectorResponse,
-  MarketTrendResponse,
 } from "../types/schemas";
 import {
   formatCurrency,
   formatPercent,
   formatQuantity,
   formatSignedPercent,
+  formatUtcDateTime,
 } from "../utils/format";
 import { getRiskTone as getSharedRiskTone } from "../utils/riskTone";
 
-type PulseTimeframe = "1D" | "1W" | "1M" | "3M" | "6M";
 type HeatmapScale = "compact" | "standard" | "expanded";
+type SparkRange = Extract<HistoryRange, "1m" | "3m" | "6m" | "1y">;
 
-const pulseTimeframes: PulseTimeframe[] = ["1D", "1W", "1M", "3M", "6M"];
 const heatmapScales: HeatmapScale[] = ["compact", "standard", "expanded"];
+const sparkRanges: SparkRange[] = ["1m", "3m", "6m", "1y"];
+const sparkRangeLabels: Record<SparkRange, string> = {
+  "1m": "1M",
+  "3m": "3M",
+  "6m": "6M",
+  "1y": "1Y",
+};
+const pageSections = [
+  { id: "market-pulse", label: "Market pulse" },
+  { id: "stock-heatmap", label: "Stock heatmap" },
+  { id: "sector-etf-heatmap", label: "Sector ETF heatmap" },
+  { id: "company-research", label: "Company research" },
+  { id: "trending-movers", label: "Trending movers" },
+  { id: "market-news", label: "Market news" },
+  { id: "daily-price-history-title", label: "Daily history chart" },
+] as const;
+const HISTORY_PROVIDER = "massive";
+const HISTORY_ADJUSTMENT = "split_adjusted";
 const stockSectorOrder = [
   "Technology",
   "Communication",
@@ -55,7 +69,7 @@ const stockSectorOrder = [
 const stockSectorRank = new Map(
   stockSectorOrder.map((sector, index) => [sector, index]),
 );
-const stockSizeRank: Record<StockHeatmapItem["size"], number> = {
+const stockSizeRank: Record<MarketHeatmapItemResponse["size"], number> = {
   mega: 0,
   large: 1,
   medium: 2,
@@ -83,10 +97,10 @@ function getHeatmapTone(changePercent: number) {
   return "border-slate-700 bg-slate-900/80 text-slate-200";
 }
 
-function getHeatmapSize(weight: SectorHeatmapItem["weight"], scale: HeatmapScale) {
+function getHeatmapSize(weight: MarketSectorResponse["weight"], scale: HeatmapScale) {
   const sizeMap: Record<
     HeatmapScale,
-    Record<SectorHeatmapItem["weight"], string>
+    Record<MarketSectorResponse["weight"], string>
   > = {
     compact: {
       large: "md:col-span-2 md:row-span-2 min-h-32",
@@ -108,38 +122,38 @@ function getHeatmapSize(weight: SectorHeatmapItem["weight"], scale: HeatmapScale
   return sizeMap[scale][weight];
 }
 
-function getStockTileSize(size: StockHeatmapItem["size"], scale: HeatmapScale) {
+function getStockTileSize(size: MarketHeatmapItemResponse["size"], scale: HeatmapScale) {
   const sizeMap: Record<
     HeatmapScale,
-    Record<StockHeatmapItem["size"], string>
+    Record<MarketHeatmapItemResponse["size"], string>
   > = {
     compact: {
-      mega: "col-span-5 row-span-3 min-h-20",
-      large: "col-span-4 row-span-2 min-h-14",
-      medium: "col-span-3 row-span-2 min-h-12",
-      small: "col-span-2 row-span-1 min-h-8",
-      micro: "col-span-1 row-span-1 min-h-7",
+      mega: "col-span-12 row-span-3 min-h-20",
+      large: "col-span-8 row-span-2 min-h-14",
+      medium: "col-span-6 row-span-2 min-h-12",
+      small: "col-span-5 row-span-1 min-h-8",
+      micro: "col-span-4 row-span-1 min-h-7",
     },
     standard: {
-      mega: "col-span-5 row-span-4 min-h-28",
-      large: "col-span-4 row-span-3 min-h-20",
-      medium: "col-span-3 row-span-2 min-h-16",
-      small: "col-span-2 row-span-1 min-h-10",
-      micro: "col-span-1 row-span-1 min-h-8",
+      mega: "col-span-12 row-span-4 min-h-28",
+      large: "col-span-8 row-span-3 min-h-20",
+      medium: "col-span-6 row-span-2 min-h-16",
+      small: "col-span-5 row-span-1 min-h-10",
+      micro: "col-span-4 row-span-1 min-h-8",
     },
     expanded: {
-      mega: "col-span-6 row-span-4 min-h-40",
-      large: "col-span-4 row-span-3 min-h-28",
-      medium: "col-span-3 row-span-2 min-h-20",
-      small: "col-span-2 row-span-1 min-h-14",
-      micro: "col-span-1 row-span-1 min-h-10",
+      mega: "col-span-12 row-span-4 min-h-40",
+      large: "col-span-8 row-span-3 min-h-28",
+      medium: "col-span-6 row-span-2 min-h-20",
+      small: "col-span-5 row-span-1 min-h-14",
+      micro: "col-span-4 row-span-1 min-h-10",
     },
   };
 
   return sizeMap[scale][size];
 }
 
-function getStockTextSize(size: StockHeatmapItem["size"], scale: HeatmapScale) {
+function getStockTextSize(size: MarketHeatmapItemResponse["size"], scale: HeatmapScale) {
   if (scale === "expanded" && (size === "mega" || size === "large")) {
     return "text-xl";
   }
@@ -155,7 +169,7 @@ function getStockTextSize(size: StockHeatmapItem["size"], scale: HeatmapScale) {
   return "text-sm";
 }
 
-function getStockChangeTextSize(size: StockHeatmapItem["size"], scale: HeatmapScale) {
+function getStockChangeTextSize(size: MarketHeatmapItemResponse["size"], scale: HeatmapScale) {
   if (scale === "expanded" && (size === "mega" || size === "large")) {
     return "text-base";
   }
@@ -177,14 +191,14 @@ function getSectorGridClass(scale: HeatmapScale) {
 
 function getStockGroupGridClass(scale: HeatmapScale) {
   if (scale === "expanded") {
-    return "columns-1 gap-2 lg:columns-2 xl:columns-3";
+    return "grid grid-cols-[repeat(auto-fit,minmax(min(100%,24rem),1fr))] items-start gap-2";
   }
 
   if (scale === "compact") {
-    return "columns-1 gap-2 md:columns-2 xl:columns-4";
+    return "grid grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] items-start gap-2";
   }
 
-  return "columns-1 gap-2 lg:columns-2 xl:columns-3";
+  return "grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] items-start gap-2";
 }
 
 function getStockTileTone(changePercent: number) {
@@ -215,45 +229,7 @@ function getStockTileTone(changePercent: number) {
   return "bg-slate-500 text-white border-slate-300/20";
 }
 
-function mergeStockHeatmap(
-  cachedItems: MarketHeatmapItemResponse[] | undefined,
-): StockHeatmapItem[] {
-  const cachedBySymbol = new Map(
-    (cachedItems ?? []).map((item) => [item.symbol, item]),
-  );
-  const merged = stockHeatmapUniverse.map((stock) => {
-    const cached = cachedBySymbol.get(stock.symbol);
-    return cached
-      ? {
-          ...stock,
-          company: cached.company || stock.company,
-          sector: cached.sector === "Other" ? stock.sector : cached.sector,
-          changePercent: cached.change_percent,
-          dataStatus: cached.data_status,
-          ageSeconds: cached.age_seconds,
-          source: cached.source,
-          asOf: cached.as_of,
-        }
-      : stock;
-  });
-  const known = new Set(merged.map((stock) => stock.symbol));
-  const extras = (cachedItems ?? [])
-    .filter((item) => !known.has(item.symbol))
-    .map<StockHeatmapItem>((item) => ({
-      symbol: item.symbol,
-      company: item.company,
-      sector: item.sector,
-      changePercent: item.change_percent,
-      size: item.size,
-      dataStatus: item.data_status,
-      ageSeconds: item.age_seconds,
-      source: item.source,
-      asOf: item.as_of,
-    }));
-  return [...merged, ...extras];
-}
-
-function groupStockHeatmap(stocks: StockHeatmapItem[]) {
+function groupStockHeatmap(stocks: MarketHeatmapItemResponse[]) {
   const sortedStocks = [...stocks].sort((a, b) => {
     const sectorDelta =
       (stockSectorRank.get(a.sector) ?? stockSectorOrder.length) -
@@ -270,7 +246,7 @@ function groupStockHeatmap(stocks: StockHeatmapItem[]) {
     return a.symbol.localeCompare(b.symbol);
   });
 
-  return sortedStocks.reduce<Record<string, StockHeatmapItem[]>>(
+  return sortedStocks.reduce<Record<string, MarketHeatmapItemResponse[]>>(
     (groups, stock) => {
       groups[stock.sector] = [...(groups[stock.sector] ?? []), stock];
       return groups;
@@ -280,20 +256,14 @@ function groupStockHeatmap(stocks: StockHeatmapItem[]) {
 }
 
 function getRiskTone(label?: string | null) {
-  return getSharedRiskTone(label === "High" || label === "Medium" ? label : "Low").chip;
-}
-
-function toResearchFallback(): MarketResearchResponse {
-  return {
-    ...fallbackResearch,
-    market_cap: fallbackResearch.market_cap,
-    errors: [],
-  };
+  return label === "High" || label === "Medium" || label === "Low"
+    ? getSharedRiskTone(label).chip
+    : "border-slate-700 bg-slate-900 text-slate-400";
 }
 
 function formatMarketCap(value?: number | null) {
-  if (!value) {
-    return "--";
+  if (value == null) {
+    return "Unavailable";
   }
 
   return formatCurrency(value, false);
@@ -303,148 +273,116 @@ function formatOptionalPercent(value?: number | null) {
   return value === null || value === undefined ? "--" : formatPercent(value * 100);
 }
 
-function getFallbackTrends(): MarketTrendResponse[] {
-  return marketTrends.map((trend) => ({
-    symbol: trend.symbol,
-    source_symbol: trend.symbol,
-    name: trend.name,
-    value: trend.value,
-    change: 0,
-    change_percent: trend.changePercent,
-  }));
+function formatNewsTime(value: string) {
+  return formatUtcDateTime(value) ?? value;
 }
 
-function getFallbackSectors(): MarketSectorResponse[] {
-  return sectorHeatmap.map((sector) => ({
-    symbol: sector.symbol,
-    sector: sector.sector,
-    change_percent: sector.changePercent,
-    weight: sector.weight,
-    leaders: sector.leaders,
-  }));
+function sparkRangeLabel(range: HistoryRange) {
+  return range in sparkRangeLabels ? sparkRangeLabels[range as SparkRange] : range.toUpperCase();
 }
 
-function getFallbackMovers(): MarketMoverResponse[] {
-  return fallbackTrending;
+function closingPrices(bars: readonly { session_date: string; close: string }[]) {
+  return [...bars]
+    .sort((left, right) => left.session_date.localeCompare(right.session_date))
+    .map((bar) => Number(bar.close))
+    .filter((value) => Number.isFinite(value));
 }
 
-function getMergedSectors(
-  apiSectors: MarketSectorResponse[] | undefined,
-): MarketSectorResponse[] {
-  const liveBySymbol = new Map(
-    (apiSectors ?? []).map((sector) => [sector.symbol, sector]),
-  );
-
-  const merged = getFallbackSectors().map((fallbackSector) => ({
-    ...fallbackSector,
-    ...(liveBySymbol.get(fallbackSector.symbol) ?? {}),
-  }));
-
-  const knownSymbols = new Set(merged.map((sector) => sector.symbol));
-  const extras = (apiSectors ?? []).filter(
-    (sector) => !knownSymbols.has(sector.symbol),
-  );
-
-  return [...merged, ...extras];
-}
-
-function getTimeframeMultiplier(timeframe: PulseTimeframe) {
-  const multipliers: Record<PulseTimeframe, number> = {
-    "1D": 1,
-    "1W": 2.4,
-    "1M": 5.2,
-    "3M": 9.5,
-    "6M": 14,
-  };
-
-  return multipliers[timeframe];
-}
-
-function getTimeframeChange(
-  trend: MarketTrendResponse,
-  timeframe: PulseTimeframe,
-) {
-  const multiplier = getTimeframeMultiplier(timeframe);
-  const directionBias = timeframe === "1D" ? 1 : trend.symbol === "RUT" ? 0.65 : 1;
-  return trend.change_percent * multiplier * directionBias;
-}
-
-function hashSymbol(symbol: string) {
-  return symbol
-    .split("")
-    .reduce((total, char) => total + char.charCodeAt(0), 0);
-}
-
-function getSparklineValues(
-  trend: MarketTrendResponse,
-  timeframe: PulseTimeframe,
-) {
-  const multiplier = getTimeframeMultiplier(timeframe);
-  const direction = trend.change_percent >= 0 ? 1 : -1;
-  const timeframeChange = getTimeframeChange(trend, timeframe);
-  const baseMove = Math.max(0.35, Math.abs(timeframeChange));
-  const symbolHash = hashSymbol(trend.symbol);
-
-  return Array.from({ length: 18 }, (_, index) => {
-    const wave =
-      Math.sin((index + symbolHash + multiplier) * 0.86) *
-      Math.min(baseMove * 0.28, 2.8);
-    const counterWave =
-      Math.cos((index + symbolHash) * 0.34) *
-      Math.min(baseMove * 0.11, 1.2);
-    const drift = ((index / 17) - 0.5) * baseMove * direction;
-    const pullback = timeframe === "1D" ? 0 : Math.sin(index * 0.55) * 0.75;
-    return 100 + drift + wave + counterWave + pullback;
-  });
-}
-
-function Sparkline({
-  trend,
-  timeframe,
+function TimeframeToggle({
+  label,
+  onChange,
+  value,
 }: {
-  trend: MarketTrendResponse;
-  timeframe: PulseTimeframe;
+  label: string;
+  onChange: (range: SparkRange) => void;
+  value: SparkRange;
 }) {
-  const values = getSparklineValues(trend, timeframe);
-  const points = values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * 100;
-      const y = Math.max(4, Math.min(34, 19 - (value - 100) * 1.55));
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-  const timeframeChange = getTimeframeChange(trend, timeframe);
-  const isPositive = timeframeChange >= 0;
-
   return (
-    <svg
-      aria-label={`${trend.symbol} ${timeframe} trend`}
-      className="mt-3 h-10 w-full overflow-visible"
-      focusable="false"
-      preserveAspectRatio="none"
-      role="img"
-      viewBox="0 0 100 38"
+    <div
+      aria-label={label}
+      className="flex flex-wrap rounded border border-slate-800 bg-slate-950 p-1"
+      role="group"
     >
-      <polyline
-        fill="none"
-        points={points}
-        stroke={isPositive ? "rgb(110 231 183)" : "rgb(253 164 175)"}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2.2"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
+      {sparkRanges.map((range) => {
+        const selected = value === range;
+        return (
+          <button
+            aria-label={`${label} ${sparkRangeLabels[range]}`}
+            aria-pressed={selected}
+            className={[
+              "min-h-11 min-w-11 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition duration-150 motion-reduce:transition-none motion-reduce:active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-950 active:translate-y-px",
+              selected
+                ? "bg-emerald-400 text-slate-950"
+                : "text-slate-200 hover:bg-slate-900 hover:text-slate-50",
+            ].join(" ")}
+            key={range}
+            onClick={() => onChange(range)}
+            type="button"
+          >
+            {sparkRangeLabels[range]}
+          </button>
+        );
+      })}
+    </div>
   );
+}
+
+function SymbolSparkline({
+  className,
+  empty = "hidden",
+  range,
+  symbol,
+}: {
+  className?: string;
+  empty?: "hidden" | "dash";
+  range: HistoryRange;
+  symbol: string;
+}) {
+  const historyQuery = useQuery({
+    queryKey: ["market", "history", symbol, HISTORY_PROVIDER, HISTORY_ADJUSTMENT, range],
+    queryFn: () => fetchDailyHistory(symbol, HISTORY_PROVIDER, HISTORY_ADJUSTMENT, range),
+    enabled: symbol.trim().length > 0,
+    retry: false,
+    staleTime: 300000,
+  });
+  const closes = historyQuery.isSuccess && historyQuery.data.status !== "unavailable"
+    ? closingPrices(historyQuery.data.bars)
+    : [];
+
+  if (closes.length >= 2) {
+    return (
+      <Sparkline
+        className={className}
+        label={`${symbol} closing prices over ${sparkRangeLabel(range)}`}
+        values={closes}
+      />
+    );
+  }
+
+  if (empty === "dash" && (historyQuery.isError || historyQuery.isSuccess)) {
+    return (
+      <span aria-label={`No closing prices for ${symbol}`} className="font-mono text-sm text-slate-300">
+        —
+      </span>
+    );
+  }
+
+  return null;
 }
 
 export function Home() {
   const { isAuthenticated } = useAuth();
   const [symbolInput, setSymbolInput] = useState("NVDA");
   const [researchSymbol, setResearchSymbol] = useState("NVDA");
-  const [pulseTimeframe, setPulseTimeframe] = useState<PulseTimeframe>("1D");
+  const [historyDraft, setHistoryDraft] = useState("");
   const [heatmapScale, setHeatmapScale] =
     useState<HeatmapScale>("standard");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pulseRange, setPulseRange] = useState<SparkRange>("1m");
+  const [researchRange, setResearchRange] = useState<SparkRange>("1m");
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuPanelRef = useRef<HTMLElement>(null);
+  const closeMenuRef = useRef<HTMLButtonElement>(null);
   const marketQuery = useQuery({
     queryKey: ["market", "overview"],
     queryFn: fetchMarketOverview,
@@ -468,28 +406,60 @@ export function Home() {
     queryFn: () => fetchMarketResearch(researchSymbol),
     retry: false,
   });
+  const newsQuery = useQuery({
+    queryKey: ["market", "news"],
+    queryFn: fetchMarketNews,
+    refetchInterval: 300000,
+    retry: false,
+  });
 
-  const trends = marketQuery.data?.trends.length
-    ? marketQuery.data.trends
-    : getFallbackTrends();
-  const sectors = getMergedSectors(marketQuery.data?.sectors);
-  const movers = trendingQuery.data?.most_active.length
-    ? trendingQuery.data.most_active
-    : getFallbackMovers();
-  const research = researchQuery.data?.name
-    ? researchQuery.data
-    : toResearchFallback();
-  const isFallbackMarket =
-    marketQuery.isError ||
-    trendingQuery.isError ||
-    researchQuery.isError ||
-    !marketQuery.data ||
-    !trendingQuery.data ||
-    !researchQuery.data;
-  const stockHeatmapGroups = groupStockHeatmap(
-    mergeStockHeatmap(heatmapQuery.data?.items),
-  );
+  const trends = marketQuery.data?.trends ?? [];
+  const sectors = marketQuery.data?.sectors ?? [];
+  const movers = trendingQuery.data?.most_active ?? [];
+  const research: MarketResearchResponse = researchQuery.data ?? { symbol: researchSymbol, errors: [] };
+  const hasResearchInputs = (research.pe_ratio != null && research.pe_ratio > 0)
+    || research.profit_margin != null || research.beta != null
+    || (research.analyst_target_price != null && research.analyst_target_price > 0 && research.price != null && research.price > 0);
+  const researchRiskLabel = hasResearchInputs ? research.research_risk_label : null;
+  const researchRiskScore = hasResearchInputs ? research.research_risk_score : null;
+  const stockHeatmapGroups = groupStockHeatmap(heatmapQuery.data?.items ?? []);
   const cachedHeatmapCount = heatmapQuery.data?.items.length ?? 0;
+  const latestQuoteAt = marketQuery.data?.as_of;
+  const articles = newsQuery.data?.articles ?? [];
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    closeMenuRef.current?.focus();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setMenuOpen(false);
+      menuButtonRef.current?.focus();
+    }
+
+    function onMouseDown(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (menuButtonRef.current?.contains(target) || menuPanelRef.current?.contains(target)) {
+        return;
+      }
+      setMenuOpen(false);
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onMouseDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [menuOpen]);
 
   function handleResearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -499,11 +469,30 @@ export function Home() {
     }
   }
 
+  function focusField(id: string) {
+    const field = document.getElementById(id);
+    if (!(field instanceof HTMLElement)) {
+      return;
+    }
+    field.focus();
+    field.scrollIntoView({ block: "center" });
+  }
+
+  function useWatchlistInResearch(symbol: string) {
+    setSymbolInput(symbol);
+    focusField("research-symbol");
+  }
+
+  function useWatchlistInChart(symbol: string) {
+    setHistoryDraft(symbol);
+    focusField("daily-history-symbol");
+  }
+
   return (
     <main className="min-h-[100dvh] bg-transparent">
       {/* Top navigation */}
-      <header className="border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      <header className="relative z-30 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
+        <div className="mx-auto flex max-w-[2200px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.25),0_0_20px_-6px_rgb(52_211_153_/_0.3)]">
               <span className="font-mono text-[11px] font-bold text-emerald-400">GY</span>
@@ -512,28 +501,87 @@ export function Home() {
               <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">
                 getrichyesterday
               </div>
-              <div className="hidden text-[10px] text-slate-500 sm:block">Market Research Console</div>
+              <div className="hidden text-[10px] text-slate-500 sm:block">Market dashboard</div>
             </div>
           </div>
-          <Link
-            className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:bg-slate-800/80 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 active:translate-y-px"
-            to={isAuthenticated ? "/dashboard" : "/login"}
-          >
-            {isAuthenticated ? "Open dashboard →" : "Sign in →"}
-          </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              aria-controls="public-market-menu"
+              aria-expanded={menuOpen}
+              aria-label="Open menu"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 motion-reduce:transition-none sm:hidden"
+              onClick={() => setMenuOpen((open) => !open)}
+              ref={menuButtonRef}
+              type="button"
+            >
+              <List aria-hidden="true" className="size-5" weight="light" />
+            </button>
+            <Link
+              className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:bg-slate-800/80 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 active:translate-y-px"
+              to={isAuthenticated ? "/dashboard" : "/login"}
+            >
+              {isAuthenticated ? "Open dashboard →" : "Log in"}
+            </Link>
+          </div>
         </div>
+        {menuOpen ? (
+          <nav
+            aria-label="Page sections"
+            className="absolute left-0 right-0 top-full z-40 border-b border-slate-800 bg-slate-950 px-4 py-3 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.8)] motion-safe:transition-opacity motion-safe:duration-150 motion-reduce:transition-none sm:hidden"
+            id="public-market-menu"
+            ref={menuPanelRef}
+          >
+            <div className="mx-auto flex max-w-[2200px] items-center justify-between gap-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">On this page</p>
+              <button
+                aria-label="Close menu"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                onClick={() => {
+                  setMenuOpen(false);
+                  menuButtonRef.current?.focus();
+                }}
+                ref={closeMenuRef}
+                type="button"
+              >
+                <X aria-hidden="true" className="size-5" weight="bold" />
+              </button>
+            </div>
+            <ul className="mx-auto mt-2 max-w-[2200px] space-y-1">
+              {pageSections.map((section) => (
+                <li key={section.id}>
+                  <a
+                    className="flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-slate-100 hover:bg-slate-900 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                    href={`#${section.id}`}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {section.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="mx-auto mt-2 max-w-[2200px]">
+              <Link
+                className="flex min-h-11 items-center rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 text-sm font-semibold text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                onClick={() => setMenuOpen(false)}
+                to={isAuthenticated ? "/dashboard" : "/login"}
+              >
+                {isAuthenticated ? "Open dashboard →" : "Log in"}
+              </Link>
+            </div>
+          </nav>
+        ) : null}
       </header>
 
       {/* Hero */}
       <div className="border-b border-slate-800/60 bg-gradient-to-b from-slate-900/30 to-transparent">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12">
+        <div className="mx-auto max-w-[2200px] px-4 py-10 sm:px-6 sm:py-12">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <span className="inline-flex items-center rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-400">
-                Public research view
+                Public dashboard
               </span>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
-                Market Research Console
+                Market dashboard
               </h1>
               <p className="mt-3 max-w-xl text-sm leading-7 text-slate-400">
                 Delayed index pulse, sector heatmaps, and company fundamentals — no account required.
@@ -553,119 +601,73 @@ export function Home() {
         </div>
       </div>
 
-      <section className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 sm:py-8">
+      <section className="mx-auto max-w-[2200px] space-y-5 px-4 py-6 sm:px-6 sm:py-8">
         <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-100">
-                Market pulse
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Index proxies, ETF sectors, and ticker research before signing in.
-              </p>
+          <div className="dashboard-card-header flex-wrap gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-100" id="market-pulse">Market pulse</h2>
+              <p className="mt-1 text-xs text-slate-400">Cached ETF proxy quotes. Historical trends are unavailable.</p>
             </div>
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <TimeframeToggle label="Market pulse range" onChange={setPulseRange} value={pulseRange} />
               <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
-                {marketQuery.isLoading ? "Loading" : isFallbackMarket ? "Fallback" : "Live"}
+                {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
               </span>
-              <div className="flex rounded border border-slate-800 bg-slate-950 p-1">
-                {pulseTimeframes.map((timeframe) => (
-                  <button
-                    aria-label={`Show ${timeframe} market pulse trend`}
-                    aria-pressed={pulseTimeframe === timeframe}
-                    className={[
-                      "rounded px-2 py-1 font-mono text-[10px] font-semibold transition duration-150 focus:outline-none focus:ring-2 focus:ring-emerald-300/40 active:translate-y-px",
-                      pulseTimeframe === timeframe
-                        ? "bg-emerald-400 text-slate-950"
-                        : "text-slate-500 hover:bg-slate-900 hover:text-slate-200",
-                    ].join(" ")}
-                    key={timeframe}
-                    onClick={() => setPulseTimeframe(timeframe)}
-                    type="button"
-                  >
-                    {timeframe}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
           <div className="dashboard-card-body">
-            {isFallbackMarket ? (
-              <p className="mb-4 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-                Some live market data is unavailable or rate-limited. Showing
-                fallback rows where needed.
-              </p>
-            ) : null}
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {trends.map((trend) => {
-                const timeframeChange = getTimeframeChange(
-                  trend,
-                  pulseTimeframe,
-                );
-
-                return (
-                  <div className="metric-tile" key={trend.symbol}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="font-mono text-sm font-semibold text-slate-100">
-                          {trend.symbol}
-                        </div>
-                        <div className="mt-1 text-[11px] uppercase tracking-[0.1em] text-slate-500">
-                          {trend.name}
-                        </div>
+            {trends.length === 0 ? (
+              <EmptyState message={marketQuery.isLoading ? "Loading quote cache" : "Market quotes unavailable"}
+                detail="Index quotes will appear when the market cache has data." />
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {trends.map((trend) => (
+                    <div className="metric-tile" key={trend.source_symbol}>
+                      <div className="flex items-center gap-2">
+                        <IconBadge
+                          Icon={trend.change_percent >= 0 ? TrendUp : TrendDown}
+                          tone={trend.change_percent >= 0 ? "emerald" : "rose"}
+                        />
+                        <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
                       </div>
-                      <div
-                        className={[
-                          "font-mono text-xs font-semibold",
-                          timeframeChange >= 0
-                            ? "text-emerald-300"
-                            : "text-rose-300",
-                        ].join(" ")}
-                      >
-                        {timeframeChange >= 0 ? "UP" : "DOWN"}{" "}
-                        {formatSignedPercent(Math.abs(timeframeChange))}
+                      <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
+                      <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
+                      <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
+                        Provider change {formatSignedPercent(trend.change_percent)}
                       </div>
+                      <SymbolSparkline className="mt-3 h-8 w-full" range={pulseRange} symbol={trend.source_symbol} />
                     </div>
-                    <div className="mt-3 font-mono text-lg font-semibold text-slate-100">
-                      {formatQuantity(trend.value)}
-                    </div>
-                    <Sparkline trend={trend} timeframe={pulseTimeframe} />
-                    <div className="mt-2 flex items-center justify-between border-t border-slate-800/80 pt-2 text-[10px] uppercase tracking-[0.1em] text-slate-500">
-                      <span>{pulseTimeframe} derived trend</span>
-                      <span>{trend.source_symbol}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  ))}
+                </div>
+                <p className="mt-4 text-xs text-slate-400">
+                  Latest cached quote: {latestQuoteAt && Number.isFinite(Date.parse(latestQuoteAt)) ? new Date(latestQuoteAt).toUTCString() : "unavailable"}. Individual quotes may be older.
+                </p>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.8fr)]">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.8fr)]">
           <div className="dashboard-card">
-            <div className="dashboard-card-header">
+            <div className="dashboard-card-header flex-col items-stretch sm:flex-row sm:items-center">
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100" id="stock-heatmap">
                   Stock heatmap
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Broad market view grouped by sector and sized by relative market cap.
+                  Cached stocks grouped by sector with illustrative tile sizes.
                 </p>
               </div>
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-col items-start gap-2 sm:items-end">
                 {heatmapQuery.isLoading ? (
                   <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
                     Loading cache
                   </span>
                 ) : cachedHeatmapCount > 0 ? (
-                  <FreshnessBadge
-                    status={heatmapQuery.data?.items[0]?.data_status}
-                    ageSeconds={heatmapQuery.data?.items[0]?.age_seconds}
-                    source={heatmapQuery.data?.items[0]?.source}
-                    asOf={heatmapQuery.data?.items[0]?.as_of}
-                  />
+<span className="text-xs text-slate-400">{cachedHeatmapCount} returned {cachedHeatmapCount === 1 ? "quote" : "quotes"}</span>
                 ) : (
-                  <FreshnessBadge />
+                  <span className="text-xs text-slate-400">No cached quotes</span>
                 )}
                 <div className="flex rounded border border-slate-800 bg-slate-950 p-1">
                   {heatmapScales.map((scale) => (
@@ -689,6 +691,9 @@ export function Home() {
               </div>
             </div>
             <div className="dashboard-card-body">
+              {cachedHeatmapCount === 0 ? (
+                <EmptyState message={heatmapQuery.isLoading ? "Loading stock cache" : "Stock heatmap unavailable"} detail="Only returned cached quotes are shown. Missing symbols are not filled with reference prices." />
+              ) : null}
               <div className={getStockGroupGridClass(heatmapScale)}>
                 {Object.entries(stockHeatmapGroups).map(([sector, stocks]) => (
                   <section
@@ -704,11 +709,11 @@ export function Home() {
                         <div
                           className={[
                             "flex flex-col justify-center overflow-hidden rounded border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]",
-                            getStockTileTone(stock.changePercent),
+                            stock.data_status === "stale" ? "border-slate-700 bg-slate-900 text-slate-400" : getStockTileTone(stock.change_percent),
                             getStockTileSize(stock.size, heatmapScale),
                           ].join(" ")}
                           key={stock.symbol}
-                          title={`${stock.company} ${formatSignedPercent(stock.changePercent)}${stock.dataStatus ? ` / ${stock.dataStatus} / ${stock.source}` : " / reference data"}`}
+                          title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}`}
                         >
                           <div
                             className={[
@@ -724,15 +729,15 @@ export function Home() {
                               getStockChangeTextSize(stock.size, heatmapScale),
                             ].join(" ")}
                           >
-                            {formatSignedPercent(stock.changePercent)}
+                            {stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}
                           </div>
                           {(stock.size === "mega" || stock.size === "large") && (
                             <div className="mt-2">
                               <FreshnessBadge
-                                status={stock.dataStatus}
-                                ageSeconds={stock.ageSeconds}
+                                status={stock.data_status}
+                                ageSeconds={stock.age_seconds}
                                 source={stock.source}
-                                asOf={stock.asOf}
+                                asOf={stock.as_of}
                                 compact
                               />
                             </div>
@@ -760,7 +765,7 @@ export function Home() {
                 <span className="ml-auto normal-case tracking-normal text-slate-500">
                   {cachedHeatmapCount > 0
                     ? "Delayed/cached quotes. Hover a tile for source status."
-                    : "Reference values shown until the backend cache is populated."}
+                    : "No cached quotes are available."}
                 </span>
               </div>
             </div>
@@ -769,16 +774,16 @@ export function Home() {
           <div className="dashboard-card">
             <div className="dashboard-card-header">
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100" id="sector-etf-heatmap">
                   Sector ETF heatmap
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Live sector proxies: XLK, XLF, XLV, XLY, XLI, XLE, XLC, XLRE,
-                  XLU, XLB, XLP.
+                  Cached sector ETF proxies returned by the market service.
                 </p>
               </div>
             </div>
             <div className="dashboard-card-body">
+              {sectors.length === 0 ? <EmptyState message={marketQuery.isLoading ? "Loading sector cache" : "Sector quotes unavailable"} /> : null}
               <div className={getSectorGridClass(heatmapScale)}>
                 {sectors.map((sector) => (
                   <div
@@ -800,7 +805,7 @@ export function Home() {
                       </div>
                       <div className="mt-2 font-mono text-xl font-semibold">
                         {sector.change_percent >= 0 ? "UP" : "DOWN"}{" "}
-                        {formatSignedPercent(Math.abs(sector.change_percent))}
+                        {formatSignedPercent(sector.change_percent)}
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-1">
@@ -822,7 +827,7 @@ export function Home() {
           <div className="dashboard-card">
             <div className="dashboard-card-header">
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100" id="company-research">
                   Company research
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
@@ -851,7 +856,7 @@ export function Home() {
               </form>
 
               <div className="rounded border border-slate-800 bg-slate-950/55 p-3">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <div className="font-mono text-lg font-semibold text-slate-50">
                       {research.symbol}
@@ -866,11 +871,12 @@ export function Home() {
                   <span
                     className={[
                       "risk-chip",
-                      getRiskTone(research.research_risk_label),
+                      getRiskTone(researchRiskLabel),
                     ].join(" ")}
                   >
-                    {research.research_risk_label ?? "Medium"} /{" "}
-                    {research.research_risk_score ?? "--"}
+                    {researchRiskLabel && researchRiskScore != null
+                      ? `${researchRiskLabel} / ${researchRiskScore}`
+                      : "Research assessment unavailable"}
                   </span>
                 </div>
 
@@ -880,7 +886,7 @@ export function Home() {
                       Price
                     </div>
                     <div className="mt-1 font-mono text-sm text-slate-100">
-                      {research.price ? formatCurrency(research.price) : "--"}
+                      {research.price != null && research.price > 0 ? formatCurrency(research.price) : "Unavailable"}
                     </div>
                   </div>
                   <div className="metric-tile px-3 py-2">
@@ -909,6 +915,22 @@ export function Home() {
                   </div>
                 </div>
 
+                {hasResearchInputs ? (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-[11px] uppercase tracking-[0.12em] text-slate-300">
+                        Price history
+                      </div>
+                      <TimeframeToggle
+                        label="Company research range"
+                        onChange={setResearchRange}
+                        value={researchRange}
+                      />
+                    </div>
+                    <SymbolSparkline className="h-24 w-full" range={researchRange} symbol={research.symbol} />
+                  </div>
+                ) : null}
+
                 <div className="mt-4 space-y-2">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                     Risk notes
@@ -933,10 +955,12 @@ export function Home() {
           </div>
         </div>
 
+        <Watchlists onUseInChart={useWatchlistInChart} onUseInResearch={useWatchlistInResearch} />
+
         <div className="dashboard-card">
           <div className="dashboard-card-header">
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">
+              <h2 className="text-sm font-semibold text-slate-100" id="trending-movers">
                 Trending movers
               </h2>
               <p className="mt-1 text-xs text-slate-500">
@@ -944,10 +968,13 @@ export function Home() {
               </p>
             </div>
             <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
-              {trendingQuery.isLoading ? "Loading" : "Active"}
+              {trendingQuery.isLoading ? "Loading" : movers.length ? "Provider response" : "Unavailable"}
             </span>
           </div>
           <div className="dashboard-card-body">
+            {movers.length === 0 ? (
+              <EmptyState message={trendingQuery.isLoading ? "Loading most-active stocks" : "Most-active data unavailable"} />
+            ) : (
             <div className="table-shell">
               <table className="data-table">
                 <thead>
@@ -956,6 +983,7 @@ export function Home() {
                     <th className="text-right">Price</th>
                     <th className="text-right">Change</th>
                     <th className="text-right">Volume</th>
+                    <th className="text-right">Trend</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -965,29 +993,84 @@ export function Home() {
                         {mover.symbol}
                       </td>
                       <td className="text-right font-mono">
-                        {formatCurrency(mover.price)}
+                        {mover.price != null && mover.price > 0 ? formatCurrency(mover.price) : "Unavailable"}
                       </td>
                       <td
                         className={[
                           "text-right font-mono",
-                          mover.change_percent >= 0
+                          mover.change_percent == null ? "text-slate-400" : mover.change_percent >= 0
                             ? "text-emerald-300"
                             : "text-rose-300",
                         ].join(" ")}
                       >
-                        {mover.change_percent >= 0 ? "UP" : "DOWN"}{" "}
-                        {formatSignedPercent(Math.abs(mover.change_percent))}
+                        {mover.change_percent == null ? "Unavailable" : formatSignedPercent(mover.change_percent)}
                       </td>
                       <td className="text-right font-mono">
-                        {formatQuantity(mover.volume)}
+                        {mover.volume == null ? "Unavailable" : formatQuantity(mover.volume)}
+                      </td>
+                      <td className="w-28 text-right">
+                        <SymbolSparkline
+                          className="ml-auto h-6 w-24"
+                          empty="dash"
+                          range="1m"
+                          symbol={mover.symbol}
+                        />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100" id="market-news">
+                Market news
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Headlines for the major index ETFs.
+              </p>
+            </div>
+            <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
+              {newsQuery.isLoading ? "Loading" : articles.length ? "Cached headlines" : "Unavailable"}
+            </span>
+          </div>
+          <div className="dashboard-card-body">
+            {articles.length === 0 ? (
+              <EmptyState
+                message={newsQuery.isLoading ? "Loading market news" : newsQuery.isError ? "Market news unavailable" : "No market headlines"}
+              />
+            ) : (
+              <ul aria-label="Market headlines" className="divide-y divide-slate-800/80">
+                {articles.map((article, index) => (
+                  <li className="py-3 first:pt-0 last:pb-0" key={`${article.url}-${article.published_at}-${index}`}>
+                    <a
+                      className="inline-flex min-h-11 items-center rounded-md text-sm font-semibold text-slate-50 underline decoration-slate-500 underline-offset-4 hover:text-emerald-200 hover:decoration-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                      href={article.url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      {article.headline}
+                    </a>
+                    {article.summary ? (
+                      <p className="mt-1 text-xs leading-5 text-slate-300">{article.summary}</p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-slate-300">
+                      <span className="font-semibold text-slate-100">{article.source}</span>
+                      <span aria-hidden="true"> · </span>
+                      <time dateTime={article.published_at}>{formatNewsTime(article.published_at)}</time>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        <DailyHistory onValueChange={setHistoryDraft} value={historyDraft} />
       </section>
     </main>
   );

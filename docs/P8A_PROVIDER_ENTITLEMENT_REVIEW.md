@@ -1,0 +1,24 @@
+# Current delivery sequence, Stage 1 — provider entitlement review
+
+Roadmap: [Sentinel_Markets_2_0_Roadmap.md, Stage 1](../Sentinel_Markets_2_0_Roadmap.md#1-baseline-and-permissions).
+This records Stage 1's step 4 (provider entitlement recording) for
+Massive, Finnhub, LSE, and Tauric. **This is research and documentation
+only — no code changed, no provider connected, no key configured.**
+
+## What this review found
+
+- **Massive**: already tracked in [grc/vendors/massive.md](../grc/vendors/massive.md) as "Pending vendor-owner review," fixture-only. A public search for current pricing/rate-limit/redistribution terms turned up only conflicting third-party sources, no authoritative answer — [grc/vendors/massive.md](../grc/vendors/massive.md) is unchanged; this review does not resolve its pending status.
+- **Finnhub**: new assessment at [grc/vendors/finnhub.md](../grc/vendors/finnhub.md). Public sources disagree on commercial-use permission for the free tier, and Finnhub's own LSE-data product is described as personal-use-licensed by third parties.
+- **LSE/LSEG**: new assessment at [grc/vendors/lse.md](../grc/vendors/lse.md), with a specific, actionable finding: LSEG does not appear to offer a simple self-serve API for historical daily OHLCV — its own products are enterprise/file-delivery, contacted via `marketdata@lseg.com`. Third-party redistributors' own LSE licenses are personal-use only. **As scoped, Stage 3's "LSE as a whole-series fallback" likely needs a real negotiated LSEG contract, not just an API key.**
+
+## Resolved, 2026-11-11: the Tauric finding and a related live defect
+
+The original version of this section flagged "Tauric's shared daily report" as not corresponding to any findable real product. Checked directly with the user: the product in mind is `https://github.com/TauricResearch/TradingAgents` — the exact repository already vendored into this codebase (`requirements-research.txt`, `app/services/research_tradingagents.py`, Phase 5.F). It is the self-run agent-debate framework, not a separate hosted/shared-report service. **There is no distinct "shared report" to build.** Stage 5 is corrected in the roadmap to describe continued use of this already-built path, not a new integration — see the roadmap's own 2026-11-11 correction note on Stage 5.
+
+While investigating this, the user reported the actual real-world symptom that prompted the question: submitting a research job on the host shows `"queued"` and never progresses. **Root cause, confirmed by reading the source, not guessed:** `process_pending_research_jobs` only runs inside `app/services/scheduled_jobs.py`'s scheduler loop, gated by `app/main.py`'s `settings.scheduled_jobs_enabled`. The live deployment had `SCHEDULED_JOBS_ENABLED=false` (confirmed via `aws lightsail get-container-services`) — deliberately set that way per [docs/RELEASE_2026-11-09.md](RELEASE_2026-11-09.md)'s initial deployment-8 spec, not a code bug. This also stalled forecast jobs, market-cache refresh, and AML/surveillance scans on the host, not just research.
+
+**Action taken, explicitly authorized by the user:** redeployed `fintechapp-preview` with `SCHEDULED_JOBS_ENABLED` flipped from `false` to `true`, every other container setting (image, ports, every other environment variable, public endpoint/health check) preserved byte-for-byte from the live deployment — confirmed via `aws lightsail get-container-services` before constructing the update, never typed from memory. `RESEARCH_SYNTHESIS_ENABLED` remains `false` on the host — flipping only the scheduler fixes jobs getting stuck forever (true for every job type), but `RESEARCH_SYNTHESIS_ENABLED=false` means a research job will still complete (not hang) with sources gathered but no AI synthesis text. Separately, even if `RESEARCH_SYNTHESIS_ENABLED` were turned on, the host's `research_llm_base_url` still defaults to `http://localhost:11434` with nothing else configured — there is no Ollama instance reachable from inside the Lightsail container today, so synthesis would fail gracefully (an "unavailable" source note) rather than actually run. Making the self-run `TradingAgents`/Ollama path produce real output on the host is a separate, larger infrastructure decision (hosting or reaching an LLM endpoint from the container) not undertaken here.
+
+## What this does not do
+
+This review does not obtain, sign, or confirm any actual Massive/Finnhub/LSE vendor agreement — that still requires the user (or whoever owns vendor relationships for this project) to check each provider's own current terms page directly and record the dated, sourced answer, per Stage 1's own exit gate. Public search results are not a substitute for that and remain flagged as such in the two vendor files above. The scheduler fix and Tauric correction above are the two items this review can report as actually resolved.

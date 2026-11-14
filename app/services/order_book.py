@@ -1,8 +1,10 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.selectable import Select
 
 from app.models.asset import Asset
 from app.models.holding import Holding
@@ -15,11 +17,40 @@ from app.services.pretrade_controls import require_price_in_band, require_stock_
 from app.models.market_quote_cache import MarketQuoteCache
 
 
+def resting_makers_select(asset_id: int, user_id: int, payload: OrderCreate) -> Select[tuple[Order]]:
+    opposite = "sell" if payload.side == "buy" else "buy"
+    crossing = (Order.limit_price <= payload.limit_price if payload.side == "buy" else Order.limit_price >= payload.limit_price) if payload.order_type == "limit" else True
+    price_order = Order.limit_price.asc() if payload.side == "buy" else Order.limit_price.desc()
+    return select(Order).where(
+        Order.asset_id == asset_id, Order.side == opposite, Order.status == "open", Order.user_id != user_id, crossing
+    ).order_by(price_order, Order.id.asc())
+
+
+def allocate_slices(quantity: Decimal, makers: list[Order]) -> list[tuple[Order, Decimal]]:
+    left = quantity
+    slices: list[tuple[Order, Decimal]] = []
+    for maker in makers:
+        if left == 0:
+            break
+        take = min(left, maker.remaining_quantity)
+        slices.append((maker, take))
+        left -= take
+    return slices
+
+
 def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order, list[int]]:
     require_trading_open(db)
     symbol = db.execute(select(MarketSymbol).where(MarketSymbol.symbol == payload.symbol, MarketSymbol.is_active.is_(True)).with_for_update()).scalar_one_or_none()
     if symbol is None:
         raise HTTPException(status_code=400, detail="Unknown or inactive stock symbol")
+    if payload.expected_quote_observed_at is not None:
+        quote = db.get(MarketQuoteCache, payload.symbol)
+        if quote is None:
+            raise HTTPException(status_code=400, detail="No current quote available to confirm against")
+        # quote_at is stored naive. A client Z suffix arrives timezone-aware; drop tz before comparing.
+        expected_quote_at = payload.expected_quote_observed_at.replace(tzinfo=None)
+        if quote.quote_at != expected_quote_at:
+            raise HTTPException(status_code=400, detail="Quote has changed since preview; request a new preview")
     require_price_in_band(db, payload.symbol, payload.limit_price)
 
     asset = db.execute(select(Asset).where(Asset.symbol == payload.symbol)).scalar_one_or_none()
@@ -30,13 +61,8 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
         db.add(asset)
         db.flush()
 
-    opposite = "sell" if payload.side == "buy" else "buy"
-    crossing = (Order.limit_price <= payload.limit_price if payload.side == "buy" else Order.limit_price >= payload.limit_price) if payload.order_type == "limit" else True
-    price_order = Order.limit_price.asc() if payload.side == "buy" else Order.limit_price.desc()
-    makers = db.execute(
-        select(Order).where(Order.asset_id == asset.id, Order.side == opposite, Order.status == "open", Order.user_id != user_id, crossing)
-        .order_by(price_order, Order.id.asc()).with_for_update()
-    ).scalars().all()
+    makers = db.execute(resting_makers_select(asset.id, user_id, payload).with_for_update()).scalars().all()
+    slices = allocate_slices(payload.quantity, makers)
 
     users = {}
     for account_id in sorted({user_id, *(maker.user_id for maker in makers)}):
@@ -49,14 +75,7 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
         if payload.order_type == "limit":
             reservation = notional_amount(payload.quantity, payload.limit_price)
         else:
-            left = payload.quantity
-            reservation = Decimal(0)
-            for maker in makers:
-                take = min(left, maker.remaining_quantity)
-                reservation += notional_amount(take, maker.limit_price)
-                left -= take
-                if left == 0:
-                    break
+            reservation = sum((notional_amount(qty, maker.limit_price) for maker, qty in slices), Decimal(0))
         if reservation > user.cash_balance - reserved_cash(db, user_id):
             raise HTTPException(status_code=400, detail="Insufficient buying power")
         reference_price = db.get(MarketQuoteCache, payload.symbol).price
@@ -73,15 +92,13 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
     db.add(order)
     db.flush()
     trade_ids = []
-    for maker in makers:
-        if order.remaining_quantity == 0:
-            break
-        qty = min(order.remaining_quantity, maker.remaining_quantity)
+    for maker, qty in slices:
         require_price_in_band(db, payload.symbol, maker.limit_price)
         # Resting order sets the execution price for both sides.
         buy_order, sell_order = (order, maker) if order.side == "buy" else (maker, order)
-        buy_trade, _ = execute_fill(db, users[buy_order.user_id], asset, "buy", qty, maker.limit_price, buy_order.id)
-        sell_trade, _ = execute_fill(db, users[sell_order.user_id], asset, "sell", qty, maker.limit_price, sell_order.id)
+        filled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        buy_trade, _ = execute_fill(db, users[buy_order.user_id], asset, "buy", qty, maker.limit_price, buy_order.id, filled_at)
+        sell_trade, _ = execute_fill(db, users[sell_order.user_id], asset, "sell", qty, maker.limit_price, sell_order.id, filled_at)
         trade_ids.extend((buy_trade.id, sell_trade.id))
         order.remaining_quantity -= qty
         maker.remaining_quantity -= qty
@@ -93,6 +110,7 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
         order.status = "filled"
     elif order.order_type == "market":
         order.status = "canceled"
+        order.canceled_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.flush()
     return order, trade_ids
 
@@ -107,5 +125,7 @@ def cancel_order(db: Session, user_id: int, order_id: int) -> Order:
     if order.status != "open":
         raise HTTPException(status_code=409, detail="Order is no longer open")
     order.status = "canceled"
+    if order.canceled_at is None:
+        order.canceled_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.flush()
     return order

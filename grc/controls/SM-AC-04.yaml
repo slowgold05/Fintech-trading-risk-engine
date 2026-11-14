@@ -1,0 +1,13 @@
+id: SM-AC-04
+title: Authenticator enrollment
+objective: Detect an application account that can still authenticate with a password alone.
+type: detective, automated
+owner: Security Operations (second line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_phase4_identity.py
+evidence: grc/evidence/SM-AC-04/<run-id>.json
+threshold: Every account has a confirmed authenticator. A database with no accounts is no_sample.
+mappings:
+  nydfs_500: "500.12"
+risks:
+  - An account can sign in with only a password

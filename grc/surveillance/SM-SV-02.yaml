@@ -1,0 +1,16 @@
+id: SM-SV-02
+version: 1
+title: Spoofing and layering
+purpose: Detect a large order that is canceled quickly while the same account executes a smaller order on the opposite side.
+model_type: deterministic_threshold
+owner: Trading Surveillance (first line)
+parameters:
+  window_minutes: 10
+  min_display_quantity: "1000"
+  max_cancel_seconds: 30
+  max_execution_quantity: "100"
+sla_hours: 24
+limitations:
+  - The rule treats one large canceled order as layering. It does not reconstruct a multi-level book.
+  - A market order whose unfilled remainder is canceled immediately can resemble a spoof when the remainder is large.
+  - Orders canceled before cancel timestamps were stored are not scored.

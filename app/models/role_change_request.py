@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, String, func, text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, String, func, null, text
 
 from app.core.database import Base
 
@@ -18,8 +18,8 @@ class RoleChangeRequest(Base):
     new_role = Column(String(24), nullable=False)
     reason = Column(String(255), nullable=False)
     requested_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, server_default=null())
     status = Column(String(12), nullable=False, server_default=text("'pending'"))
     requested_at = Column(DateTime, nullable=False, server_default=func.now())
-    approved_at = Column(DateTime, nullable=True)
-    applied_at = Column(DateTime, nullable=True)
+    approved_at = Column(DateTime, nullable=True, server_default=null())
+    applied_at = Column(DateTime, nullable=True, server_default=null())

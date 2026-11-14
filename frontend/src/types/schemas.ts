@@ -87,6 +87,70 @@ export interface AccessReviewAccountResponse {
   reviewed_at: string | null;
 }
 
+export interface SurveillanceRuleResponse {
+  id: string;
+  title: string;
+  version: number;
+  model_type: string;
+  sla_hours: number;
+  activation_status: "inactive" | "pending" | "active" | "rejected" | "retired";
+  request_id: number | null;
+  requested_by_user_id: number | null;
+}
+
+export interface SurveillanceCaseResponse {
+  id: number;
+  rule_id: string;
+  rule_version: number;
+  subject_user_id: number;
+  symbol: string;
+  status: "open" | "closed";
+  disposition: "true_positive" | "false_positive" | "inconclusive" | null;
+  summary: string;
+  opened_at: string;
+  due_at: string;
+  closed_at: string | null;
+}
+
+export interface OpsHealthResponse {
+  generated_at: string;
+  market_data_freshness: {
+    "live-ish": number;
+    delayed: number;
+    cached: number;
+    stale: number;
+  };
+  job_queues: {
+    research: {
+      queued_count: number;
+      running_count: number;
+      oldest_queued_age_seconds: number | null;
+      failed_last_24h_count: number;
+    };
+    forecast: {
+      queued_count: number;
+      running_count: number;
+      oldest_queued_age_seconds: number | null;
+      failed_last_24h_count: number;
+    };
+  };
+  ai_usage: {
+    research_jobs_with_token_counts: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    avg_duration_ms: number;
+  };
+  massive_ingestion: {
+    symbols_covered: number;
+    latest_session_date: string | null;
+    flagged_last_30d_count: number;
+  };
+  kronos_worker: {
+    weights_cache_dir_exists: boolean;
+    weights_cache_bytes: number;
+  };
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -142,33 +206,44 @@ export interface OrderResponse {
 export interface CreateOrderPayload {
   symbol: string;
   side: TradeSide;
-  quantity: number;
+  quantity: number | string;
   order_type: "limit" | "market";
-  limit_price?: number;
+  limit_price?: number | string;
 }
+
+export type ValuationStatus = "complete" | "incomplete";
+
+export type PriceStatus = "available" | "unavailable";
+
+export type UnavailableReason = "missing" | "invalid" | "stale" | "unsupported_asset";
 
 export interface PortfolioPositionResponse {
   symbol: string;
   asset_type: string;
   quantity: number;
   avg_cost: number;
-  current_price: number;
-  position_value: number;
+  current_price: number | null;
+  position_value: number | null;
   cost_basis: number;
-  unrealized_pnl: number;
-  unrealized_pnl_pct: number;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+  price_status: PriceStatus;
+  unavailable_reason: UnavailableReason | null;
+  source: string | null;
+  quote_at: string | null;
+  fetched_at: string | null;
 }
 
 export interface PortfolioSummaryResponse {
   cash_balance: number;
   buying_power: number;
-  total_account_value: number;
-  total_portfolio_value: number;
+  total_account_value: number | null;
+  total_portfolio_value: number | null;
   total_cost_basis: number;
-  total_unrealized_pnl: number;
-  total_unrealized_pnl_pct: number;
+  total_unrealized_pnl: number | null;
+  total_unrealized_pnl_pct: number | null;
   total_realized_pnl: number;
-  total_pnl: number;
+  total_pnl: number | null;
 }
 
 export interface PortfolioResponse {
@@ -176,21 +251,106 @@ export interface PortfolioResponse {
     id: number;
     email: string;
   };
+  valuation_status: ValuationStatus;
+  snapshot_read_at: string;
+  unavailable_symbols: string[];
   positions: PortfolioPositionResponse[];
   summary: PortfolioSummaryResponse;
 }
 
-export interface PortfolioPnlPointResponse {
-  label: string;
-  value: number;
+export interface AllocationSecurity {
+  symbol: string;
+  sector: string;
+  position_value: string | null;
+  weight_pct: string | null;
+  price_status: PriceStatus;
 }
 
-export interface PortfolioPnlResponse {
-  points?: PortfolioPnlPointResponse[];
-  total_pnl?: number;
-  total_pnl_pct?: number;
-  daily_pnl?: number;
-  daily_pnl_pct?: number;
+export interface AllocationSector {
+  sector: string;
+  value: string;
+  weight_pct: string;
+}
+
+export interface AllocationResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  cash_balance: string;
+  cash_weight_pct: string | null;
+  total_account_value: string | null;
+  unavailable_symbols: string[];
+  securities: AllocationSecurity[];
+  sectors: AllocationSector[] | null;
+}
+
+export interface AttributionSecurity {
+  symbol: string;
+  sector: string;
+  realized_pnl: string;
+  unrealized_pnl: string | null;
+  total_pnl: string | null;
+  pnl_contribution_pct: string | null;
+}
+
+export interface AttributionSector {
+  sector: string;
+  total_pnl: string;
+  pnl_contribution_pct: string | null;
+}
+
+export interface AttributionResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  total_pnl: string | null;
+  securities: AttributionSecurity[];
+  sectors: AttributionSector[] | null;
+}
+
+export interface StressScenario {
+  scenario:
+    | "broad_market_selloff"
+    | "technology_sector_selloff"
+    | "single_security_worst_holding";
+  shock_pct: string;
+  loss: string | null;
+  loss_pct: string | null;
+  affected_symbol?: string | null;
+}
+
+export interface RiskCorrelation {
+  symbols: [string, string];
+  return_count: number;
+  correlation: string | null;
+}
+
+export interface RiskContribution {
+  symbol: string;
+  weight_pct: string;
+  risk_contribution_pct: string;
+}
+
+export interface RiskMetricsResponse {
+  user: { id: number; email: string };
+  range: "1y" | "2y";
+  requested_start: string;
+  requested_end: string;
+  read_at: string;
+  status: "complete" | "incomplete";
+  observed_periods: number;
+  return_count: number;
+  historical_volatility_pct: string | null;
+  max_drawdown_pct: string | null;
+  beta_pair_count: number;
+  portfolio_beta: string | null;
+  historical_var_95_pct: string | null;
+  historical_var_99_pct: string | null;
+  expected_shortfall_95_pct: string | null;
+  expected_shortfall_99_pct: string | null;
+  correlations: RiskCorrelation[] | null;
+  stress_scenarios: StressScenario[] | null;
+  risk_contributions: RiskContribution[] | null;
 }
 
 export interface RiskAlertResponse {
@@ -219,6 +379,23 @@ export interface RiskAssessmentResponse {
 export interface RiskResponse {
   assessments: RiskAssessmentResponse[];
 }
+
+export interface TradeRiskAlert {
+  rule_code: string;
+  severity: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface TradeRiskAssessment {
+  assessment_id: number;
+  trade_id: number;
+  risk_score: number;
+  created_at: string;
+  alerts: TradeRiskAlert[];
+}
+
+export type TradeRiskResponse = TradeRiskAssessment | { message: string };
 
 export interface MarketTrendResponse {
   symbol: string;
@@ -274,10 +451,10 @@ export interface MarketHeatmapResponse {
 
 export interface MarketMoverResponse {
   symbol: string;
-  price: number;
-  change_amount: number;
-  change_percent: number;
-  volume: number;
+  price: number | null;
+  change_amount: number | null;
+  change_percent: number | null;
+  volume: number | null;
 }
 
 export interface MarketTrendingResponse {
@@ -303,8 +480,8 @@ export interface MarketResearchResponse {
   analyst_target_price?: number | null;
   price?: number | null;
   change_percent?: number | null;
-  research_risk_score?: number;
-  research_risk_label?: "Low" | "Medium" | "High";
+  research_risk_score?: number | null;
+  research_risk_label?: "Low" | "Medium" | "High" | null;
   risk_factors?: string[];
   description?: string | null;
   fundamentals?: {
@@ -320,4 +497,223 @@ export interface MarketResearchResponse {
     source?: string;
     detail: string | null;
   }>;
+}
+
+export interface ResearchFiling {
+  form: string | null;
+  filing_date: string | null;
+  report_date: string | null;
+  accession_number: string;
+  primary_document: string;
+  document_url: string;
+}
+
+export interface ResearchFilingsResponse {
+  symbol: string;
+  cik: string;
+  name: string | null;
+  filings: ResearchFiling[];
+  source: string;
+  fetched_at: string;
+}
+
+export interface MarketNewsArticle {
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published_at: string;
+}
+
+export interface MarketNewsResponse {
+  articles: MarketNewsArticle[];
+  as_of: string | null;
+}
+
+export interface ResearchNewsArticle {
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  published_at: string;
+}
+
+export interface ResearchNewsResponse {
+  symbol: string;
+  articles: ResearchNewsArticle[];
+  error: string | null;
+}
+
+export interface TradeImpactLevel {
+  cash_balance: string | null;
+  buying_power: string | null;
+  total_account_value: string | null;
+  cash_weight_pct: string | null;
+  symbol_position_value: string | null;
+  symbol_weight_pct: string | null;
+}
+
+export interface TradeImpactChanges {
+  cash_balance: string | null;
+  total_account_value: string | null;
+  cash_weight_pct: string | null;
+  symbol_weight_pct: string | null;
+}
+
+export interface TradeImpactResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: string;
+  reference_price: string;
+  order_type: "market" | "limit";
+  warnings: string[];
+  before: TradeImpactLevel;
+  after: TradeImpactLevel;
+  changes: TradeImpactChanges;
+}
+
+export interface TradeImpactRequestBody {
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: string;
+  reference_price: string;
+  order_type: "market" | "limit";
+}
+
+export interface RiskScenarioShock {
+  target_type: "symbol" | "sector";
+  target: string;
+  shock_pct: string;
+}
+
+export interface RiskScenarioSecurity {
+  symbol: string;
+  sector: string;
+  position_value_before: string;
+  position_value_after: string;
+}
+
+export interface RiskScenariosResponse {
+  user: { id: number; email: string };
+  read_at: string;
+  status: "complete" | "incomplete";
+  shocks: RiskScenarioShock[];
+  total_account_value_before: string | null;
+  total_account_value_after: string | null;
+  loss: string | null;
+  loss_pct: string | null;
+  securities: RiskScenarioSecurity[];
+}
+
+export interface ResearchJob {
+  id: number;
+  symbol: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+}
+
+export interface ResearchReportSource {
+  type: string;
+  status: string;
+  detail: string;
+}
+
+export interface ResearchReport {
+  id: number;
+  job_id: number;
+  symbol: string;
+  created_at: string;
+  sources: ResearchReportSource[];
+  bull_case: string | null;
+  bear_case: string | null;
+  synthesis: string | null;
+  risks: string | null;
+  model_version: string | null;
+  prompt_version: string | null;
+  backend_detail: Record<string, unknown> | null;
+}
+
+export interface ResearchBriefEntry {
+  symbol: string;
+  report_id: number | null;
+}
+
+export interface ResearchBrief {
+  id: number;
+  brief_date: string;
+  created_at: string;
+  entries: ResearchBriefEntry[];
+}
+
+export interface ForecastJob {
+  id: number;
+  symbol: string;
+  provider: string;
+  adjustment_type: string;
+  lookback: number;
+  horizon: number;
+  sample_count: number;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+}
+
+export interface ForecastBar {
+  session_date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface ForecastResult {
+  id: number;
+  job_id: number;
+  symbol: string;
+  provider: string;
+  adjustment_type: string;
+  model_name: string;
+  tokenizer_name: string;
+  lookback: number;
+  horizon: number;
+  sample_count: number;
+  input_cutoff: string;
+  generated_at: string;
+  bars: ForecastBar[];
+}
+
+export interface ForecastModel {
+  id: string;
+  model_name: string;
+  tokenizer_name: string;
+  enabled: boolean;
+  max_lookback: number;
+  max_horizon: number;
+  max_sample_count: number;
+  source_commit: string;
+  license: string;
+}
+
+export interface ForecastEvaluation {
+  id: number;
+  symbol: string;
+  provider: string;
+  adjustment_type: string;
+  horizon: number;
+  window_count: number;
+  model_mae: number;
+  model_directional_accuracy: number;
+  baseline_type: string;
+  baseline_mae: number;
+  baseline_directional_accuracy: number;
+  weights_exercised: boolean;
+  notes: string | null;
+  created_at: string;
 }

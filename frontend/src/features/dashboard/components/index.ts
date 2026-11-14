@@ -1,9 +1,10 @@
 export { DashboardCard } from "./DashboardCard";
 export { EmptyState } from "./EmptyState";
+export { IconBadge } from "./IconBadge";
 export { PnlValue } from "./PnlValue";
-export { PortfolioChart } from "./PortfolioChart";
 export { PositionsTable } from "./PositionsTable";
 export { QuickTradePanel } from "./QuickTradePanel";
+export { RecentOrdersTable } from "./RecentOrdersTable";
 export { RecentTradesTable } from "./RecentTradesTable";
 export { RiskScoreCard } from "./RiskScoreCard";
 export { SkeletonBlock } from "./SkeletonBlock";

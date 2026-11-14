@@ -1,0 +1,34 @@
+id: sentinel-markets
+updated: 2026-11-04
+approval: Pending asset owner review
+assets:
+  - id: web-api
+    name: Sentinel Markets web and API container
+    type: application
+    owner: Engineering
+    location: Lightsail container in the selected Region us-east-2. The working tree is not the running image.
+    data_classes: [credentials, paper-orders, sessions]
+  - id: database
+    name: PostgreSQL 17
+    type: database
+    owner: Engineering
+    location: Private Lightsail database in us-east-2
+    data_classes: [credentials, paper-orders, ledger, control-evidence, surveillance-cases]
+  - id: source-repository
+    name: Fintech trading risk engine
+    type: source
+    owner: Engineering
+    location: GitHub repository
+    data_classes: [application-code, control-definitions]
+  - id: evidence-store
+    name: Control evidence
+    type: data-store
+    owner: Compliance
+    location: control_evidence in the application database. Files under grc/evidence are a local working copy.
+    data_classes: [control-evidence]
+  - id: market-cache
+    name: Quote and symbol cache
+    type: data-store
+    owner: Market Operations
+    location: Application database
+    data_classes: [market-data]

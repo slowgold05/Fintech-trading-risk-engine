@@ -157,12 +157,21 @@ def refresh_quote_cache(db: Session, tier: str, limit: int, source: str = "alpha
     raise ValueError("Refresh source must be 'alpha_vantage' or 'eod'.")
 
 
-def _freshness(quote: MarketQuoteCache, tier: str) -> tuple[str, int | None]:
+def _as_naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _freshness(quote: MarketQuoteCache, tier: str, now: datetime | None = None) -> tuple[str, int | None]:
     if quote.quote_at is None:
         return "stale", None
-    age_seconds = max(0, int((_utcnow() - quote.quote_at).total_seconds()))
+    # Portfolio valuation passes one snapshot clock. Heatmap keeps the process clock.
+    clock = _utcnow() if now is None else _as_naive_utc(now)
+    observed = _as_naive_utc(quote.quote_at)
+    age_seconds = max(0, int((clock - observed).total_seconds()))
     if quote.source in {"yahoo", "alpha_vantage"}:
-        age_days = (_utcnow().date() - quote.quote_at.date()).days
+        age_days = (clock.date() - observed.date()).days
         if age_days <= 1:
             return "delayed", age_seconds
         # shortcut: seven days covers market closures; use an exchange calendar for tighter limits.

@@ -43,6 +43,28 @@ export function formatDateTime(value: string | number | Date) {
   }).format(new Date(value));
 }
 
+const ISO_WITH_EXPLICIT_ZONE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}|[+-]\d{4})$/i;
+
+const utcDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+  timeZoneName: "short",
+});
+
+export function formatUtcDateTime(value: string | null | undefined): string | null {
+  if (value == null || !ISO_WITH_EXPLICIT_ZONE.test(value)) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+  return utcDateTimeFormatter.format(new Date(parsed));
+}
+
 export function formatSignedPercent(value: number) {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${formatPercent(value)}`;

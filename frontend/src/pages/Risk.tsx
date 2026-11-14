@@ -7,6 +7,7 @@ import {
   RiskScoreCard,
   SkeletonBlock,
 } from "../features/dashboard/components";
+import { getRiskScore } from "../features/dashboard/adapters";
 import {
   formatCurrency,
   formatPercent,
@@ -15,20 +16,24 @@ import {
 import { getRiskLevel, getRiskTone } from "../utils/riskTone";
 import type { RiskAlertResponse, RiskAssessmentResponse } from "../types/schemas";
 
-function getRiskScore(assessments: RiskAssessmentResponse[]) {
-  return assessments[0]?.risk_score ?? 0;
+const pageDescription =
+  "Latest trade assessment, historical rule factors, and assessed trade notionals.";
+
+function finiteScore(score: unknown): number | null {
+  return typeof score === "number" && Number.isFinite(score) ? score : null;
+}
+
+function tradeNotional(trade: RiskAssessmentResponse["trade"]): number | null {
+  if (!trade) {
+    return null;
+  }
+
+  const notional = trade.quantity * trade.price_at_execution;
+  return Number.isFinite(notional) ? notional : null;
 }
 
 function getInterpretation(level: ReturnType<typeof getRiskLevel>, score: number) {
-  if (level === "High") {
-    return `Risk score ${score} indicates elevated exposure. Reduce order size, review concentration, and resolve active alerts before adding risk.`;
-  }
-
-  if (level === "Medium") {
-    return `Risk score ${score} is in watch range. Continue trading with size discipline and monitor alerts before increasing exposure.`;
-  }
-
-  return `Risk score ${score} is within normal operating range. Maintain current controls and monitor new trade assessments.`;
+  return `Latest trade assessment score ${score} is ${level}. It describes the newest scored trade.`;
 }
 
 function getAllAlerts(assessments: RiskAssessmentResponse[]) {
@@ -52,20 +57,20 @@ function getRiskFactors(alerts: Array<RiskAlertResponse & { symbol: string }>) {
     .sort((a, b) => b.count - a.count);
 }
 
-function getExposureBreakdown(assessments: RiskAssessmentResponse[]) {
-  const exposure = assessments.reduce<Record<string, number>>((acc, assessment) => {
+function getAssessedNotional(assessments: RiskAssessmentResponse[]) {
+  const notionals = assessments.reduce<Record<string, number>>((acc, assessment) => {
     const trade = assessment.trade;
-    if (!trade) {
+    const notional = tradeNotional(trade);
+    if (!trade || notional == null) {
       return acc;
     }
 
     const assetType = trade.asset_type.toUpperCase();
-    const notional = trade.quantity * trade.price_at_execution;
     acc[assetType] = (acc[assetType] ?? 0) + notional;
     return acc;
   }, {});
 
-  return Object.entries(exposure)
+  return Object.entries(notionals)
     .map(([assetType, value]) => ({ assetType, value }))
     .sort((a, b) => b.value - a.value);
 }
@@ -76,51 +81,77 @@ export function Risk() {
     queryFn: fetchRisk,
   });
 
+  if (riskQuery.isError) {
+    return (
+      <div className="min-w-0 space-y-6">
+        <PageHeader
+          title="Risk Engine"
+          description={pageDescription}
+        />
+        <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
+          <p>
+            Risk assessments could not be loaded. Check the API server and
+            authentication state. A previously loaded result is not shown.
+          </p>
+          <button
+            className="mt-3 rounded-md border border-rose-400/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
+            onClick={() => {
+              void riskQuery.refetch();
+            }}
+            type="button"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isLoading = riskQuery.isLoading;
   const assessments = riskQuery.data?.assessments ?? [];
-  const score = getRiskScore(assessments);
-  const level = getRiskLevel(score);
-  const tone = getRiskTone(level);
+  const score = isLoading ? null : getRiskScore(riskQuery.data);
+  const level = score == null ? null : getRiskLevel(score);
+  const tone = level == null ? null : getRiskTone(level);
   const alerts = getAllAlerts(assessments);
   const riskFactors = getRiskFactors(alerts);
-  const exposure = getExposureBreakdown(assessments);
-  const totalExposure = exposure.reduce((sum, item) => sum + item.value, 0);
+  const notionals = getAssessedNotional(assessments);
+  const totalNotional = notionals.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <PageHeader
-        badge="Risk"
         title="Risk Engine"
-        description="Current score, active alert factors, and exposure signals from the risk assessment engine."
+        description={pageDescription}
       />
 
-      {riskQuery.isError ? (
-        <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
-          Risk data could not be loaded. Check the API server and
-          authentication state.
-        </div>
-      ) : null}
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-        <div className="space-y-5">
-          {riskQuery.isLoading ? (
-            <DashboardCard title="Current Risk Score">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <div className="min-w-0 space-y-5">
+          {isLoading ? (
+            <DashboardCard title="Latest Trade Risk Score">
               <div className="space-y-4">
                 <SkeletonBlock className="h-28" />
                 <SkeletonBlock className="h-20" />
               </div>
             </DashboardCard>
           ) : assessments.length === 0 ? (
-            <DashboardCard title="Current Risk Score">
+            <DashboardCard title="Latest Trade Risk Score">
               <EmptyState
-                detail="Risk assessments will appear after trades are submitted and scored."
-                message="No risk activity yet."
+                detail="Scores appear after a trade is assessed. This is not a current portfolio risk score."
+                message="No trade assessments yet."
               />
             </DashboardCard>
-          ) : (
+          ) : score != null && level != null ? (
             <RiskScoreCard label={level} score={score} />
+          ) : (
+            <DashboardCard title="Latest Trade Risk Score">
+              <p className="text-sm text-slate-300">Latest trade score unavailable.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                The newest assessment has no usable score. Older assessed trades stay listed. This is not current account risk.
+              </p>
+            </DashboardCard>
           )}
 
-          {!riskQuery.isLoading && assessments.length > 0 ? (
+          {tone != null && level != null && score != null ? (
             <div
               className={[
                 "rounded-md border px-4 py-4",
@@ -131,7 +162,7 @@ export function Risk() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Risk interpretation
+                    Latest trade assessment
                   </div>
                   <p className={["mt-2 max-w-3xl text-sm leading-6", tone.text].join(" ")}>
                     {getInterpretation(level, score)}
@@ -144,8 +175,8 @@ export function Risk() {
             </div>
           ) : null}
 
-          {(level === "Medium" || level === "High") && assessments.length > 0 ? (
-            <DashboardCard title={level === "High" ? "Active Warning" : "Watch Panel"}>
+          {level === "Medium" || level === "High" ? (
+            <DashboardCard title={level === "High" ? "High assessment" : "Medium assessment"}>
               <div
                 className={[
                   "rounded border px-4 py-3 text-sm",
@@ -155,8 +186,8 @@ export function Risk() {
                 ].join(" ")}
               >
                 {level === "High"
-                  ? "High risk is active. Review open alerts and avoid adding exposure until the score drops below the high threshold."
-                  : "Medium risk is active. Keep order sizes controlled and monitor concentration before increasing positions."}
+                  ? "Latest trade assessment is High. Listed alerts are historical rule factors from assessed trades."
+                  : "Latest trade assessment is Medium. Listed alerts are historical rule factors from assessed trades."}
               </div>
             </DashboardCard>
           ) : null}
@@ -164,12 +195,12 @@ export function Risk() {
           <DashboardCard
             action={
               <span className="font-mono text-xs text-slate-500">
-                {riskQuery.isLoading ? "--" : `${alerts.length} alerts`}
+                {isLoading ? "--" : `${alerts.length} assessment alerts`}
               </span>
             }
-            title="Risk Factors"
+            title="Rule factors"
           >
-            {riskQuery.isLoading ? (
+            {isLoading ? (
               <div className="space-y-3">
                 {[0, 1, 2].map((item) => (
                   <SkeletonBlock className="h-10" key={item} />
@@ -177,8 +208,8 @@ export function Risk() {
               </div>
             ) : riskFactors.length === 0 ? (
               <EmptyState
-                detail="Rule triggers and alert counts will be listed here when the risk engine raises them."
-                message="No active risk factors."
+                detail="Rule factors appear when an assessed trade records an alert."
+                message="No assessment alerts."
               />
             ) : (
               <div className="table-shell">
@@ -216,23 +247,26 @@ export function Risk() {
           </DashboardCard>
         </div>
 
-        <div className="space-y-5">
-          <DashboardCard title="Exposure Breakdown">
-            {riskQuery.isLoading ? (
+        <div className="min-w-0 space-y-5">
+          <DashboardCard title="Assessed Trade Notional">
+            <p className="mb-3 text-xs leading-5 text-slate-400">
+              Historical assessed trade value. Includes buys and sells, not current holdings.
+            </p>
+            {isLoading ? (
               <div className="space-y-3">
                 {[0, 1, 2].map((item) => (
                   <SkeletonBlock className="h-12" key={item} />
                 ))}
               </div>
-            ) : exposure.length === 0 ? (
+            ) : notionals.length === 0 ? (
               <EmptyState
-                detail="Exposure by asset type will appear after assessed trades are available."
-                message="No exposure signals yet."
+                detail="Sums appear when assessed trades include quantity and price."
+                message="No assessed trade notionals."
               />
             ) : (
               <div className="space-y-3">
-                {exposure.map((item) => {
-                  const share = totalExposure > 0 ? (item.value / totalExposure) * 100 : 0;
+                {notionals.map((item) => {
+                  const share = totalNotional > 0 ? (item.value / totalNotional) * 100 : 0;
                   return (
                     <div
                       className="rounded border border-slate-800 bg-slate-900/60 p-3"
@@ -256,7 +290,7 @@ export function Risk() {
                       </div>
                       <div className="mt-3 h-1.5 overflow-hidden rounded bg-slate-800">
                         <div
-                          className={["h-full rounded", tone.bar].join(" ")}
+                          className={["h-full rounded", tone?.bar ?? "bg-slate-400/75"].join(" ")}
                           style={{ width: `${Math.min(share, 100)}%` }}
                         />
                       </div>
@@ -270,12 +304,12 @@ export function Risk() {
           <DashboardCard
             action={
               <span className="font-mono text-xs text-slate-500">
-                {riskQuery.isLoading ? "--" : `${assessments.length} rows`}
+                {isLoading ? "--" : `${assessments.length} rows`}
               </span>
             }
             title="Assessment Feed"
           >
-            {riskQuery.isLoading ? (
+            {isLoading ? (
               <div className="space-y-3">
                 {[0, 1, 2, 3].map((item) => (
                   <SkeletonBlock className="h-12" key={item} />
@@ -283,7 +317,7 @@ export function Risk() {
               </div>
             ) : assessments.length === 0 ? (
               <EmptyState
-                detail="Every submitted trade will add an assessment row with score, symbol, notional, and alert count."
+                detail="Each scored trade adds a row with score, symbol, notional, and assessment alerts."
                 message="No assessments yet."
               />
             ) : (
@@ -300,24 +334,13 @@ export function Risk() {
                   <tbody>
                     {assessments.map((assessment) => {
                       const trade = assessment.trade;
-                      const notional = trade
-                        ? trade.quantity * trade.price_at_execution
-                        : 0;
-                      const rowLevel = getRiskLevel(assessment.risk_score);
-                      const rowTone = getRiskTone(rowLevel);
+                      const notional = tradeNotional(trade);
+                      const rowScore = finiteScore(assessment.risk_score);
+                      const rowLevel = rowScore == null ? null : getRiskLevel(rowScore);
+                      const rowTone = rowLevel == null ? null : getRiskTone(rowLevel);
 
                       return (
-                        <tr
-                          className={[
-                            "border-l-2",
-                            rowLevel === "High"
-                              ? "border-l-rose-400/70"
-                              : rowLevel === "Medium"
-                                ? "border-l-amber-400/70"
-                                : "border-l-emerald-400/70",
-                          ].join(" ")}
-                          key={assessment.assessment_id}
-                        >
+                        <tr key={assessment.assessment_id}>
                           <td>
                             <div className="font-mono text-sm font-semibold text-slate-100">
                               {trade?.symbol ?? "--"}
@@ -327,12 +350,16 @@ export function Risk() {
                             </div>
                           </td>
                           <td className="text-right">
-                            <span className={["risk-chip", rowTone.chip].join(" ")}>
-                              {assessment.risk_score}
-                            </span>
+                            {rowScore == null || rowTone == null ? (
+                              <span className="text-slate-400">Unavailable</span>
+                            ) : (
+                              <span className={["risk-chip", rowTone.chip].join(" ")}>
+                                {rowScore}
+                              </span>
+                            )}
                           </td>
                           <td className="text-right font-mono tabular-nums">
-                            {formatCurrency(notional, false)}
+                            {notional == null ? "Unavailable" : formatCurrency(notional, false)}
                           </td>
                           <td className="text-right font-mono tabular-nums">
                             {formatQuantity(assessment.alerts.length)}

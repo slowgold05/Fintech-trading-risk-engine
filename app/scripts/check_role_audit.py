@@ -5,6 +5,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.database import SessionLocal
 from app.models.role_change import RoleChange
 from app.models.user import User
 from app.services.control_evidence import control_status, write_evidence
@@ -43,7 +44,8 @@ def main() -> None:
     with Session(engine) as db:
         result = check_role_audit(db)
     engine.dispose()
-    path, digest = write_evidence("SM-AC-02", result)
+    with SessionLocal() as app_db:
+        path, digest = write_evidence("SM-AC-02", result, app_db)
     status = control_status("SM-AC-02", result)
     print(json.dumps({"control_id": "SM-AC-02", "status": status,
                       "evidence": str(path), "sha256": digest}, sort_keys=True))

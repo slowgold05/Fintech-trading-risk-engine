@@ -1,0 +1,40 @@
+{
+  "rule_id": "SM-SV-02",
+  "scenarios": [
+    {
+      "id": "fast-cancel-and-opposite-fill",
+      "label": true,
+      "events": [
+        {"event_id": "o1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "order", "side": "buy", "quantity": "5000", "price": "10", "order_id": "1"},
+        {"event_id": "c1", "at": "2026-11-03T15:00:03", "user_id": 1, "symbol": "NVDA", "kind": "cancel", "side": "buy", "quantity": "5000", "price": "10", "order_id": "1"},
+        {"event_id": "t1", "at": "2026-11-03T15:00:04", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "20", "price": "10.1", "order_id": "2"}
+      ]
+    },
+    {
+      "id": "second-symbol-spoof",
+      "label": true,
+      "events": [
+        {"event_id": "o1", "at": "2026-11-03T15:10:00", "user_id": 4, "symbol": "AMD", "kind": "order", "side": "sell", "quantity": "2000", "price": "30", "order_id": "9"},
+        {"event_id": "c1", "at": "2026-11-03T15:10:08", "user_id": 4, "symbol": "AMD", "kind": "cancel", "side": "sell", "quantity": "2000", "price": "30", "order_id": "9"},
+        {"event_id": "t1", "at": "2026-11-03T15:10:20", "user_id": 4, "symbol": "AMD", "kind": "trade", "side": "buy", "quantity": "15", "price": "29.9", "order_id": "10"}
+      ]
+    },
+    {
+      "id": "slow-cancel",
+      "label": false,
+      "events": [
+        {"event_id": "o1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "order", "side": "buy", "quantity": "5000", "price": "10", "order_id": "1"},
+        {"event_id": "c1", "at": "2026-11-03T15:05:00", "user_id": 1, "symbol": "NVDA", "kind": "cancel", "side": "buy", "quantity": "5000", "price": "10", "order_id": "1"},
+        {"event_id": "t1", "at": "2026-11-03T15:05:05", "user_id": 1, "symbol": "NVDA", "kind": "trade", "side": "sell", "quantity": "20", "price": "10.1"}
+      ]
+    },
+    {
+      "id": "cancel-without-fill",
+      "label": false,
+      "events": [
+        {"event_id": "o1", "at": "2026-11-03T15:00:00", "user_id": 1, "symbol": "NVDA", "kind": "order", "side": "buy", "quantity": "5000", "price": "10", "order_id": "1"},
+        {"event_id": "c1", "at": "2026-11-03T15:00:03", "user_id": 1, "symbol": "NVDA", "kind": "cancel", "side": "buy", "quantity": "5000", "price": "10", "order_id": "1"}
+      ]
+    }
+  ]
+}

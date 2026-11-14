@@ -23,3 +23,4 @@ class Order(Base):
     limit_price = Column(Numeric(18, 6), nullable=True)
     status = Column(String(10), nullable=False, default="open")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+    canceled_at = Column(DateTime, nullable=True)

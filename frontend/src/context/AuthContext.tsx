@@ -6,6 +6,7 @@ import {
   setUnauthorizedHandler,
 } from "../api/client";
 import { logout, refreshSession } from "../api/auth";
+import { clearPersistedOrderAttempt } from "../utils/orderAttemptStorage";
 import { AuthContext } from "./authState";
 
 type AuthProviderProps = {
@@ -29,6 +30,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         void logout().catch(() => undefined);
         setToken(null);
         clearAuthToken();
+        clearPersistedOrderAttempt();
       },
     }),
     [isInitializing, token],
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setToken(null);
+      clearPersistedOrderAttempt();
     });
     setTokenRefreshHandler((nextToken) => {
       setToken(nextToken);

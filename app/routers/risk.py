@@ -9,6 +9,8 @@ from app.models.trade import Trade
 from app.models.asset import Asset
 from app.core.security import get_current_user
 from app.models.user import User
+from app.schemas.risk_scenarios import RiskScenariosRequest
+from app.services.risk_scenarios import build_risk_scenarios_response
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -126,3 +128,16 @@ def risk_for_trade(
             for a in alerts
         ]
     }
+
+
+@router.post("/scenarios")
+def post_risk_scenarios(
+    payload: RiskScenariosRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Previews custom security and sector shocks. This route does not write."""
+    # Copy identity before the allocation read rolls the session back to a snapshot.
+    user_id = current_user.id
+    email = current_user.email
+    return build_risk_scenarios_response(db, user_id, email, payload)

@@ -1,0 +1,46 @@
+{
+  "rule_id": "SM-AML-02",
+  "scenarios": [
+    {
+      "id": "withdrawal-returns-most-of-the-deposit",
+      "label": true,
+      "events": [
+        {"event_id": "cash-20", "at": "2026-11-04T12:00:00Z", "user_id": 1, "kind": "deposit", "amount": "5000"},
+        {"event_id": "cash-21", "at": "2026-11-04T12:30:00Z", "user_id": 1, "kind": "withdrawal", "amount": "4500"}
+      ]
+    },
+    {
+      "id": "two-withdrawals-reach-the-ratio",
+      "label": true,
+      "events": [
+        {"event_id": "cash-22", "at": "2026-11-04T12:00:00Z", "user_id": 2, "kind": "deposit", "amount": "2000"},
+        {"event_id": "cash-23", "at": "2026-11-04T12:20:00Z", "user_id": 2, "kind": "withdrawal", "amount": "1000"},
+        {"event_id": "cash-24", "at": "2026-11-04T12:40:00Z", "user_id": 2, "kind": "withdrawal", "amount": "900"}
+      ]
+    },
+    {
+      "id": "withdrawal-stays-under-the-ratio",
+      "label": false,
+      "events": [
+        {"event_id": "cash-25", "at": "2026-11-04T12:00:00Z", "user_id": 3, "kind": "deposit", "amount": "5000"},
+        {"event_id": "cash-26", "at": "2026-11-04T12:30:00Z", "user_id": 3, "kind": "withdrawal", "amount": "4400"}
+      ]
+    },
+    {
+      "id": "withdrawal-after-the-window",
+      "label": false,
+      "events": [
+        {"event_id": "cash-27", "at": "2026-11-04T12:00:00Z", "user_id": 4, "kind": "deposit", "amount": "5000"},
+        {"event_id": "cash-28", "at": "2026-11-04T13:30:00Z", "user_id": 4, "kind": "withdrawal", "amount": "5000"}
+      ]
+    },
+    {
+      "id": "deposit-below-the-minimum",
+      "label": false,
+      "events": [
+        {"event_id": "cash-29", "at": "2026-11-04T12:00:00Z", "user_id": 5, "kind": "deposit", "amount": "500"},
+        {"event_id": "cash-30", "at": "2026-11-04T12:10:00Z", "user_id": 5, "kind": "withdrawal", "amount": "500"}
+      ]
+    }
+  ]
+}

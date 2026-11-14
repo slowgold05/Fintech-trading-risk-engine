@@ -1,0 +1,13 @@
+id: SM-FC-01
+title: Forecast signal stays off when the monitor trips
+objective: Detect an open finding that the advisory forecast monitor is disabled.
+type: detective, automated
+owner: Market Risk (first line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_expansion.py
+evidence: grc/evidence/SM-FC-01/<run-id>.json
+threshold: The advisory signal is absent while the monitor is disabled. No monitor finding is no_sample.
+mappings:
+  sr_11_7: "ongoing-monitoring"
+risks:
+  - A degraded forecast still changes a risk decision

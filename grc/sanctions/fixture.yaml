@@ -1,0 +1,4 @@
+source: local-fixture
+note: This list is not OpenSanctions, OFAC, or any other official sanctions list. It exists so a design test can prove that a matching name is blocked.
+names:
+  - Test Sanctioned Person

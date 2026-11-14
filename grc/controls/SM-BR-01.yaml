@@ -1,0 +1,13 @@
+id: SM-BR-01
+title: Risk brief figures match the stored inputs
+objective: Detect a stored brief that contains a number absent from its stored figures.
+type: detective, automated
+owner: Market Risk (first line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_expansion.py
+evidence: grc/evidence/SM-BR-01/<run-id>.json
+threshold: Every stored brief verifies against its figures. No briefs is no_sample.
+mappings:
+  sr_11_7: "outcomes-analysis"
+risks:
+  - A narrative states a risk number that was not computed

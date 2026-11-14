@@ -1,0 +1,12 @@
+id: SM-SV-05
+title: Surveillance cases stay inside their SLA
+objective: Detect a surveillance case that is still open after its due time or was closed late.
+type: detective, automated
+owner: Trading Surveillance (first line)
+frequency: daily
+test: python -m app.scripts.run_controls; tests/test_surveillance.py
+evidence: grc/evidence/SM-SV-05/<run-id>.json
+threshold: Every surveillance case is closed by its due time. A book with no cases is no_sample.
+mappings: {}
+risks:
+  - Manipulation alerts are not reviewed before the case SLA
