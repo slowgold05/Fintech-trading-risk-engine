@@ -52,6 +52,38 @@ function emailInitial(email: string | null | undefined): string {
   return letter ? letter.toUpperCase() : "";
 }
 
+function AccountTools({ identity }: { identity: UserResponse | undefined }) {
+  const initial = identity ? emailInitial(identity.email) : "";
+  return (
+    <>
+      <p className="text-sm text-copy">{shellDateFormatter.format(new Date())}</p>
+      <Link
+        to="/market"
+        className="inline-flex min-h-11 items-center rounded-full border border-line px-4 text-sm font-medium text-ink hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      >
+        Search markets
+      </Link>
+      <p role="status" className="inline-flex min-h-11 max-w-full items-center gap-2 text-sm text-muted">
+        <Bell className="size-5 shrink-0" weight="light" aria-hidden="true" />
+        <span>Notifications unavailable</span>
+      </p>
+      {identity ? (
+        <div className="flex min-w-0 max-w-full items-center gap-2">
+          {initial ? (
+            <span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-canvas">
+              {initial}
+            </span>
+          ) : null}
+          {identity.email ? (
+            <span className="min-w-0 truncate text-xs font-medium text-ink">{identity.email}</span>
+          ) : null}
+          <span className={["status-badge shrink-0", roleTone[identity.role]].join(" ")}>{identity.role}</span>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function Sidebar({
   onClose,
   collapsed = false,
@@ -163,7 +195,6 @@ export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const initial = me.data ? emailInitial(me.data.email) : "";
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 768px)");
@@ -234,56 +265,41 @@ export function AppShell() {
       </dialog>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 border-b border-line bg-canvas/95 px-4 sm:px-6 lg:px-10">
-          <div className="flex flex-wrap items-center gap-6 py-3">
-            {!desktop && (
-              <>
-                <button
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-line bg-raised p-2 text-copy hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-                  onClick={() => setSidebarOpen(true)}
-                  aria-label="Open navigation"
-                  aria-expanded={sidebarOpen}
-                  aria-controls="mobile-navigation"
-                  type="button"
-                >
-                  <List className="size-5" weight="light" aria-hidden="true" />
-                </button>
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 shadow-[inset_0_0_0_1px_rgb(32_185_129_/_0.2)]" aria-hidden="true">
-                    <span className="font-mono text-[11px] font-bold text-brand-300">SM</span>
-                  </div>
-                  <span className="truncate text-sm font-semibold text-ink">Sentinel Markets</span>
+        <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-canvas/95 px-4 sm:px-6 lg:px-10">
+          {desktop ? (
+            <div className="flex flex-wrap items-center justify-end gap-6 py-3">
+              <AccountTools identity={me.data} />
+            </div>
+          ) : (
+            <div className="flex h-14 items-center gap-3">
+              <button
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-raised p-2 text-copy hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open navigation"
+                aria-expanded={sidebarOpen}
+                aria-controls="mobile-navigation"
+                type="button"
+              >
+                <List className="size-5" weight="light" aria-hidden="true" />
+              </button>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 shadow-[inset_0_0_0_1px_rgb(32_185_129_/_0.2)]" aria-hidden="true">
+                  <span className="font-mono text-[11px] font-bold text-brand-300">SM</span>
                 </div>
-              </>
-            )}
-            <p className="text-sm text-copy lg:ml-auto">{shellDateFormatter.format(new Date())}</p>
-            <Link
-              to="/market"
-              className="inline-flex min-h-11 items-center rounded-full border border-line px-4 text-sm font-medium text-ink hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-            >
-              Search markets
-            </Link>
-            <p role="status" className="inline-flex min-h-11 max-w-full items-center gap-2 text-sm text-muted">
-              <Bell className="size-5 shrink-0" weight="light" aria-hidden="true" />
-              <span>Notifications unavailable</span>
-            </p>
-            {me.data && (
-              <div className="flex min-w-0 max-w-full items-center gap-2">
-                {initial ? (
-                  <span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-canvas">
-                    {initial}
-                  </span>
-                ) : null}
-                {me.data.email ? (
-                  <span className="min-w-0 truncate text-xs font-medium text-ink">{me.data.email}</span>
-                ) : null}
-                <span className={["status-badge shrink-0", roleTone[me.data.role]].join(" ")}>{me.data.role}</span>
+                <span className="truncate text-sm font-semibold text-ink">Sentinel Markets</span>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </header>
 
         <main className="flex-1 overflow-auto" id="main-content">
+          {!desktop && (
+            <div className="border-b border-line px-4 py-4">
+              <div className="mx-auto flex max-w-7xl flex-col items-start gap-3">
+                <AccountTools identity={me.data} />
+              </div>
+            </div>
+          )}
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
             <Outlet />
           </div>

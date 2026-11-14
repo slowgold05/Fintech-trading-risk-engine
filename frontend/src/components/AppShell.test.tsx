@@ -119,6 +119,28 @@ describe("mobile shell", () => {
     expect(within(screen.getByLabelText("Sidebar")).getByRole("link", { name: "Compliance" })).toBeInTheDocument();
     expect(document.body.style.overflow).not.toBe("hidden");
   });
+
+  it("keeps the persistent mobile header to navigation and brand", async () => {
+    api.fetchMe.mockResolvedValue({ role: "trader", email: "ada@example.com" });
+    renderShell();
+    const header = screen.getByRole("banner");
+    const formattedDate = new Intl.DateTimeFormat("en-US", {
+      weekday: "long", month: "long", day: "numeric",
+    }).format(new Date());
+    expect(within(header).getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    expect(within(header).getByText("Sentinel Markets")).toBeInTheDocument();
+    expect(header.firstElementChild).toHaveClass("h-14");
+    expect(within(header).queryByRole("link", { name: "Search markets" })).not.toBeInTheDocument();
+    expect(within(header).queryByRole("status")).not.toBeInTheDocument();
+    expect(within(header).queryByText("ada@example.com")).not.toBeInTheDocument();
+    expect(header).not.toHaveTextContent(formattedDate);
+    const main = screen.getByRole("main");
+    expect(main).toHaveTextContent(formattedDate);
+    expect(within(main).getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
+    expect(within(main).getByRole("status")).toHaveTextContent("Notifications unavailable");
+    expect(await within(main).findByText("ada@example.com")).toBeInTheDocument();
+    expect(within(main).getByText("trader")).toBeInTheDocument();
+  });
 });
 
 describe("desktop shell", () => {
