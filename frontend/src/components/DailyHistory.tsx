@@ -1123,6 +1123,7 @@ function DailyHistoryCanvas({
     } catch {
       disposeRef.current?.();
       failedRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- A chart library draw failure is only known inside this effect; this one-off update shows the fallback.
       setFailed(true);
     }
   }, [
@@ -1153,6 +1154,7 @@ function DailyHistoryCanvas({
     } catch {
       disposeRef.current?.();
       failedRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- A chart library marker failure is only known inside this effect; this one-off update shows the fallback.
       setFailed(true);
     }
   }, [executionMarkers]);
@@ -1169,6 +1171,7 @@ function DailyHistoryCanvas({
     } catch {
       disposeRef.current?.();
       failedRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- A chart library price line failure is only known inside this effect; this one-off update shows the fallback.
       setFailed(true);
     }
   }, [openLimitOrders]);
