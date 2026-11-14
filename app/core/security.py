@@ -3,11 +3,11 @@ import hashlib
 import secrets
 from typing import Optional
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt.exceptions import InvalidTokenError
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -15,22 +15,31 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-DUMMY_PASSWORD_HASH = pwd_context.hash("missing-user-password-check")
+# bcrypt only reads the first 72 bytes of a password. bcrypt < 5 dropped the rest
+# silently and bcrypt >= 5 raises instead, so truncate here: hashes stored by
+# earlier releases keep verifying and an over-long login cannot raise.
+BCRYPT_MAX_PASSWORD_BYTES = 72
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
+def _password_bytes(password: str) -> bytes:
+    return password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+
+
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt()).decode("ascii")
+
+
+DUMMY_PASSWORD_HASH = hash_password("missing-user-password-check")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    return bcrypt.checkpw(_password_bytes(password), password_hash.encode("utf-8"))
 
 
 def verify_password_or_dummy(password: str, password_hash: str | None) -> bool:
-    return pwd_context.verify(password, password_hash or DUMMY_PASSWORD_HASH)
+    return verify_password(password, password_hash or DUMMY_PASSWORD_HASH)
 
 
 def create_access_token(user_id: int, minutes: int | None = None) -> str:

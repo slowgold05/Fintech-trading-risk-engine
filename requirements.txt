@@ -7,11 +7,10 @@ python-dotenv
 pydantic
 pydantic-settings
 email-validator
-passlib[bcrypt]
 PyJWT>=2.14,<3
 requests
 alembic
-bcrypt==3.2.2
+bcrypt==5.0.0
 python-multipart
 slowapi
 PyYAML
