@@ -924,7 +924,7 @@ export function Home() {
                   Cached stocks grouped by sector with illustrative tile sizes.
                 </p>
               </div>
-              <div className="flex flex-col items-start gap-2 sm:items-end">
+              <div className="flex min-w-0 max-w-full flex-col items-start gap-2 sm:items-end">
                 {heatmapQuery.isLoading ? (
                   <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
                     Loading cache
@@ -934,7 +934,7 @@ export function Home() {
                 ) : (
                   <span className="text-xs text-slate-400">No cached quotes</span>
                 )}
-                <div aria-label="Heatmap view" className="flex rounded-xl border border-slate-800 bg-slate-950 p-1" role="group">
+                <div aria-label="Heatmap view" className="flex max-w-full flex-wrap rounded-xl border border-slate-800 bg-slate-950 p-1" role="group">
                   <button
                     aria-pressed={heatmapView === "stocks"}
                     className={[
@@ -962,7 +962,7 @@ export function Home() {
                     Sectors
                   </button>
                 </div>
-                <div aria-label="Heatmap size" className="flex rounded border border-slate-800 bg-slate-950 p-1" role="group">
+                <div aria-label="Heatmap size" className="flex min-w-0 max-w-full flex-wrap rounded border border-slate-800 bg-slate-950 p-1" role="group">
                   {heatmapScales.map((scale) => (
                   <button
                     aria-label={`Set heatmap size to ${scale}`}

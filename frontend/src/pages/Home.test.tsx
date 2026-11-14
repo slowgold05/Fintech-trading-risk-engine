@@ -462,6 +462,8 @@ describe("public market data truth", () => {
     expect(await within(heatmap).findByText("ONLY")).toBeInTheDocument();
     expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
     expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(heatmap).getByRole("group", { name: "Heatmap size" }).className).toContain("max-w-full");
+    expect(within(heatmap).getByRole("group", { name: "Heatmap size" }).className).toContain("flex-wrap");
 
     fireEvent.click(within(heatmap).getByRole("button", { name: "Set heatmap size to compact" }));
     expect(stocks).toHaveAttribute("aria-pressed", "true");
