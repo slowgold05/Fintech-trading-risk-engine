@@ -14,7 +14,7 @@ from app.models.market_symbol import MarketSymbol
 from app.services.exchange_calendar import expected_session_dates
 from app.services.market_history import two_calendar_years_before
 from app.services.market_providers import ProviderUnavailable
-from app.services.massive_client import http_get_massive
+from app.services.massive_client import RequestPacer, http_get_massive
 from app.services.massive_ingestion import backfill_two_years, ingest_one_day
 
 
@@ -253,8 +253,65 @@ def test_backfill_two_years_survives_a_malformed_payload_on_one_day(db_session):
     assert len(stored_days) == len(expected_days) - 1
 
 
+def test_backfill_skips_a_finished_day_and_refetches_a_thinner_one(db_session, monkeypatch):
+    days = [date(2026, 11, 10), date(2026, 11, 12), date(2026, 11, 13)]
+    monkeypatch.setattr(massive_ingestion, "expected_session_dates", lambda start, end: days)
+    symbols = ["AAPL", "MSFT"]
+    _seed_symbols(db_session, symbols)
+    _insert_bar(db_session, "AAPL", days[0])
+    _insert_bar(db_session, "MSFT", days[0])
+    _insert_bar(db_session, "AAPL", days[1])
+    calls = []
+
+    def http_get(kind, arg, key):
+        calls.append(arg)
+        return _grouped([
+            _ticker("AAPL", 10, open_=10, high=11, low=9),
+            _ticker("MSFT", 20, open_=20, high=22, low=19),
+        ])
+
+    report = backfill_two_years(
+        db_session,
+        symbols,
+        "test-key",
+        http_get=http_get,
+        today=days[-1],
+    )
+
+    assert calls == [days[1], days[2]]
+    assert report["sessions_attempted"] == 3
+    assert report["sessions_skipped"] == 1
+    assert report["sessions_with_data"] == 3
+    assert report["sessions_failed"] == 0
+    skipped = next(item for item in report["per_day"] if item["day"] == days[0].isoformat())
+    assert skipped["skipped"] is True
+    assert skipped["missing"] == []
+    assert db_session.query(MarketBarDaily).count() == 6
+
+
+def _insert_bar(db, symbol, day) -> None:
+    db.add(MarketBarDaily(
+        symbol=symbol,
+        session_date=day,
+        provider="massive",
+        adjustment_type="raw",
+        open=Decimal("10"),
+        high=Decimal("11"),
+        low=Decimal("9"),
+        close=Decimal("10"),
+        volume=100,
+        fetched_at=datetime.now(timezone.utc),
+        quality_status="valid",
+    ))
+    db.commit()
+
+
 def test_http_get_massive_puts_the_day_and_key_in_the_url_and_rejects_non_200(monkeypatch):
     day = date(2026, 11, 10)
+    monkeypatch.setattr(
+        "app.services.massive_client.get_shared_pacer",
+        lambda: RequestPacer(4.8, sleep=lambda _seconds: None),
+    )
     seen = []
 
     def fake_get(*args, **kwargs):
@@ -267,6 +324,7 @@ def test_http_get_massive_puts_the_day_and_key_in_the_url_and_rejects_non_200(mo
     assert "2026-11-10" in seen[0]
     assert "test-key" in seen[0]
     assert "https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/" in seen[0]
+    assert "adjusted=false" in seen[0]
 
     def fake_denied(*args, **kwargs):
         return SimpleNamespace(status_code=503)

@@ -1,0 +1,132 @@
+"""Pacing and HTTP 429 behavior for the Massive client. No live calls."""
+
+from datetime import date, datetime, timezone
+
+import pytest
+
+from app.core.config import settings
+from app.services.market_providers import ProviderUnavailable
+from app.services.massive_client import (
+    RequestPacer,
+    bounded_retry_delay,
+    get_shared_pacer,
+    http_get_massive,
+    reset_shared_pacer,
+)
+
+
+class _Response:
+    def __init__(self, status_code, headers=None, body=None):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._body = {} if body is None else body
+
+    def json(self):
+        if isinstance(self._body, Exception):
+            raise self._body
+        return self._body
+
+
+def test_pacer_spaces_calls_at_the_free_plan_interval():
+    clock = {"now": 1000.0}
+    slept = []
+
+    def fake_clock():
+        return clock["now"]
+
+    def fake_sleep(seconds):
+        slept.append(seconds)
+        clock["now"] += seconds
+
+    pacer = RequestPacer(4.8, sleep=fake_sleep, clock=fake_clock)
+    assert pacer.wait() == 0
+    assert pacer.wait() == pytest.approx(12.5)
+    assert pacer.wait() == pytest.approx(12.5)
+    assert slept == pytest.approx([12.5, 12.5])
+
+
+def test_default_spacing_stays_under_five_requests_per_minute():
+    assert settings.massive_requests_per_minute == pytest.approx(4.8)
+    assert RequestPacer(settings.massive_requests_per_minute).min_interval == pytest.approx(12.5)
+
+
+def test_retry_delay_floors_at_the_pacer_interval_and_caps_the_header():
+    now = datetime(2026, 11, 15, 21, 0, tzinfo=timezone.utc)
+    assert bounded_retry_delay("0", attempt=1, min_interval=12.5, cap=60, now=now) == pytest.approx(12.5)
+    assert bounded_retry_delay("10000", attempt=1, min_interval=12.5, cap=60, now=now) == pytest.approx(60)
+    assert bounded_retry_delay(
+        "Sun, 15 Nov 2026 21:00:30 GMT",
+        attempt=1,
+        min_interval=12.5,
+        cap=60,
+        now=now,
+    ) == pytest.approx(30)
+    assert bounded_retry_delay(None, attempt=1, min_interval=12.5, cap=60, now=now) == pytest.approx(12.5)
+    assert bounded_retry_delay(None, attempt=3, min_interval=12.5, cap=60, now=now) == pytest.approx(50)
+    assert bounded_retry_delay(None, attempt=4, min_interval=12.5, cap=60, now=now) == pytest.approx(60)
+
+
+def test_http_get_honors_retry_after_without_a_tight_loop(monkeypatch):
+    responses = [
+        _Response(429, {"Retry-After": "0"}),
+        _Response(429, {"Retry-After": "10000"}),
+        _Response(200, {}, {"status": "OK", "results": []}),
+    ]
+    seen = []
+    sleeps = []
+
+    def fake_get(*args, **kwargs):
+        seen.append(args[0])
+        return responses.pop(0)
+
+    monkeypatch.setattr("app.services.massive_client.requests.get", fake_get)
+    body = http_get_massive(
+        "massive",
+        date(2026, 11, 13),
+        "test-key",
+        pacer=RequestPacer(4.8, sleep=lambda _seconds: None),
+        sleeper=lambda seconds: sleeps.append(seconds),
+        max_attempts=4,
+        retry_cap=60,
+    )
+
+    assert body == {"status": "OK", "results": []}
+    assert len(seen) == 3
+    assert sleeps == pytest.approx([12.5, 60])
+    assert "adjusted=false" in seen[0]
+    assert "2026-11-13" in seen[0]
+    assert "test-key" in seen[0]
+
+
+def test_http_get_stops_after_the_bounded_429_attempts(monkeypatch):
+    calls = {"n": 0}
+    sleeps = []
+
+    def fake_get(*args, **kwargs):
+        calls["n"] += 1
+        return _Response(429, {"Retry-After": "1"})
+
+    monkeypatch.setattr("app.services.massive_client.requests.get", fake_get)
+    with pytest.raises(ProviderUnavailable, match="429"):
+        http_get_massive(
+            "massive",
+            date(2026, 11, 13),
+            "test-key",
+            pacer=RequestPacer(4.8, sleep=lambda _seconds: None),
+            sleeper=lambda seconds: sleeps.append(seconds),
+            max_attempts=3,
+            retry_cap=60,
+        )
+
+    assert calls["n"] == 3
+    assert len(sleeps) == 2
+    assert all(delay >= 12.5 for delay in sleeps)
+    assert all(delay <= 60 for delay in sleeps)
+
+
+def test_shared_pacer_is_reused_across_callers():
+    reset_shared_pacer()
+    try:
+        assert get_shared_pacer() is get_shared_pacer()
+    finally:
+        reset_shared_pacer()

@@ -1,7 +1,8 @@
 """Write Massive grouped-daily bars into canonical history.
 
-The default client calls Massive. Tests pass a fake ``http_get``. Nothing
-here is registered with the scheduler, and nothing here paces requests.
+The default client calls Massive. That client paces requests and retries HTTP
+429 with a bounded wait. Tests pass a fake ``http_get``, which is not paced.
+Nothing here is registered with the scheduler.
 """
 
 from __future__ import annotations
@@ -76,39 +77,117 @@ def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive) -> dict
     }
 
 
-def backfill_two_years(db, symbols, api_key, *, http_get=http_get_massive, today=None) -> dict:
+def backfill_two_years(
+    db,
+    symbols,
+    api_key,
+    *,
+    http_get=http_get_massive,
+    today=None,
+    commit_each: bool = False,
+    on_day=None,
+) -> dict:
     """Ingest every NYSE session from two calendar years before ``today`` through ``today``.
 
-    A real backfill would need to respect Massive's actual rate limit
-    (documented as roughly 5 calls/minute on a free tier per
-    grc/vendors/massive.md). This function calls ``ingest_one_day`` back-to-back
-    with no delay, which is fine for mocked tests but would need a real pacing
-    mechanism before it is pointed at the live API with a real key. That pacing
-    mechanism is not built in this slice.
+    The real client paces at the free-plan limit. A fake ``http_get`` does not.
+    Session dates that already have a finished Massive raw set are skipped, so
+    a rerun resumes. ``commit_each`` commits after every session; use it for a
+    long local run so a crash keeps the days already stored.
     """
     end = date.today() if today is None else today
     sessions = expected_session_dates(two_calendar_years_before(end), end)
     requested = [str(symbol).upper() for symbol in symbols]
+    stored = _stored_symbols_by_day(db, requested, sessions)
+    skip = _dates_to_skip(stored)
     per_day = []
     for session_day in sessions:
-        try:
-            per_day.append(ingest_one_day(db, session_day, symbols, api_key, http_get=http_get))
-        except (ProviderUnavailable, ValueError) as exc:
-            # A malformed/incomplete payload (parse_massive_grouped) raises
-            # ValueError, not ProviderUnavailable. Either way, one bad day
-            # must not abort the whole two-year backfill. Record it as a
-            # fully-missing session (every requested symbol in its gaps) and
-            # move on to the next day.
-            per_day.append({
-                "day": session_day.isoformat(),
-                "requested": len(symbols),
-                "written_valid": 0,
-                "written_flagged": 0,
-                "rejected": [],
-                "missing": list(dict.fromkeys(requested)),
-                "error": str(exc),
-            })
+        if session_day in skip:
+            report = _skipped_day(session_day, symbols, stored.get(session_day, set()))
+        else:
+            try:
+                report = ingest_one_day(db, session_day, symbols, api_key, http_get=http_get)
+            except (ProviderUnavailable, ValueError) as exc:
+                # A malformed/incomplete payload (parse_massive_grouped) raises
+                # ValueError, not ProviderUnavailable. Either way, one bad day
+                # must not abort the whole two-year backfill. Record it as a
+                # fully-missing session (every requested symbol in its gaps) and
+                # move on to the next day. The client's own 429 retries are
+                # already finished before this exception is raised.
+                report = {
+                    "day": session_day.isoformat(),
+                    "requested": len(symbols),
+                    "written_valid": 0,
+                    "written_flagged": 0,
+                    "rejected": [],
+                    "missing": list(dict.fromkeys(requested)),
+                    "error": str(exc),
+                }
+        per_day.append(report)
+        if on_day is not None:
+            on_day(report)
+        if commit_each:
+            db.commit()
     return _coverage(symbols, per_day)
+
+
+def _stored_symbols_by_day(db: Session, symbols: list[str], sessions: list[date]) -> dict[date, set[str]]:
+    """Massive raw symbols already stored for each session in the window."""
+    unique = list(dict.fromkeys(symbols))
+    if not unique or not sessions:
+        return {}
+    rows = (
+        db.query(MarketBarDaily.session_date, MarketBarDaily.symbol)
+        .filter(
+            MarketBarDaily.symbol.in_(unique),
+            MarketBarDaily.provider == _PROVIDER,
+            MarketBarDaily.adjustment_type == _ADJUSTMENT,
+            MarketBarDaily.session_date >= sessions[0],
+            MarketBarDaily.session_date <= sessions[-1],
+            MarketBarDaily.quality_status.in_(("valid", "flagged")),
+        )
+        .all()
+    )
+    stored: dict[date, set[str]] = {}
+    for session_date, symbol in rows:
+        stored.setdefault(_as_date(session_date), set()).add(symbol)
+    return stored
+
+
+def _dates_to_skip(stored: dict[date, set[str]]) -> set[date]:
+    """Dates whose stored set matches the fullest day already in the window.
+
+    A live run commits only after a day's grouped response is fully written, so
+    the fullest day is a finished day. Matching it means the date is done.
+    A thinner day is fetched again. Days with no rows are not skipped.
+    """
+    if not stored:
+        return set()
+    fullest = max(len(found) for found in stored.values())
+    if fullest <= 0:
+        return set()
+    return {day for day, found in stored.items() if len(found) >= fullest}
+
+
+def _skipped_day(day: date, symbols, stored_symbols: set[str]) -> dict:
+    requested = list(dict.fromkeys(str(symbol).upper() for symbol in symbols))
+    missing = [symbol for symbol in requested if symbol not in stored_symbols]
+    return {
+        "day": day.isoformat(),
+        "requested": len(symbols),
+        "written_valid": 0,
+        "written_flagged": 0,
+        "rejected": [],
+        "missing": missing,
+        "skipped": True,
+    }
+
+
+def _as_date(value: object) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
 
 
 def _coverage(symbols, per_day: list[dict]) -> dict:
@@ -124,8 +203,10 @@ def _coverage(symbols, per_day: list[dict]) -> dict:
     return {
         "sessions_attempted": len(per_day),
         "sessions_with_data": sum(
-            1 for report in per_day if report["written_valid"] or report["written_flagged"]
+            1 for report in per_day
+            if report.get("skipped") or report["written_valid"] or report["written_flagged"]
         ),
+        "sessions_skipped": sum(1 for report in per_day if report.get("skipped")),
         "sessions_failed": sum(1 for report in per_day if "error" in report),
         "symbols_fully_covered": [symbol for symbol in unique if not gaps[symbol]],
         "symbols_with_gaps": {symbol: days for symbol, days in gaps.items() if days},
