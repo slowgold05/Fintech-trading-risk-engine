@@ -322,6 +322,19 @@ function formatOptionalPercent(value?: number | null) {
   return value === null || value === undefined ? "--" : formatPercent(value * 100);
 }
 
+function formatMarginPeriod(period: MarketResearchResponse["profit_margin_period"]): string | null {
+  if (period == null) {
+    return null;
+  }
+  const start = period.start?.trim();
+  const end = period.end?.trim();
+  if (!start || !end) {
+    return null;
+  }
+  const form = period.form?.trim();
+  return form ? `${form} · ${start} to ${end}` : `${start} to ${end}`;
+}
+
 function formatNewsTime(value: string) {
   return formatUtcDateTime(value) ?? value;
 }
@@ -467,6 +480,9 @@ export function Home() {
   const sectors = marketQuery.data?.sectors ?? [];
   const movers = trendingQuery.data?.most_active ?? [];
   const research: MarketResearchResponse = researchQuery.data ?? { symbol: researchSymbol, errors: [] };
+  const marginPeriod = research.profit_margin != null
+    ? formatMarginPeriod(research.profit_margin_period)
+    : null;
   const hasResearchInputs = (research.pe_ratio != null && research.pe_ratio > 0)
     || research.profit_margin != null || research.beta != null
     || (research.analyst_target_price != null && research.analyst_target_price > 0 && research.price != null && research.price > 0);
@@ -894,6 +910,11 @@ export function Home() {
                     <div className="mt-1 font-mono text-sm text-slate-100">
                       {formatOptionalPercent(research.profit_margin)}
                     </div>
+                    {marginPeriod ? (
+                      <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {marginPeriod}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
