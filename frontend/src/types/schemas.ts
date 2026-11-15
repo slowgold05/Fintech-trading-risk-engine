@@ -404,6 +404,8 @@ export interface MarketTrendResponse {
   value: number;
   change: number;
   change_percent: number;
+  price_basis?: "end_of_day_previous_close" | null;
+  change_basis?: "prior_close" | "open_to_close" | null;
 }
 
 export interface MarketSectorResponse {
@@ -416,6 +418,7 @@ export interface MarketSectorResponse {
 
 export interface MarketOverviewResponse {
   as_of: string | null;
+  data_notice?: string | null;
   trends: MarketTrendResponse[];
   sectors: MarketSectorResponse[];
   errors: Array<{
@@ -440,6 +443,7 @@ export interface MarketHeatmapItemResponse {
   age_seconds: number | null;
   source: string;
   as_of: string | null;
+  price_basis?: "end_of_day_previous_close" | null;
 }
 
 export interface MarketHeatmapResponse {

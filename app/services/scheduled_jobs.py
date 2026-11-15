@@ -28,15 +28,23 @@ def refresh_market_caches(db) -> dict:
         requested = 0
         refreshed = 0
         error_count = 0
+        source = settings.market_quote_source
+        # One grouped-daily call covers the tier. Other sources stay in batches of 50.
         while remaining > 0:
-            result = refresh_quote_cache(db, tier, min(50, remaining), source="eod")
+            batch = remaining if source == "massive" else min(50, remaining)
+            result = refresh_quote_cache(db, tier, batch, source=source)
             requested += result["requested"]
             refreshed += result["refreshed"]
             error_count += len(result["errors"])
             if result["requested"] == 0 or result["refreshed"] == 0:
                 break
             remaining -= result["requested"]
-        summary[tier] = {"requested": requested, "refreshed": refreshed, "error_count": error_count}
+        summary[tier] = {
+            "requested": requested,
+            "refreshed": refreshed,
+            "error_count": error_count,
+            "source": source,
+        }
     return summary
 
 

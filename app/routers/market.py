@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
-from app.services.market_cache_service import get_cached_heatmap
+from app.services.market_cache_service import MASSIVE_EOD_NOTICE, get_cached_heatmap
 from app.services.market_news_service import get_market_news
 from app.services.price_service import (
     get_company_overview,
@@ -129,6 +129,7 @@ def market_overview(db: Session = Depends(get_db)):
     trends = []
     sectors = []
     errors = []
+    massive_index = False
     requested_symbols = [item["symbol"] for item in INDEX_SYMBOLS + SECTOR_SYMBOLS]
     cached_quotes = {
         quote.symbol: quote
@@ -146,14 +147,18 @@ def market_overview(db: Session = Depends(get_db)):
 
         if quote.quote_at is not None:
             latest = max(latest, quote.quote_at) if latest else quote.quote_at
-        trends.append({
+        trend = {
             "symbol": item["display_symbol"],
             "source_symbol": item["symbol"],
             "name": item["name"],
             "value": round(float(quote.price), 2),
             "change": round(float(quote.change_amount), 4),
             "change_percent": round(float(quote.change_percent), 4),
-        })
+        }
+        if quote.source == "massive":
+            massive_index = True
+            trend["price_basis"] = "end_of_day_previous_close"
+        trends.append(trend)
 
     for item in SECTOR_SYMBOLS:
         quote = cached_quotes.get(item["symbol"])
@@ -171,12 +176,15 @@ def market_overview(db: Session = Depends(get_db)):
             "leaders": item["leaders"],
         })
 
-    return {
+    payload = {
         "as_of": latest.replace(tzinfo=timezone.utc).isoformat() if latest else None,
         "trends": trends,
         "sectors": sectors,
         "errors": errors,
     }
+    if massive_index:
+        payload["data_notice"] = MASSIVE_EOD_NOTICE
+    return payload
 
 
 @router.get("/news")

@@ -746,6 +746,9 @@ export function Home() {
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-100" id="market-pulse">Market pulse</h2>
               <p className="mt-1 text-xs text-slate-400">Cached ETF proxy quotes. Historical trends are unavailable.</p>
+              {marketQuery.data?.data_notice ? (
+                <p className="mt-1 text-xs text-slate-400">{marketQuery.data.data_notice}</p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <TimeframeToggle label="Market pulse range" onChange={setPulseRange} value={pulseRange} />
@@ -773,7 +776,12 @@ export function Home() {
                       <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
                       <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
                       <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
-                        Provider change {formatSignedPercent(trend.change_percent)}
+                        {trend.change_basis === "prior_close"
+                          ? "Prior-close change"
+                          : trend.change_basis === "open_to_close"
+                            ? "Open-to-close change"
+                            : "Provider change"}{" "}
+                        {formatSignedPercent(trend.change_percent)}
                       </div>
                       <SymbolSparkline className="mt-3 h-8 w-full" range={pulseRange} symbol={trend.source_symbol} />
                     </div>
@@ -1039,7 +1047,7 @@ export function Home() {
                             getStockTileSize(stock.size, heatmapScale),
                           ].join(" ")}
                           key={stock.symbol}
-                          title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}`}
+                          title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}${stock.price_basis === "end_of_day_previous_close" ? " / end-of-day previous close, not real-time" : ""}`}
                         >
                           <div
                             className={[
@@ -1090,7 +1098,9 @@ export function Home() {
                 </span>
                 <span className="ml-auto normal-case tracking-normal text-slate-500">
                   {cachedHeatmapCount > 0
-                    ? "Delayed/cached quotes. Hover a tile for source status."
+                    ? (heatmapQuery.data?.data_notice && /end of day/i.test(heatmapQuery.data.data_notice)
+                      ? heatmapQuery.data.data_notice
+                      : "Delayed/cached quotes. Hover a tile for source status.")
                     : "No cached quotes are available."}
                 </span>
               </div>

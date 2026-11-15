@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     massive_requests_per_minute: float = Field(default=4.8, gt=0, le=60)
     massive_max_attempts: int = Field(default=4, ge=1, le=8)
     massive_retry_after_cap_seconds: float = Field(default=60, gt=0, le=300)
+    # Scheduled and CLI refreshes read this. "eod" keeps the Yahoo path until a
+    # local Massive refresh of the S&P list succeeds; then the default can move
+    # to "massive". Alpha Vantage stays the fallback inside the Massive path.
+    market_quote_source: str = "eod"
     finnhub_api_key: str = ""
     twelve_data_api_key: str = ""
     kronos_checkpoint: str = ""
