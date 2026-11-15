@@ -8,31 +8,33 @@
     Geist, Satoshi, "Cabinet Grotesk", Outfit, ui-sans-serif, system-ui,
     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums;
+  --sm-canvas:#111315; --sm-sidebar:#15181B; --sm-surface:#1B1F22;
+  --sm-raised:#24292D; --sm-hover:#2D3337; --sm-line:#343B3F;
+  --sm-ink:#F3F6F4; --sm-copy:#C6CFCA; --sm-muted:#98A39D;
+  --sm-brand-100:#D7F8E9; --sm-brand-300:#67DEAA;
+  --sm-brand-500:#20B981; --sm-brand-700:#117A59;
+  --sm-accent-300:#FFC078; --sm-accent-500:#F59E42;
+  --sm-accent-700:#B8661F; --sm-up:#67DEAA; --sm-down:#F07A78;
+  --sm-focus:#8CEFC0;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background-color: #020617;
-  /* Dot grid + color glows */
-  background-image:
-    radial-gradient(circle, rgb(30 41 59 / 0.4) 1px, transparent 1px),
-    radial-gradient(ellipse 80% 60% at 0% 0%, rgb(16 185 129 / 0.055), transparent 55%),
-    radial-gradient(ellipse 60% 50% at 100% 100%, rgb(30 58 138 / 0.065), transparent 50%);
-  background-size: 28px 28px, 100% 100%, 100% 100%;
-  color: #e2e8f0;
+  background-color: var(--sm-canvas);
+  color: var(--sm-ink);
 }
 
 /* Custom scrollbars */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgb(51 65 85 / 0.7); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: rgb(100 116 139 / 0.8); }
+::-webkit-scrollbar-thumb { background: var(--sm-line); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--sm-hover); }
 
 a { color: inherit; text-decoration: none; }
 button, input, select { font: inherit; }
 button { touch-action: manipulation; }
-::selection { background: rgb(52 211 153 / 0.25); }
+::selection { background: rgb(103 222 170 / 0.25); }
 
 /* ─── Keyframes ─────────────────────────────────── */
 @keyframes ping-slow {
@@ -57,15 +59,15 @@ button { touch-action: manipulation; }
 @layer components {
   /* ─── Cards ─────────────────────────────────────── */
   .dashboard-card {
-    @apply rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-[0_1px_18px_-14px_rgba(15,23,42,0.9)];
+    @apply rounded-2xl border border-line bg-surface;
   }
 
   .dashboard-card-header {
-    @apply flex min-h-12 items-center justify-between gap-4 border-b border-slate-800/60 bg-slate-900/25 px-4 py-3 rounded-t-2xl;
+    @apply flex min-h-12 items-center justify-between gap-4 border-b border-line bg-raised/40 px-6 py-4 rounded-t-2xl;
   }
 
   .dashboard-card-body {
-    @apply p-4;
+    @apply p-6;
   }
 
   /* ─── Metric tiles ───────────────────────────────── */
@@ -84,11 +86,11 @@ button { touch-action: manipulation; }
     @apply rounded-xl;
     background: linear-gradient(
       90deg,
-      rgb(15 23 42 / 0.9) 0%,
-      rgb(30 41 59 / 0.8) 40%,
-      rgb(51 65 85 / 0.6) 50%,
-      rgb(30 41 59 / 0.8) 60%,
-      rgb(15 23 42 / 0.9) 100%
+      rgb(17 19 21 / 0.9) 0%,
+      rgb(36 41 45 / 0.85) 40%,
+      rgb(45 51 55 / 0.7) 50%,
+      rgb(36 41 45 / 0.85) 60%,
+      rgb(17 19 21 / 0.9) 100%
     );
     background-size: 200% 100%;
   }
@@ -96,41 +98,41 @@ button { touch-action: manipulation; }
     .skeleton { animation: shimmer 1.6s linear infinite; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .skeleton { background: rgb(30 41 59 / 0.6); }
+    .skeleton { background: rgb(36 41 45 / 0.6); }
   }
 
   /* ─── Form controls ──────────────────────────────── */
   .field-control {
-    @apply mt-2 min-h-11 w-full rounded-xl border border-slate-700/90 bg-slate-900/80 px-3 py-2
-           text-sm text-slate-100 outline-none
+    @apply mt-2 min-h-11 w-full rounded-xl border border-line bg-raised px-3 py-2
+           text-sm text-ink outline-none
            transition duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]
-           placeholder:text-slate-500
-           hover:border-slate-600
-           focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/15
+           placeholder:text-muted
+           hover:border-muted
+           focus:border-brand-300 focus:ring-2 focus:ring-focus/20
            disabled:cursor-not-allowed disabled:opacity-60;
   }
 
   /* ─── Data tables ────────────────────────────────── */
   .table-shell {
-    @apply overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/35;
+    @apply overflow-x-auto rounded-2xl border border-line bg-surface;
   }
 
   .data-table { @apply w-full text-[13px]; }
 
   .data-table thead {
-    @apply bg-slate-900/75 text-[10px] uppercase tracking-[0.12em] text-slate-500;
+    @apply bg-raised text-[10px] uppercase tracking-[0.12em] text-muted;
   }
 
   .data-table th {
-    @apply border-b border-slate-800 px-3 py-2.5 font-semibold;
+    @apply border-b border-line px-3 py-2.5 font-semibold;
   }
 
   .data-table td { @apply px-3 py-2.5 align-middle; }
 
-  .data-table tbody { @apply divide-y divide-slate-800/70; }
+  .data-table tbody { @apply divide-y divide-line; }
 
   .data-table tbody tr {
-    @apply text-slate-300 transition-colors duration-150 hover:bg-slate-900/50;
+    @apply text-copy transition-colors duration-150 even:bg-raised/50 hover:bg-hover;
   }
 
   /* ─── Badges ─────────────────────────────────────── */
@@ -145,27 +147,27 @@ button { touch-action: manipulation; }
 
   /* ─── Primary action ─────────────────────────────── */
   .primary-action {
-    @apply min-h-11 w-full rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950
+    @apply min-h-11 w-full rounded-full bg-brand-500 px-4 py-2.5 text-sm font-semibold text-canvas
            transition duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]
-           hover:bg-emerald-300
-           focus:outline-none focus:ring-2 focus:ring-emerald-300/60
+           hover:bg-brand-300
+           focus:outline-none focus:ring-2 focus:ring-focus/60
            active:translate-y-px
-           disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500;
+           disabled:cursor-not-allowed disabled:bg-raised disabled:text-muted;
   }
 
   /* ─── Sidebar ────────────────────────────────────── */
   .sidebar-nav-item {
-    @apply flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium
+    @apply flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium
            transition-all duration-150
-           focus:outline-none focus:ring-2 focus:ring-emerald-300/40 focus:ring-offset-1 focus:ring-offset-slate-950;
+           focus:outline-none focus:ring-2 focus:ring-focus/60 focus:ring-offset-1 focus:ring-offset-sidebar;
   }
 
   .sidebar-nav-active {
-    @apply bg-emerald-400/10 text-emerald-300 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.18)];
+    @apply bg-brand-500/10 text-brand-300 shadow-[inset_0_0_0_1px_rgb(32_185_129_/_0.28)];
   }
 
   .sidebar-nav-inactive {
-    @apply text-slate-400 hover:bg-slate-800/60 hover:text-slate-100;
+    @apply text-muted hover:bg-hover hover:text-ink;
   }
 
   /* ─── Toasts ─────────────────────────────────────── */
