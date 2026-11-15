@@ -1373,6 +1373,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         artifacts.mkdir(parents=True, exist_ok=True)
         driver.save_screenshot(str(artifacts / "dashboard-desktop.png"))
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        _wait(driver).until(lambda current: _viewport(current)["width"] == 390)
         assert _viewport(driver)["width"] == 390
         _wait(driver).until(lambda current: current.execute_script(
             "const opener = document.querySelector('button[aria-label=\"Open navigation\"]'); return Boolean(opener && opener.getAttribute('aria-expanded') === 'false' && !document.querySelector('dialog[open]'));"
@@ -1381,6 +1382,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         assert driver.execute_script("return document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         assert driver.execute_script("const main = document.querySelector('main'); return main.scrollWidth <= main.clientWidth")
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 632, "height": 324, "deviceScaleFactor": 2, "mobile": False})
+        _wait(driver).until(lambda current: _viewport(current)["width"] == 632)
         assert _viewport(driver)["width"] == 632
         driver.save_screenshot(str(artifacts / "dashboard-reflow-200.png"))
         assert driver.execute_script("const main = document.querySelector('main'); return main.scrollWidth <= main.clientWidth")
