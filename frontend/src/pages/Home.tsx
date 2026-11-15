@@ -673,8 +673,10 @@ export function Home() {
       </div>
 
       <section className="mx-auto max-w-[2200px] space-y-6 px-4 py-6 sm:px-6 lg:px-10">
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)_minmax(260px,1fr)]">
-        <div className="dashboard-card min-w-0 xl:col-start-1 xl:row-start-1">
+        <div className="grid grid-cols-1 items-start gap-6 min-[1200px]:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)_minmax(260px,1fr)]">
+          {/* Independent columns from 1200px. Below that, display:contents plus order restores the stacked sequence. */}
+          <div className="contents min-w-0 min-[1200px]:flex min-[1200px]:flex-col min-[1200px]:gap-6">
+        <div className="dashboard-card min-w-0 max-[1199px]:order-1">
           <div className="dashboard-card-header">
             <div>
               <h2 className="text-sm font-semibold text-slate-100" id="trending-movers">
@@ -741,72 +743,7 @@ export function Home() {
             )}
           </div>
         </div>
-        <div className="dashboard-card min-w-0 xl:col-start-2 xl:row-start-1">
-          <div className="dashboard-card-header flex-wrap gap-3">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-slate-100" id="market-pulse">Market pulse</h2>
-              <p className="mt-1 text-xs text-slate-400">Cached ETF proxy quotes. Historical trends are unavailable.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <TimeframeToggle label="Market pulse range" onChange={setPulseRange} value={pulseRange} />
-              <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
-                {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
-              </span>
-            </div>
-          </div>
-          <div className="dashboard-card-body">
-            {trends.length === 0 ? (
-              <EmptyState message={marketQuery.isLoading ? "Loading quote cache" : "Market quotes unavailable"}
-                detail="Index quotes will appear when the market cache has data." />
-            ) : (
-              <>
-                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                  {trends.map((trend) => (
-                    <div className="metric-tile min-w-0" key={trend.source_symbol}>
-                      <div className="flex items-center gap-2">
-                        <IconBadge
-                          Icon={trend.change_percent >= 0 ? TrendUp : TrendDown}
-                          tone={trend.change_percent >= 0 ? "emerald" : "rose"}
-                        />
-                        <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
-                      </div>
-                      <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
-                      <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
-                      <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
-                        Provider change {formatSignedPercent(trend.change_percent)}
-                      </div>
-                      <SymbolSparkline className="mt-3 h-8 w-full" range={pulseRange} symbol={trend.source_symbol} />
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-4 text-xs text-slate-400">
-                  Latest cached quote: {latestQuoteAt && Number.isFinite(Date.parse(latestQuoteAt)) ? new Date(latestQuoteAt).toUTCString() : "unavailable"}. Individual quotes may be older.
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-          <div className="dashboard-card min-w-0 xl:col-start-3 xl:row-start-1">
-            <div className="dashboard-card-header">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-100" id="sector-etf-heatmap">
-                  Sector ETF heatmap
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Cached sector ETF proxies returned by the market service.
-                </p>
-              </div>
-            </div>
-            <div className="dashboard-card-body">
-              {returnedSectorProxies.length === 0 ? (
-                <EmptyState message={sectorStatusLabel} />
-              ) : (
-                <SectorProxyTiles scale="compact" sectors={returnedSectorProxies} />
-              )}
-            </div>
-          </div>
-
-          <div className="dashboard-card min-w-0 xl:col-start-1 xl:row-start-2">
+          <div className="dashboard-card min-w-0 max-[1199px]:order-4">
             <div className="dashboard-card-header">
               <div>
                 <h2 className="text-sm font-semibold text-slate-100" id="company-research">
@@ -935,7 +872,54 @@ export function Home() {
               </div>
             </div>
           </div>
-          <div className="dashboard-card min-w-0 xl:col-start-2 xl:row-start-2">
+          </div>
+          <div className="contents min-w-0 min-[1200px]:flex min-[1200px]:flex-col min-[1200px]:gap-6">
+        <div className="dashboard-card min-w-0 max-[1199px]:order-2">
+          <div className="dashboard-card-header flex-wrap gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-100" id="market-pulse">Market pulse</h2>
+              <p className="mt-1 text-xs text-slate-400">Cached ETF proxy quotes. Historical trends are unavailable.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <TimeframeToggle label="Market pulse range" onChange={setPulseRange} value={pulseRange} />
+              <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
+                {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
+              </span>
+            </div>
+          </div>
+          <div className="dashboard-card-body">
+            {trends.length === 0 ? (
+              <EmptyState message={marketQuery.isLoading ? "Loading quote cache" : "Market quotes unavailable"}
+                detail="Index quotes will appear when the market cache has data." />
+            ) : (
+              <>
+                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                  {trends.map((trend) => (
+                    <div className="metric-tile min-w-0" key={trend.source_symbol}>
+                      <div className="flex items-center gap-2">
+                        <IconBadge
+                          Icon={trend.change_percent >= 0 ? TrendUp : TrendDown}
+                          tone={trend.change_percent >= 0 ? "emerald" : "rose"}
+                        />
+                        <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
+                      <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
+                      <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
+                        Provider change {formatSignedPercent(trend.change_percent)}
+                      </div>
+                      <SymbolSparkline className="mt-3 h-8 w-full" range={pulseRange} symbol={trend.source_symbol} />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 text-xs text-slate-400">
+                  Latest cached quote: {latestQuoteAt && Number.isFinite(Date.parse(latestQuoteAt)) ? new Date(latestQuoteAt).toUTCString() : "unavailable"}. Individual quotes may be older.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+          <div className="dashboard-card min-w-0 max-[1199px]:order-5">
             <div className="dashboard-card-header flex-col items-stretch sm:flex-row sm:items-center">
               <div>
                 <h2 className="text-sm font-semibold text-slate-100" id="stock-heatmap">
@@ -1003,7 +987,7 @@ export function Home() {
                 </div>
               </div>
             </div>
-            <div className="dashboard-card-body">
+            <div className="dashboard-card-body max-h-[calc(100vh-16rem)] overflow-x-hidden overflow-y-auto">
               {heatmapView === "sectors" ? (
                 <div>
                   <p className="mb-3 text-xs text-slate-400">
@@ -1098,7 +1082,28 @@ export function Home() {
               )}
             </div>
           </div>
-        <div className="dashboard-card min-w-0 xl:col-start-3 xl:row-start-2">
+          </div>
+          <div className="contents min-w-0 min-[1200px]:flex min-[1200px]:flex-col min-[1200px]:gap-6">
+          <div className="dashboard-card min-w-0 max-[1199px]:order-3">
+            <div className="dashboard-card-header">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-100" id="sector-etf-heatmap">
+                  Sector ETF heatmap
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Cached sector ETF proxies returned by the market service.
+                </p>
+              </div>
+            </div>
+            <div className="dashboard-card-body">
+              {returnedSectorProxies.length === 0 ? (
+                <EmptyState message={sectorStatusLabel} />
+              ) : (
+                <SectorProxyTiles scale="compact" sectors={returnedSectorProxies} />
+              )}
+            </div>
+          </div>
+        <div className="dashboard-card min-w-0 max-[1199px]:order-6">
           <div className="dashboard-card-header">
             <div>
               <h2 className="text-sm font-semibold text-slate-100" id="market-news">
@@ -1143,6 +1148,7 @@ export function Home() {
             )}
           </div>
         </div>
+          </div>
         </div>
 
         <Watchlists onUseInChart={useWatchlistInChart} onUseInResearch={useWatchlistInResearch} />

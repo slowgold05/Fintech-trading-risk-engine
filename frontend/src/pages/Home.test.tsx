@@ -393,9 +393,14 @@ describe("public market data truth", () => {
     expect(within(newsCard).queryByRole("link")).not.toBeInTheDocument();
   });
 
-  it("keeps one row-major copy of each market panel above watchlists and history", () => {
+  it("stacks desktop columns independently and keeps one mobile copy of each panel", () => {
     open();
-    const ids = [
+    const columns = [
+      ["trending-movers", "company-research"],
+      ["market-pulse", "stock-heatmap"],
+      ["sector-etf-heatmap", "market-news"],
+    ];
+    const mobileOrder = [
       "trending-movers",
       "market-pulse",
       "sector-etf-heatmap",
@@ -403,31 +408,30 @@ describe("public market data truth", () => {
       "stock-heatmap",
       "market-news",
     ];
-    const cards = ids.map((id) => {
+    const cards = mobileOrder.map((id, index) => {
       const matches = document.querySelectorAll(`#${id}`);
       expect(matches).toHaveLength(1);
-      return matches[0].closest(".dashboard-card") as HTMLElement;
+      const card = matches[0].closest(".dashboard-card") as HTMLElement;
+      expect(card.className).toContain(`max-[1199px]:order-${index + 1}`);
+      return card;
     });
-    const grid = cards[0].parentElement;
+    const grid = cards[0].parentElement?.parentElement;
     expect(grid?.className).toContain("gap-6");
-    expect(grid?.className).toContain("xl:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)_minmax(260px,1fr)]");
-    const placements = [
-      ["xl:col-start-1", "xl:row-start-1"],
-      ["xl:col-start-2", "xl:row-start-1"],
-      ["xl:col-start-3", "xl:row-start-1"],
-      ["xl:col-start-1", "xl:row-start-2"],
-      ["xl:col-start-2", "xl:row-start-2"],
-      ["xl:col-start-3", "xl:row-start-2"],
-    ];
-    cards.forEach((card, index) => {
-      expect(card.parentElement).toBe(grid);
-      for (const placement of placements[index]) {
-        expect(card.className).toContain(placement);
-      }
-      if (index > 0) {
-        expect(cards[index - 1].compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      }
+    expect(grid?.className).toContain("items-start");
+    expect(grid?.className).toContain("min-[1200px]:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)_minmax(260px,1fr)]");
+    expect(grid?.className).not.toContain("xl:grid-cols");
+    const stacks = Array.from(grid?.children ?? []);
+    expect(stacks).toHaveLength(3);
+    stacks.forEach((stack, index) => {
+      expect(stack.className).toContain("contents");
+      expect(stack.className).toContain("min-[1200px]:flex-col");
+      expect(stack.className).toContain("min-[1200px]:gap-6");
+      expect(Array.from(stack.querySelectorAll("h2")).map((heading) => heading.id)).toEqual(columns[index]);
     });
+    const heatmap = document.getElementById("stock-heatmap")?.closest(".dashboard-card") as HTMLElement;
+    expect(heatmap.querySelector(".dashboard-card-body")?.className).toContain("max-h-[calc(100vh-16rem)]");
+    expect(heatmap.querySelector(".dashboard-card-body")?.className).toContain("overflow-y-auto");
+    expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveClass("min-h-11");
     const section = grid?.closest("section");
     expect(section?.className).toContain("px-4");
     expect(section?.className).toContain("sm:px-6");
@@ -435,7 +439,8 @@ describe("public market data truth", () => {
     const watchlist = screen.getByRole("button", { name: "Use MSFT in research" });
     const historyTitle = document.getElementById("daily-price-history-title");
     expect(historyTitle).not.toBeNull();
-    expect(cards[5].compareDocumentPosition(watchlist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const newsCard = document.getElementById("market-news")?.closest(".dashboard-card") as HTMLElement;
+    expect(newsCard.compareDocumentPosition(watchlist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(watchlist.compareDocumentPosition(historyTitle as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Open menu" })).toHaveLength(1);
   });
