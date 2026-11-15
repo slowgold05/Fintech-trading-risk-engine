@@ -429,8 +429,12 @@ describe("public market data truth", () => {
       expect(Array.from(stack.querySelectorAll("h2")).map((heading) => heading.id)).toEqual(columns[index]);
     });
     const heatmap = document.getElementById("stock-heatmap")?.closest(".dashboard-card") as HTMLElement;
-    expect(heatmap.querySelector(".dashboard-card-body")?.className).toContain("max-h-[calc(100vh-16rem)]");
-    expect(heatmap.querySelector(".dashboard-card-body")?.className).toContain("overflow-y-auto");
+    const heatmapBody = within(heatmap).getByRole("region", { name: "Stock heatmap" });
+    expect(heatmapBody.className).toContain("max-h-[max(24rem,calc(100vh-16rem))]");
+    expect(heatmapBody.className).toContain("overflow-y-auto");
+    expect(heatmapBody.className).toContain("focus:ring-2");
+    expect(heatmapBody).toHaveAttribute("tabindex", "0");
+    expect(heatmapBody).toHaveAttribute("aria-labelledby", "stock-heatmap");
     expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveClass("min-h-11");
     const section = grid?.closest("section");
     expect(section?.className).toContain("px-4");

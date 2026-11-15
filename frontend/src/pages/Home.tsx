@@ -987,7 +987,12 @@ export function Home() {
                 </div>
               </div>
             </div>
-            <div className="dashboard-card-body max-h-[calc(100vh-16rem)] overflow-x-hidden overflow-y-auto">
+            <div
+              aria-labelledby="stock-heatmap"
+              className="dashboard-card-body max-h-[max(24rem,calc(100vh-16rem))] overflow-x-hidden overflow-y-auto focus:outline-none focus:ring-2 focus:ring-inset focus:ring-emerald-300/40"
+              role="region"
+              tabIndex={0}
+            >
               {heatmapView === "sectors" ? (
                 <div>
                   <p className="mb-3 text-xs text-slate-400">
