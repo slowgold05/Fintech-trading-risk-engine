@@ -147,6 +147,116 @@ def _pair_rank(revenue: dict, net_income: dict) -> tuple:
     )
 
 
+_EPS_UNIT = "USD/shares"
+_SHARES_CONCEPTS = (
+    "EntityCommonStockSharesOutstanding",
+    "CommonStockSharesOutstanding",
+)
+
+
+def _share_duration_facts(facts: dict, concepts: list[str]) -> list[dict]:
+    collected = []
+    gaap = facts.get("us-gaap", {})
+    for rank, concept in enumerate(concepts):
+        candidates = gaap.get(concept, {}).get("units", {}).get(_EPS_UNIT) or []
+        if not isinstance(candidates, list):
+            continue
+        for index, item in enumerate(candidates):
+            if not isinstance(item, dict):
+                continue
+            start = item.get("start")
+            end = item.get("end")
+            form = item.get("form")
+            number = _finite_number(item.get("val"))
+            if not isinstance(start, str) or not isinstance(end, str) or not isinstance(form, str):
+                continue
+            start = start.strip()
+            end = end.strip()
+            form = form.strip()
+            if not start or not end or not form or number is None:
+                continue
+            fp = item.get("fp")
+            fy = item.get("fy")
+            collected.append({
+                "concept_rank": rank,
+                "index": index,
+                "start": start,
+                "end": end,
+                "form": form,
+                "filed": item.get("filed") if isinstance(item.get("filed"), str) else "",
+                "fp": fp if isinstance(fp, str) and fp else None,
+                "fy": fy if isinstance(fy, int) and not isinstance(fy, bool) else None,
+                "val": number,
+            })
+    return collected
+
+
+def trailing_diluted_eps(facts: dict) -> dict | None:
+    """Sum the latest four standard diluted-EPS quarters.
+
+    A quarter is the same shape the margin matcher accepts: fiscal period
+    Q1-Q4 and a duration of 70 to 120 days. Year-to-date rows and annual rows
+    are left out. Fewer than four such quarters, or four that do not cover
+    about one year without overlap, is not a trailing twelve months.
+    """
+    chosen = _best_by_period(_share_duration_facts(facts, ["EarningsPerShareDiluted"]))
+    quarters = [item for item in chosen.values() if _is_standard_quarter(item)]
+    by_end: dict[str, dict] = {}
+    for item in quarters:
+        rank = (item["filed"], -item["concept_rank"], item["index"])
+        current = by_end.get(item["end"])
+        if current is None or rank > current["_pick"]:
+            by_end[item["end"]] = {**item, "_pick": rank}
+    ordered = sorted(by_end.values(), key=lambda item: item["end"])
+    if len(ordered) < 4:
+        return None
+    window = ordered[-4:]
+    span = _period_days(window[0]["start"], window[-1]["end"])
+    if span is None or not 300 <= span <= 400:
+        return None
+    for previous, current in zip(window, window[1:]):
+        gap = _period_days(previous["end"], current["start"])
+        if gap is None or gap < -5 or gap > 20:
+            return None
+    return {
+        "eps": sum(item["val"] for item in window),
+        "periods": [
+            {
+                "form": item["form"],
+                "start": item["start"],
+                "end": item["end"],
+                "fp": item["fp"],
+                "fy": item["fy"],
+            }
+            for item in window
+        ],
+    }
+
+
+def latest_dei_shares_outstanding(facts: dict) -> float | None:
+    """Latest positive share count from the SEC dei cover facts."""
+    dei = facts.get("dei", {})
+    if not isinstance(dei, dict):
+        return None
+    best: tuple[str, str, float] | None = None
+    for concept in _SHARES_CONCEPTS:
+        units = dei.get(concept, {}).get("units", {}).get("shares") or []
+        if not isinstance(units, list):
+            continue
+        for item in units:
+            if not isinstance(item, dict):
+                continue
+            end = item.get("end")
+            number = _finite_number(item.get("val"))
+            if not isinstance(end, str) or number is None or number <= 0:
+                continue
+            filed = item.get("filed") if isinstance(item.get("filed"), str) else ""
+            rank = (end, filed, number)
+            if best is None or rank[:2] > best[:2]:
+                best = (end, filed, number)
+    return None if best is None else best[2]
+
+
 def _matched_margin(facts: dict) -> dict | None:
     """Return one revenue and net-income fact that share a form and duration.
 
@@ -197,6 +307,7 @@ def _parse_company_facts(data: dict, ticker: str, cik: str) -> dict:
     liabilities = _latest_fact(facts, ["Liabilities"])
     equity = _latest_fact(facts, ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"])
     eps = _latest_fact(facts, ["EarningsPerShareDiluted", "EarningsPerShareBasic"], "USD/shares")
+    trailing = trailing_diluted_eps(facts)
 
     return {
         "symbol": ticker,
@@ -210,6 +321,9 @@ def _parse_company_facts(data: dict, ticker: str, cik: str) -> dict:
         "liabilities": liabilities,
         "equity": equity,
         "eps": eps,
+        "ttm_diluted_eps": None if trailing is None else trailing["eps"],
+        "ttm_diluted_eps_periods": None if trailing is None else trailing["periods"],
+        "shares_outstanding": latest_dei_shares_outstanding(facts),
         "source": "SEC EDGAR",
     }
 
@@ -219,7 +333,13 @@ def get_sec_company_fundamentals(symbol: str, db: Session) -> dict:
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
     cached = db.get(MarketFundamentalsCache, symbol)
     cached_payload = cached.payload if cached is not None and isinstance(cached.payload, dict) else {}
-    if cached and cached.fetched_at >= cutoff and "profit_margin_period" in cached_payload:
+    if (
+        cached
+        and cached.fetched_at >= cutoff
+        and "profit_margin_period" in cached_payload
+        and "ttm_diluted_eps" in cached_payload
+        and "shares_outstanding" in cached_payload
+    ):
         return cached.payload
 
     ticker_record = _get_ticker_map().get(symbol)

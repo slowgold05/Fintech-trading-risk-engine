@@ -478,7 +478,12 @@ export interface MarketResearchResponse {
   sector?: string | null;
   industry?: string | null;
   market_cap?: number | null;
+  market_cap_basis?: string | null;
   pe_ratio?: number | null;
+  pe_basis?: string | null;
+  price_basis?: string | null;
+  price_as_of?: string | null;
+  valuation_notice?: string | null;
   profit_margin?: number | null;
   profit_margin_period?: {
     form?: string | null;

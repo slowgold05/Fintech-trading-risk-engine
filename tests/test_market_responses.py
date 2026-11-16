@@ -3,6 +3,12 @@ import pytest
 from app.routers.market import _format_mover, _score_company_research
 
 
+@pytest.fixture(autouse=True)
+def _research_stays_offline(monkeypatch):
+    """Research tests must not call Massive when a key is present in the environment."""
+    monkeypatch.setattr("app.core.config.settings.massive_api_key", "")
+
+
 @pytest.mark.parametrize("missing", [None, "", "None", "-", "NaN", "Infinity"])
 def test_missing_mover_numbers_are_not_real_zeros(missing):
     item = _format_mover({"ticker": "MISS", "price": missing, "change_amount": missing,
