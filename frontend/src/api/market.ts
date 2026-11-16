@@ -5,6 +5,7 @@ import type {
   MarketOverviewResponse,
   MarketResearchResponse,
   MarketTrendingResponse,
+  MarketUniverseResponse,
 } from "../types/schemas";
 
 export async function fetchMarketHeatmap(): Promise<MarketHeatmapResponse> {
@@ -38,5 +39,14 @@ export async function fetchMarketResearch(
 
 export async function fetchMarketNews(): Promise<MarketNewsResponse> {
   const response = await apiClient.get<MarketNewsResponse>("/market/news");
+  return response.data;
+}
+
+export async function fetchMarketUniverse(
+  search: string,
+): Promise<MarketUniverseResponse> {
+  const response = await apiClient.get<MarketUniverseResponse>("/market/universe", {
+    params: { search, limit: 20 },
+  });
   return response.data;
 }

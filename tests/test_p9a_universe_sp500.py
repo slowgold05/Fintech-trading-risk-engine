@@ -1,4 +1,4 @@
-"""Stage 2: universe browse/search is limited to S&P 500 members.
+"""Stage 2: browse stays the featured universe; explicit search and holdings do not.
 
 Direct symbol routes stay open to any seeded MarketSymbol.
 """
@@ -6,11 +6,16 @@ Direct symbol routes stay open to any seeded MarketSymbol.
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from app.models.asset import Asset
+from app.models.holding import Holding
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_symbol import MarketSymbol
+from app.models.user import User
 
 MEMBER = "MMM"
 OUTSIDER = "ZZZFAKE"
+BENCHMARK = "QQQ"
+OUTSIDE_LABEL = "Outside S&P 500"
 
 
 def _active_symbol(db, symbol: str) -> None:
@@ -26,28 +31,84 @@ def _active_symbol(db, symbol: str) -> None:
     ))
 
 
-def test_universe_lists_sp500_member_and_omits_non_member(client, db_session):
+def test_universe_browse_keeps_featured_set_and_omits_non_member(client, db_session):
     _active_symbol(db_session, MEMBER)
+    _active_symbol(db_session, BENCHMARK)
     _active_symbol(db_session, OUTSIDER)
     db_session.commit()
 
     response = client.get("/market/universe")
     assert response.status_code == 200, response.text
-    symbols = {item["symbol"] for item in response.json()["items"]}
-    assert MEMBER in symbols
-    assert OUTSIDER not in symbols
+    items = {item["symbol"]: item for item in response.json()["items"]}
+    assert MEMBER in items
+    assert items[MEMBER]["in_featured_universe"] is True
+    assert items[MEMBER]["universe_label"] is None
+    assert BENCHMARK in items
+    assert items[BENCHMARK]["in_featured_universe"] is True
+    assert items[BENCHMARK]["universe_label"] is None
+    assert OUTSIDER not in items
 
 
-def test_universe_search_for_non_member_returns_zero_items(client, db_session):
+def test_universe_search_labels_member(client, db_session):
     _active_symbol(db_session, MEMBER)
     _active_symbol(db_session, OUTSIDER)
     db_session.commit()
 
-    response = client.get("/market/universe", params={"search": OUTSIDER})
+    response = client.get("/market/universe", params={"search": MEMBER})
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["total"] == 0
-    assert body["items"] == []
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["symbol"] == MEMBER
+    assert item["in_featured_universe"] is True
+    assert item["universe_label"] is None
+
+
+def test_universe_search_labels_explicit_non_member(client, db_session):
+    _active_symbol(db_session, MEMBER)
+    _active_symbol(db_session, OUTSIDER)
+    db_session.commit()
+
+    response = client.get("/market/universe", params={"search": OUTSIDER.lower()})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["symbol"] == OUTSIDER
+    assert item["in_featured_universe"] is False
+    assert item["universe_label"] == OUTSIDE_LABEL
+
+    partial = client.get("/market/universe", params={"search": "ZZZ"})
+    assert partial.status_code == 200, partial.text
+    assert partial.json()["total"] == 0
+    assert partial.json()["items"] == []
+
+
+def test_universe_browse_shows_held_non_member(client, db_session, auth_headers):
+    _active_symbol(db_session, OUTSIDER)
+    headers = auth_headers("holder-outsider@example.com", "password123")
+    user = db_session.query(User).filter(User.email == "holder-outsider@example.com").one()
+    asset = Asset(symbol=OUTSIDER, asset_type="stock", name="Outsider Co")
+    db_session.add(asset)
+    db_session.flush()
+    db_session.add(Holding(
+        user_id=user.id,
+        asset_id=asset.id,
+        quantity=Decimal("1"),
+        avg_cost=Decimal("5"),
+    ))
+    db_session.commit()
+
+    held = client.get("/market/universe", headers=headers)
+    assert held.status_code == 200, held.text
+    items = {item["symbol"]: item for item in held.json()["items"]}
+    assert OUTSIDER in items
+    assert items[OUTSIDER]["in_featured_universe"] is False
+    assert items[OUTSIDER]["universe_label"] == OUTSIDE_LABEL
+
+    anonymous = client.get("/market/universe")
+    assert anonymous.status_code == 200, anonymous.text
+    assert OUTSIDER not in {item["symbol"] for item in anonymous.json()["items"]}
 
 
 def test_non_member_history_remains_readable(client, db_session):

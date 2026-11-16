@@ -14,6 +14,7 @@ import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
 import { IconBadge } from "../features/dashboard/components";
 import { DailyHistory } from "../components/DailyHistory";
+import { MarketSearch } from "../components/MarketSearch";
 import { Sparkline } from "../components/Sparkline";
 import { Watchlists } from "../components/Watchlists";
 import { FreshnessBadge } from "../components/FreshnessBadge";
@@ -674,6 +675,7 @@ export function Home() {
                 Delayed index pulse, sector heatmaps, and company fundamentals — no account required.
                 Sign in to access trading, portfolio, and risk workflows.
               </p>
+              <MarketSearch />
             </div>
             {!isAuthenticated && (
               <Link
