@@ -228,13 +228,16 @@ def _trailing_result(eps: float, items: list[dict]) -> dict:
 
 
 def _discrete_trailing(quarters: list[dict]) -> dict | None:
+    """The newest four continuous quarters, if they cover about one year."""
     if len(quarters) < 4:
         return None
-    window = quarters[-4:]
-    span = _period_days(window[0]["start"], window[-1]["end"])
-    if span is None or not 300 <= span <= 400 or not _periods_follow(window):
-        return None
-    return _trailing_result(sum(item["val"] for item in window), window)
+    for start in range(len(quarters) - 4, -1, -1):
+        window = quarters[start:start + 4]
+        span = _period_days(window[0]["start"], window[-1]["end"])
+        if span is None or not 300 <= span <= 400 or not _periods_follow(window):
+            continue
+        return _trailing_result(sum(item["val"] for item in window), window)
+    return None
 
 
 def _quarter_set(items: list[dict], fiscal_periods: tuple[str, ...]) -> list[dict] | None:
@@ -304,12 +307,35 @@ def _derived_fourth_quarter(three: list[dict], year: dict) -> dict | None:
     }
 
 
+def _roll_matching_quarters(three: list[dict], derived: dict, year: dict, later: list[dict]) -> dict | None:
+    """Replace as many prior-year quarters as the new year has reported.
+
+    Q1 alone, Q1 plus Q2, or Q1 through Q3 each move the annual total forward.
+    The unused prior quarters stay in the window.
+    """
+    for count, fiscal_periods in ((3, ("Q1", "Q2", "Q3")), (2, ("Q1", "Q2")), (1, ("Q1",))):
+        current = _quarter_set(later, fiscal_periods)
+        if current is None:
+            continue
+        bridge = _period_days(year["end"], current[0]["start"])
+        if bridge is None or bridge < -5 or bridge > 20:
+            continue
+        window = [*three[count:], derived, *current]
+        span = _period_days(window[0]["start"], window[-1]["end"])
+        if span is None or not 300 <= span <= 400 or not _periods_follow(window):
+            continue
+        rolled = year["val"] - sum(item["val"] for item in three[:count]) + sum(item["val"] for item in current)
+        if not math.isfinite(rolled):
+            continue
+        return _trailing_result(rolled, window)
+    return None
+
+
 def _trailing_from_annual(quarters: list[dict], years: list[dict]) -> dict | None:
     """Fourth quarter is the full year minus the three reported quarters.
 
-    When the next fiscal year has also reported Q1 through Q3, the trailing
-    sum is that derived quarter plus those three. A roll-forward that is not
-    one continuous year keeps the completed year.
+    When the next fiscal year has reported Q1, Q1 and Q2, or Q1 through Q3,
+    the annual total is rolled forward by those matching quarters.
     """
     if not years:
         return None
@@ -323,35 +349,35 @@ def _trailing_from_annual(quarters: list[dict], years: list[dict]) -> dict | Non
         return None
     annual = _trailing_result(year["val"], [*three, derived])
     later = [item for item in quarters if _follows_year(item, year)]
-    three_later = _quarter_set(later, ("Q1", "Q2", "Q3"))
-    if three_later is None:
-        return annual
-    bridge = _period_days(year["end"], three_later[0]["start"])
-    span = _period_days(derived["start"], three_later[-1]["end"])
-    if bridge is None or bridge < -5 or bridge > 20 or span is None or not 300 <= span <= 400:
-        return annual
-    rolled = derived["val"] + sum(item["val"] for item in three_later)
-    if not math.isfinite(rolled):
-        return annual
-    return _trailing_result(rolled, [derived, *three_later])
+    rolled = _roll_matching_quarters(three, derived, year, later)
+    return annual if rolled is None else rolled
+
+
+def _window_end(result: dict | None) -> str:
+    if not result or not result.get("periods"):
+        return ""
+    return result["periods"][-1]["end"]
 
 
 def trailing_diluted_eps(facts: dict) -> dict | None:
     """Trailing diluted EPS from the rows SEC company facts actually carry.
 
-    Four discrete quarters are used when they form one continuous year.
-    Filings usually have no Q4 row: the 10-K is the full year. The fourth
-    quarter is then the year minus Q1 through Q3, and the trailing sum is
-    the year. Once the next year has reported Q1 through Q3, the sum rolls
-    forward from that derived quarter. None means the window cannot be built.
+    A discrete four-quarter window and the annual window are both built.
+    The one that ends later is used, so a newer 10-K beats an older set of
+    four quarters. Filings usually have no Q4 row: the fourth quarter is the
+    year minus Q1 through Q3. A new year that has reported Q1, or Q1 and Q2,
+    rolls that annual total forward. None means no window can be built.
     """
     chosen = _best_by_period(_share_duration_facts(facts, ["EarningsPerShareDiluted"]))
     quarters = _dedupe_by_end([item for item in chosen.values() if _is_standard_quarter(item)])
     discrete = _discrete_trailing(quarters)
-    if discrete is not None:
-        return discrete
     years = [item for item in chosen.values() if _is_standard_year(item)]
-    return _trailing_from_annual(quarters, years)
+    annual = _trailing_from_annual(quarters, years)
+    if discrete is None:
+        return annual
+    if annual is None or _window_end(annual) <= _window_end(discrete):
+        return discrete
+    return annual
 
 
 def latest_dei_shares_outstanding(facts: dict) -> float | None:
