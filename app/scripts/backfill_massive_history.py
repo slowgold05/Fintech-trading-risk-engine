@@ -24,7 +24,7 @@ from app.models.market_symbol import MarketSymbol
 from app.services.exchange_calendar import expected_session_dates
 from app.services.market_history import two_calendar_years_before
 from app.services.market_providers import ProviderUnavailable
-from app.services.massive_ingestion import backfill_two_years, ingest_one_day
+from app.services.massive_ingestion import backfill_two_years, ingest_one_day, nyse_calendar_today
 from app.services.sp500_constituents import load_sp500_constituents
 
 # Same ETF proxies the market overview uses for the major indexes.
@@ -37,9 +37,11 @@ INDEX_ETFS = (
 _SAMPLE_SYMBOLS = ("AAPL", "MSFT", "SPY", "QQQ", "DIA", "IWM", "BRK.B", "BF.B")
 DEFAULT_STATUS_FILENAME = "massive-backfill-status.json"
 CLOSED_SESSIONS_FILENAME = "massive-backfill-closed-sessions.json"
-# 2025-01-09: the local grouped call stored no bars for all 507 symbols and
-# raised, which is the empty-payload shape. NYSE was closed that day. A rerun
-# records it as skipped and does not request it again.
+# 2025-01-09: the local grouped call stored no bars for all 507 symbols.
+# NYSE was closed that day, and the date is strictly before the latest
+# finished session, so a rerun records it as skipped and does not request it
+# again. An empty file for the latest finished session, or a newer date, is
+# not written here: those bars may not be published yet.
 OBSERVED_CLOSED_SESSIONS = (date(2025, 1, 9),)
 
 
@@ -182,6 +184,7 @@ def _compact(report: dict) -> dict:
         "sessions_attempted": report["sessions_attempted"],
         "sessions_with_data": report["sessions_with_data"],
         "sessions_skipped": report["sessions_skipped"],
+        "sessions_not_yet_available": report["sessions_not_yet_available"],
         "sessions_failed": report["sessions_failed"],
         "symbols_fully_covered": len(report["symbols_fully_covered"]),
         "symbols_with_gaps": len(gaps),
@@ -211,14 +214,23 @@ def main() -> None:
         print(f"symbols={len(symbols)} inserted_missing={added}", flush=True)
         if args.day:
             day = date.fromisoformat(args.day)
-            report = ingest_one_day(db, day, symbols, settings.massive_api_key)
-            if report.get("skip_reason") == "market_closed":
+            as_of = nyse_calendar_today()
+            report = ingest_one_day(db, day, symbols, settings.massive_api_key, today=as_of)
+            reason = report.get("skip_reason")
+            if reason in {"market_closed", "not_yet_available"}:
                 db.rollback()
-                closed = load_closed_sessions()
-                closed.add(day)
-                save_closed_sessions(closed)
-                print(json.dumps({"day": day.isoformat(), "skipped": True, "skip_reason": "market_closed"}), flush=True)
-                _write_status(status_path, {"state": "done", "mode": "day", "skipped": True, "skip_reason": "market_closed", "day": day.isoformat()})
+                if reason == "market_closed":
+                    closed = load_closed_sessions()
+                    closed.add(day)
+                    save_closed_sessions(closed)
+                print(json.dumps({"day": day.isoformat(), "skipped": True, "skip_reason": reason}), flush=True)
+                _write_status(status_path, {
+                    "state": "done",
+                    "mode": "day",
+                    "skipped": True,
+                    "skip_reason": reason,
+                    "day": day.isoformat(),
+                })
                 return
             db.commit()
             summary = _quality(db, day, symbols, report)
@@ -228,7 +240,7 @@ def main() -> None:
                 raise SystemExit(1)
             return
 
-        end = date.today()
+        end = nyse_calendar_today()
         sessions = expected_session_dates(two_calendar_years_before(end), end)
         state = {"done": 0, "failed": 0, "skipped": 0}
         closed = load_closed_sessions()
@@ -256,7 +268,7 @@ def main() -> None:
             print(
                 f"{report['day']} valid={report['written_valid']} flagged={report['written_flagged']} "
                 f"missing={len(report['missing'])} skipped={bool(report.get('skipped'))} "
-                f"failed={bool(report.get('error'))}",
+                f"reason={report.get('skip_reason') or ''} failed={bool(report.get('error'))}",
                 flush=True,
             )
 

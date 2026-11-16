@@ -7,18 +7,24 @@ Nothing here is registered with the scheduler.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.models.market_bar_daily import MarketBarDaily
-from app.services.exchange_calendar import expected_session_dates
+from app.services.exchange_calendar import expected_session_dates, is_nyse_trading_day
 from app.services.market_history import two_calendar_years_before
 from app.services.market_providers import ProviderUnavailable, fetch_massive_grouped
 from app.services.market_quality import Bar, check_bars
 from app.services.massive_client import http_get_massive
+
+_NYSE = ZoneInfo("America/New_York")
+# Skips that stored nothing. already_stored is not in this set: those sessions
+# have bars, so coverage still counts them.
+_NO_DATA_SKIPS = frozenset({"market_closed", "not_yet_available"})
 
 # Mirrors ck_market_bars_daily_prices: strictly below one trillion, strictly above zero.
 _PRICE_CEILING = Decimal("1000000000000")
@@ -26,20 +32,60 @@ _PROVIDER = "massive"
 _ADJUSTMENT = "raw"
 
 
-def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive) -> dict:
-    """Fetch one grouped day, quality-check the requested symbols, and upsert them."""
+def nyse_calendar_today() -> date:
+    """Today's date in New York, the clock an NYSE session uses."""
+    return datetime.now(_NYSE).date()
+
+
+def latest_finished_nyse_session(today: date) -> date:
+    """Last standard NYSE session strictly before ``today``.
+
+    Grouped bars for a session are not treated as published on that session's
+    own date. This walk uses the fixed holiday calendar, so it does not know
+    about a one-off closure.
+    """
+    cursor = today - timedelta(days=1)
+    for _ in range(14):
+        if is_nyse_trading_day(cursor):
+            return cursor
+        cursor -= timedelta(days=1)
+    raise ValueError(f"no NYSE session before {today.isoformat()}")
+
+
+def empty_session_skip_reason(day: date, today: date) -> str:
+    """Why an empty grouped payload should be skipped.
+
+    ``market_closed`` is only for a session strictly before the latest finished
+    NYSE session. That date can be remembered. The latest finished session, and
+    anything newer, may simply be unpublished, so the reason is
+    ``not_yet_available`` and the caller must request it again.
+    """
+    if day < latest_finished_nyse_session(today):
+        return "market_closed"
+    return "not_yet_available"
+
+
+def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive, *, today: date | None = None) -> dict:
+    """Fetch one grouped day, quality-check the requested symbols, and upsert them.
+
+    ``today`` is the New York calendar date used to decide whether an empty
+    payload is a closed session or a file that is not published yet. It defaults
+    to the current New York date.
+    """
     fetched = fetch_massive_grouped(day, api_key, http_get)
     requested = [str(symbol).upper() for symbol in symbols]
     if not fetched:
+        as_of = nyse_calendar_today() if today is None else today
+        reason = empty_session_skip_reason(day, as_of)
         return {
             "day": day.isoformat(),
             "requested": len(symbols),
             "written_valid": 0,
             "written_flagged": 0,
             "rejected": [],
-            "missing": [],
+            "missing": [] if reason == "market_closed" else list(dict.fromkeys(requested)),
             "skipped": True,
-            "skip_reason": "market_closed",
+            "skip_reason": reason,
         }
     wanted = set(requested)
     by_symbol: dict[str, Bar] = {}
@@ -104,14 +150,16 @@ def backfill_two_years(
     The real client paces at the free-plan limit. A fake ``http_get`` does not.
     A session that already has stored Massive raw bars for the requested
     symbols is skipped, so a rerun resumes. One finished day can hold fewer
-    symbols than a later day when a ticker was not listed yet. A grouped
-    response with no bars is a closed session: it is skipped, not failed, and
-    the date is added to ``closed_dates`` when that set is passed in so a
-    later run does not request it again. ``commit_each`` commits after every
-    session; use it for a long local run so a crash keeps the days already
-    stored.
+    symbols than a later day when a ticker was not listed yet. An empty grouped
+    response is a closed session only when that date is strictly before the
+    latest finished NYSE session. It is then added to ``closed_dates`` when
+    that set is passed in. An empty response for the latest finished session,
+    or any newer date, is ``not_yet_available``: it is a gap for this run and
+    is not remembered, so the next run requests it again. ``commit_each``
+    commits after every session; use it for a long local run so a crash keeps
+    the days already stored.
     """
-    end = date.today() if today is None else today
+    end = nyse_calendar_today() if today is None else today
     sessions = expected_session_dates(two_calendar_years_before(end), end)
     requested = [str(symbol).upper() for symbol in symbols]
     stored = _stored_symbols_by_day(db, requested, sessions)
@@ -125,7 +173,9 @@ def backfill_two_years(
             report = _skipped_day(session_day, symbols, stored.get(session_day, set()))
         else:
             try:
-                report = ingest_one_day(db, session_day, symbols, api_key, http_get=http_get)
+                report = ingest_one_day(
+                    db, session_day, symbols, api_key, http_get=http_get, today=end,
+                )
             except (ProviderUnavailable, ValueError) as exc:
                 # A malformed/incomplete payload (parse_massive_grouped) raises
                 # ValueError, not ProviderUnavailable. Either way, one bad day
@@ -227,13 +277,17 @@ def _coverage(symbols, per_day: list[dict]) -> dict:
         "sessions_attempted": len(per_day),
         "sessions_with_data": sum(
             1 for report in per_day
-            if (
-                (report.get("skipped") and report.get("skip_reason") != "market_closed")
+            if report.get("skip_reason") not in _NO_DATA_SKIPS
+            and (
+                report.get("skipped")
                 or report["written_valid"]
                 or report["written_flagged"]
             )
         ),
         "sessions_skipped": sum(1 for report in per_day if report.get("skipped")),
+        "sessions_not_yet_available": sum(
+            1 for report in per_day if report.get("skip_reason") == "not_yet_available"
+        ),
         "sessions_failed": sum(1 for report in per_day if "error" in report),
         "symbols_fully_covered": [symbol for symbol in unique if not gaps[symbol]],
         "symbols_with_gaps": {symbol: days for symbol, days in gaps.items() if days},
