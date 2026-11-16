@@ -90,9 +90,11 @@ def backfill_two_years(
     """Ingest every NYSE session from two calendar years before ``today`` through ``today``.
 
     The real client paces at the free-plan limit. A fake ``http_get`` does not.
-    Session dates that already have a finished Massive raw set are skipped, so
-    a rerun resumes. ``commit_each`` commits after every session; use it for a
-    long local run so a crash keeps the days already stored.
+    A session that already has stored Massive raw bars for the requested
+    symbols is skipped, so a rerun resumes. One finished day can hold fewer
+    symbols than a later day when a ticker was not listed yet. ``commit_each``
+    commits after every session; use it for a long local run so a crash keeps
+    the days already stored.
     """
     end = date.today() if today is None else today
     sessions = expected_session_dates(two_calendar_years_before(end), end)
@@ -154,18 +156,14 @@ def _stored_symbols_by_day(db: Session, symbols: list[str], sessions: list[date]
 
 
 def _dates_to_skip(stored: dict[date, set[str]]) -> set[date]:
-    """Dates whose stored set matches the fullest day already in the window.
+    """Dates that already have stored Massive rows for the requested symbols.
 
-    A live run commits only after a day's grouped response is fully written, so
-    the fullest day is a finished day. Matching it means the date is done.
-    A thinner day is fetched again. Days with no rows are not skipped.
+    A live run commits a session only after that day's grouped write finishes,
+    so any stored rows mean the session is done. A later day can hold more
+    symbols when a ticker listed or was renamed. That does not make the older
+    day incomplete. Days with no stored rows are fetched.
     """
-    if not stored:
-        return set()
-    fullest = max(len(found) for found in stored.values())
-    if fullest <= 0:
-        return set()
-    return {day for day, found in stored.items() if len(found) >= fullest}
+    return {day for day, found in stored.items() if found}
 
 
 def _skipped_day(day: date, symbols, stored_symbols: set[str]) -> dict:

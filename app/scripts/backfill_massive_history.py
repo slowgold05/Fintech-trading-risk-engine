@@ -2,7 +2,7 @@
 
 One grouped request covers every US stock for a session. The client paces at
 the free-plan limit. Each session is committed on its own, and a later run
-skips dates that already match the fullest stored day.
+skips dates that already have stored bars for the requested symbols.
 
 Reads MASSIVE_API_KEY and DATABASE_URL from the environment. Prints counts
 and a few sample bars. Does not print the key.

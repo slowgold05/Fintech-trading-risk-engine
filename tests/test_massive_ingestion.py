@@ -253,14 +253,14 @@ def test_backfill_two_years_survives_a_malformed_payload_on_one_day(db_session):
     assert len(stored_days) == len(expected_days) - 1
 
 
-def test_backfill_skips_a_finished_day_and_refetches_a_thinner_one(db_session, monkeypatch):
+def test_backfill_skips_a_finished_day_that_has_fewer_symbols_than_a_later_one(db_session, monkeypatch):
     days = [date(2026, 11, 10), date(2026, 11, 12), date(2026, 11, 13)]
     monkeypatch.setattr(massive_ingestion, "expected_session_dates", lambda start, end: days)
     symbols = ["AAPL", "MSFT"]
     _seed_symbols(db_session, symbols)
     _insert_bar(db_session, "AAPL", days[0])
-    _insert_bar(db_session, "MSFT", days[0])
     _insert_bar(db_session, "AAPL", days[1])
+    _insert_bar(db_session, "MSFT", days[1])
     calls = []
 
     def http_get(kind, arg, key):
@@ -278,15 +278,18 @@ def test_backfill_skips_a_finished_day_and_refetches_a_thinner_one(db_session, m
         today=days[-1],
     )
 
-    assert calls == [days[1], days[2]]
+    assert calls == [days[2]]
     assert report["sessions_attempted"] == 3
-    assert report["sessions_skipped"] == 1
+    assert report["sessions_skipped"] == 2
     assert report["sessions_with_data"] == 3
     assert report["sessions_failed"] == 0
-    skipped = next(item for item in report["per_day"] if item["day"] == days[0].isoformat())
-    assert skipped["skipped"] is True
-    assert skipped["missing"] == []
-    assert db_session.query(MarketBarDaily).count() == 6
+    older = next(item for item in report["per_day"] if item["day"] == days[0].isoformat())
+    newer = next(item for item in report["per_day"] if item["day"] == days[1].isoformat())
+    assert older["skipped"] is True
+    assert older["missing"] == ["MSFT"]
+    assert newer["skipped"] is True
+    assert newer["missing"] == []
+    assert db_session.query(MarketBarDaily).count() == 5
 
 
 def _insert_bar(db, symbol, day) -> None:
