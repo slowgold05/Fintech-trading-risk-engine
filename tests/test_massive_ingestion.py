@@ -348,3 +348,69 @@ def test_backfill_status_filename_is_not_tied_to_a_worker_session():
     from app.scripts.backfill_massive_history import DEFAULT_STATUS_FILENAME
 
     assert DEFAULT_STATUS_FILENAME == "massive-backfill-status.json"
+
+
+def test_empty_grouped_day_is_skipped_and_not_requested_again(db_session, monkeypatch):
+    days = [date(2026, 11, 12), date(2026, 11, 13)]
+    monkeypatch.setattr(massive_ingestion, "expected_session_dates", lambda start, end: days)
+    _seed_symbols(db_session, ["AAPL"])
+    calls = []
+
+    def http_get(kind, arg, key):
+        calls.append(arg)
+        if arg == days[0]:
+            return {"status": "OK", "resultsCount": 0, "queryCount": 0}
+        return _grouped([_ticker("AAPL", 10, open_=10, high=11, low=9)])
+
+    closed: set[date] = set()
+    report = backfill_two_years(
+        db_session, ["AAPL"], "test-key", http_get=http_get, today=days[-1], closed_dates=closed,
+    )
+
+    assert calls == days
+    assert closed == {days[0]}
+    assert report["sessions_failed"] == 0
+    assert report["sessions_skipped"] == 1
+    assert report["symbols_with_gaps"] == {}
+    closed_day = next(item for item in report["per_day"] if item["day"] == days[0].isoformat())
+    assert closed_day["skipped"] is True
+    assert closed_day["skip_reason"] == "market_closed"
+    assert "error" not in closed_day
+
+    calls.clear()
+    again = backfill_two_years(
+        db_session, ["AAPL"], "test-key", http_get=http_get, today=days[-1], closed_dates=closed,
+    )
+    assert days[0] not in calls
+    assert again["sessions_failed"] == 0
+    assert again["sessions_skipped"] >= 1
+
+
+def test_observed_carter_closure_is_skipped_without_a_request(db_session, monkeypatch):
+    from app.scripts.backfill_massive_history import OBSERVED_CLOSED_SESSIONS
+
+    closed_day = date(2025, 1, 9)
+    open_day = date(2025, 1, 10)
+    assert closed_day in OBSERVED_CLOSED_SESSIONS
+    monkeypatch.setattr(massive_ingestion, "expected_session_dates", lambda start, end: [closed_day, open_day])
+    _seed_symbols(db_session, ["AAPL"])
+    calls = []
+
+    def http_get(kind, arg, key):
+        calls.append(arg)
+        return _grouped([_ticker("AAPL", 10, open_=10, high=11, low=9)])
+
+    report = backfill_two_years(
+        db_session,
+        ["AAPL"],
+        "test-key",
+        http_get=http_get,
+        today=open_day,
+        closed_dates=set(OBSERVED_CLOSED_SESSIONS),
+    )
+
+    assert calls == [open_day]
+    assert report["sessions_failed"] == 0
+    skipped = next(item for item in report["per_day"] if item["day"] == closed_day.isoformat())
+    assert skipped["skip_reason"] == "market_closed"
+    assert skipped["missing"] == []

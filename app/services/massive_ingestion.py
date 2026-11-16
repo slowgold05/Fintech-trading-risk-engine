@@ -30,6 +30,17 @@ def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive) -> dict
     """Fetch one grouped day, quality-check the requested symbols, and upsert them."""
     fetched = fetch_massive_grouped(day, api_key, http_get)
     requested = [str(symbol).upper() for symbol in symbols]
+    if not fetched:
+        return {
+            "day": day.isoformat(),
+            "requested": len(symbols),
+            "written_valid": 0,
+            "written_flagged": 0,
+            "rejected": [],
+            "missing": [],
+            "skipped": True,
+            "skip_reason": "market_closed",
+        }
     wanted = set(requested)
     by_symbol: dict[str, Bar] = {}
     for bar in fetched:
@@ -86,24 +97,31 @@ def backfill_two_years(
     today=None,
     commit_each: bool = False,
     on_day=None,
+    closed_dates: set[date] | None = None,
 ) -> dict:
     """Ingest every NYSE session from two calendar years before ``today`` through ``today``.
 
     The real client paces at the free-plan limit. A fake ``http_get`` does not.
     A session that already has stored Massive raw bars for the requested
     symbols is skipped, so a rerun resumes. One finished day can hold fewer
-    symbols than a later day when a ticker was not listed yet. ``commit_each``
-    commits after every session; use it for a long local run so a crash keeps
-    the days already stored.
+    symbols than a later day when a ticker was not listed yet. A grouped
+    response with no bars is a closed session: it is skipped, not failed, and
+    the date is added to ``closed_dates`` when that set is passed in so a
+    later run does not request it again. ``commit_each`` commits after every
+    session; use it for a long local run so a crash keeps the days already
+    stored.
     """
     end = date.today() if today is None else today
     sessions = expected_session_dates(two_calendar_years_before(end), end)
     requested = [str(symbol).upper() for symbol in symbols]
     stored = _stored_symbols_by_day(db, requested, sessions)
     skip = _dates_to_skip(stored)
+    remembered = closed_dates if closed_dates is not None else set()
     per_day = []
     for session_day in sessions:
-        if session_day in skip:
+        if session_day in remembered:
+            report = _skipped_day(session_day, symbols, set(), reason="market_closed")
+        elif session_day in skip:
             report = _skipped_day(session_day, symbols, stored.get(session_day, set()))
         else:
             try:
@@ -124,6 +142,9 @@ def backfill_two_years(
                     "missing": list(dict.fromkeys(requested)),
                     "error": str(exc),
                 }
+            else:
+                if report.get("skip_reason") == "market_closed":
+                    remembered.add(session_day)
         per_day.append(report)
         if on_day is not None:
             on_day(report)
@@ -166,9 +187,12 @@ def _dates_to_skip(stored: dict[date, set[str]]) -> set[date]:
     return {day for day, found in stored.items() if found}
 
 
-def _skipped_day(day: date, symbols, stored_symbols: set[str]) -> dict:
+def _skipped_day(day: date, symbols, stored_symbols: set[str], *, reason: str = "already_stored") -> dict:
     requested = list(dict.fromkeys(str(symbol).upper() for symbol in symbols))
-    missing = [symbol for symbol in requested if symbol not in stored_symbols]
+    if reason == "market_closed":
+        missing: list[str] = []
+    else:
+        missing = [symbol for symbol in requested if symbol not in stored_symbols]
     return {
         "day": day.isoformat(),
         "requested": len(symbols),
@@ -177,6 +201,7 @@ def _skipped_day(day: date, symbols, stored_symbols: set[str]) -> dict:
         "rejected": [],
         "missing": missing,
         "skipped": True,
+        "skip_reason": reason,
     }
 
 
@@ -202,7 +227,11 @@ def _coverage(symbols, per_day: list[dict]) -> dict:
         "sessions_attempted": len(per_day),
         "sessions_with_data": sum(
             1 for report in per_day
-            if report.get("skipped") or report["written_valid"] or report["written_flagged"]
+            if (
+                (report.get("skipped") and report.get("skip_reason") != "market_closed")
+                or report["written_valid"]
+                or report["written_flagged"]
+            )
         ),
         "sessions_skipped": sum(1 for report in per_day if report.get("skipped")),
         "sessions_failed": sum(1 for report in per_day if "error" in report),
