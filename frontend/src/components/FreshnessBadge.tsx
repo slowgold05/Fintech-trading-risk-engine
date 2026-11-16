@@ -66,6 +66,7 @@ export function FreshnessBadge({
     `Status: ${status}`,
     age ? `Age: ${age}` : null,
     `Source: ${formatSource(source)}`,
+    source === "massive" ? "End-of-day previous close, not real-time." : null,
     asOf ? `As of: ${asOf}` : null,
   ]
     .filter(Boolean)

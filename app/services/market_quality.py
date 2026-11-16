@@ -26,6 +26,19 @@ class Bar:
     fetched_at: datetime
 
 
+# Mirrors ck_market_bars_daily_prices: strictly below one trillion, strictly above zero.
+_PRICE_CEILING = Decimal("1000000000000")
+
+
+def fails_price_checks(bar: Bar) -> bool:
+    for price in (bar.open, bar.high, bar.low, bar.close):
+        if (not price.is_finite()) or price <= 0 or price >= _PRICE_CEILING:
+            return True
+    if not (bar.low <= bar.open <= bar.high and bar.low <= bar.close <= bar.high):
+        return True
+    return bar.volume < 0
+
+
 def batch_checksum(bars: list[Bar]) -> str:
     payload = [
         {
