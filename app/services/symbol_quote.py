@@ -68,6 +68,26 @@ def _float_or_none(value: object) -> float | None:
     return number
 
 
+def detail_available_symbols(db: Session, symbols) -> frozenset[str]:
+    """Return the given symbols that `read_symbol_quote` can serve.
+
+    Responses that link to the detail page use this so a link never leads to a 404:
+    the symbol must be in the supported set and have a symbol row, the same two
+    checks the quote read makes.
+    """
+    candidates = {
+        symbol.upper()
+        for symbol in symbols
+        if isinstance(symbol, str) and symbol.upper() in SUPPORTED_DETAIL_SYMBOLS
+    }
+    if not candidates:
+        return frozenset()
+    rows = db.execute(
+        select(MarketSymbol.symbol).where(MarketSymbol.symbol.in_(candidates))
+    )
+    return frozenset(row.symbol for row in rows)
+
+
 def read_symbol_quote(db: Session, symbol: str) -> dict:
     normalized = _normalize(symbol)
     if normalized not in SUPPORTED_DETAIL_SYMBOLS:

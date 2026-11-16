@@ -158,3 +158,72 @@ def test_padded_symbol_is_rejected(db_session):
         read_symbol_quote(db_session, " AAPL")
 
     assert raised.value.status_code == 422
+
+
+def _cached(db, symbol):
+    db.add(MarketQuoteCache(
+        symbol=symbol,
+        price="10.000000",
+        change_amount="0.100000",
+        change_percent="1.0000",
+        volume=1000,
+        source="massive",
+        quote_at=datetime(2026, 11, 13, 21, 0, 0),
+        fetched_at=datetime(2026, 11, 13, 21, 5, 0),
+    ))
+
+
+def _quote_is_readable(client, symbol):
+    return client.get(f"/market/symbols/{symbol}/quote").status_code == 200
+
+
+def test_heatmap_movers_and_research_flag_only_symbols_the_quote_endpoint_serves(
+    client, db_session, monkeypatch,
+):
+    """AAPL is supported and stored. OUTX is stored but outside the supported set.
+    MSFT is in the supported set but has no symbol row. Only AAPL has a detail page."""
+    _symbol(db_session, "AAPL", name="Apple Inc.", sector="Technology")
+    _symbol(db_session, "OUTX", name="Outside Fixture", sector="Technology")
+    _cached(db_session, "AAPL")
+    _cached(db_session, "OUTX")
+    db_session.commit()
+    expected = {"AAPL": True, "OUTX": False, "MSFT": False}
+    assert {symbol: _quote_is_readable(client, symbol) for symbol in expected} == expected
+
+    heatmap = client.get("/market/heatmap").json()["items"]
+    assert {item["symbol"]: item["detail_available"] for item in heatmap} == {
+        "AAPL": True,
+        "OUTX": False,
+    }
+
+    monkeypatch.setattr("app.routers.market.get_top_gainers_losers", lambda: {
+        "top_gainers": [{"ticker": "AAPL", "price": "10"}, {"ticker": "OUTX", "price": "10"}],
+        "top_losers": [{"ticker": "MSFT", "price": "10"}],
+        "most_actively_traded": [{"ticker": "OUTX", "price": "10"}, {"ticker": "AAPL", "price": "10"}],
+    })
+    trending = client.get("/market/trending").json()
+    movers = trending["top_gainers"] + trending["top_losers"] + trending["most_active"]
+    assert len(movers) == 5
+    for mover in movers:
+        assert mover["detail_available"] is expected[mover["symbol"]]
+
+    monkeypatch.setattr("app.core.config.settings.massive_api_key", "")
+    monkeypatch.setattr("app.routers.market.get_company_overview", lambda _symbol: {"Name": "Fixture"})
+    monkeypatch.setattr("app.routers.market.get_sec_company_fundamentals", lambda *_args: {})
+    monkeypatch.setattr("app.routers.market.get_stock_quote", lambda _symbol: {"price": 10, "change_percent": 0})
+    for symbol, readable in expected.items():
+        body = client.get(f"/market/research/{symbol}").json()
+        assert body["symbol"] == symbol
+        assert body["detail_available"] is readable
+
+
+def test_movers_stay_unlinked_when_the_provider_fails(client, monkeypatch):
+    def unavailable():
+        raise ValueError("Fixture has no movers")
+
+    monkeypatch.setattr("app.routers.market.get_top_gainers_losers", unavailable)
+
+    body = client.get("/market/trending").json()
+
+    assert body["top_gainers"] == [] and body["top_losers"] == [] and body["most_active"] == []
+    assert body["errors"] == [{"detail": "Fixture has no movers"}]

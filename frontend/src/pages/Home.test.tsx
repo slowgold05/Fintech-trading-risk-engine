@@ -146,12 +146,59 @@ describe("public market data truth", () => {
     expect(screen.queryByText("XLF")).not.toBeInTheDocument();
     const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
     expect(within(heatmap).getByText("ONLY")).toBeInTheDocument();
-    expect(within(heatmap).getByRole("link", { name: /ONLY/ })).toHaveAttribute("href", "/market/ONLY");
+    expect(within(heatmap).queryByRole("link", { name: /ONLY/ })).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("AAPL")).not.toBeInTheDocument();
     expect(within(heatmap).getByText("+0.00%")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "MOVE" })).toHaveAttribute("href", "/market/MOVE");
+    expect(screen.getByText("MOVE")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "MOVE" })).not.toBeInTheDocument();
     expect(screen.getByText(/-0.50%/)).toBeInTheDocument();
     expect(screen.queryByText(/\+0.50%/)).not.toBeInTheDocument();
+  });
+
+  it("links heatmap tiles, movers, and research only to symbols the detail page can read", async () => {
+    const tile = { company: "Fixture", sector: "Technology", price: 10, change_percent: 1, volume: 100, size: "large",
+      refresh_tier: "daily", data_status: "delayed", source: "fixture", age_seconds: 60, as_of: "2026-11-04T00:00:00Z" };
+    api.fetchMarketHeatmap.mockResolvedValue({
+      items: [
+        { ...tile, symbol: "AAPL", detail_available: true },
+        { ...tile, symbol: "OUTX", detail_available: false },
+        { ...tile, symbol: "OLDAPI" },
+      ],
+    });
+    const mover = { price: 12.3, change_amount: 1, change_percent: 0.5, volume: 1000 };
+    api.fetchMarketTrending.mockResolvedValue({
+      most_active: [
+        { ...mover, symbol: "MSFT", detail_available: true },
+        { ...mover, symbol: "PENNY", detail_available: false },
+      ],
+    });
+    api.fetchMarketResearch.mockImplementation(async (symbol: string) => ({
+      symbol, detail_available: symbol === "MSFT", market_cap: 1000000, errors: [],
+    }));
+    open();
+
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".dashboard-card") as HTMLElement;
+    expect(await within(heatmap).findByRole("link", { name: /AAPL/ })).toHaveAttribute("href", "/market/AAPL");
+    for (const symbol of ["OUTX", "OLDAPI"]) {
+      const plain = within(heatmap).getByText(symbol).closest("[title]") as HTMLElement;
+      expect(plain.tagName).toBe("DIV");
+      expect(plain).toHaveAttribute("title", expect.stringContaining("Fixture"));
+    }
+    expect(within(heatmap).getAllByRole("link")).toHaveLength(1);
+
+    expect(screen.getByRole("link", { name: "MSFT" })).toHaveAttribute("href", "/market/MSFT");
+    expect(screen.getByText("PENNY")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "PENNY" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "PENNY" } });
+    fireEvent.click(screen.getByRole("button", { name: "Research" }));
+    await waitFor(() => expect(api.fetchMarketResearch).toHaveBeenCalledWith("PENNY"));
+    await waitFor(() => expect(screen.getAllByText("PENNY").length).toBeGreaterThan(1));
+    expect(screen.queryByRole("link", { name: "View PENNY" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "MSFT" } });
+    fireEvent.click(screen.getByRole("button", { name: "Research" }));
+    expect(await screen.findByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
   });
 
   it("keeps stale heatmap changes from looking current", async () => {
@@ -164,12 +211,12 @@ describe("public market data truth", () => {
   });
 
   it("does not replace a failed requested company with NVIDIA reference data", async () => {
-    api.fetchMarketResearch.mockImplementation(async (symbol: string) => ({ symbol, market_cap: 1000000, errors: [], research_risk_label: "Medium", research_risk_score: 50 }));
+    api.fetchMarketResearch.mockImplementation(async (symbol: string) => ({ symbol, detail_available: true, market_cap: 1000000, errors: [], research_risk_label: "Medium", research_risk_score: 50 }));
     open();
     fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "MSFT" } });
     fireEvent.click(screen.getByRole("button", { name: "Research" }));
     expect(await screen.findByText("MSFT")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
+    expect(await screen.findByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
     expect(screen.queryByText("NVDA")).not.toBeInTheDocument();
     expect(screen.getByText("Research assessment unavailable")).toBeInTheDocument();
     expect(screen.queryByText("Medium / 50")).not.toBeInTheDocument();

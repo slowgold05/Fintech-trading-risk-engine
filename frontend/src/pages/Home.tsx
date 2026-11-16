@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, List, TrendDown, TrendUp, X } from "@phosphor-icons/react";
@@ -280,6 +280,37 @@ function getStockTileTone(changePercent: number) {
   }
 
   return "bg-slate-500 text-white border-slate-300/20";
+}
+
+/**
+ * A heatmap tile links to the detail page only when the API says that page can read the
+ * symbol. The heatmap holds any cached stock, and the detail quote covers a smaller set.
+ */
+function HeatmapTile({
+  to,
+  ariaLabel,
+  className,
+  title,
+  children,
+}: {
+  to: string | null;
+  ariaLabel: string;
+  className: string;
+  title: string;
+  children: ReactNode;
+}) {
+  if (to === null) {
+    return (
+      <div className={className} title={title}>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link aria-label={ariaLabel} className={className} title={title} to={to}>
+      {children}
+    </Link>
+  );
 }
 
 function groupStockHeatmap(stocks: MarketHeatmapItemResponse[]) {
@@ -794,12 +825,17 @@ export function Home() {
                   {movers.map((mover) => (
                     <tr key={mover.symbol}>
                       <td className="font-mono font-semibold text-slate-100">
-                        <Link
-                          className="inline-flex min-h-11 items-center rounded-xl px-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                          to={`/market/${encodeURIComponent(mover.symbol)}`}
-                        >
-                          {mover.symbol}
-                        </Link>
+                        {mover.detail_available === true ? (
+                          <Link
+                            className="inline-flex min-h-11 items-center rounded-xl px-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                            to={`/market/${encodeURIComponent(mover.symbol)}`}
+                          >
+                            {mover.symbol}
+                          </Link>
+                        ) : (
+                          // Provider movers can be symbols the detail page cannot read.
+                          mover.symbol
+                        )}
                       </td>
                       <td className="text-right font-mono">
                         {mover.price != null && mover.price > 0 ? formatCurrency(mover.price) : "Unavailable"}
@@ -870,12 +906,14 @@ export function Home() {
                     <div className="font-mono text-lg font-semibold text-slate-50">
                       {research.symbol}
                     </div>
-                    <Link
-                      className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                      to={`/market/${encodeURIComponent(research.symbol)}`}
-                    >
-                      View {research.symbol}
-                    </Link>
+                    {research.detail_available === true ? (
+                      <Link
+                        className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                        to={`/market/${encodeURIComponent(research.symbol)}`}
+                      >
+                        View {research.symbol}
+                      </Link>
+                    ) : null}
                     <div className="mt-1 text-sm text-slate-300">
                       {research.name ?? "Company overview unavailable"}
                     </div>
@@ -1142,8 +1180,8 @@ export function Home() {
                     </div>
                     <div className="grid grid-flow-dense auto-rows-[minmax(1.75rem,auto)] grid-cols-12 gap-1">
                       {stocks.map((stock) => (
-                        <Link
-                          aria-label={`${stock.symbol}, ${stock.company}, ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}`}
+                        <HeatmapTile
+                          ariaLabel={`${stock.symbol}, ${stock.company}, ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}`}
                           className={[
                             "flex flex-col justify-center overflow-hidden rounded border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                             stock.data_status === "stale" ? "border-slate-700 bg-slate-900 text-slate-400" : getStockTileTone(stock.change_percent),
@@ -1151,7 +1189,7 @@ export function Home() {
                           ].join(" ")}
                           key={stock.symbol}
                           title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}${stock.price_basis === "end_of_day_previous_close" ? " / end-of-day previous close, not real-time" : ""}`}
-                          to={`/market/${encodeURIComponent(stock.symbol)}`}
+                          to={stock.detail_available === true ? `/market/${encodeURIComponent(stock.symbol)}` : null}
                         >
                           <div
                             className={[
@@ -1180,7 +1218,7 @@ export function Home() {
                               />
                             </div>
                           )}
-                        </Link>
+                        </HeatmapTile>
                       ))}
                     </div>
                   </section>
