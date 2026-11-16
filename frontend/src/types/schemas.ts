@@ -404,6 +404,7 @@ export interface MarketTrendResponse {
   value: number;
   change: number;
   change_percent: number;
+  price_basis?: "end_of_day_previous_close" | null;
 }
 
 export interface MarketSectorResponse {
@@ -412,16 +413,36 @@ export interface MarketSectorResponse {
   change_percent: number;
   weight: "large" | "medium" | "small";
   leaders: string[];
+  price_basis?: "end_of_day_previous_close" | null;
 }
 
 export interface MarketOverviewResponse {
   as_of: string | null;
+  data_notice?: string | null;
   trends: MarketTrendResponse[];
   sectors: MarketSectorResponse[];
   errors: Array<{
     symbol: string;
     detail: string | null;
   }>;
+}
+
+export interface MarketUniverseItem {
+  symbol: string;
+  company_name: string;
+  exchange: string;
+  sector: string | null;
+  is_etf: boolean;
+  refresh_tier: string;
+  in_featured_universe: boolean;
+  universe_label: string | null;
+}
+
+export interface MarketUniverseResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: MarketUniverseItem[];
 }
 
 export type MarketDataStatus = "live-ish" | "delayed" | "cached" | "stale";
@@ -440,6 +461,7 @@ export interface MarketHeatmapItemResponse {
   age_seconds: number | null;
   source: string;
   as_of: string | null;
+  price_basis?: "end_of_day_previous_close" | null;
 }
 
 export interface MarketHeatmapResponse {

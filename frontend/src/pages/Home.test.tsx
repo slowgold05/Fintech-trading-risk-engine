@@ -240,17 +240,44 @@ describe("public market data truth", () => {
     );
     expect(menuButton).not.toHaveClass("sm:hidden");
     expect(menu).not.toHaveClass("sm:hidden");
+    expect(menuButton.compareDocumentPosition(screen.getByText("getrichyesterday")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(menuButton.compareDocumentPosition(document.getElementById("trending-movers") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(menu).getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
-    expect(within(menu).getByRole("button", { name: "Close menu" })).toHaveClass("min-h-11");
+    const closeMenu = within(menu).getByRole("button", { name: "Close menu" });
+    expect(closeMenu).toHaveClass("min-h-11");
+    expect(closeMenu).toHaveFocus();
+    const overlay = menu.parentElement as HTMLElement;
+    expect(overlay.className).toContain("fixed");
+    expect(overlay.className).toContain("inset-0");
+    expect(menu.className).toContain("inset-y-0");
+    expect(menu.className).toContain("left-0");
+    expect(menu.className).toContain("w-[min(18rem,calc(100%-3rem))]");
+    expect(menu.className).toContain("motion-safe:animate-[drawer-in_200ms_ease-out_both]");
+    expect(document.body.style.overflow).toBe("hidden");
+
+    const loginLink = within(menu).getByRole("link", { name: "Log in" });
+    loginLink.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(closeMenu).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(loginLink).toHaveFocus();
 
     fireEvent.click(menuButton);
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
 
     fireEvent.click(menuButton);
+    const reopened = screen.getByRole("navigation", { name: "Page sections" });
+    fireEvent.click(reopened.parentElement?.firstElementChild as HTMLElement);
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(menuButton).toHaveFocus();
+    expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+
+    fireEvent.click(menuButton);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(menuButton).toHaveFocus();
     expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
   });
 
@@ -487,6 +514,12 @@ describe("public market data truth", () => {
     const historyTitle = document.getElementById("daily-price-history-title");
     expect(historyTitle).not.toBeNull();
     const newsCard = document.getElementById("market-news")?.closest(".dashboard-card") as HTMLElement;
+    const newsBody = within(newsCard).getByRole("region", { name: "Market news" });
+    expect(newsBody.className).toContain("max-h-[max(24rem,calc(100vh-16rem))]");
+    expect(newsBody.className).toContain("overflow-y-auto");
+    expect(newsBody.className).toContain("focus:ring-2");
+    expect(newsBody).toHaveAttribute("tabindex", "0");
+    expect(newsBody).toHaveAttribute("aria-labelledby", "market-news");
     expect(newsCard.compareDocumentPosition(watchlist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(watchlist.compareDocumentPosition(historyTitle as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Open menu" })).toHaveLength(1);

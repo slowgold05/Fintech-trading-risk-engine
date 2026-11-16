@@ -2,15 +2,19 @@ from datetime import datetime, timezone
 from math import isfinite
 
 import requests
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import or_
+from fastapi import APIRouter, Depends, Header, Query
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security import decode_access_token
+from app.models.asset import Asset
+from app.models.holding import Holding
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
-from app.services.market_cache_service import get_cached_heatmap
+from app.models.user import User
+from app.services.market_cache_service import MASSIVE_EOD_NOTICE, get_cached_heatmap
 from app.services.market_news_service import get_market_news
 from app.services.price_service import (
     get_company_overview,
@@ -129,6 +133,7 @@ def market_overview(db: Session = Depends(get_db)):
     trends = []
     sectors = []
     errors = []
+    massive_quotes = False
     requested_symbols = [item["symbol"] for item in INDEX_SYMBOLS + SECTOR_SYMBOLS]
     cached_quotes = {
         quote.symbol: quote
@@ -146,14 +151,18 @@ def market_overview(db: Session = Depends(get_db)):
 
         if quote.quote_at is not None:
             latest = max(latest, quote.quote_at) if latest else quote.quote_at
-        trends.append({
+        trend = {
             "symbol": item["display_symbol"],
             "source_symbol": item["symbol"],
             "name": item["name"],
             "value": round(float(quote.price), 2),
             "change": round(float(quote.change_amount), 4),
             "change_percent": round(float(quote.change_percent), 4),
-        })
+        }
+        if quote.source == "massive":
+            massive_quotes = True
+            trend["price_basis"] = "end_of_day_previous_close"
+        trends.append(trend)
 
     for item in SECTOR_SYMBOLS:
         quote = cached_quotes.get(item["symbol"])
@@ -163,20 +172,27 @@ def market_overview(db: Session = Depends(get_db)):
 
         if quote.quote_at is not None:
             latest = max(latest, quote.quote_at) if latest else quote.quote_at
-        sectors.append({
+        sector = {
             "symbol": item["symbol"],
             "sector": item["sector"],
             "change_percent": round(float(quote.change_percent), 4),
             "weight": item["weight"],
             "leaders": item["leaders"],
-        })
+        }
+        if quote.source == "massive":
+            massive_quotes = True
+            sector["price_basis"] = "end_of_day_previous_close"
+        sectors.append(sector)
 
-    return {
+    payload = {
         "as_of": latest.replace(tzinfo=timezone.utc).isoformat() if latest else None,
         "trends": trends,
         "sectors": sectors,
         "errors": errors,
     }
+    if massive_quotes:
+        payload["data_notice"] = MASSIVE_EOD_NOTICE
+    return payload
 
 
 @router.get("/news")
@@ -214,42 +230,100 @@ def market_heatmap(
     return get_cached_heatmap(db, limit=limit)
 
 
+OUTSIDE_FEATURED_UNIVERSE_LABEL = "Outside S&P 500"
+
+
+def _featured_universe_tickers() -> set[str]:
+    tickers = {row["ticker"] for row in load_sp500_constituents()}
+    tickers.update(item["symbol"] for item in INDEX_SYMBOLS)
+    return tickers
+
+
+def _universe_viewer(db: Session, authorization: str | None) -> User | None:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    user_id = decode_access_token(token.strip())
+    if user_id is None:
+        return None
+    return db.query(User).filter(User.id == user_id).one_or_none()
+
+
+def _held_tickers(db: Session, user: User | None) -> set[str]:
+    if user is None:
+        return set()
+    rows = (
+        db.query(Asset.symbol)
+        .join(Holding, Holding.asset_id == Asset.id)
+        .filter(Holding.user_id == user.id, Holding.quantity > 0)
+        .all()
+    )
+    return {symbol for (symbol,) in rows}
+
+
+def _universe_item(item: MarketSymbol, featured: set[str]) -> dict:
+    in_featured = item.symbol in featured
+    return {
+        "symbol": item.symbol,
+        "company_name": item.company_name,
+        "exchange": item.exchange,
+        "sector": infer_sector(item.symbol, item.company_name, item.sector),
+        "is_etf": item.is_etf,
+        "refresh_tier": item.refresh_tier,
+        "in_featured_universe": in_featured,
+        "universe_label": None if in_featured else OUTSIDE_FEATURED_UNIVERSE_LABEL,
+    }
+
+
 @router.get("/universe")
 def market_universe(
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
     search: str | None = Query(default=None, max_length=50),
+    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    sp500_tickers = {row["ticker"] for row in load_sp500_constituents()}
+    featured = _featured_universe_tickers()
+    held = _held_tickers(db, _universe_viewer(db, authorization))
+    visible = featured | held
     query = db.query(MarketSymbol).filter(MarketSymbol.is_active.is_(True))
-    query = query.filter(MarketSymbol.symbol.in_(sp500_tickers))
-    if search:
-        pattern = f"%{search.strip()}%"
+    term = search.strip() if search else ""
+    if term:
+        pattern = f"%{term}%"
+        name_or_symbol = or_(
+            MarketSymbol.symbol.ilike(pattern),
+            MarketSymbol.company_name.ilike(pattern),
+        )
+        # A non-member is returned only for an exact ticker, or when this user holds it.
         query = query.filter(
             or_(
-                MarketSymbol.symbol.like(pattern),
-                MarketSymbol.company_name.like(pattern),
+                and_(MarketSymbol.symbol.in_(visible), name_or_symbol),
+                and_(
+                    func.upper(MarketSymbol.symbol) == term.upper(),
+                    MarketSymbol.symbol.notin_(featured),
+                ),
             )
         )
+    else:
+        query = query.filter(MarketSymbol.symbol.in_(visible))
 
     total = query.count()
-    rows = query.order_by(MarketSymbol.symbol).offset(offset).limit(limit).all()
+    # Held names sort first so one offset/limit ordering never repeats a row.
+    if held:
+        query = query.order_by(
+            case((MarketSymbol.symbol.in_(held), 0), else_=1),
+            MarketSymbol.symbol,
+        )
+    else:
+        query = query.order_by(MarketSymbol.symbol)
+    rows = query.offset(offset).limit(limit).all()
     return {
         "total": total,
         "limit": limit,
         "offset": offset,
-        "items": [
-            {
-                "symbol": item.symbol,
-                "company_name": item.company_name,
-                "exchange": item.exchange,
-                "sector": infer_sector(item.symbol, item.company_name, item.sector),
-                "is_etf": item.is_etf,
-                "refresh_tier": item.refresh_tier,
-            }
-            for item in rows
-        ],
+        "items": [_universe_item(item, featured) for item in rows],
     }
 
 

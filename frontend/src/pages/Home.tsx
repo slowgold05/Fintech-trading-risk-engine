@@ -14,6 +14,7 @@ import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
 import { IconBadge } from "../features/dashboard/components";
 import { DailyHistory } from "../components/DailyHistory";
+import { MarketSearch } from "../components/MarketSearch";
 import { Sparkline } from "../components/Sparkline";
 import { Watchlists } from "../components/Watchlists";
 import { FreshnessBadge } from "../components/FreshnessBadge";
@@ -444,7 +445,7 @@ export function Home() {
   const [pulseRange, setPulseRange] = useState<SparkRange>("1m");
   const [researchRange, setResearchRange] = useState<SparkRange>("1m");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const menuPanelRef = useRef<HTMLElement>(null);
+  const menuPanelRef = useRef<HTMLDivElement>(null);
   const closeMenuRef = useRef<HTMLButtonElement>(null);
   const marketQuery = useQuery({
     queryKey: ["market", "overview"],
@@ -519,14 +520,43 @@ export function Home() {
       return;
     }
 
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     closeMenuRef.current?.focus();
 
+    function focusableControls() {
+      const panel = menuPanelRef.current;
+      if (!panel) {
+        return [];
+      }
+      return Array.from(panel.querySelectorAll<HTMLElement>("a[href], button:not([disabled])"));
+    }
+
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
         return;
       }
-      setMenuOpen(false);
-      menuButtonRef.current?.focus();
+      if (event.key !== "Tab") {
+        return;
+      }
+      const controls = focusableControls();
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first || !last) {
+        return;
+      }
+      const active = document.activeElement;
+      const outside = !(active instanceof Node) || !menuPanelRef.current?.contains(active);
+      if (event.shiftKey && (active === first || outside)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || outside)) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
     function onMouseDown(event: MouseEvent) {
@@ -538,11 +568,13 @@ export function Home() {
         return;
       }
       setMenuOpen(false);
+      menuButtonRef.current?.focus();
     }
 
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("mousedown", onMouseDown);
     return () => {
+      document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("mousedown", onMouseDown);
     };
@@ -579,85 +611,93 @@ export function Home() {
     <main className="min-h-[100dvh] bg-transparent">
       {/* Top navigation */}
       <header className="relative z-30 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[2200px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-4 sm:px-6 lg:px-10">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex max-w-[2200px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-4 sm:px-6 lg:px-10">
+          <button
+            aria-controls="public-market-menu"
+            aria-expanded={menuOpen}
+            aria-label="Open menu"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 motion-reduce:transition-none"
+            onClick={() => setMenuOpen((open) => !open)}
+            ref={menuButtonRef}
+            type="button"
+          >
+            <List aria-hidden="true" className="size-5" weight="light" />
+          </button>
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 shadow-[inset_0_0_0_1px_rgb(52_211_153_/_0.25),0_0_20px_-6px_rgb(52_211_153_/_0.3)]">
               <span className="font-mono text-[11px] font-bold text-emerald-400">GY</span>
             </div>
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">
+            <div className="min-w-0">
+              <div className="truncate text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">
                 getrichyesterday
               </div>
               <div className="hidden text-[10px] text-slate-500 sm:block">Market dashboard</div>
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              aria-controls="public-market-menu"
-              aria-expanded={menuOpen}
-              aria-label="Open menu"
-              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 motion-reduce:transition-none"
-              onClick={() => setMenuOpen((open) => !open)}
-              ref={menuButtonRef}
-              type="button"
-            >
-              <List aria-hidden="true" className="size-5" weight="light" />
-            </button>
+          <div className="ml-auto">
             <Link
-              className="rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:bg-slate-800/80 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 active:translate-y-px"
+              className="inline-flex min-h-11 items-center rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-150 hover:border-emerald-400/60 hover:bg-slate-800/80 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 active:translate-y-px"
               to={isAuthenticated ? "/dashboard" : "/login"}
             >
               {isAuthenticated ? "Open dashboard →" : "Log in"}
             </Link>
           </div>
         </div>
-        {menuOpen ? (
-          <nav
-            aria-label="Page sections"
-            className="absolute left-0 right-0 top-full z-40 border-b border-slate-800 bg-slate-950 px-4 py-3 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.8)] motion-safe:transition-opacity motion-safe:duration-150 motion-reduce:transition-none sm:px-6 lg:px-10"
-            id="public-market-menu"
-            ref={menuPanelRef}
-          >
-            <div className="mx-auto flex max-w-[2200px] items-center justify-between gap-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">On this page</p>
-              <button
-                aria-label="Close menu"
-                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
-                onClick={() => {
-                  setMenuOpen(false);
-                  menuButtonRef.current?.focus();
-                }}
-                ref={closeMenuRef}
-                type="button"
-              >
-                <X aria-hidden="true" className="size-5" weight="bold" />
-              </button>
-            </div>
-            <ul className="mx-auto mt-2 max-w-[2200px] space-y-1">
-              {pageSections.map((section) => (
-                <li key={section.id}>
-                  <a
-                    className="flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-slate-100 hover:bg-slate-900 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
-                    href={`#${section.id}`}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {section.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-            <div className="mx-auto mt-2 max-w-[2200px]">
-              <Link
-                className="flex min-h-11 items-center rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 text-sm font-semibold text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
-                onClick={() => setMenuOpen(false)}
-                to={isAuthenticated ? "/dashboard" : "/login"}
-              >
-                {isAuthenticated ? "Open dashboard →" : "Log in"}
-              </Link>
-            </div>
-          </nav>
-        ) : null}
       </header>
+        {menuOpen ? (
+          <div className="fixed inset-0 z-40 overflow-hidden" ref={menuPanelRef}>
+            <div
+              className="absolute inset-0 bg-slate-950/70 motion-safe:animate-[drawer-fade_200ms_ease-out_both]"
+              onClick={() => {
+                setMenuOpen(false);
+                menuButtonRef.current?.focus();
+              }}
+            />
+            <nav
+              aria-label="Page sections"
+              className="absolute inset-y-0 left-0 flex w-[min(18rem,calc(100%-3rem))] flex-col overflow-y-auto border-r border-slate-800 bg-slate-950 px-4 py-3 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.8)] motion-safe:animate-[drawer-in_200ms_ease-out_both]"
+              id="public-market-menu"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-400">On this page</p>
+                <button
+                  aria-label="Close menu"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    menuButtonRef.current?.focus();
+                  }}
+                  ref={closeMenuRef}
+                  type="button"
+                >
+                  <X aria-hidden="true" className="size-5" weight="bold" />
+                </button>
+              </div>
+              <ul className="mt-2 space-y-1">
+                {pageSections.map((section) => (
+                  <li key={section.id}>
+                    <a
+                      className="flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-slate-100 hover:bg-slate-900 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                      href={`#${section.id}`}
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      {section.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2">
+                <Link
+                  className="flex min-h-11 items-center rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 text-sm font-semibold text-slate-100 hover:border-emerald-400/60 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                  onClick={() => setMenuOpen(false)}
+                  to={isAuthenticated ? "/dashboard" : "/login"}
+                >
+                  {isAuthenticated ? "Open dashboard →" : "Log in"}
+                </Link>
+              </div>
+            </nav>
+          </div>
+        ) : null}
 
       {/* Hero */}
       <div className="border-b border-slate-800/60 bg-gradient-to-b from-slate-900/30 to-transparent">
@@ -674,6 +714,7 @@ export function Home() {
                 Delayed index pulse, sector heatmaps, and company fundamentals — no account required.
                 Sign in to access trading, portfolio, and risk workflows.
               </p>
+              <MarketSearch />
             </div>
             {!isAuthenticated && (
               <Link
@@ -911,6 +952,9 @@ export function Home() {
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-100" id="market-pulse">Market pulse</h2>
               <p className="mt-1 text-xs text-slate-400">Cached ETF proxy quotes. Historical trends are unavailable.</p>
+              {marketQuery.data?.data_notice ? (
+                <p className="mt-1 text-xs text-slate-400">{marketQuery.data.data_notice}</p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <TimeframeToggle label="Market pulse range" onChange={setPulseRange} value={pulseRange} />
@@ -1061,7 +1105,7 @@ export function Home() {
                             getStockTileSize(stock.size, heatmapScale),
                           ].join(" ")}
                           key={stock.symbol}
-                          title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}`}
+                          title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}${stock.price_basis === "end_of_day_previous_close" ? " / end-of-day previous close, not real-time" : ""}`}
                           to={`/market/${encodeURIComponent(stock.symbol)}`}
                         >
                           <div
@@ -1113,7 +1157,9 @@ export function Home() {
                 </span>
                 <span className="ml-auto normal-case tracking-normal text-slate-500">
                   {cachedHeatmapCount > 0
-                    ? "Delayed/cached quotes. Hover a tile for source status."
+                    ? (heatmapQuery.data?.data_notice && /end of day/i.test(heatmapQuery.data.data_notice)
+                      ? heatmapQuery.data.data_notice
+                      : "Delayed/cached quotes. Hover a tile for source status.")
                     : "No cached quotes are available."}
                 </span>
               </div>
@@ -1156,7 +1202,12 @@ export function Home() {
               {newsQuery.isLoading ? "Loading" : articles.length ? "Cached headlines" : "Unavailable"}
             </span>
           </div>
-          <div className="dashboard-card-body">
+          <div
+            aria-labelledby="market-news"
+            className="dashboard-card-body max-h-[max(24rem,calc(100vh-16rem))] overflow-x-hidden overflow-y-auto focus:outline-none focus:ring-2 focus:ring-inset focus:ring-emerald-300/40"
+            role="region"
+            tabIndex={0}
+          >
             {articles.length === 0 ? (
               <EmptyState
                 message={newsQuery.isLoading ? "Loading market news" : newsQuery.isError ? "Market news unavailable" : "No market headlines"}

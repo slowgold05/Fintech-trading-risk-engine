@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     massive_requests_per_minute: float = Field(default=4.8, gt=0, le=60)
     massive_max_attempts: int = Field(default=4, ge=1, le=8)
     massive_retry_after_cap_seconds: float = Field(default=60, gt=0, le=300)
+    # Scheduled and CLI refreshes read this. Massive is the prior-session close
+    # when a key is configured. With no key the refresh uses the Yahoo path and
+    # says Massive is not configured. Alpha Vantage stays the fallback inside
+    # the Massive path. "eod" is the Yahoo path.
+    market_quote_source: str = "massive"
     finnhub_api_key: str = ""
     twelve_data_api_key: str = ""
     kronos_checkpoint: str = ""
