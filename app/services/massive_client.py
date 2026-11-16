@@ -13,6 +13,7 @@ request per trading day. The shared pacer spaces those calls at 12.5 seconds
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from datetime import date, datetime, timezone
@@ -98,7 +99,7 @@ def bounded_retry_delay(
     if attempt < 1:
         raise ValueError("attempt must be positive")
     parsed = _parse_retry_after(retry_after, now or datetime.now(timezone.utc))
-    if parsed is None:
+    if parsed is None or not math.isfinite(parsed):
         parsed = min_interval * (2 ** (attempt - 1))
     floor = min_interval
     ceiling = cap if cap >= floor else floor
@@ -110,20 +111,35 @@ def bounded_retry_delay(
 
 
 def _parse_retry_after(value: str | None, now: datetime) -> float | None:
+    """Delta-seconds or HTTP-date. Unparseable and non-finite values are None."""
     if value is None:
         return None
     text = str(value).strip()
     if not text:
         return None
     try:
-        return float(text)
-    except ValueError:
+        seconds = float(text)
+    except (ValueError, TypeError):
+        seconds = None
+    else:
+        if math.isfinite(seconds):
+            return seconds
+        return None
+    try:
         parsed = parsedate_to_datetime(text)
+    except (ValueError, TypeError, OverflowError):
+        return None
     if parsed is None:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return (parsed - now).total_seconds()
+    try:
+        delta = (parsed - now).total_seconds()
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if not math.isfinite(delta):
+        return None
+    return delta
 
 
 def _failure_message(response) -> str:

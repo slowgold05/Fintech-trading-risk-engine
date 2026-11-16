@@ -2,7 +2,7 @@
 
 One grouped request covers every US stock for a session. The client paces at
 the free-plan limit. Each session is committed on its own, and a later run
-skips dates that already match the fullest stored day.
+skips dates that already have stored bars for the requested symbols.
 
 Reads MASSIVE_API_KEY and DATABASE_URL from the environment. Prints counts
 and a few sample bars. Does not print the key.
@@ -24,7 +24,7 @@ from app.models.market_symbol import MarketSymbol
 from app.services.exchange_calendar import expected_session_dates
 from app.services.market_history import two_calendar_years_before
 from app.services.market_providers import ProviderUnavailable
-from app.services.massive_ingestion import backfill_two_years, ingest_one_day
+from app.services.massive_ingestion import backfill_two_years, ingest_one_day, nyse_calendar_today
 from app.services.sp500_constituents import load_sp500_constituents
 
 # Same ETF proxies the market overview uses for the major indexes.
@@ -35,6 +35,14 @@ INDEX_ETFS = (
     ("IWM", "Russell 2000 proxy"),
 )
 _SAMPLE_SYMBOLS = ("AAPL", "MSFT", "SPY", "QQQ", "DIA", "IWM", "BRK.B", "BF.B")
+DEFAULT_STATUS_FILENAME = "massive-backfill-status.json"
+CLOSED_SESSIONS_FILENAME = "massive-backfill-closed-sessions.json"
+# 2025-01-09: the local grouped call stored no bars for all 507 symbols.
+# NYSE was closed that day, and the date is strictly before the latest
+# finished session, so a rerun records it as skipped and does not request it
+# again. An empty file for the latest finished session, or a newer date, is
+# not written here: those bars may not be published yet.
+OBSERVED_CLOSED_SESSIONS = (date(2025, 1, 9),)
 
 
 def universe() -> list[tuple[str, str, bool]]:
@@ -129,6 +137,37 @@ def _quality(db, day: date, symbols: list[str], report: dict) -> dict:
     }
 
 
+def closed_sessions_path() -> Path:
+    return Path(tempfile.gettempdir()) / CLOSED_SESSIONS_FILENAME
+
+
+def load_closed_sessions() -> set[date]:
+    found = set(OBSERVED_CLOSED_SESSIONS)
+    path = closed_sessions_path()
+    if not path.exists():
+        return found
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return found
+    if not isinstance(raw, list):
+        return found
+    for item in raw:
+        try:
+            found.add(date.fromisoformat(str(item)))
+        except ValueError:
+            continue
+    return found
+
+
+def save_closed_sessions(days: set[date]) -> None:
+    payload = sorted(day.isoformat() for day in days)
+    try:
+        closed_sessions_path().write_text(json.dumps(payload), encoding="utf-8")
+    except OSError as exc:
+        print(f"closed-session file was not written: {exc.__class__.__name__}", file=sys.stderr, flush=True)
+
+
 def _write_status(path: Path, payload: dict) -> None:
     try:
         path.write_text(json.dumps(payload), encoding="utf-8")
@@ -145,6 +184,7 @@ def _compact(report: dict) -> dict:
         "sessions_attempted": report["sessions_attempted"],
         "sessions_with_data": report["sessions_with_data"],
         "sessions_skipped": report["sessions_skipped"],
+        "sessions_not_yet_available": report["sessions_not_yet_available"],
         "sessions_failed": report["sessions_failed"],
         "symbols_fully_covered": len(report["symbols_fully_covered"]),
         "symbols_with_gaps": len(gaps),
@@ -157,7 +197,7 @@ def main() -> None:
     parser.add_argument("--day", help="Ingest one session date (YYYY-MM-DD) instead of the two-year window.")
     parser.add_argument(
         "--status-file",
-        default=str(Path(tempfile.gettempdir()) / "massive-backfill-fintechapp-117.json"),
+        default=str(Path(tempfile.gettempdir()) / DEFAULT_STATUS_FILENAME),
         help="Progress JSON path. Updated after each session.",
     )
     args = parser.parse_args()
@@ -174,7 +214,24 @@ def main() -> None:
         print(f"symbols={len(symbols)} inserted_missing={added}", flush=True)
         if args.day:
             day = date.fromisoformat(args.day)
-            report = ingest_one_day(db, day, symbols, settings.massive_api_key)
+            as_of = nyse_calendar_today()
+            report = ingest_one_day(db, day, symbols, settings.massive_api_key, today=as_of)
+            reason = report.get("skip_reason")
+            if reason in {"market_closed", "not_yet_available"}:
+                db.rollback()
+                if reason == "market_closed":
+                    closed = load_closed_sessions()
+                    closed.add(day)
+                    save_closed_sessions(closed)
+                print(json.dumps({"day": day.isoformat(), "skipped": True, "skip_reason": reason}), flush=True)
+                _write_status(status_path, {
+                    "state": "done",
+                    "mode": "day",
+                    "skipped": True,
+                    "skip_reason": reason,
+                    "day": day.isoformat(),
+                })
+                return
             db.commit()
             summary = _quality(db, day, symbols, report)
             print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
@@ -183,9 +240,10 @@ def main() -> None:
                 raise SystemExit(1)
             return
 
-        end = date.today()
+        end = nyse_calendar_today()
         sessions = expected_session_dates(two_calendar_years_before(end), end)
         state = {"done": 0, "failed": 0, "skipped": 0}
+        closed = load_closed_sessions()
 
         def on_day(report: dict) -> None:
             state["done"] += 1
@@ -193,6 +251,9 @@ def main() -> None:
                 state["failed"] += 1
             if report.get("skipped"):
                 state["skipped"] += 1
+            if report.get("skip_reason") == "market_closed":
+                closed.add(date.fromisoformat(report["day"]))
+                save_closed_sessions(closed)
             _write_status(status_path, {
                 "state": "running",
                 "last_day": report["day"],
@@ -200,13 +261,14 @@ def main() -> None:
                 "sessions_planned": len(sessions),
                 "failed": state["failed"],
                 "skipped": state["skipped"],
+                "skip_reason": report.get("skip_reason", ""),
                 "error": report.get("error", ""),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
             print(
                 f"{report['day']} valid={report['written_valid']} flagged={report['written_flagged']} "
                 f"missing={len(report['missing'])} skipped={bool(report.get('skipped'))} "
-                f"failed={bool(report.get('error'))}",
+                f"reason={report.get('skip_reason') or ''} failed={bool(report.get('error'))}",
                 flush=True,
             )
 
@@ -225,6 +287,7 @@ def main() -> None:
             today=end,
             commit_each=True,
             on_day=on_day,
+            closed_dates=closed,
         )
         summary = _compact(report)
         print(json.dumps(summary, indent=2, sort_keys=True), flush=True)

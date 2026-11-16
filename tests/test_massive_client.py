@@ -1,5 +1,6 @@
 """Pacing and HTTP 429 behavior for the Massive client. No live calls."""
 
+import math
 from datetime import date, datetime, timezone
 
 import pytest
@@ -64,6 +65,10 @@ def test_retry_delay_floors_at_the_pacer_interval_and_caps_the_header():
     assert bounded_retry_delay(None, attempt=1, min_interval=12.5, cap=60, now=now) == pytest.approx(12.5)
     assert bounded_retry_delay(None, attempt=3, min_interval=12.5, cap=60, now=now) == pytest.approx(50)
     assert bounded_retry_delay(None, attempt=4, min_interval=12.5, cap=60, now=now) == pytest.approx(60)
+    assert bounded_retry_delay("soon", attempt=1, min_interval=12.5, cap=60, now=now) == pytest.approx(12.5)
+    assert bounded_retry_delay("soon", attempt=2, min_interval=12.5, cap=60, now=now) == pytest.approx(25)
+    assert bounded_retry_delay("nan", attempt=1, min_interval=12.5, cap=60, now=now) == pytest.approx(12.5)
+    assert bounded_retry_delay("inf", attempt=3, min_interval=12.5, cap=60, now=now) == pytest.approx(50)
 
 
 def test_http_get_honors_retry_after_without_a_tight_loop(monkeypatch):
@@ -96,6 +101,33 @@ def test_http_get_honors_retry_after_without_a_tight_loop(monkeypatch):
     assert "adjusted=false" in seen[0]
     assert "2026-11-13" in seen[0]
     assert "test-key" in seen[0]
+
+
+def test_http_get_treats_an_unparseable_retry_after_as_backoff(monkeypatch):
+    responses = [
+        _Response(429, {"Retry-After": "soon"}),
+        _Response(429, {"Retry-After": "nan"}),
+        _Response(200, {}, {"status": "OK", "results": []}),
+    ]
+    sleeps = []
+
+    def fake_get(*args, **kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr("app.services.massive_client.requests.get", fake_get)
+    body = http_get_massive(
+        "massive",
+        date(2026, 11, 13),
+        "test-key",
+        pacer=RequestPacer(4.8, sleep=lambda _seconds: None),
+        sleeper=lambda seconds: sleeps.append(seconds),
+        max_attempts=4,
+        retry_cap=60,
+    )
+
+    assert body == {"status": "OK", "results": []}
+    assert sleeps == pytest.approx([12.5, 25])
+    assert all(math.isfinite(delay) for delay in sleeps)
 
 
 def test_http_get_stops_after_the_bounded_429_attempts(monkeypatch):
