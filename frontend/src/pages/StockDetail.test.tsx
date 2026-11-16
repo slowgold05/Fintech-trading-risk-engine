@@ -165,6 +165,7 @@ describe("stock detail", () => {
     expect(screen.getByText("Apple Inc.")).toBeInTheDocument();
     expect(screen.getByText(/Technology/)).toBeInTheDocument();
     expect(screen.getByText("$190.50")).toBeInTheDocument();
+    expect(screen.getByText("Raw last close")).toBeInTheDocument();
     expect(screen.getByText("Up +$1.25 (+0.66%)")).toBeInTheDocument();
     expect(screen.getByText("As of 2026-11-13")).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "split_adjusted", "2y");
@@ -226,6 +227,17 @@ describe("stock detail", () => {
     const stats = screen.getByRole("region", { name: "Key stats" });
     expect(within(stats).getByText("52-week high").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
     expect(within(stats).getByText("52-week low").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
+  });
+
+  it("shows fractional adjusted volume without switching to raw history", async () => {
+    historyApi.fetchDailyHistory.mockResolvedValue(history([
+      bar("2026-11-12", "50", "52", "49", "100.25"),
+    ]));
+    renderDetail();
+    expect(await screen.findByText("Massive split-adjusted prices.")).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "2026-11-12" }).closest("tr")).toHaveTextContent("100.25");
+    expect(within(screen.getByRole("region", { name: "Key stats" })).getByText("Avg volume (52-week)").parentElement).toHaveTextContent("100.25");
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
   });
 
   it("shows an empty chart when the cache has no bars", async () => {

@@ -1,14 +1,14 @@
 """Preserve provider-reported fractional daily aggregate volume.
 
 Revision ID: b7c91a0e4d62
-Revises: 8f3a1c6d9e20
+Revises: a4c8e2b7d915
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 revision = "b7c91a0e4d62"
-down_revision = "8f3a1c6d9e20"
+down_revision = "a4c8e2b7d915"
 branch_labels = None
 depends_on = None
 

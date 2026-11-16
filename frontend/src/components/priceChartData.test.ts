@@ -112,6 +112,14 @@ describe("price chart data", () => {
     expect(stats).toEqual({ high: 130, low: 80, averageVolume: 2000 });
   });
 
+  it("keeps fractional Massive volume in the plotted bar and yearly average", () => {
+    const bars = [bar("2026-11-12", "50", "52", "49", "100.25")];
+    const series = buildSeries(bars);
+    expect(series.plotted[0]).toMatchObject({ close: 50, volume: 100.25, volumeText: "100.25" });
+    expect(series.volume[0]).toMatchObject({ value: 100.25 });
+    expect(trailingYearStats(bars, END).averageVolume).toBe(100.25);
+  });
+
   it("describes an empty range without a made-up price", () => {
     expect(chartSummary("AAPL", [], 0, "1Y")).toBe(
       "No cached daily bars for AAPL in the 1 year range.",
