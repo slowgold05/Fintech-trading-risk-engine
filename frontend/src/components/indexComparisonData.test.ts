@@ -23,6 +23,47 @@ describe("normalizeCloses", () => {
     ]);
   });
 
+  it("keeps a single missing weekday on one line", () => {
+    const series = normalizeCloses([
+      { session_date: "2026-11-02", close: "100.000000" },
+      { session_date: "2026-11-04", close: "101.000000" },
+    ]);
+
+    expect(series?.hasGap).toBe(false);
+    expect(series?.points).toEqual([
+      { time: "2026-11-02", value: 0 },
+      { time: "2026-11-04", value: 1 },
+    ]);
+  });
+
+  it("breaks the line when two mid-week sessions are missing", () => {
+    const series = normalizeCloses([
+      { session_date: "2026-11-03", close: "100.000000" },
+      { session_date: "2026-11-06", close: "110.000000" },
+    ]);
+
+    expect(series?.hasGap).toBe(true);
+    expect(series?.points.map((point) => point.time)).toEqual([
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-06",
+    ]);
+    expect(series?.points[1]).toEqual({ time: "2026-11-04" });
+  });
+
+  it("keeps a single-holiday weekend on one line", () => {
+    const series = normalizeCloses([
+      { session_date: "2026-11-05", close: "100.000000" },
+      { session_date: "2026-11-09", close: "100.000000" },
+    ]);
+
+    expect(series?.hasGap).toBe(false);
+    expect(series?.points).toEqual([
+      { time: "2026-11-05", value: 0 },
+      { time: "2026-11-09", value: 0 },
+    ]);
+  });
+
   it("breaks the line across a gap longer than a holiday weekend", () => {
     const series = normalizeCloses([
       { session_date: "2026-11-02", close: "50.000000" },

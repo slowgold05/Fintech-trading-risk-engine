@@ -120,7 +120,11 @@ def test_cached_daily_chart(chart_api):
         harness._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "#daily-history-series option[value]:not([value=''])"))
         assert _history_reads(driver, "P3HISTORY") == 0
         assert _no_plot(driver)
-        assert driver.execute_script("return !performance.getEntriesByType('resource').some(e => e.name.includes('lightweight-charts.production'))")
+        # Market pulse charts the index proxies on load, so this chunk is already
+        # fetched. The daily history section still has no canvas until View history.
+        harness._wait(driver).until(lambda current: current.execute_script(
+            "return performance.getEntriesByType('resource').some(e => e.name.includes('lightweight-charts.production'))"
+        ))
 
         _submit(driver, "P3HISTORY")
         canvas = harness._wait(driver).until(_plot)

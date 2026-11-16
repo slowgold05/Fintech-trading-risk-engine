@@ -198,8 +198,9 @@ export function IndexComparisonChart({
     const date = row.series?.asOf ?? "";
     return !latest || date > latest ? date : latest;
   }, null);
-  const gapNames = rows
-    .filter((row) => row.series?.hasGap || coverageHasGaps(row.coverage))
+  const brokenNames = rows.filter((row) => row.series?.hasGap).map((row) => row.symbol);
+  const spannedNames = rows
+    .filter((row) => !row.series?.hasGap && coverageHasGaps(row.coverage))
     .map((row) => row.symbol);
   const missing = rows.filter((row) => row.state === "unavailable").map((row) => row.symbol);
   const loading = rows.some((row) => row.state === "loading");
@@ -259,9 +260,14 @@ export function IndexComparisonChart({
       {missing.length > 0 ? (
         <p className="text-xs text-slate-400" role="status">End-of-day history unavailable for {missing.join(", ")}.</p>
       ) : null}
-      {gapNames.length > 0 ? (
+      {brokenNames.length > 0 ? (
         <p className="text-xs text-slate-400" role="status">
-          Missing sessions stay open for {gapNames.join(", ")}. The line does not connect across those gaps.
+          Missing sessions stay open for {brokenNames.join(", ")}. The line does not connect across those gaps.
+        </p>
+      ) : null}
+      {spannedNames.length > 0 ? (
+        <p className="text-xs text-slate-400" role="status">
+          Sessions are missing for {spannedNames.join(", ")}. The line spans those sessions.
         </p>
       ) : null}
       <div className="min-w-0 overflow-x-auto">
@@ -277,9 +283,20 @@ export function IndexComparisonChart({
           <tbody>
             {rows.map((row) => (
               <tr className="border-t border-slate-800" key={row.symbol}>
-                <th className="py-2 pr-2 font-mono font-semibold text-slate-100" scope="row">
-                  {row.symbol}
-                  <span className="mt-0.5 block font-sans text-[10px] font-normal text-slate-500">{row.name}</span>
+                <th className="py-2 pr-2 font-semibold text-slate-100" scope="row">
+                  <span className="flex items-start gap-2">
+                    {row.series ? (
+                      <span
+                        aria-hidden="true"
+                        className="mt-1 inline-block size-2 shrink-0 rounded-sm"
+                        style={{ backgroundColor: row.color }}
+                      />
+                    ) : null}
+                    <span className="min-w-0 font-mono">
+                      {row.symbol}
+                      <span className="mt-0.5 block font-sans text-[10px] font-normal text-slate-500">{row.name}</span>
+                    </span>
+                  </span>
                 </th>
                 <td className="py-2 pr-2 font-mono">
                   {row.series ? formatSignedPercent(row.series.changePercent) : row.state === "loading" ? "Loading" : "Unavailable"}
