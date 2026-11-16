@@ -54,6 +54,39 @@ def test_zero_sec_margin_has_the_same_precedence_for_display_and_score(client, m
     assert "Healthy profit margin" not in body["risk_factors"]
 
 
+def test_research_keeps_the_sec_margin_period(client, monkeypatch):
+    period = {"form": "10-K", "start": "2024-01-01", "end": "2024-12-31", "fp": "FY", "fy": 2024}
+    monkeypatch.setattr("app.routers.market.get_company_overview", lambda _symbol: {"ProfitMargin": "0.9", "Name": "Fixture"})
+    monkeypatch.setattr(
+        "app.routers.market.get_sec_company_fundamentals",
+        lambda *_args: {"name": "Example Corp", "profit_margin": 0.25, "profit_margin_period": period},
+    )
+    monkeypatch.setattr("app.routers.market.get_stock_quote", lambda _symbol: {"price": 10, "change_percent": 0})
+    response = client.get("/market/research/EXMP")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["profit_margin"] == 0.25
+    assert body["profit_margin_period"] == period
+    assert "Healthy profit margin" in body["risk_factors"]
+
+
+def test_overview_margin_does_not_inherit_an_sec_period(client, monkeypatch):
+    monkeypatch.setattr("app.routers.market.get_company_overview", lambda _symbol: {"ProfitMargin": "0.2", "Name": "Fixture"})
+    monkeypatch.setattr(
+        "app.routers.market.get_sec_company_fundamentals",
+        lambda *_args: {
+            "profit_margin": None,
+            "profit_margin_period": {"form": "10-K", "start": "2024-01-01", "end": "2024-12-31", "fp": "FY", "fy": 2024},
+        },
+    )
+    monkeypatch.setattr("app.routers.market.get_stock_quote", lambda _symbol: {"price": 10, "change_percent": 0})
+    response = client.get("/market/research/EXMP")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["profit_margin"] == 0.2
+    assert body["profit_margin_period"] is None
+
+
 def test_target_needs_a_valid_quote_before_it_can_support_a_score():
     for quote in (None, {"price": 0}, {"price": -1}, {"price": "NaN"}):
         assert _score_company_research({"AnalystTargetPrice": 200}, quote) == (None, None, [])

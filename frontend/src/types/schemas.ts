@@ -480,6 +480,13 @@ export interface MarketResearchResponse {
   market_cap?: number | null;
   pe_ratio?: number | null;
   profit_margin?: number | null;
+  profit_margin_period?: {
+    form?: string | null;
+    start?: string | null;
+    end?: string | null;
+    fp?: string | null;
+    fy?: number | null;
+  } | null;
   beta?: number | null;
   analyst_target_price?: number | null;
   price?: number | null;
