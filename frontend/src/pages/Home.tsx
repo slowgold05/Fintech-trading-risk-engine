@@ -725,7 +725,12 @@ export function Home() {
                   {movers.map((mover) => (
                     <tr key={mover.symbol}>
                       <td className="font-mono font-semibold text-slate-100">
-                        {mover.symbol}
+                        <Link
+                          className="inline-flex min-h-11 items-center rounded-xl px-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                          to={`/market/${encodeURIComponent(mover.symbol)}`}
+                        >
+                          {mover.symbol}
+                        </Link>
                       </td>
                       <td className="text-right font-mono">
                         {mover.price != null && mover.price > 0 ? formatCurrency(mover.price) : "Unavailable"}
@@ -796,6 +801,12 @@ export function Home() {
                     <div className="font-mono text-lg font-semibold text-slate-50">
                       {research.symbol}
                     </div>
+                    <Link
+                      className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      to={`/market/${encodeURIComponent(research.symbol)}`}
+                    >
+                      View {research.symbol}
+                    </Link>
                     <div className="mt-1 text-sm text-slate-300">
                       {research.name ?? "Company overview unavailable"}
                     </div>
@@ -1042,14 +1053,16 @@ export function Home() {
                     </div>
                     <div className="grid grid-flow-dense auto-rows-[minmax(1.75rem,auto)] grid-cols-12 gap-1">
                       {stocks.map((stock) => (
-                        <div
+                        <Link
+                          aria-label={`${stock.symbol}, ${stock.company}, ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}`}
                           className={[
-                            "flex flex-col justify-center overflow-hidden rounded border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]",
+                            "flex flex-col justify-center overflow-hidden rounded border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                             stock.data_status === "stale" ? "border-slate-700 bg-slate-900 text-slate-400" : getStockTileTone(stock.change_percent),
                             getStockTileSize(stock.size, heatmapScale),
                           ].join(" ")}
                           key={stock.symbol}
                           title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}`}
+                          to={`/market/${encodeURIComponent(stock.symbol)}`}
                         >
                           <div
                             className={[
@@ -1078,7 +1091,7 @@ export function Home() {
                               />
                             </div>
                           )}
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   </section>

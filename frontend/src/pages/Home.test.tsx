@@ -124,8 +124,10 @@ describe("public market data truth", () => {
     expect(screen.queryByText("XLF")).not.toBeInTheDocument();
     const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
     expect(within(heatmap).getByText("ONLY")).toBeInTheDocument();
+    expect(within(heatmap).getByRole("link", { name: /ONLY/ })).toHaveAttribute("href", "/market/ONLY");
     expect(within(heatmap).queryByText("AAPL")).not.toBeInTheDocument();
     expect(within(heatmap).getByText("+0.00%")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "MOVE" })).toHaveAttribute("href", "/market/MOVE");
     expect(screen.getByText(/-0.50%/)).toBeInTheDocument();
     expect(screen.queryByText(/\+0.50%/)).not.toBeInTheDocument();
   });
@@ -145,6 +147,7 @@ describe("public market data truth", () => {
     fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "MSFT" } });
     fireEvent.click(screen.getByRole("button", { name: "Research" }));
     expect(await screen.findByText("MSFT")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
     expect(screen.queryByText("NVDA")).not.toBeInTheDocument();
     expect(screen.getByText("Research assessment unavailable")).toBeInTheDocument();
     expect(screen.queryByText("Medium / 50")).not.toBeInTheDocument();

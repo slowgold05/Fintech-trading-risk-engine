@@ -467,6 +467,20 @@ export interface MarketTrendingResponse {
   }>;
 }
 
+export interface SymbolQuoteResponse {
+  symbol: string;
+  name: string;
+  sector: string | null;
+  exchange: string | null;
+  is_etf: boolean;
+  price: number | null;
+  change_amount: number | null;
+  change_percent: number | null;
+  volume: number | null;
+  source: string | null;
+  as_of: string | null;
+}
+
 export interface MarketResearchResponse {
   symbol: string;
   name?: string | null;
