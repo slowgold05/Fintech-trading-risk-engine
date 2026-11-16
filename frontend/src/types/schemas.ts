@@ -427,6 +427,24 @@ export interface MarketOverviewResponse {
   }>;
 }
 
+export interface MarketUniverseItem {
+  symbol: string;
+  company_name: string;
+  exchange: string;
+  sector: string | null;
+  is_etf: boolean;
+  refresh_tier: string;
+  in_featured_universe: boolean;
+  universe_label: string | null;
+}
+
+export interface MarketUniverseResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: MarketUniverseItem[];
+}
+
 export type MarketDataStatus = "live-ish" | "delayed" | "cached" | "stale";
 
 export interface MarketHeatmapItemResponse {

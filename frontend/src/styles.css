@@ -20,7 +20,7 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: min(320px, 100%);
   background-color: var(--sm-canvas);
   color: var(--sm-ink);
 }
@@ -54,6 +54,16 @@ button { touch-action: manipulation; }
 @keyframes toast-progress {
   from { width: 100%; }
   to   { width: 0%; }
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes drawer-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @layer components {
@@ -194,5 +204,8 @@ button { touch-action: manipulation; }
   html { scroll-behavior: smooth; }
   .animate-ping-slow {
     animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  #mobile-navigation[open]::backdrop {
+    animation: drawer-fade 200ms ease-out both;
   }
 }

@@ -16,6 +16,28 @@ const historyApi = vi.hoisted(() => ({
 }));
 vi.mock("../api/market", () => api);
 vi.mock("../api/history", () => historyApi);
+vi.mock("lightweight-charts", () => ({
+  ColorType: { Solid: "solid" },
+  LineSeries: { type: "line" },
+  CandlestickSeries: { type: "candlestick" },
+  HistogramSeries: { type: "histogram" },
+  AreaSeries: { type: "area" },
+  createSeriesMarkers: () => ({ setMarkers: () => undefined }),
+  createChart: () => ({
+    addSeries: () => ({
+      setData: () => undefined,
+      applyOptions: () => undefined,
+      setMarkers: () => undefined,
+      createPriceLine: () => ({}),
+      removePriceLine: () => undefined,
+    }),
+    subscribeCrosshairMove: () => undefined,
+    timeScale: () => ({ fitContent: () => undefined }),
+    priceScale: () => ({ applyOptions: () => undefined }),
+    remove: () => undefined,
+    applyOptions: () => undefined,
+  }),
+}));
 vi.mock("../context/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false }) }));
 vi.mock("../components/Watchlists", () => ({
   Watchlists: ({
@@ -116,8 +138,8 @@ describe("public market data truth", () => {
     });
     api.fetchMarketTrending.mockResolvedValue({ most_active: [{ symbol: "MOVE", price: 12.3, change_amount: -1, change_percent: -0.5, volume: 1000 }] });
     open();
-    expect(await screen.findByText("SPY")).toBeInTheDocument();
-    expect(screen.getByText("$123.45")).toBeInTheDocument();
+    expect(await screen.findByText("$123.45")).toBeInTheDocument();
+    expect(screen.getAllByText("SPY").length).toBeGreaterThan(0);
     expect(screen.getByText("Provider change -1.50%")).toBeInTheDocument();
     expect(screen.queryByText("SPX")).not.toBeInTheDocument();
     expect(screen.queryByText("VIX")).not.toBeInTheDocument();
@@ -190,19 +212,19 @@ describe("public market data truth", () => {
       expect(history).toHaveValue("MSFT");
       expect(history).toHaveFocus();
       expect(scrollIntoView).toHaveBeenCalledTimes(2);
-      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y");
       const series = JSON.stringify(["fixture", "raw"]);
       fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: series } });
       fireEvent.click(screen.getByRole("button", { name: "Use MSFT in chart" }));
       expect(document.getElementById("daily-history-symbol")).toHaveValue("MSFT");
       expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveValue(series);
       expect(scrollIntoView).toHaveBeenCalledTimes(3);
-      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y");
       const form = screen.getByRole("button", { name: "View history" }).closest("form");
       if (!(form instanceof HTMLFormElement)) throw new Error("Missing history form.");
       fireEvent.submit(form);
       await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y"));
-      expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
+      expect(historyApi.fetchDailyHistory.mock.calls.filter((call) => call[0] === "MSFT")).toHaveLength(1);
     } finally {
       if (scrollDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", scrollDescriptor);
       else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
@@ -237,17 +259,44 @@ describe("public market data truth", () => {
     );
     expect(menuButton).not.toHaveClass("sm:hidden");
     expect(menu).not.toHaveClass("sm:hidden");
+    expect(menuButton.compareDocumentPosition(screen.getByText("getrichyesterday")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(menuButton.compareDocumentPosition(document.getElementById("trending-movers") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(menu).getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
-    expect(within(menu).getByRole("button", { name: "Close menu" })).toHaveClass("min-h-11");
+    const closeMenu = within(menu).getByRole("button", { name: "Close menu" });
+    expect(closeMenu).toHaveClass("min-h-11");
+    expect(closeMenu).toHaveFocus();
+    const overlay = menu.parentElement as HTMLElement;
+    expect(overlay.className).toContain("fixed");
+    expect(overlay.className).toContain("inset-0");
+    expect(menu.className).toContain("inset-y-0");
+    expect(menu.className).toContain("left-0");
+    expect(menu.className).toContain("w-[min(18rem,calc(100%-3rem))]");
+    expect(menu.className).toContain("motion-safe:animate-[drawer-in_200ms_ease-out_both]");
+    expect(document.body.style.overflow).toBe("hidden");
+
+    const loginLink = within(menu).getByRole("link", { name: "Log in" });
+    loginLink.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(closeMenu).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(loginLink).toHaveFocus();
 
     fireEvent.click(menuButton);
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
 
     fireEvent.click(menuButton);
+    const reopened = screen.getByRole("navigation", { name: "Page sections" });
+    fireEvent.click(reopened.parentElement?.firstElementChild as HTMLElement);
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(menuButton).toHaveFocus();
+    expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+
+    fireEvent.click(menuButton);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(menuButton).toHaveFocus();
     expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
   });
 
@@ -290,6 +339,13 @@ describe("public market data truth", () => {
     expect(await within(pulse).findByRole("img", { name: "SPY closing prices over 3M, up" })).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "3m");
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "3m");
+    const comparison = await within(pulse).findByRole("table", { name: "End-of-day percent change for the index proxies" });
+    expect(within(comparison).getByRole("rowheader", { name: /DIA/ })).toBeInTheDocument();
+    expect(within(comparison).getByRole("rowheader", { name: /IWM/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Market pulse range 2Y" }));
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "2y"));
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "massive", "split_adjusted", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("IWM", "massive", "split_adjusted", "2y");
   });
 
   it("keeps market-pulse tiles text-only when history is unavailable", async () => {
@@ -341,7 +397,7 @@ describe("public market data truth", () => {
     const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
     expect(within(researchCard).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
     expect(within(researchCard).queryByRole("button", { name: /Company research range/i })).not.toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("NVDA", "massive", "split_adjusted", "1m");
 
     resolveResearch({ symbol: "NVDA", name: "NVIDIA Corporation", pe_ratio: 28, price: 100, errors: [] });
     expect(await within(researchCard).findByRole("img", { name: "NVDA closing prices over 1M, up" })).toBeInTheDocument();
@@ -540,6 +596,12 @@ describe("public market data truth", () => {
     const historyTitle = document.getElementById("daily-price-history-title");
     expect(historyTitle).not.toBeNull();
     const newsCard = document.getElementById("market-news")?.closest(".dashboard-card") as HTMLElement;
+    const newsBody = within(newsCard).getByRole("region", { name: "Market news" });
+    expect(newsBody.className).toContain("max-h-[max(24rem,calc(100vh-16rem))]");
+    expect(newsBody.className).toContain("overflow-y-auto");
+    expect(newsBody.className).toContain("focus:ring-2");
+    expect(newsBody).toHaveAttribute("tabindex", "0");
+    expect(newsBody).toHaveAttribute("aria-labelledby", "market-news");
     expect(newsCard.compareDocumentPosition(watchlist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(watchlist.compareDocumentPosition(historyTitle as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Open menu" })).toHaveLength(1);
