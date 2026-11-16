@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.scripts.run_controls import app_control_results, persist_results
 from app.services.control_evidence import backfill_missing_file_evidence
 from app.services.market_cache_service import massive_key_is_set, refresh_quote_cache
+from app.services.research_valuation import refresh_wanted_references
 from app.services.aml_cases import run_live_aml
 from app.services.research_briefs import build_daily_briefs
 from app.services.research_worker import process_pending_research_jobs
@@ -83,6 +84,12 @@ def _run_scheduled_steps(db) -> None:
         refresh = {"error": exc.__class__.__name__}
         _log(f"market refresh failed: {exc.__class__.__name__}")
     try:
+        references = refresh_wanted_references(db)
+    except Exception as exc:
+        db.rollback()
+        references = {"error": exc.__class__.__name__}
+        _log(f"reference refresh failed: {exc.__class__.__name__}")
+    try:
         results = run_app_controls(db)
     except Exception as exc:
         db.rollback()
@@ -125,7 +132,11 @@ def _run_scheduled_steps(db) -> None:
         forecasts = {"error": exc.__class__.__name__}
         _log(f"forecast jobs failed: {exc.__class__.__name__}")
     statuses = ",".join(f"{item['control_id']}={item['status']}" for item in results)
-    _log(f"refresh={refresh} controls={statuses or 'none'} imported={imported} surveillance={surveillance} aml={aml} research={research} briefs={briefs} forecasts={forecasts}")
+    _log(
+        f"refresh={refresh} references={references} controls={statuses or 'none'} "
+        f"imported={imported} surveillance={surveillance} aml={aml} research={research} "
+        f"briefs={briefs} forecasts={forecasts}"
+    )
 
 
 def start_scheduled_jobs() -> Callable[[], None]:

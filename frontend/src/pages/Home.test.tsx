@@ -16,6 +16,28 @@ const historyApi = vi.hoisted(() => ({
 }));
 vi.mock("../api/market", () => api);
 vi.mock("../api/history", () => historyApi);
+vi.mock("lightweight-charts", () => ({
+  ColorType: { Solid: "solid" },
+  LineSeries: { type: "line" },
+  CandlestickSeries: { type: "candlestick" },
+  HistogramSeries: { type: "histogram" },
+  AreaSeries: { type: "area" },
+  createSeriesMarkers: () => ({ setMarkers: () => undefined }),
+  createChart: () => ({
+    addSeries: () => ({
+      setData: () => undefined,
+      applyOptions: () => undefined,
+      setMarkers: () => undefined,
+      createPriceLine: () => ({}),
+      removePriceLine: () => undefined,
+    }),
+    subscribeCrosshairMove: () => undefined,
+    timeScale: () => ({ fitContent: () => undefined }),
+    priceScale: () => ({ applyOptions: () => undefined }),
+    remove: () => undefined,
+    applyOptions: () => undefined,
+  }),
+}));
 vi.mock("../context/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false }) }));
 vi.mock("../components/Watchlists", () => ({
   Watchlists: ({
@@ -116,8 +138,8 @@ describe("public market data truth", () => {
     });
     api.fetchMarketTrending.mockResolvedValue({ most_active: [{ symbol: "MOVE", price: 12.3, change_amount: -1, change_percent: -0.5, volume: 1000 }] });
     open();
-    expect(await screen.findByText("SPY")).toBeInTheDocument();
-    expect(screen.getByText("$123.45")).toBeInTheDocument();
+    expect(await screen.findByText("$123.45")).toBeInTheDocument();
+    expect(screen.getAllByText("SPY").length).toBeGreaterThan(0);
     expect(screen.getByText("Provider change -1.50%")).toBeInTheDocument();
     expect(screen.queryByText("SPX")).not.toBeInTheDocument();
     expect(screen.queryByText("VIX")).not.toBeInTheDocument();
@@ -193,19 +215,19 @@ describe("public market data truth", () => {
       expect(history).toHaveValue("MSFT");
       expect(history).toHaveFocus();
       expect(scrollIntoView).toHaveBeenCalledTimes(2);
-      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y");
       const series = JSON.stringify(["fixture", "raw"]);
       fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: series } });
       fireEvent.click(screen.getByRole("button", { name: "Use MSFT in chart" }));
       expect(document.getElementById("daily-history-symbol")).toHaveValue("MSFT");
       expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveValue(series);
       expect(scrollIntoView).toHaveBeenCalledTimes(3);
-      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+      expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y");
       const form = screen.getByRole("button", { name: "View history" }).closest("form");
       if (!(form instanceof HTMLFormElement)) throw new Error("Missing history form.");
       fireEvent.submit(form);
       await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y"));
-      expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
+      expect(historyApi.fetchDailyHistory.mock.calls.filter((call) => call[0] === "MSFT")).toHaveLength(1);
     } finally {
       if (scrollDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", scrollDescriptor);
       else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
@@ -320,6 +342,13 @@ describe("public market data truth", () => {
     expect(await within(pulse).findByRole("img", { name: "SPY closing prices over 3M, up" })).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "3m");
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "3m");
+    const comparison = await within(pulse).findByRole("table", { name: "End-of-day percent change for the index proxies" });
+    expect(within(comparison).getByRole("rowheader", { name: /DIA/ })).toBeInTheDocument();
+    expect(within(comparison).getByRole("rowheader", { name: /IWM/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Market pulse range 2Y" }));
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "2y"));
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "massive", "split_adjusted", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("IWM", "massive", "split_adjusted", "2y");
   });
 
   it("keeps market-pulse tiles text-only when history is unavailable", async () => {
@@ -371,7 +400,7 @@ describe("public market data truth", () => {
     const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
     expect(within(researchCard).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
     expect(within(researchCard).queryByRole("button", { name: /Company research range/i })).not.toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalled();
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("NVDA", "massive", "split_adjusted", "1m");
 
     resolveResearch({ symbol: "NVDA", name: "NVIDIA Corporation", pe_ratio: 28, price: 100, errors: [] });
     expect(await within(researchCard).findByRole("img", { name: "NVDA closing prices over 1M, up" })).toBeInTheDocument();
@@ -427,6 +456,62 @@ describe("public market data truth", () => {
     const margin = (await within(researchCard).findByText("Margin")).parentElement as HTMLElement;
     expect(within(margin).getByText("--")).toBeInTheDocument();
     expect(within(margin).queryByText(/10-K/)).not.toBeInTheDocument();
+  });
+
+  it("labels end-of-day research price, market cap, and P/E with the quote date", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      price_basis: "end_of_day_previous_close",
+      price_as_of: "2026-11-13",
+      market_cap: 1000000,
+      market_cap_basis: "end_of_day_price_times_shares",
+      pe_ratio: 25,
+      pe_basis: "sec_ttm_diluted_eps",
+      errors: [],
+    });
+    historyApi.fetchDailyHistory.mockImplementation(async (symbol: string, provider: string, adjustment: string, range: string) => (
+      historyResponse(symbol, range, ["10.000000", "14.000000"], provider, adjustment)
+    ));
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(researchCard).findAllByText("End of day 2026-11-13")).toHaveLength(3);
+    const pe = within(researchCard).getByText("P/E").parentElement as HTMLElement;
+    expect(within(pe).getByText("25.00")).toBeInTheDocument();
+  });
+
+  it("shows a research P/E with two decimal places", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      pe_ratio: 31.47619047619048,
+      pe_basis: "sec_ttm_diluted_eps",
+      errors: [],
+    });
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const value = await within(researchCard).findByText("31.48");
+    expect(value.closest(".metric-tile")).toHaveTextContent("P/E");
+  });
+
+  it("does not label an Alpha Vantage research quote as end of day", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      price_basis: "alpha_vantage",
+      market_cap: 1000000,
+      market_cap_basis: "alpha_vantage",
+      pe_ratio: 10,
+      pe_basis: "alpha_vantage",
+      errors: [],
+    });
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(researchCard).findByText("$100.00")).toBeInTheDocument();
+    expect(within(researchCard).queryByText(/End of day/)).not.toBeInTheDocument();
   });
 
   it("renders market headlines from the news endpoint", async () => {
