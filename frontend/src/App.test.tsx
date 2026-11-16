@@ -14,6 +14,7 @@ vi.mock("./api/market", () => ({
   fetchMarketTrending: vi.fn().mockRejectedValue(new Error("Unavailable")),
   fetchMarketResearch: vi.fn().mockRejectedValue(new Error("Unavailable")),
   fetchMarketNews: vi.fn().mockRejectedValue(new Error("Unavailable")),
+  fetchSymbolQuote: vi.fn().mockRejectedValue(new Error("Unavailable")),
 }));
 vi.mock("./api/history", () => ({
   fetchCachedSeries: vi.fn().mockResolvedValue({

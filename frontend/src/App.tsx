@@ -4,6 +4,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Dashboard } from "./pages/Dashboard";
 import ForecastLab from "./pages/ForecastLab";
 import { Home } from "./pages/Home";
+import { StockDetail } from "./pages/StockDetail";
 import { Login } from "./pages/Login";
 import { Portfolio } from "./pages/Portfolio";
 import { Research } from "./pages/Research";
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
       </Route>
+      <Route path="/market/:symbol" element={<StockDetail />} />
       <Route path="/market" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route element={<ProtectedRoute />}>

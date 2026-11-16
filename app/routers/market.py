@@ -25,6 +25,7 @@ from app.services.research_valuation import build_research_valuation
 from app.services.sec_service import get_sec_company_fundamentals
 from app.services.sector_classifier import infer_sector
 from app.services.sp500_constituents import load_sp500_constituents
+from app.services.symbol_quote import detail_available_symbols
 
 router = APIRouter()
 
@@ -60,11 +61,12 @@ def _to_float(value) -> float | None:
         return None
 
 
-def _format_mover(item: dict) -> dict:
+def _format_mover(item: dict, detail_symbols: frozenset[str] = frozenset()) -> dict:
     price = _to_float(item.get("price"))
     volume = str(item.get("volume", "")).strip()
     return {
         "symbol": item.get("ticker", ""),
+        "detail_available": item.get("ticker", "") in detail_symbols,
         "price": price if price is not None and price > 0 else None,
         "change_amount": _to_float(item.get("change_amount")),
         "change_percent": _to_float(item.get("change_percentage")),
@@ -195,7 +197,7 @@ def market_news(db: Session = Depends(get_db)):
 
 
 @router.get("/trending")
-def market_trending():
+def market_trending(db: Session = Depends(get_db)):
     try:
         data = get_top_gainers_losers()
     except ValueError as exc:
@@ -207,11 +209,22 @@ def market_trending():
             "errors": [{"detail": str(exc)}],
         }
 
+    groups = {
+        "top_gainers": data.get("top_gainers", [])[:8],
+        "top_losers": data.get("top_losers", [])[:8],
+        "most_active": data.get("most_actively_traded", [])[:8],
+    }
+    # Provider movers are not limited to the symbols the detail page can read.
+    detail_symbols = detail_available_symbols(
+        db,
+        [item.get("ticker") for items in groups.values() for item in items],
+    )
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
-        "top_gainers": [_format_mover(item) for item in data.get("top_gainers", [])[:8]],
-        "top_losers": [_format_mover(item) for item in data.get("top_losers", [])[:8]],
-        "most_active": [_format_mover(item) for item in data.get("most_actively_traded", [])[:8]],
+        **{
+            name: [_format_mover(item, detail_symbols) for item in items]
+            for name, items in groups.items()
+        },
         "errors": [],
     }
 
@@ -361,6 +374,7 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
     score, label, factors = _score_company_research(scoring_overview, quote)
     return {
         "symbol": normalized_symbol,
+        "detail_available": normalized_symbol in detail_available_symbols(db, [normalized_symbol]),
         "name": sec_fundamentals.get("name") or overview.get("Name"),
         "exchange": overview.get("Exchange"),
         "sector": overview.get("Sector"),

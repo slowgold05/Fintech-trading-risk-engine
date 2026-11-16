@@ -13,7 +13,7 @@ def _research_stays_offline(monkeypatch):
 def test_missing_mover_numbers_are_not_real_zeros(missing):
     item = _format_mover({"ticker": "MISS", "price": missing, "change_amount": missing,
                           "change_percentage": missing, "volume": missing})
-    assert item == {"symbol": "MISS", "price": None, "change_amount": None, "change_percent": None, "volume": None}
+    assert item == {"symbol": "MISS", "detail_available": False, "price": None, "change_amount": None, "change_percent": None, "volume": None}
 
 
 def test_public_movers_keep_real_zero_and_exact_integer_volume(client, monkeypatch):
@@ -24,7 +24,7 @@ def test_public_movers_keep_real_zero_and_exact_integer_volume(client, monkeypat
     response = client.get("/market/trending")
     assert response.status_code == 200
     zero, large = response.json()["most_active"]
-    assert zero == {"symbol": "ZERO", "price": 10, "change_amount": 0, "change_percent": 0, "volume": 0}
+    assert zero == {"symbol": "ZERO", "detail_available": False, "price": 10, "change_amount": 0, "change_percent": 0, "volume": 0}
     assert large["volume"] == 9007199254740993
     assert large["change_percent"] is None
 
