@@ -12,6 +12,7 @@ from app.services.massive_client import (
     bounded_retry_delay,
     get_shared_pacer,
     http_get_massive,
+    http_get_massive_ticker,
     reset_shared_pacer,
 )
 
@@ -173,3 +174,27 @@ def test_shared_pacer_is_reused_across_callers():
         assert get_shared_pacer() is get_shared_pacer()
     finally:
         reset_shared_pacer()
+
+
+def test_ticker_reference_error_hides_the_request(monkeypatch):
+    seen = []
+
+    def fake_get(*args, **kwargs):
+        seen.append(args[0])
+        return _Response(404, {})
+
+    monkeypatch.setattr("app.services.massive_client.requests.get", fake_get)
+    with pytest.raises(ProviderUnavailable, match="status 404") as caught:
+        http_get_massive_ticker(
+            "EXMP",
+            "test-key",
+            pacer=RequestPacer(4.8, sleep=lambda _seconds: None),
+            sleeper=lambda _seconds: None,
+            max_attempts=1,
+        )
+
+    message = str(caught.value)
+    assert seen and "/v3/reference/tickers/EXMP" in seen[0]
+    assert "test-key" not in message
+    assert "apiKey" not in message
+    assert "api.massive.com" not in message

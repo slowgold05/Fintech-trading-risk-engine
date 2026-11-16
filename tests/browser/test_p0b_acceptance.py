@@ -57,7 +57,7 @@ DISPOSABLE_DATABASE = "p0b_browser"
 DISPOSABLE_PORT = 54331
 API_PORT = 8000
 WEB_PORT = 4173
-ALEMBIC_HEAD = "8f3a1c6d9e20"
+ALEMBIC_HEAD = "a4c8e2b7d915"
 DISPOSABLE_JWT_SECRET = "p0b-browser-jwt-secret-value-32b"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACCESS_EVENT = re.compile(r'"([A-Z]+) ([^"\s]+) HTTP/[0-9.]+" (\d{3})')
@@ -1441,13 +1441,13 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         assert "Provider change -1.50%" in text
         assert not driver.find_elements(By.CSS_SELECTOR, "svg[aria-label*='trend']")
         assert not driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='market pulse trend']")
-        stale = _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//div[@title][.//*[normalize-space()='P1PUBLIC']]")))
+        stale = _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[self::a or self::div][@title][.//*[normalize-space()='P1PUBLIC']]")))
         assert "Stale" in stale.text and "+99.00%" not in stale.text
         from selenium.common.exceptions import StaleElementReferenceException
 
         heatmap_artifacts = REPO_ROOT / ".local-tools" / "public-browser"
         heatmap_artifacts.mkdir(parents=True, exist_ok=True)
-        tile_xpath = "//div[@title][.//*[normalize-space()='P1PUBLIC']]"
+        tile_xpath = "//*[self::a or self::div][@title][.//*[normalize-space()='P1PUBLIC']]"
 
         def prove_heatmap_scales() -> None:
             for scale in ("compact", "standard", "expanded"):

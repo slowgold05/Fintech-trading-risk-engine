@@ -146,10 +146,59 @@ describe("public market data truth", () => {
     expect(screen.queryByText("XLF")).not.toBeInTheDocument();
     const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
     expect(within(heatmap).getByText("ONLY")).toBeInTheDocument();
+    expect(within(heatmap).queryByRole("link", { name: /ONLY/ })).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("AAPL")).not.toBeInTheDocument();
     expect(within(heatmap).getByText("+0.00%")).toBeInTheDocument();
+    expect(screen.getByText("MOVE")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "MOVE" })).not.toBeInTheDocument();
     expect(screen.getByText(/-0.50%/)).toBeInTheDocument();
     expect(screen.queryByText(/\+0.50%/)).not.toBeInTheDocument();
+  });
+
+  it("links heatmap tiles, movers, and research only to symbols the detail page can read", async () => {
+    const tile = { company: "Fixture", sector: "Technology", price: 10, change_percent: 1, volume: 100, size: "large",
+      refresh_tier: "daily", data_status: "delayed", source: "fixture", age_seconds: 60, as_of: "2026-11-04T00:00:00Z" };
+    api.fetchMarketHeatmap.mockResolvedValue({
+      items: [
+        { ...tile, symbol: "AAPL", detail_available: true },
+        { ...tile, symbol: "OUTX", detail_available: false },
+        { ...tile, symbol: "OLDAPI" },
+      ],
+    });
+    const mover = { price: 12.3, change_amount: 1, change_percent: 0.5, volume: 1000 };
+    api.fetchMarketTrending.mockResolvedValue({
+      most_active: [
+        { ...mover, symbol: "MSFT", detail_available: true },
+        { ...mover, symbol: "PENNY", detail_available: false },
+      ],
+    });
+    api.fetchMarketResearch.mockImplementation(async (symbol: string) => ({
+      symbol, detail_available: symbol === "MSFT", market_cap: 1000000, errors: [],
+    }));
+    open();
+
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".dashboard-card") as HTMLElement;
+    expect(await within(heatmap).findByRole("link", { name: /AAPL/ })).toHaveAttribute("href", "/market/AAPL");
+    for (const symbol of ["OUTX", "OLDAPI"]) {
+      const plain = within(heatmap).getByText(symbol).closest("[title]") as HTMLElement;
+      expect(plain.tagName).toBe("DIV");
+      expect(plain).toHaveAttribute("title", expect.stringContaining("Fixture"));
+    }
+    expect(within(heatmap).getAllByRole("link")).toHaveLength(1);
+
+    expect(screen.getByRole("link", { name: "MSFT" })).toHaveAttribute("href", "/market/MSFT");
+    expect(screen.getByText("PENNY")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "PENNY" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "PENNY" } });
+    fireEvent.click(screen.getByRole("button", { name: "Research" }));
+    await waitFor(() => expect(api.fetchMarketResearch).toHaveBeenCalledWith("PENNY"));
+    await waitFor(() => expect(screen.getAllByText("PENNY").length).toBeGreaterThan(1));
+    expect(screen.queryByRole("link", { name: "View PENNY" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "MSFT" } });
+    fireEvent.click(screen.getByRole("button", { name: "Research" }));
+    expect(await screen.findByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
   });
 
   it("keeps stale heatmap changes from looking current", async () => {
@@ -162,11 +211,12 @@ describe("public market data truth", () => {
   });
 
   it("does not replace a failed requested company with NVIDIA reference data", async () => {
-    api.fetchMarketResearch.mockImplementation(async (symbol: string) => ({ symbol, market_cap: 1000000, errors: [], research_risk_label: "Medium", research_risk_score: 50 }));
+    api.fetchMarketResearch.mockImplementation(async (symbol: string) => ({ symbol, detail_available: true, market_cap: 1000000, errors: [], research_risk_label: "Medium", research_risk_score: 50 }));
     open();
     fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "MSFT" } });
     fireEvent.click(screen.getByRole("button", { name: "Research" }));
     expect(await screen.findByText("MSFT")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
     expect(screen.queryByText("NVDA")).not.toBeInTheDocument();
     expect(screen.getByText("Research assessment unavailable")).toBeInTheDocument();
     expect(screen.queryByText("Medium / 50")).not.toBeInTheDocument();
@@ -453,6 +503,62 @@ describe("public market data truth", () => {
     const margin = (await within(researchCard).findByText("Margin")).parentElement as HTMLElement;
     expect(within(margin).getByText("--")).toBeInTheDocument();
     expect(within(margin).queryByText(/10-K/)).not.toBeInTheDocument();
+  });
+
+  it("labels end-of-day research price, market cap, and P/E with the quote date", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      price_basis: "end_of_day_previous_close",
+      price_as_of: "2026-11-13",
+      market_cap: 1000000,
+      market_cap_basis: "end_of_day_price_times_shares",
+      pe_ratio: 25,
+      pe_basis: "sec_ttm_diluted_eps",
+      errors: [],
+    });
+    historyApi.fetchDailyHistory.mockImplementation(async (symbol: string, provider: string, adjustment: string, range: string) => (
+      historyResponse(symbol, range, ["10.000000", "14.000000"], provider, adjustment)
+    ));
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(researchCard).findAllByText("End of day 2026-11-13")).toHaveLength(3);
+    const pe = within(researchCard).getByText("P/E").parentElement as HTMLElement;
+    expect(within(pe).getByText("25.00")).toBeInTheDocument();
+  });
+
+  it("shows a research P/E with two decimal places", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      pe_ratio: 31.47619047619048,
+      pe_basis: "sec_ttm_diluted_eps",
+      errors: [],
+    });
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const value = await within(researchCard).findByText("31.48");
+    expect(value.closest(".metric-tile")).toHaveTextContent("P/E");
+  });
+
+  it("does not label an Alpha Vantage research quote as end of day", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      price_basis: "alpha_vantage",
+      market_cap: 1000000,
+      market_cap_basis: "alpha_vantage",
+      pe_ratio: 10,
+      pe_basis: "alpha_vantage",
+      errors: [],
+    });
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(researchCard).findByText("$100.00")).toBeInTheDocument();
+    expect(within(researchCard).queryByText(/End of day/)).not.toBeInTheDocument();
   });
 
   it("renders market headlines from the news endpoint", async () => {

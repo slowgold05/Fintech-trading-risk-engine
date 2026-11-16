@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, List, TrendDown, TrendUp, X } from "@phosphor-icons/react";
@@ -282,6 +282,37 @@ function getStockTileTone(changePercent: number) {
   return "bg-slate-500 text-white border-slate-300/20";
 }
 
+/**
+ * A heatmap tile links to the detail page only when the API says that page can read the
+ * symbol. The heatmap holds any cached stock, and the detail quote covers a smaller set.
+ */
+function HeatmapTile({
+  to,
+  ariaLabel,
+  className,
+  title,
+  children,
+}: {
+  to: string | null;
+  ariaLabel: string;
+  className: string;
+  title: string;
+  children: ReactNode;
+}) {
+  if (to === null) {
+    return (
+      <div className={className} title={title}>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link aria-label={ariaLabel} className={className} title={title} to={to}>
+      {children}
+    </Link>
+  );
+}
+
 function groupStockHeatmap(stocks: MarketHeatmapItemResponse[]) {
   const sortedStocks = [...stocks].sort((a, b) => {
     const sectorDelta =
@@ -324,6 +355,17 @@ function formatMarketCap(value?: number | null) {
 
 function formatOptionalPercent(value?: number | null) {
   return value === null || value === undefined ? "--" : formatPercent(value * 100);
+}
+
+function formatResearchPe(value?: number | null) {
+  return value == null || !Number.isFinite(value) ? "--" : value.toFixed(2);
+}
+
+function endOfDayCaption(show: boolean, asOf?: string | null): string | null {
+  if (!show || !asOf) {
+    return null;
+  }
+  return `End of day ${asOf}`;
 }
 
 function formatMarginPeriod(period: MarketResearchResponse["profit_margin_period"]): string | null {
@@ -489,6 +531,18 @@ export function Home() {
   const marginPeriod = research.profit_margin != null
     ? formatMarginPeriod(research.profit_margin_period)
     : null;
+  const priceAsOf = research.price_basis === "end_of_day_previous_close" ? research.price_as_of : null;
+  const priceCaption = endOfDayCaption(research.price != null && research.price > 0, priceAsOf);
+  const marketCapCaption = endOfDayCaption(
+    research.market_cap != null && research.market_cap_basis === "end_of_day_price_times_shares",
+    research.price_as_of,
+  );
+  const peCaption = endOfDayCaption(
+    research.pe_ratio != null
+      && research.pe_basis === "sec_ttm_diluted_eps"
+      && research.price_basis === "end_of_day_previous_close",
+    research.price_as_of,
+  );
   const hasResearchInputs = (research.pe_ratio != null && research.pe_ratio > 0)
     || research.profit_margin != null || research.beta != null
     || (research.analyst_target_price != null && research.analyst_target_price > 0 && research.price != null && research.price > 0);
@@ -771,7 +825,17 @@ export function Home() {
                   {movers.map((mover) => (
                     <tr key={mover.symbol}>
                       <td className="font-mono font-semibold text-slate-100">
-                        {mover.symbol}
+                        {mover.detail_available === true ? (
+                          <Link
+                            className="inline-flex min-h-11 items-center rounded-xl px-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                            to={`/market/${encodeURIComponent(mover.symbol)}`}
+                          >
+                            {mover.symbol}
+                          </Link>
+                        ) : (
+                          // Provider movers can be symbols the detail page cannot read.
+                          mover.symbol
+                        )}
                       </td>
                       <td className="text-right font-mono">
                         {mover.price != null && mover.price > 0 ? formatCurrency(mover.price) : "Unavailable"}
@@ -842,6 +906,14 @@ export function Home() {
                     <div className="font-mono text-lg font-semibold text-slate-50">
                       {research.symbol}
                     </div>
+                    {research.detail_available === true ? (
+                      <Link
+                        className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                        to={`/market/${encodeURIComponent(research.symbol)}`}
+                      >
+                        View {research.symbol}
+                      </Link>
+                    ) : null}
                     <div className="mt-1 text-sm text-slate-300">
                       {research.name ?? "Company overview unavailable"}
                     </div>
@@ -869,6 +941,11 @@ export function Home() {
                     <div className="mt-1 font-mono text-sm text-slate-100">
                       {research.price != null && research.price > 0 ? formatCurrency(research.price) : "Unavailable"}
                     </div>
+                    {priceCaption ? (
+                      <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {priceCaption}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="metric-tile px-3 py-2">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
@@ -877,14 +954,24 @@ export function Home() {
                     <div className="mt-1 font-mono text-sm text-slate-100">
                       {formatMarketCap(research.market_cap)}
                     </div>
+                    {marketCapCaption ? (
+                      <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {marketCapCaption}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="metric-tile px-3 py-2">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
                       P/E
                     </div>
                     <div className="mt-1 font-mono text-sm text-slate-100">
-                      {research.pe_ratio ?? "--"}
+                      {formatResearchPe(research.pe_ratio)}
                     </div>
+                    {peCaption ? (
+                      <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {peCaption}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="metric-tile px-3 py-2">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
@@ -1093,14 +1180,16 @@ export function Home() {
                     </div>
                     <div className="grid grid-flow-dense auto-rows-[minmax(1.75rem,auto)] grid-cols-12 gap-1">
                       {stocks.map((stock) => (
-                        <div
+                        <HeatmapTile
+                          ariaLabel={`${stock.symbol}, ${stock.company}, ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}`}
                           className={[
-                            "flex flex-col justify-center overflow-hidden rounded border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]",
+                            "flex flex-col justify-center overflow-hidden rounded border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                             stock.data_status === "stale" ? "border-slate-700 bg-slate-900 text-slate-400" : getStockTileTone(stock.change_percent),
                             getStockTileSize(stock.size, heatmapScale),
                           ].join(" ")}
                           key={stock.symbol}
                           title={`${stock.company} ${stock.data_status === "stale" ? "Stale" : formatSignedPercent(stock.change_percent)}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}${stock.price_basis === "end_of_day_previous_close" ? " / end-of-day previous close, not real-time" : ""}`}
+                          to={stock.detail_available === true ? `/market/${encodeURIComponent(stock.symbol)}` : null}
                         >
                           <div
                             className={[
@@ -1129,7 +1218,7 @@ export function Home() {
                               />
                             </div>
                           )}
-                        </div>
+                        </HeatmapTile>
                       ))}
                     </div>
                   </section>

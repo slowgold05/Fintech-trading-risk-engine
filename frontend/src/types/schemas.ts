@@ -449,6 +449,8 @@ export type MarketDataStatus = "live-ish" | "delayed" | "cached" | "stale";
 
 export interface MarketHeatmapItemResponse {
   symbol: string;
+  /** True only when GET /market/symbols/{symbol}/quote can serve this symbol. */
+  detail_available?: boolean;
   company: string;
   exchange: string;
   sector: string;
@@ -473,6 +475,8 @@ export interface MarketHeatmapResponse {
 
 export interface MarketMoverResponse {
   symbol: string;
+  /** True only when GET /market/symbols/{symbol}/quote can serve this symbol. */
+  detail_available?: boolean;
   price: number | null;
   change_amount: number | null;
   change_percent: number | null;
@@ -489,14 +493,35 @@ export interface MarketTrendingResponse {
   }>;
 }
 
+export interface SymbolQuoteResponse {
+  symbol: string;
+  name: string;
+  sector: string | null;
+  exchange: string | null;
+  is_etf: boolean;
+  price: number | null;
+  change_amount: number | null;
+  change_percent: number | null;
+  volume: number | null;
+  source: string | null;
+  as_of: string | null;
+}
+
 export interface MarketResearchResponse {
   symbol: string;
+  /** True only when GET /market/symbols/{symbol}/quote can serve this symbol. */
+  detail_available?: boolean;
   name?: string | null;
   exchange?: string | null;
   sector?: string | null;
   industry?: string | null;
   market_cap?: number | null;
+  market_cap_basis?: string | null;
   pe_ratio?: number | null;
+  pe_basis?: string | null;
+  price_basis?: string | null;
+  price_as_of?: string | null;
+  valuation_notice?: string | null;
   profit_margin?: number | null;
   profit_margin_period?: {
     form?: string | null;

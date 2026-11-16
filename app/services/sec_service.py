@@ -147,6 +147,263 @@ def _pair_rank(revenue: dict, net_income: dict) -> tuple:
     )
 
 
+_EPS_UNIT = "USD/shares"
+_SHARES_CONCEPTS = (
+    "EntityCommonStockSharesOutstanding",
+    "CommonStockSharesOutstanding",
+)
+
+
+def _share_duration_facts(facts: dict, concepts: list[str]) -> list[dict]:
+    collected = []
+    gaap = facts.get("us-gaap", {})
+    for rank, concept in enumerate(concepts):
+        candidates = gaap.get(concept, {}).get("units", {}).get(_EPS_UNIT) or []
+        if not isinstance(candidates, list):
+            continue
+        for index, item in enumerate(candidates):
+            if not isinstance(item, dict):
+                continue
+            start = item.get("start")
+            end = item.get("end")
+            form = item.get("form")
+            number = _finite_number(item.get("val"))
+            if not isinstance(start, str) or not isinstance(end, str) or not isinstance(form, str):
+                continue
+            start = start.strip()
+            end = end.strip()
+            form = form.strip()
+            if not start or not end or not form or number is None:
+                continue
+            fp = item.get("fp")
+            fy = item.get("fy")
+            collected.append({
+                "concept_rank": rank,
+                "index": index,
+                "start": start,
+                "end": end,
+                "form": form,
+                "filed": item.get("filed") if isinstance(item.get("filed"), str) else "",
+                "fp": fp if isinstance(fp, str) and fp else None,
+                "fy": fy if isinstance(fy, int) and not isinstance(fy, bool) else None,
+                "val": number,
+            })
+    return collected
+
+
+def _pick_rank(item: dict) -> tuple:
+    return (item["filed"], -item["concept_rank"], item["index"])
+
+
+def _dedupe_by_end(items: list[dict]) -> list[dict]:
+    by_end: dict[str, dict] = {}
+    for item in items:
+        rank = _pick_rank(item)
+        current = by_end.get(item["end"])
+        if current is None or rank > current["_pick"]:
+            by_end[item["end"]] = {**item, "_pick": rank}
+    return sorted(by_end.values(), key=lambda item: item["end"])
+
+
+def _periods_follow(items: list[dict]) -> bool:
+    for previous, current in zip(items, items[1:]):
+        gap = _period_days(previous["end"], current["start"])
+        if gap is None or gap < -5 or gap > 20:
+            return False
+    return True
+
+
+def _period_public(item: dict) -> dict:
+    return {
+        "form": item["form"],
+        "start": item["start"],
+        "end": item["end"],
+        "fp": item["fp"],
+        "fy": item["fy"],
+    }
+
+
+def _trailing_result(eps: float, items: list[dict]) -> dict:
+    return {"eps": eps, "periods": [_period_public(item) for item in items]}
+
+
+def _discrete_trailing(quarters: list[dict]) -> dict | None:
+    """The newest four continuous quarters, if they cover about one year."""
+    if len(quarters) < 4:
+        return None
+    for start in range(len(quarters) - 4, -1, -1):
+        window = quarters[start:start + 4]
+        span = _period_days(window[0]["start"], window[-1]["end"])
+        if span is None or not 300 <= span <= 400 or not _periods_follow(window):
+            continue
+        return _trailing_result(sum(item["val"] for item in window), window)
+    return None
+
+
+def _quarter_set(items: list[dict], fiscal_periods: tuple[str, ...]) -> list[dict] | None:
+    chosen: dict[str, dict] = {}
+    for item in items:
+        fiscal_period = item["fp"]
+        if fiscal_period not in fiscal_periods:
+            continue
+        current = chosen.get(fiscal_period)
+        if current is None or item["_pick"] > current["_pick"]:
+            chosen[fiscal_period] = item
+    if any(fiscal_period not in chosen for fiscal_period in fiscal_periods):
+        return None
+    ordered = [chosen[fiscal_period] for fiscal_period in fiscal_periods]
+    if not _periods_follow(ordered):
+        return None
+    return ordered
+
+
+def _belongs_to_year(item: dict, year: dict) -> bool:
+    """The quarter's dates fall inside the annual period.
+
+    SEC ``fy`` names the filing that reported the fact, not the fact's own
+    year. A 10-Q comparative keeps the prior period's dates and carries the
+    later filing's ``fy``, so membership is dates only.
+    """
+    return item["start"] >= year["start"] and item["end"] <= year["end"]
+
+
+def _follows_year(item: dict, year: dict) -> bool:
+    """The quarter starts after the annual period and still belongs to the next year."""
+    if item["start"] <= year["end"]:
+        return False
+    gap = _period_days(year["end"], item["start"])
+    return gap is not None and gap <= 320
+
+
+def _day_after(value: str) -> str | None:
+    try:
+        return (datetime.fromisoformat(value) + timedelta(days=1)).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _derived_fourth_quarter(three: list[dict], year: dict) -> dict | None:
+    start = _day_after(three[-1]["end"])
+    if start is None:
+        return None
+    days = _period_days(start, year["end"])
+    opening = _period_days(year["start"], three[0]["start"])
+    if days is None or not 70 <= days <= 120 or opening is None or opening < -5 or opening > 20:
+        return None
+    value = year["val"] - sum(item["val"] for item in three)
+    if not math.isfinite(value):
+        return None
+    return {
+        "form": year["form"],
+        "start": start,
+        "end": year["end"],
+        "fp": "Q4",
+        "fy": year["fy"],
+        "val": value,
+        "filed": year["filed"],
+        "concept_rank": year["concept_rank"],
+        "index": year["index"],
+        "_pick": _pick_rank(year),
+    }
+
+
+def _roll_matching_quarters(three: list[dict], derived: dict, year: dict, later: list[dict]) -> dict | None:
+    """Replace as many prior-year quarters as the new year has reported.
+
+    Q1 alone, Q1 plus Q2, or Q1 through Q3 each move the annual total forward.
+    The unused prior quarters stay in the window.
+    """
+    for count, fiscal_periods in ((3, ("Q1", "Q2", "Q3")), (2, ("Q1", "Q2")), (1, ("Q1",))):
+        current = _quarter_set(later, fiscal_periods)
+        if current is None:
+            continue
+        bridge = _period_days(year["end"], current[0]["start"])
+        if bridge is None or bridge < -5 or bridge > 20:
+            continue
+        window = [*three[count:], derived, *current]
+        span = _period_days(window[0]["start"], window[-1]["end"])
+        if span is None or not 300 <= span <= 400 or not _periods_follow(window):
+            continue
+        rolled = year["val"] - sum(item["val"] for item in three[:count]) + sum(item["val"] for item in current)
+        if not math.isfinite(rolled):
+            continue
+        return _trailing_result(rolled, window)
+    return None
+
+
+def _trailing_from_annual(quarters: list[dict], years: list[dict]) -> dict | None:
+    """Fourth quarter is the full year minus the three reported quarters.
+
+    When the next fiscal year has reported Q1, Q1 and Q2, or Q1 through Q3,
+    the annual total is rolled forward by those matching quarters.
+    """
+    if not years:
+        return None
+    year = max(years, key=lambda item: (item["end"], item["filed"], item["index"]))
+    inside = [item for item in quarters if _belongs_to_year(item, year)]
+    three = _quarter_set(inside, ("Q1", "Q2", "Q3"))
+    if three is None or three[-1]["end"] >= year["end"]:
+        return None
+    derived = _derived_fourth_quarter(three, year)
+    if derived is None:
+        return None
+    annual = _trailing_result(year["val"], [*three, derived])
+    later = [item for item in quarters if _follows_year(item, year)]
+    rolled = _roll_matching_quarters(three, derived, year, later)
+    return annual if rolled is None else rolled
+
+
+def _window_end(result: dict | None) -> str:
+    if not result or not result.get("periods"):
+        return ""
+    return result["periods"][-1]["end"]
+
+
+def trailing_diluted_eps(facts: dict) -> dict | None:
+    """Trailing diluted EPS from the rows SEC company facts actually carry.
+
+    A discrete four-quarter window and the annual window are both built.
+    The one that ends later is used, so a newer 10-K beats an older set of
+    four quarters. Filings usually have no Q4 row: the fourth quarter is the
+    year minus Q1 through Q3. A new year that has reported Q1, or Q1 and Q2,
+    rolls that annual total forward. None means no window can be built.
+    """
+    chosen = _best_by_period(_share_duration_facts(facts, ["EarningsPerShareDiluted"]))
+    quarters = _dedupe_by_end([item for item in chosen.values() if _is_standard_quarter(item)])
+    discrete = _discrete_trailing(quarters)
+    years = [item for item in chosen.values() if _is_standard_year(item)]
+    annual = _trailing_from_annual(quarters, years)
+    if discrete is None:
+        return annual
+    if annual is None or _window_end(annual) <= _window_end(discrete):
+        return discrete
+    return annual
+
+
+def latest_dei_shares_outstanding(facts: dict) -> float | None:
+    """Latest positive share count from the SEC dei cover facts."""
+    dei = facts.get("dei", {})
+    if not isinstance(dei, dict):
+        return None
+    best: tuple[str, str, float] | None = None
+    for concept in _SHARES_CONCEPTS:
+        units = dei.get(concept, {}).get("units", {}).get("shares") or []
+        if not isinstance(units, list):
+            continue
+        for item in units:
+            if not isinstance(item, dict):
+                continue
+            end = item.get("end")
+            number = _finite_number(item.get("val"))
+            if not isinstance(end, str) or number is None or number <= 0:
+                continue
+            filed = item.get("filed") if isinstance(item.get("filed"), str) else ""
+            rank = (end, filed, number)
+            if best is None or rank[:2] > best[:2]:
+                best = (end, filed, number)
+    return None if best is None else best[2]
+
+
 def _matched_margin(facts: dict) -> dict | None:
     """Return one revenue and net-income fact that share a form and duration.
 
@@ -197,6 +454,7 @@ def _parse_company_facts(data: dict, ticker: str, cik: str) -> dict:
     liabilities = _latest_fact(facts, ["Liabilities"])
     equity = _latest_fact(facts, ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"])
     eps = _latest_fact(facts, ["EarningsPerShareDiluted", "EarningsPerShareBasic"], "USD/shares")
+    trailing = trailing_diluted_eps(facts)
 
     return {
         "symbol": ticker,
@@ -210,6 +468,9 @@ def _parse_company_facts(data: dict, ticker: str, cik: str) -> dict:
         "liabilities": liabilities,
         "equity": equity,
         "eps": eps,
+        "ttm_diluted_eps": None if trailing is None else trailing["eps"],
+        "ttm_diluted_eps_periods": None if trailing is None else trailing["periods"],
+        "shares_outstanding": latest_dei_shares_outstanding(facts),
         "source": "SEC EDGAR",
     }
 
@@ -219,7 +480,13 @@ def get_sec_company_fundamentals(symbol: str, db: Session) -> dict:
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
     cached = db.get(MarketFundamentalsCache, symbol)
     cached_payload = cached.payload if cached is not None and isinstance(cached.payload, dict) else {}
-    if cached and cached.fetched_at >= cutoff and "profit_margin_period" in cached_payload:
+    if (
+        cached
+        and cached.fetched_at >= cutoff
+        and "profit_margin_period" in cached_payload
+        and "ttm_diluted_eps" in cached_payload
+        and "shares_outstanding" in cached_payload
+    ):
         return cached.payload
 
     ticker_record = _get_ticker_map().get(symbol)

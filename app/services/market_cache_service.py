@@ -18,6 +18,7 @@ from app.services.market_quality import Bar, fails_price_checks
 from app.services.massive_client import http_get_massive
 from app.services.price_service import AlphaVantageRateLimitError, get_stock_quote
 from app.services.sector_classifier import SECTOR_ORDER, infer_sector
+from app.services.symbol_quote import SUPPORTED_DETAIL_SYMBOLS
 
 # Free Stocks Basic returns the completed session, not the current one.
 MASSIVE_EOD_NOTICE = (
@@ -512,6 +513,8 @@ def get_cached_heatmap(db: Session, limit: int = 1000) -> dict:
 
         items.append({
             "symbol": symbol.symbol,
+            # The row exists, so the detail quote read only needs the supported-set check.
+            "detail_available": symbol.symbol in SUPPORTED_DETAIL_SYMBOLS,
             "company": symbol.company_name,
             "exchange": symbol.exchange,
             "sector": sector,
