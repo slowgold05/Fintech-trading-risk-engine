@@ -279,7 +279,7 @@ function DetailBody({
             </p>
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Last close</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{quote.source === "massive" ? "Raw last close" : "Last close"}</p>
             <p className="text-3xl leading-9 font-semibold tabular-nums text-ink">{price}</p>
             <p className={["mt-2 text-sm leading-6 tabular-nums", changeUp ? "text-up" : changeDown ? "text-down" : "text-copy"].join(" ")}>
               {change}
@@ -335,7 +335,7 @@ function DetailBody({
               label="Avg volume (52-week)"
               value={historyError
                 ? "unavailable"
-                : statValue(historyLoading, stats.averageVolume == null ? "unavailable" : formatQuantity(Math.round(stats.averageVolume)))}
+                : statValue(historyLoading, stats.averageVolume == null ? "unavailable" : formatQuantity(stats.averageVolume))}
             />
             <Stat label="Market cap" value={statValue(researchLoading, researchFailed ? "unavailable" : wholeMoney(research?.market_cap))} />
             <Stat label="P/E" value={statValue(researchLoading, researchFailed ? "unavailable" : multiple(research?.pe_ratio))} />

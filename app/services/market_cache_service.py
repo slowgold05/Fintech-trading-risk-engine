@@ -22,7 +22,7 @@ from app.services.symbol_quote import SUPPORTED_DETAIL_SYMBOLS
 
 # Free Stocks Basic returns the completed session, not the current one.
 MASSIVE_EOD_NOTICE = (
-    "Massive prices are the prior session close (end of day), not real-time quotes. "
+    "Massive prices are raw prior session closes (end of day), not real-time quotes. "
     "They are not suitable for order execution."
 )
 MASSIVE_FALLBACK_NOTICE = (

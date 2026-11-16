@@ -50,7 +50,7 @@ def _ticker(symbol, close, *, open_=None, high=None, low=None, volume=100) -> di
 
 
 def _http_get(payload, day=None, api_key="test-key"):
-    def http_get(kind, arg, key):
+    def http_get(kind, arg, key, *, adjusted=False):
         assert kind == "massive"
         assert key == api_key
         if day is not None:
@@ -105,6 +105,104 @@ def test_ingest_one_day_writes_valid_rows_for_requested_symbols(db_session):
     assert all(value.tzinfo is not None and value.utcoffset() == timedelta(0) for value in written_at)
     assert again["written_valid"] == 3
     assert db_session.query(MarketBarDaily).count() == 3
+
+
+def test_split_adjusted_history_preserves_raw_rows_and_fractional_volume(client, db_session):
+    older = date.today() - timedelta(days=3)
+    newer = older + timedelta(days=1)
+    _seed_symbols(db_session, ["AAPL"])
+    raw = _grouped([_ticker("AAPL", 100, volume=100)])
+    ingest_one_day(db_session, older, ["AAPL"], "test-key", _http_get(raw))
+
+    calls = []
+
+    def adjusted_get(kind, day, key, *, adjusted=False):
+        calls.append((day, adjusted))
+        return {"adjusted": True, **_grouped([
+            _ticker("AAPL", 50 if day == older else 52.5, volume=100.25),
+        ])}
+
+    first = ingest_one_day(db_session, older, ["AAPL"], "test-key", adjusted_get,
+                           adjustment_type="split_adjusted")
+    second = ingest_one_day(db_session, newer, ["AAPL"], "test-key", adjusted_get,
+                            adjustment_type="split_adjusted")
+    db_session.commit()
+    rows = {(row.session_date, row.adjustment_type): row for row in db_session.query(MarketBarDaily).all()}
+    assert calls == [(older, True), (newer, True)]
+    assert first["written_valid"] == second["written_valid"] == 1
+    assert rows[(older, "raw")].close == Decimal("100")
+    assert rows[(older, "split_adjusted")].close == Decimal("50")
+    assert rows[(older, "split_adjusted")].volume == Decimal("100.25")
+    assert rows[(newer, "split_adjusted")].quality_status == "valid"
+    response = client.get("/market/symbols/AAPL/history", params={
+        "interval": "1d", "range": "2y", "provider": "massive", "adjustment_type": "split_adjusted",
+    }).json()
+    assert [bar["close"] for bar in response["bars"]] == ["50.000000", "52.500000"]
+    assert [bar["volume"] for bar in response["bars"]] == ["100.25", "100.25"]
+
+
+def test_adjusted_ingestion_rejects_unconfirmed_provider_basis(db_session):
+    _seed_symbols(db_session, ["AAPL"])
+    with pytest.raises(ValueError, match="did not confirm split adjustment"):
+        ingest_one_day(db_session, date.today() - timedelta(days=1), ["AAPL"],
+                       "test-key", _http_get(_grouped([_ticker("AAPL", 50)])),
+                       adjustment_type="split_adjusted")
+    assert db_session.query(MarketBarDaily).count() == 0
+
+
+def test_adjusted_refresh_reprices_prior_split_bars_without_changing_raw(db_session, monkeypatch):
+    older = date(2026, 11, 10)
+    newer = date(2026, 11, 11)
+    monkeypatch.setattr(massive_ingestion, "expected_session_dates", lambda _start, _end: [older, newer])
+    _seed_symbols(db_session, ["AAPL"])
+    ingest_one_day(db_session, older, ["AAPL"], "test-key", _http_get(_grouped([_ticker("AAPL", 100)])))
+
+    def initial(kind, day, key, *, adjusted):
+        return {"adjusted": True, **_grouped([_ticker("AAPL", 100 if day == older else 52.5)])}
+
+    ingest_one_day(db_session, older, ["AAPL"], "test-key", initial, adjustment_type="split_adjusted")
+    ingest_one_day(db_session, newer, ["AAPL"], "test-key", initial, adjustment_type="split_adjusted")
+    db_session.commit()
+    calls = []
+
+    def refreshed(kind, day, key, *, adjusted):
+        calls.append(day)
+        assert adjusted is True
+        return {"adjusted": True, **_grouped([_ticker("AAPL", 50 if day == older else 52.5)])}
+
+    report = backfill_two_years(db_session, ["AAPL"], "test-key", http_get=refreshed,
+                                today=newer + timedelta(days=1), adjustment_type="split_adjusted",
+                                refresh_adjusted=True)
+    db_session.commit()
+    rows = {(row.session_date, row.adjustment_type): row for row in db_session.query(MarketBarDaily).all()}
+    assert calls == [older, newer]
+    assert report["sessions_failed"] == 0
+    assert rows[(older, "raw")].close == Decimal("100")
+    assert rows[(older, "split_adjusted")].close == Decimal("50")
+    assert rows[(newer, "split_adjusted")].quality_status == "valid"
+
+
+def test_adjusted_refresh_stops_when_provider_omits_existing_bar(db_session, monkeypatch):
+    day = date(2026, 11, 10)
+    monkeypatch.setattr(massive_ingestion, "expected_session_dates", lambda _start, _end: [day, day + timedelta(days=1)])
+    _seed_symbols(db_session, ["AAPL"])
+    ingest_one_day(db_session, day, ["AAPL"], "test-key",
+                   lambda *_args, **_kwargs: {"adjusted": True, **_grouped([_ticker("AAPL", 100)])},
+                   adjustment_type="split_adjusted")
+    db_session.commit()
+    calls = []
+
+    def missing(kind, requested_day, key, *, adjusted):
+        calls.append(requested_day)
+        return {"adjusted": True, **_grouped([_ticker("MSFT", 50)])}
+
+    report = backfill_two_years(db_session, ["AAPL"], "test-key", http_get=missing,
+                                today=day + timedelta(days=2), adjustment_type="split_adjusted",
+                                refresh_adjusted=True)
+    assert calls == [day]
+    assert report["sessions_failed"] == 1
+    db_session.rollback()
+    assert db_session.query(MarketBarDaily).one().close == Decimal("100")
 
 
 def test_ingest_one_day_reports_symbols_missing_from_the_provider(db_session):

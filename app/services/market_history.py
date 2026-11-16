@@ -539,9 +539,9 @@ def _price_text(value: object) -> str:
 
 def _volume_text(value: object) -> str:
     try:
-        number = int(value)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=500, detail="Canonical volume is not an integer.") from exc
-    if number < 0:
+        number = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail="Canonical volume is not a decimal.") from exc
+    if not number.is_finite() or number < 0:
         raise HTTPException(status_code=500, detail="Canonical volume is negative.")
-    return str(number)
+    return format(number.normalize(), "f")

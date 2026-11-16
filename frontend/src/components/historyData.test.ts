@@ -392,11 +392,15 @@ describe("historyVolume", () => {
     ]);
   });
 
+  it("plots provider-reported fractional volume", () => {
+    expect(historyVolume(dailyPayload([bar({ volume: "100.25" })]))[0]?.value).toBe(100.25);
+  });
+
   it("returns no points for the known unavailable empty fixture", () => {
     expect(historyVolume(dailyPayload([]))).toEqual([]);
   });
 
-  it.each(["", "-1", "1.5", "01", "1e2", "NaN", null, undefined, 0])(
+  it.each(["", "-1", "1.1234567", "01", "1e2", "NaN", null, undefined, 0])(
     "rejects an invalid volume %j",
     (volume) => {
       expect(() => historyVolume(dailyPayload([bar({ volume })]))).toThrow();

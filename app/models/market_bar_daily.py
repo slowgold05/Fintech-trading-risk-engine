@@ -1,6 +1,6 @@
 """Canonical daily research bars; provider and adjustment series remain separate."""
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, Date, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Numeric, String
 
 from app.core.database import Base
 
@@ -29,6 +29,6 @@ class MarketBarDaily(Base):
     high = Column(Numeric(18, 6), nullable=False)
     low = Column(Numeric(18, 6), nullable=False)
     close = Column(Numeric(18, 6), nullable=False)
-    volume = Column(BigInteger, nullable=False)
+    volume = Column(Numeric(30, 6), nullable=False)
     fetched_at = Column(DateTime(timezone=True), nullable=False)
     quality_status = Column(String(16), nullable=False)
