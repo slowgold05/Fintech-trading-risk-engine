@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.scripts.run_controls import app_control_results, persist_results
 from app.services.control_evidence import backfill_missing_file_evidence
-from app.services.market_cache_service import refresh_quote_cache
+from app.services.market_cache_service import massive_key_is_set, refresh_quote_cache
 from app.services.aml_cases import run_live_aml
 from app.services.research_briefs import build_daily_briefs
 from app.services.research_worker import process_pending_research_jobs
@@ -28,15 +28,32 @@ def refresh_market_caches(db) -> dict:
         requested = 0
         refreshed = 0
         error_count = 0
+        source = settings.market_quote_source
+        # One grouped-daily call covers the tier when Massive is configured.
+        # A missing key uses the Yahoo path, in batches of 50, and says so.
+        one_batch = source == "massive" and massive_key_is_set()
+        reported_source = source
+        fallback_reason = None
         while remaining > 0:
-            result = refresh_quote_cache(db, tier, min(50, remaining), source="eod")
+            batch = remaining if one_batch else min(50, remaining)
+            result = refresh_quote_cache(db, tier, batch, source=source)
             requested += result["requested"]
             refreshed += result["refreshed"]
             error_count += len(result["errors"])
+            reported_source = result.get("source", source)
+            if result.get("fallback_reason"):
+                fallback_reason = result["fallback_reason"]
             if result["requested"] == 0 or result["refreshed"] == 0:
                 break
             remaining -= result["requested"]
-        summary[tier] = {"requested": requested, "refreshed": refreshed, "error_count": error_count}
+        summary[tier] = {
+            "requested": requested,
+            "refreshed": refreshed,
+            "error_count": error_count,
+            "source": reported_source,
+        }
+        if fallback_reason:
+            summary[tier]["fallback_reason"] = fallback_reason
     return summary
 
 

@@ -36,7 +36,37 @@ def _bar(symbol: str, day: date, open_, high, low, close, volume, source: str) -
     )
 
 
+def grouped_payload_has_no_bars(payload: dict) -> bool:
+    """True when a grouped day returned no aggregate bars.
+
+    A session with no trades comes back as status OK and resultsCount 0, often
+    with the results list omitted, or as an empty results list. A missing
+    status with a zero count is the same shape. NOT_FOUND and DELAYED are not
+    an empty session: the parser leaves them incomplete so a rerun can retry.
+    """
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("status") not in {None, "OK"}:
+        return False
+    rows = payload.get("results")
+    if isinstance(rows, list):
+        return len(rows) == 0
+    if rows is not None:
+        return False
+    count = payload.get("resultsCount")
+    if count is None:
+        count = payload.get("queryCount")
+    if count is None:
+        return False
+    try:
+        return int(count) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def parse_massive_grouped(payload: dict, day: date) -> list[Bar]:
+    if grouped_payload_has_no_bars(payload):
+        return []
     rows = payload.get("results") if isinstance(payload, dict) else None
     if payload.get("status") not in {None, "OK"} or not isinstance(rows, list):
         raise ValueError("Massive grouped payload is incomplete")
