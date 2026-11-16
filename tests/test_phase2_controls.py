@@ -124,6 +124,11 @@ def test_scheduled_cycle_refreshes_before_writing_controls(monkeypatch):
     monkeypatch.setattr(scheduled_jobs, "acquire_scheduler", lambda db, owner, now, stale_before: True)
     monkeypatch.setattr(scheduled_jobs, "release_scheduler", lambda db, owner: None)
     monkeypatch.setattr(scheduled_jobs, "refresh_market_caches", lambda db: calls.append("refresh") or {})
+    monkeypatch.setattr(
+        scheduled_jobs,
+        "refresh_wanted_references",
+        lambda db: calls.append("references") or {"requested": 0, "refreshed": 0, "errors": 0},
+    )
     monkeypatch.setattr(scheduled_jobs, "run_app_controls", lambda db: calls.append("controls") or [])
     monkeypatch.setattr(scheduled_jobs, "backfill_missing_file_evidence", lambda db: calls.append("backfill") or [])
     monkeypatch.setattr(scheduled_jobs, "run_live_surveillance", lambda db: calls.append("surveillance") or {"opened": 0, "rules": 0})
@@ -134,4 +139,4 @@ def test_scheduled_cycle_refreshes_before_writing_controls(monkeypatch):
 
     scheduled_jobs.run_scheduled_cycle()
 
-    assert calls == ["refresh", "controls", "backfill", "surveillance", "aml", "research", "briefs", "forecasts"]
+    assert calls == ["refresh", "references", "controls", "backfill", "surveillance", "aml", "research", "briefs", "forecasts"]

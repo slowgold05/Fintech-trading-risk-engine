@@ -371,6 +371,56 @@ def test_trailing_eps_needs_four_quarters():
     assert parsed["ttm_diluted_eps_periods"] is None
 
 
+def test_trailing_eps_derives_the_fourth_quarter_from_the_annual_filing():
+    """Real filings have three 10-Q quarters and an FY 10-K, not a Q4 row."""
+    rows = [
+        _eps("2024-01-01", "2024-03-31", 1.0, "Q1", 2024, "2024-05-02"),
+        _eps("2024-04-01", "2024-06-30", 1.1, "Q2", 2024, "2024-08-02"),
+        _eps("2024-01-01", "2024-06-30", 9.9, "Q2", 2024, "2024-08-02"),
+        _eps("2024-07-01", "2024-09-30", 1.2, "Q3", 2024, "2024-11-01"),
+        _eps("2024-01-01", "2024-09-30", 9.9, "Q3", 2024, "2024-11-01"),
+        _eps("2024-01-01", "2024-12-31", 4.6, "FY", 2024, "2025-02-14", form="10-K"),
+    ]
+    parsed = _parsed(_diluted(rows))
+
+    assert parsed["ttm_diluted_eps"] == pytest.approx(4.6)
+    periods = parsed["ttm_diluted_eps_periods"]
+    assert [item["fp"] for item in periods] == ["Q1", "Q2", "Q3", "Q4"]
+    assert [item["form"] for item in periods] == ["10-Q", "10-Q", "10-Q", "10-K"]
+    assert periods[3]["start"] == "2024-10-01"
+    assert periods[3]["end"] == "2024-12-31"
+
+
+def test_trailing_eps_rolls_forward_from_the_derived_fourth_quarter():
+    rows = [
+        _eps("2024-01-01", "2024-03-31", 1.0, "Q1", 2024, "2024-05-02"),
+        _eps("2024-04-01", "2024-06-30", 1.1, "Q2", 2024, "2024-08-02"),
+        _eps("2024-07-01", "2024-09-30", 1.2, "Q3", 2024, "2024-11-01"),
+        _eps("2024-01-01", "2024-12-31", 4.6, "FY", 2024, "2025-02-14", form="10-K"),
+        _eps("2025-01-01", "2025-03-31", 1.4, "Q1", 2025, "2025-05-02"),
+        _eps("2025-04-01", "2025-06-30", 1.5, "Q2", 2025, "2025-08-01"),
+        _eps("2025-07-01", "2025-09-30", 1.6, "Q3", 2025, "2025-11-01"),
+    ]
+    parsed = _parsed(_diluted(rows))
+
+    assert parsed["ttm_diluted_eps"] == pytest.approx(5.8)
+    periods = parsed["ttm_diluted_eps_periods"]
+    assert [item["fp"] for item in periods] == ["Q4", "Q1", "Q2", "Q3"]
+    assert periods[0]["start"] == "2024-10-01"
+    assert periods[0]["end"] == "2024-12-31"
+    assert periods[-1]["end"] == "2025-09-30"
+
+
+def test_derived_non_positive_trailing_eps_is_still_returned():
+    rows = [
+        _eps("2024-01-01", "2024-03-31", 1.0, "Q1", 2024, "2024-05-02"),
+        _eps("2024-04-01", "2024-06-30", 1.0, "Q2", 2024, "2024-08-02"),
+        _eps("2024-07-01", "2024-09-30", 1.0, "Q3", 2024, "2024-11-01"),
+        _eps("2024-01-01", "2024-12-31", 0, "FY", 2024, "2025-02-14", form="10-K"),
+    ]
+    assert _parsed(_diluted(rows))["ttm_diluted_eps"] == 0
+
+
 def test_trailing_eps_rejects_a_gap_that_is_not_one_continuous_year():
     rows = _four_quarters()
     rows[2] = _eps("2024-07-22", "2024-10-20", 1.2, "Q3", 2024, "2024-11-01")

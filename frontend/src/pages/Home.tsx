@@ -322,6 +322,10 @@ function formatOptionalPercent(value?: number | null) {
   return value === null || value === undefined ? "--" : formatPercent(value * 100);
 }
 
+function formatResearchPe(value?: number | null) {
+  return value == null || !Number.isFinite(value) ? "--" : value.toFixed(2);
+}
+
 function endOfDayCaption(show: boolean, asOf?: string | null): string | null {
   if (!show || !asOf) {
     return null;
@@ -866,7 +870,7 @@ export function Home() {
                       P/E
                     </div>
                     <div className="mt-1 font-mono text-sm text-slate-100">
-                      {research.pe_ratio ?? "--"}
+                      {formatResearchPe(research.pe_ratio)}
                     </div>
                     {peCaption ? (
                       <div className="mt-1 text-[10px] leading-4 text-slate-500">

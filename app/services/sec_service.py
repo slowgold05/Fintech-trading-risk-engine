@@ -191,46 +191,162 @@ def _share_duration_facts(facts: dict, concepts: list[str]) -> list[dict]:
     return collected
 
 
-def trailing_diluted_eps(facts: dict) -> dict | None:
-    """Sum the latest four standard diluted-EPS quarters.
+def _pick_rank(item: dict) -> tuple:
+    return (item["filed"], -item["concept_rank"], item["index"])
 
-    A quarter is the same shape the margin matcher accepts: fiscal period
-    Q1-Q4 and a duration of 70 to 120 days. Year-to-date rows and annual rows
-    are left out. Fewer than four such quarters, or four that do not cover
-    about one year without overlap, is not a trailing twelve months.
-    """
-    chosen = _best_by_period(_share_duration_facts(facts, ["EarningsPerShareDiluted"]))
-    quarters = [item for item in chosen.values() if _is_standard_quarter(item)]
+
+def _dedupe_by_end(items: list[dict]) -> list[dict]:
     by_end: dict[str, dict] = {}
-    for item in quarters:
-        rank = (item["filed"], -item["concept_rank"], item["index"])
+    for item in items:
+        rank = _pick_rank(item)
         current = by_end.get(item["end"])
         if current is None or rank > current["_pick"]:
             by_end[item["end"]] = {**item, "_pick": rank}
-    ordered = sorted(by_end.values(), key=lambda item: item["end"])
-    if len(ordered) < 4:
-        return None
-    window = ordered[-4:]
-    span = _period_days(window[0]["start"], window[-1]["end"])
-    if span is None or not 300 <= span <= 400:
-        return None
-    for previous, current in zip(window, window[1:]):
+    return sorted(by_end.values(), key=lambda item: item["end"])
+
+
+def _periods_follow(items: list[dict]) -> bool:
+    for previous, current in zip(items, items[1:]):
         gap = _period_days(previous["end"], current["start"])
         if gap is None or gap < -5 or gap > 20:
-            return None
+            return False
+    return True
+
+
+def _period_public(item: dict) -> dict:
     return {
-        "eps": sum(item["val"] for item in window),
-        "periods": [
-            {
-                "form": item["form"],
-                "start": item["start"],
-                "end": item["end"],
-                "fp": item["fp"],
-                "fy": item["fy"],
-            }
-            for item in window
-        ],
+        "form": item["form"],
+        "start": item["start"],
+        "end": item["end"],
+        "fp": item["fp"],
+        "fy": item["fy"],
     }
+
+
+def _trailing_result(eps: float, items: list[dict]) -> dict:
+    return {"eps": eps, "periods": [_period_public(item) for item in items]}
+
+
+def _discrete_trailing(quarters: list[dict]) -> dict | None:
+    if len(quarters) < 4:
+        return None
+    window = quarters[-4:]
+    span = _period_days(window[0]["start"], window[-1]["end"])
+    if span is None or not 300 <= span <= 400 or not _periods_follow(window):
+        return None
+    return _trailing_result(sum(item["val"] for item in window), window)
+
+
+def _quarter_set(items: list[dict], fiscal_periods: tuple[str, ...]) -> list[dict] | None:
+    chosen: dict[str, dict] = {}
+    for item in items:
+        fiscal_period = item["fp"]
+        if fiscal_period not in fiscal_periods:
+            continue
+        current = chosen.get(fiscal_period)
+        if current is None or item["_pick"] > current["_pick"]:
+            chosen[fiscal_period] = item
+    if any(fiscal_period not in chosen for fiscal_period in fiscal_periods):
+        return None
+    ordered = [chosen[fiscal_period] for fiscal_period in fiscal_periods]
+    if not _periods_follow(ordered):
+        return None
+    return ordered
+
+
+def _belongs_to_year(item: dict, year: dict) -> bool:
+    if item["start"] < year["start"] or item["end"] > year["end"]:
+        return False
+    if item["fy"] is not None and year["fy"] is not None and item["fy"] != year["fy"]:
+        return False
+    return True
+
+
+def _day_after(value: str) -> str | None:
+    try:
+        return (datetime.fromisoformat(value) + timedelta(days=1)).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _derived_fourth_quarter(three: list[dict], year: dict) -> dict | None:
+    start = _day_after(three[-1]["end"])
+    if start is None:
+        return None
+    days = _period_days(start, year["end"])
+    opening = _period_days(year["start"], three[0]["start"])
+    if days is None or not 70 <= days <= 120 or opening is None or opening < -5 or opening > 20:
+        return None
+    value = year["val"] - sum(item["val"] for item in three)
+    if not math.isfinite(value):
+        return None
+    return {
+        "form": year["form"],
+        "start": start,
+        "end": year["end"],
+        "fp": "Q4",
+        "fy": year["fy"],
+        "val": value,
+        "filed": year["filed"],
+        "concept_rank": year["concept_rank"],
+        "index": year["index"],
+        "_pick": _pick_rank(year),
+    }
+
+
+def _trailing_from_annual(quarters: list[dict], years: list[dict]) -> dict | None:
+    """Fourth quarter is the full year minus the three reported quarters.
+
+    When the next fiscal year has also reported Q1 through Q3, the trailing
+    sum is that derived quarter plus those three. A roll-forward that is not
+    one continuous year keeps the completed year.
+    """
+    if not years:
+        return None
+    year = max(years, key=lambda item: (item["end"], item["filed"], item["index"]))
+    inside = [item for item in quarters if _belongs_to_year(item, year)]
+    three = _quarter_set(inside, ("Q1", "Q2", "Q3"))
+    if three is None or three[-1]["end"] >= year["end"]:
+        return None
+    derived = _derived_fourth_quarter(three, year)
+    if derived is None:
+        return None
+    annual = _trailing_result(year["val"], [*three, derived])
+    if year["fy"] is None:
+        return annual
+    later = [
+        item for item in quarters
+        if item["end"] > year["end"] and item["fy"] == year["fy"] + 1
+    ]
+    three_later = _quarter_set(later, ("Q1", "Q2", "Q3"))
+    if three_later is None:
+        return annual
+    bridge = _period_days(year["end"], three_later[0]["start"])
+    span = _period_days(derived["start"], three_later[-1]["end"])
+    if bridge is None or bridge < -5 or bridge > 20 or span is None or not 300 <= span <= 400:
+        return annual
+    rolled = derived["val"] + sum(item["val"] for item in three_later)
+    if not math.isfinite(rolled):
+        return annual
+    return _trailing_result(rolled, [derived, *three_later])
+
+
+def trailing_diluted_eps(facts: dict) -> dict | None:
+    """Trailing diluted EPS from the rows SEC company facts actually carry.
+
+    Four discrete quarters are used when they form one continuous year.
+    Filings usually have no Q4 row: the 10-K is the full year. The fourth
+    quarter is then the year minus Q1 through Q3, and the trailing sum is
+    the year. Once the next year has reported Q1 through Q3, the sum rolls
+    forward from that derived quarter. None means the window cannot be built.
+    """
+    chosen = _best_by_period(_share_duration_facts(facts, ["EarningsPerShareDiluted"]))
+    quarters = _dedupe_by_end([item for item in chosen.values() if _is_standard_quarter(item)])
+    discrete = _discrete_trailing(quarters)
+    if discrete is not None:
+        return discrete
+    years = [item for item in chosen.values() if _is_standard_year(item)]
+    return _trailing_from_annual(quarters, years)
 
 
 def latest_dei_shares_outstanding(facts: dict) -> float | None:

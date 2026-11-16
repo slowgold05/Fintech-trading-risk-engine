@@ -1,10 +1,11 @@
 """Price, market cap, and P/E for the company research panel.
 
 Price comes from the latest Massive row in the quote cache. Market cap is that
-price times shares outstanding. Share count comes from the Massive ticker
-reference endpoint, which is on the free plan, and falls back to the SEC dei
-cover fact. P/E is the price divided by the trailing four diluted-EPS quarters.
-Alpha Vantage is used only when the preferred figure cannot be computed.
+price times shares outstanding. Share counts are read from the reference cache.
+The scheduled refresh fills that cache. A miss keeps the SEC dei cover count
+and does not call Massive. P/E is the price divided by trailing diluted EPS,
+rounded to two decimals. A missing trailing window uses the overview P/E.
+Alpha Vantage supplies the quote only when the Massive close is absent.
 """
 
 from __future__ import annotations
@@ -23,6 +24,10 @@ from app.services.massive_client import http_get_massive_ticker
 from app.services.price_service import get_stock_quote
 
 _CACHE_HOURS = 24
+_FAILURE_MINUTES = 15
+_PENDING_SOURCE = "massive_pending"
+_FAILURE_SOURCE = "massive_error"
+_REFERENCE_BATCH = 20
 _EOD_BASIS = "end_of_day_previous_close"
 _AV_BASIS = "alpha_vantage"
 
@@ -96,11 +101,19 @@ def _massive_quote(db: Session, symbol: str) -> dict | None:
     }
 
 
+def _cache_ttl(source: str) -> timedelta:
+    if source == _FAILURE_SOURCE:
+        return timedelta(minutes=_FAILURE_MINUTES)
+    if source == _PENDING_SOURCE:
+        return timedelta(days=3650)
+    return timedelta(hours=_CACHE_HOURS)
+
+
 def _cached_shares(db: Session, symbol: str) -> MarketReferenceCache | None:
     row = db.get(MarketReferenceCache, symbol)
     if row is None or row.fetched_at is None:
         return None
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=_CACHE_HOURS)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - _cache_ttl(row.source)
     fetched = row.fetched_at
     if fetched.tzinfo is not None:
         fetched = fetched.astimezone(timezone.utc).replace(tzinfo=None)
@@ -120,30 +133,69 @@ def _store_shares(db: Session, symbol: str, shares: float | None, source: str) -
     db.commit()
 
 
-def massive_shares_outstanding(db: Session, symbol: str, *, http_get=None) -> tuple[float | None, str | None, str | None]:
-    """Return shares, source, and an error detail. Uses the 24-hour cache.
+def massive_shares_outstanding(db: Session, symbol: str) -> tuple[float | None, str | None, str | None]:
+    """Return the cached share count. This never calls Massive.
 
-    ``http_get`` is resolved when the function runs so tests can replace
-    ``http_get_massive_ticker`` without a live Massive call.
+    A miss records the symbol for the scheduled refresh and leaves the SEC
+    count in place. A cached failure is remembered so the next request does
+    not ask again.
     """
-    fetch = http_get_massive_ticker if http_get is None else http_get
     cached = _cached_shares(db, symbol)
     if cached is not None:
         shares = _positive(cached.shares_outstanding)
         return shares, cached.source, None
+    if settings.massive_api_key.strip():
+        _store_shares(db, symbol, None, _PENDING_SOURCE)
+    return None, None, None
+
+
+def refresh_wanted_references(db: Session, *, limit: int = _REFERENCE_BATCH, http_get=None, pacer=None, sleeper=None) -> dict:
+    """Fetch share counts that research asked for. One attempt, no retry sleep.
+
+    The scheduled cycle calls this. A 404 or 429 is stored for a short time
+    so the following research request does not repeat it.
+    """
     if not settings.massive_api_key.strip():
-        return None, None, None
-    try:
-        payload = fetch(symbol, settings.massive_api_key)
-    except ProviderUnavailable as exc:
-        return None, None, str(exc)
-    parsed = shares_from_ticker_payload(payload if isinstance(payload, dict) else {})
-    if parsed is None:
-        _store_shares(db, symbol, None, "massive_unavailable")
-        return None, "massive_unavailable", None
-    shares, source = parsed
-    _store_shares(db, symbol, shares, source)
-    return shares, source, None
+        return {"requested": 0, "refreshed": 0, "errors": 0}
+    fetch = http_get_massive_ticker if http_get is None else http_get
+    from app.services.massive_client import get_shared_pacer
+
+    limiter = get_shared_pacer() if pacer is None else pacer
+    rows = (
+        db.query(MarketReferenceCache)
+        .filter(MarketReferenceCache.source == _PENDING_SOURCE)
+        .order_by(MarketReferenceCache.fetched_at)
+        .limit(limit)
+        .all()
+    )
+    refreshed = 0
+    errors = 0
+    for row in rows:
+        symbol = row.symbol
+        try:
+            payload = fetch(
+                symbol,
+                settings.massive_api_key,
+                pacer=limiter,
+                max_attempts=1,
+                sleeper=sleeper,
+            )
+        except ProviderUnavailable:
+            _store_shares(db, symbol, None, _FAILURE_SOURCE)
+            errors += 1
+            continue
+        parsed = shares_from_ticker_payload(payload if isinstance(payload, dict) else {})
+        if parsed is None:
+            _store_shares(db, symbol, None, "massive_unavailable")
+            continue
+        shares, source = parsed
+        _store_shares(db, symbol, shares, source)
+        refreshed += 1
+    return {"requested": len(rows), "refreshed": refreshed, "errors": errors}
+
+
+def _round_ratio(value: float) -> float:
+    return round(value, 2)
 
 
 def build_research_valuation(
@@ -152,15 +204,14 @@ def build_research_valuation(
     overview: dict,
     sec_fundamentals: dict,
     *,
-    http_get=None,
     quote_getter=None,
 ) -> dict:
     """Choose price, market cap, and P/E, and the quote used for scoring.
 
     ``quote_getter`` is the research router's ``get_stock_quote``. Passing it
     at call time keeps the existing router monkeypatches on the fallback path.
+    Share counts come from the cache. This function does not call Massive.
     """
-    fetch = http_get_massive_ticker if http_get is None else http_get
     getter = get_stock_quote if quote_getter is None else quote_getter
     errors = []
     quote = _massive_quote(db, symbol)
@@ -181,7 +232,7 @@ def build_research_valuation(
 
     shares = _positive(sec_fundamentals.get("shares_outstanding")) if isinstance(sec_fundamentals, dict) else None
     shares_source = "sec_dei" if shares is not None else None
-    massive_shares, massive_source, massive_error = massive_shares_outstanding(db, symbol, http_get=fetch)
+    massive_shares, massive_source, massive_error = massive_shares_outstanding(db, symbol)
     if massive_error:
         errors.append({"source": "Massive reference", "detail": massive_error})
     if massive_shares is not None:
@@ -204,16 +255,16 @@ def build_research_valuation(
     eps = _finite(sec.get("ttm_diluted_eps")) if "ttm_diluted_eps" in sec else None
     pe_ratio = None
     pe_basis = None
-    if "ttm_diluted_eps" in sec:
-        # A filing set that does not produce a positive trailing EPS stays blank.
-        # Falling back to the overview P/E would show a different number.
+    if price is not None and eps is not None and eps > 0:
+        pe_ratio = _round_ratio(price / eps)
         pe_basis = "sec_ttm_diluted_eps"
-        if price is not None and eps is not None and eps > 0:
-            pe_ratio = price / eps
+    elif eps is not None and eps <= 0:
+        # A computed trailing EPS that is not positive stays blank.
+        pe_basis = "sec_ttm_diluted_eps"
     else:
         overview_pe = _positive(_overview_number(overview, "PERatio"))
         if overview_pe is not None:
-            pe_ratio = overview_pe
+            pe_ratio = _round_ratio(overview_pe)
             pe_basis = _AV_BASIS
 
     as_of = quote.get("price_as_of")
