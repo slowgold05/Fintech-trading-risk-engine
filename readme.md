@@ -13,7 +13,8 @@ Sentinel Markets combines a paper-trading terminal, portfolio analytics, optiona
 | Path | What it provides | Access |
 | --- | --- | --- |
 | `/`, `/dashboard` | Public market home or signed-in account overview | Account numbers require a session. |
-| `/market` | Market discovery, daily charts, and watchlists | Public market data; private watchlists require a session. |
+| `/market` | Public discovery: search, Market pulse, heatmap, sector ETFs, news, and watchlists | Public market data. Private watchlists require a session. |
+| `/market/:symbol` | End-of-day quote, daily chart, key stats, and company news | Public for an S&P 500 name or SPY, QQQ, DIA, and IWM. Company news requires a session. |
 | `/trades` | Order preview, paper execution, fills, and cancellation | Signed in; execution role checks still apply. |
 | `/portfolio` | Valuation, performance, allocation, and P&L attribution | Signed in. |
 | `/risk` | Portfolio risk measures and read-only scenario previews | Signed in. |
@@ -26,7 +27,7 @@ The public home header has a **Log in** link to `/login` (signed-in visitors see
 
 ## Product path
 
-1. Browse the public dashboard: cached market context, no account required.
+1. Browse `/market`: cached end-of-day market context, no account required.
 2. Sign in. Private watchlists support multiple lists, membership, and ordering. They can prefill a research or chart draft. Trade entry from a watchlist passes only the symbol.
 3. Open a cached chart, then an explicit non-binding order preview, then confirm a supported paper order.
 4. Matching uses actual opposing liquidity and price-time priority, including partial fills, cancel, and buying power. Idempotency keys are required on submit.
@@ -35,11 +36,37 @@ The public home header has a **Log in** link to `/login` (signed-in visitors see
 
 ## Charts and market data
 
-Charts use Lightweight Charts 5.2.1: candle, line, and area series, volume, and SMA, EMA, Bollinger Bands, RSI, and MACD with configurable parameters. Ranges are `1m`, `3m`, `6m`, `1y`, `2y`, and `all`. **All** means stored available history, not guaranteed full listing coverage. Chart preferences persist. Owned execution markers and open-order price levels are drawn for the signed-in account.
+The signed-in daily chart uses Lightweight Charts 5.2.1: candle, line, and area series, volume, and SMA, EMA, Bollinger Bands, RSI, and MACD with configurable parameters. Its ranges are `1m`, `3m`, `6m`, `1y`, `2y`, and `all`. **All** means stored available history, not guaranteed full listing coverage. Chart preferences persist. Owned execution markers and open-order price levels are drawn for the signed-in account.
 
-The quote path is a cached provider. Adjustment policy is explicit. The standard NYSE calendar has documented coverage limits. There is no intraday feed and no claim of a continuous provider entitlement.
+There is no intraday feed and no claim of a continuous provider entitlement. Quotes, risk, and paper execution stay on raw prices. Order execution still reads a live price through Alpha Vantage, described under Trading below.
 
-`GET /market/universe` is narrowed to the S&P 500 constituent list plus four index benchmarks (`app/data/sp500_constituents.csv`), not the whole discoverable market. A real Massive-backed two-year daily backfill (`app/services/massive_ingestion.py`'s `backfill_two_years`) has been run end to end against a real key for all 503 symbols; it tolerates a single day's provider outage or a malformed payload without aborting the rest of the run, recording that one session as missing and continuing. `backfill_two_years` does not pace its own requests against a free-tier provider's rate limit — pacing a real run is the caller's responsibility.
+### Massive quotes
+
+The scheduled quote source defaults to `massive`. One grouped daily call loads the latest finished NYSE session. Overview, heatmap, and sector tiles label a Massive price as the prior session close, not a real-time quote. The one-session change uses the stored raw close from the immediately previous NYSE session. An older bar is ignored, and the change is then open-to-close. A symbol missing from that call, or a failed or malformed grouped payload, falls back to Alpha Vantage. With no Massive key, the same refresh uses Yahoo end-of-day quotes and says Massive is not configured. These cached prices are not used for order execution.
+
+### Search, news, and the public menu
+
+Default `GET /market/universe` browse is the S&P 500 constituent list plus SPY, QQQ, DIA, and IWM. An exact ticker search, or a symbol the signed-in user holds, can return a name outside that list with `in_featured_universe` false and the label `Outside S&P 500`. A partial search does not surface an unheld outsider. Ticker and company-name matching is case-insensitive. Held symbols sort first inside the page limit.
+
+Public `GET /market/news` serves cached Finnhub headlines for SPY, QQQ, DIA, and IWM. The Market news card scrolls inside the same height cap as the stock heatmap. **Open menu** sits to the left of the brand and opens a left drawer. Escape, the backdrop, and Close menu dismiss it and return focus to the button. Reduced motion skips the slide.
+
+### Market pulse
+
+The public Market pulse card charts SPY, QQQ, DIA, and IWM from `GET /market/symbols/{symbol}/history` with provider `massive` and adjustment `split_adjusted`. Ranges are 1M, 3M, 6M, 1Y, and 2Y. Each line is the percent change from the first positive close in the range. Compare draws the four together. Separate draws one panel each. A table lists the same change and as-of date. The line breaks only when more than one weekday is missing. A single missing weekday stays connected. An empty or failed series stays blank. This card does not fall back to raw bars.
+
+### Company research
+
+`GET /market/research/{symbol}` prices the public panel from the latest Massive row in the quote cache. When that close is used, the panel labels the price `End of day` plus the quote date. Market cap is that price times shares outstanding and gets the same label. P/E is that price divided by trailing diluted EPS, shown to two decimals, and gets the same label. Non-positive trailing EPS stays blank. When that window cannot be built, P/E uses the Alpha Vantage overview figure and is not labeled end of day. The request reads the share-count cache and does not call Massive. A stale count stays until the scheduled refresh replaces it. If no Massive count is stored, the SEC cover count is used. Alpha Vantage supplies the quote only when the Massive close is absent. Overview text still comes from Alpha Vantage. This panel does not start a Research Desk job.
+
+### Stock detail
+
+`/market/:symbol` is public for the S&P 500 universe plus SPY, QQQ, DIA, and IWM. Heatmap tiles, mover rows, and research results link to it when the symbol can be served. `GET /market/symbols/{symbol}/quote` reads `MarketQuoteCache` and does not call a provider. A Massive quote is labeled as the raw last close. The page loads two years of Massive `split_adjusted` bars and plots 1M, 3M, 6M, YTD, 1Y, or 2Y as a line or candlestick, with volume. Gaps stay empty. If that adjusted series is empty, the page plots the raw bars and says so. Market cap and P/E come from the research response and render as unavailable when that response omits them. Company news uses the signed-in Finnhub route. Signed-out visitors see a sign-in prompt. Paper trade opens the existing order ticket.
+
+### Daily bars and adjustment
+
+`market_bars_daily` keeps `raw` and `split_adjusted` as separate series. Quotes, portfolio risk, and performance reads use the raw series. Bar volume is a decimal, so a fractional provider volume is preserved. A split-adjusted grouped response is stored only when the payload confirms `adjusted=true`. The Massive client paces at 4.8 requests per minute, a 12.5 second gap, and retries HTTP 429 with a bounded wait. `backfill_two_years` uses that client. An empty grouped day is a closed session only when the date is strictly before the latest finished NYSE session. The latest finished session, and any newer empty day, stays not yet available and is requested again. `NOT_FOUND` and `DELAYED` stay failures. One malformed day is recorded and the rest of the window continues.
+
+The recorded local two-year run stored the **raw** series for the S&P 500 constituents and the four index ETFs. This file does not record a finished split-adjusted backfill. After migration `b7c91a0e4d62`, that series is loaded with `python -m app.scripts.backfill_massive_history --adjustment split_adjusted`. A later split uses `--refresh-adjusted`, which re-fetches the window and commits only when the refresh is complete. An incomplete refresh rolls back. Until those bars are stored, stock detail keeps the labeled raw fallback and Market pulse leaves an empty proxy blank.
 
 ## Trading, ledger, and access
 
@@ -63,7 +90,7 @@ Risk metrics, when history is long enough, include volatility as a **sample per 
 
 ## Research Desk
 
-`/research` serves owner-scoped jobs and reports, daily watchlist briefs, and — alongside each AI-generated note — the symbol's current price, an interactive daily chart, its recent SEC EDGAR filings, and recent Finnhub company-news headlines.
+`/research` serves owner-scoped jobs and reports, daily watchlist briefs, and — alongside each AI-generated note — the symbol's current price, an interactive daily chart, its recent SEC EDGAR filings, and recent Finnhub company-news headlines. That desk is separate from the public company-research panel on `/market`.
 
 A queued research job now starts processing immediately (via a FastAPI background task fired right after `POST /research/jobs` returns), instead of waiting only for the scheduler's periodic cycle. The periodic scheduler cycle still runs as a safety net for anything a crashed process or restart left behind.
 
@@ -216,5 +243,6 @@ requirements*.txt     Core install, plus optional research and forecast extras
 - Optional models stay off unless someone installs the extra requirements and points the worker at a model server. Enabling them is a separate decision. This README does not do it.
 - Open review items include the performance-range bug, zero-account division, job-cap races, and multi-read risk metrics. None of those are closed here.
 - A real LSE market-data adapter does not exist; Stage 3's fallback provider path is blocked on a real LSE account.
-- Kronos's fixed 12-stock scope and a named model-owner reviewer are undecided; a real walk-forward evaluation on real weights has not been run.
+- Kronos's fixed 12-stock scope and a named model-owner reviewer are undecided. A finished 12-stock walk-forward evaluation on real weights is not recorded here. `forecast_kronos_enabled` stays false.
+- Split-adjusted Massive daily bars are a separate series from the recorded raw backfill. This file does not record that adjusted-price backfill as finished.
 - `finnhub_api_key` is empty by default; `/research/news/{symbol}` then returns an honest empty-list result rather than real headlines until a key is configured.
