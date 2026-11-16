@@ -231,6 +231,99 @@ def test_massive_refresh_uses_one_grouped_call_and_prior_close(db_session, monke
     assert gone.source == "alpha_vantage"
 
 
+def test_massive_refresh_ignores_a_prior_close_from_an_older_session(db_session, monkeypatch):
+    _symbol(db_session, "AAPL")
+    db_session.add(MarketBarDaily(
+        symbol="AAPL", session_date=date(2026, 11, 10), provider="massive",
+        adjustment_type="raw", open=Decimal("50"), high=Decimal("50"),
+        low=Decimal("50"), close=Decimal("50"), volume=10,
+        fetched_at=datetime(2026, 11, 10, tzinfo=timezone.utc), quality_status="valid",
+    ))
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.services.market_cache_service.http_get_massive",
+        lambda kind, day, api_key: _grouped_payload(),
+    )
+    monkeypatch.setattr(
+        "app.services.market_cache_service.latest_entitled_session",
+        lambda today=None: date(2026, 11, 13),
+    )
+    monkeypatch.setattr(settings, "massive_api_key", "unit-key")
+
+    result = refresh_quote_cache(db_session, "daily", 5, source="massive", symbols=["AAPL"])
+
+    assert result["change_basis_counts"] == {"prior_close": 0, "open_to_close": 1}
+    quote = db_session.query(MarketQuoteCache).one()
+    assert quote.price == Decimal("105.000000")
+    assert quote.change_amount == Decimal("5.000000")
+
+
+def test_massive_refresh_rejects_an_inconsistent_bar_and_uses_fallback(db_session, monkeypatch):
+    for symbol in ("AAPL", "MSFT"):
+        _symbol(db_session, symbol)
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.services.market_cache_service.http_get_massive",
+        lambda kind, day, api_key: {
+            "status": "OK",
+            "results": [
+                {"T": "AAPL", "o": 100, "h": 110, "l": 90, "c": 105, "v": 1000},
+                {"T": "MSFT", "o": 10, "h": 8, "l": 12, "c": 0, "v": 50},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.market_cache_service.latest_entitled_session",
+        lambda today=None: date(2026, 11, 13),
+    )
+    monkeypatch.setattr(settings, "massive_api_key", "unit-key")
+    monkeypatch.setattr(settings, "market_request_delay_seconds", 0)
+    monkeypatch.setattr(
+        "app.services.market_cache_service.get_stock_quote",
+        lambda symbol: {
+            "price": Decimal("4"), "change": Decimal("1"), "change_percent": Decimal("1"),
+            "volume": 1, "quote_date": "2026-11-13",
+        },
+    )
+
+    result = refresh_quote_cache(db_session, "daily", 5, source="massive", symbols=["AAPL", "MSFT"])
+
+    assert result["refreshed_from_massive"] == 1
+    assert result["refreshed_from_fallback"] == 1
+    assert db_session.query(MarketQuoteCache).filter_by(symbol="AAPL").one().source == "massive"
+    assert db_session.query(MarketQuoteCache).filter_by(symbol="MSFT").one().source == "alpha_vantage"
+    assert db_session.query(MarketQuoteCache).filter_by(symbol="MSFT").one().price == Decimal("4")
+
+
+def test_massive_refresh_falls_back_when_the_grouped_payload_is_malformed(db_session, monkeypatch):
+    _symbol(db_session, "AAPL")
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.services.market_cache_service.http_get_massive",
+        lambda kind, day, api_key: {"status": "OK", "results": [{"T": "AAPL", "o": 1, "h": 1, "l": 1, "v": 1}]},
+    )
+    monkeypatch.setattr(
+        "app.services.market_cache_service.latest_entitled_session",
+        lambda today=None: date(2026, 11, 13),
+    )
+    monkeypatch.setattr(settings, "massive_api_key", "unit-key")
+    monkeypatch.setattr(settings, "market_request_delay_seconds", 0)
+    monkeypatch.setattr(
+        "app.services.market_cache_service.get_stock_quote",
+        lambda symbol: {
+            "price": Decimal("8"), "change": Decimal("1"), "change_percent": Decimal("1"),
+            "volume": 1, "quote_date": "2026-11-13",
+        },
+    )
+
+    result = refresh_quote_cache(db_session, "daily", 5, source="massive", symbols=["AAPL"])
+
+    assert result["source"] == "alpha_vantage"
+    assert result["fallback_from"] == "massive"
+    assert result["refreshed"] == 1
+    assert db_session.query(MarketQuoteCache).one().source == "alpha_vantage"
+
+
 def test_massive_refresh_falls_back_when_the_grouped_call_fails(db_session, monkeypatch):
     _symbol(db_session, "AAPL")
     db_session.commit()
@@ -378,3 +471,18 @@ def test_overview_marks_a_massive_index_quote(client, db_session):
     assert "end of day" in body["data_notice"]
     assert body["trends"][0]["source_symbol"] == "SPY"
     assert body["trends"][0]["price_basis"] == "end_of_day_previous_close"
+
+
+def test_overview_marks_a_massive_sector_quote(client, db_session):
+    db_session.add(MarketQuoteCache(
+        symbol="XLK", price=Decimal("220"), change_amount=Decimal("2"),
+        change_percent=Decimal("0.90"), volume=1000, source="massive",
+        fetched_at=datetime(2026, 11, 15, 18, 0), quote_at=datetime(2026, 11, 13),
+    ))
+    db_session.commit()
+
+    body = client.get("/market/overview").json()
+    sector = next(item for item in body["sectors"] if item["symbol"] == "XLK")
+
+    assert "end of day" in body["data_notice"]
+    assert sector["price_basis"] == "end_of_day_previous_close"

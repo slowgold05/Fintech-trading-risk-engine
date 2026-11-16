@@ -17,11 +17,9 @@ from app.models.market_bar_daily import MarketBarDaily
 from app.services.exchange_calendar import expected_session_dates
 from app.services.market_history import two_calendar_years_before
 from app.services.market_providers import ProviderUnavailable, fetch_massive_grouped
-from app.services.market_quality import Bar, check_bars
+from app.services.market_quality import Bar, check_bars, fails_price_checks
 from app.services.massive_client import http_get_massive
 
-# Mirrors ck_market_bars_daily_prices: strictly below one trillion, strictly above zero.
-_PRICE_CEILING = Decimal("1000000000000")
 _PROVIDER = "massive"
 _ADJUSTMENT = "raw"
 
@@ -287,12 +285,7 @@ def _as_decimal(value: object) -> Decimal:
 
 
 def _fails_table_checks(bar: Bar) -> bool:
-    for price in (bar.open, bar.high, bar.low, bar.close):
-        if (not price.is_finite()) or price <= 0 or price >= _PRICE_CEILING:
-            return True
-    if not (bar.low <= bar.open <= bar.high and bar.low <= bar.close <= bar.high):
-        return True
-    return bar.volume < 0
+    return fails_price_checks(bar)
 
 
 def _upsert_daily_bar(db: Session, bar: Bar, quality_status: str) -> None:

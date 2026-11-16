@@ -1,9 +1,9 @@
 import time
 from datetime import date, datetime, time as datetime_time, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -14,7 +14,7 @@ from app.models.price_history_daily import PriceHistoryDaily
 from app.services.eod_service import EodQuote, fetch_eod_batch
 from app.services.exchange_calendar import is_nyse_trading_day
 from app.services.market_providers import ProviderUnavailable, fetch_massive_grouped
-from app.services.market_quality import Bar
+from app.services.market_quality import Bar, fails_price_checks
 from app.services.massive_client import http_get_massive
 from app.services.price_service import AlphaVantageRateLimitError, get_stock_quote
 from app.services.sector_classifier import SECTOR_ORDER, infer_sector
@@ -169,32 +169,31 @@ def _named_symbol_rows(
     return rows, errors
 
 
+def _previous_nyse_session(day: date) -> date | None:
+    cursor = day - timedelta(days=1)
+    for _ in range(14):
+        try:
+            if is_nyse_trading_day(cursor):
+                return cursor
+        except ValueError:
+            return None
+        cursor -= timedelta(days=1)
+    return None
+
+
 def _prior_massive_closes(db: Session, symbols: list[str], day: date) -> dict[str, Decimal]:
-    if not symbols:
+    """Closes from the NYSE session immediately before `day`.
+
+    An older stored bar is not a one-session move, so it is ignored.
+    """
+    previous = _previous_nyse_session(day)
+    if not symbols or previous is None:
         return {}
-    latest = (
-        db.query(
-            MarketBarDaily.symbol.label("symbol"),
-            func.max(MarketBarDaily.session_date).label("session_date"),
-        )
-        .filter(
-            MarketBarDaily.symbol.in_(symbols),
-            MarketBarDaily.session_date < day,
-            MarketBarDaily.provider == "massive",
-            MarketBarDaily.adjustment_type == "raw",
-            MarketBarDaily.quality_status.in_(("valid", "flagged")),
-        )
-        .group_by(MarketBarDaily.symbol)
-        .subquery()
-    )
     rows = (
         db.query(MarketBarDaily.symbol, MarketBarDaily.close)
-        .join(
-            latest,
-            (MarketBarDaily.symbol == latest.c.symbol)
-            & (MarketBarDaily.session_date == latest.c.session_date),
-        )
         .filter(
+            MarketBarDaily.symbol.in_(symbols),
+            MarketBarDaily.session_date == previous,
             MarketBarDaily.provider == "massive",
             MarketBarDaily.adjustment_type == "raw",
             MarketBarDaily.quality_status.in_(("valid", "flagged")),
@@ -273,7 +272,7 @@ def _refresh_massive_quote_cache(
     try:
         session_day = latest_entitled_session()
         bars = fetch_massive_grouped(session_day, settings.massive_api_key, http_get_massive)
-    except (ProviderUnavailable, ValueError) as exc:
+    except (ProviderUnavailable, ValueError, KeyError, TypeError, InvalidOperation, ArithmeticError) as exc:
         fallback = _refresh_alpha_vantage_quote_cache(db, rows, tier)
         fallback["fallback_from"] = "massive"
         fallback["notice"] = MASSIVE_FALLBACK_NOTICE
@@ -294,7 +293,7 @@ def _refresh_massive_quote_cache(
     for symbol_row, _cache in rows:
         symbol = symbol_row.symbol
         bar = by_symbol.get(symbol)
-        if bar is None:
+        if bar is None or fails_price_checks(bar):
             missing_rows.append((symbol_row, cache_rows[symbol]))
             continue
         quote, basis = _massive_quote_fields(bar, priors.get(symbol))

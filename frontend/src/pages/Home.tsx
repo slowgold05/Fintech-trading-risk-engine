@@ -776,12 +776,7 @@ export function Home() {
                       <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
                       <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
                       <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
-                        {trend.change_basis === "prior_close"
-                          ? "Prior-close change"
-                          : trend.change_basis === "open_to_close"
-                            ? "Open-to-close change"
-                            : "Provider change"}{" "}
-                        {formatSignedPercent(trend.change_percent)}
+                        Provider change {formatSignedPercent(trend.change_percent)}
                       </div>
                       <SymbolSparkline className="mt-3 h-8 w-full" range={pulseRange} symbol={trend.source_symbol} />
                     </div>

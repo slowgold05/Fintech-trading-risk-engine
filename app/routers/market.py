@@ -129,7 +129,7 @@ def market_overview(db: Session = Depends(get_db)):
     trends = []
     sectors = []
     errors = []
-    massive_index = False
+    massive_quotes = False
     requested_symbols = [item["symbol"] for item in INDEX_SYMBOLS + SECTOR_SYMBOLS]
     cached_quotes = {
         quote.symbol: quote
@@ -156,7 +156,7 @@ def market_overview(db: Session = Depends(get_db)):
             "change_percent": round(float(quote.change_percent), 4),
         }
         if quote.source == "massive":
-            massive_index = True
+            massive_quotes = True
             trend["price_basis"] = "end_of_day_previous_close"
         trends.append(trend)
 
@@ -168,13 +168,17 @@ def market_overview(db: Session = Depends(get_db)):
 
         if quote.quote_at is not None:
             latest = max(latest, quote.quote_at) if latest else quote.quote_at
-        sectors.append({
+        sector = {
             "symbol": item["symbol"],
             "sector": item["sector"],
             "change_percent": round(float(quote.change_percent), 4),
             "weight": item["weight"],
             "leaders": item["leaders"],
-        })
+        }
+        if quote.source == "massive":
+            massive_quotes = True
+            sector["price_basis"] = "end_of_day_previous_close"
+        sectors.append(sector)
 
     payload = {
         "as_of": latest.replace(tzinfo=timezone.utc).isoformat() if latest else None,
@@ -182,7 +186,7 @@ def market_overview(db: Session = Depends(get_db)):
         "sectors": sectors,
         "errors": errors,
     }
-    if massive_index:
+    if massive_quotes:
         payload["data_notice"] = MASSIVE_EOD_NOTICE
     return payload
 

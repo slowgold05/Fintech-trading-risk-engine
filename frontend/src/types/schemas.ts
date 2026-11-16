@@ -405,7 +405,6 @@ export interface MarketTrendResponse {
   change: number;
   change_percent: number;
   price_basis?: "end_of_day_previous_close" | null;
-  change_basis?: "prior_close" | "open_to_close" | null;
 }
 
 export interface MarketSectorResponse {
@@ -414,6 +413,7 @@ export interface MarketSectorResponse {
   change_percent: number;
   weight: "large" | "medium" | "small";
   leaders: string[];
+  price_basis?: "end_of_day_previous_close" | null;
 }
 
 export interface MarketOverviewResponse {
