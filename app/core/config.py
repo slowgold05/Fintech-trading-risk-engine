@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     yente_url: str = ""
     yente_match_threshold: Decimal = Field(default=Decimal("0.85"), gt=0, le=1)
     massive_api_key: str = ""
+    # Stocks Basic is 5 requests/minute. 4.8/min is a 12.5s gap so a sliding
+    # minute stays at or under that cap. Confirmed 2026-11-15.
+    massive_requests_per_minute: float = Field(default=4.8, gt=0, le=60)
+    massive_max_attempts: int = Field(default=4, ge=1, le=8)
+    massive_retry_after_cap_seconds: float = Field(default=60, gt=0, le=300)
     finnhub_api_key: str = ""
     twelve_data_api_key: str = ""
     kronos_checkpoint: str = ""
