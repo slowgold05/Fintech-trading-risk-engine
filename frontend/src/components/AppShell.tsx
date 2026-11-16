@@ -258,8 +258,8 @@ export function AppShell() {
             setSidebarOpen(false);
           }
         }}
-        className="fixed inset-y-0 left-0 m-0 h-[100dvh] max-h-none w-[min(320px,calc(100%-3rem))] max-w-none border-0 border-r border-line bg-sidebar p-0 text-ink backdrop:bg-canvas/75 motion-safe:[&[open]]:animate-[drawer-in_200ms_ease-out_both]">
-        <div className="flex h-full flex-col">
+        className="fixed inset-y-0 left-0 m-0 h-[100dvh] max-h-none w-[min(320px,calc(100%-3rem))] max-w-none overflow-hidden border-0 bg-transparent p-0 text-ink backdrop:bg-canvas/75">
+        <div className="mobile-drawer-panel flex h-full flex-col border-r border-line bg-sidebar">
           <Sidebar onClose={() => setSidebarOpen(false)} />
         </div>
       </dialog>
