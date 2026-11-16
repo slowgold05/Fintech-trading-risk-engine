@@ -87,7 +87,7 @@ database before the run. Hosted databases were not migrated here.
 | Item | Value |
 | --- | --- |
 | Parent commit at run time | `240d2145947cd841c5309656b56d27e3316f5cf0` (`Add Massive as an end-of-day quote-cache source (#135)`) |
-| Evaluation-code commit | `EVALUATION_COMMIT_SHA` |
+| Evaluation-code commit | `728e5dfc4d48414d7e565ba1528e30375d748ace` |
 | Python | 3.11.9, the existing forecast virtualenv |
 | pandas | 2.2.2 |
 | numpy | 1.26.4 |
@@ -100,7 +100,7 @@ database before the run. Hosted databases were not migrated here.
 | Dependency pins | `requirements-forecast.txt` (`torch>=2.2,<2.6`, `numpy>=1.26,<2`) |
 
 The scored run executed the worktree recorded by commit
-`EVALUATION_COMMIT_SHA`. A follow-up commit only replaces that
+`728e5dfc4d48414d7e565ba1528e30375d748ace`. A follow-up commit only replaces that
 identifier. Weights were already cached
 under `var/kronos` (gitignored). Windows cached the Hugging Face files
 without symlinks. That warning did not stop the run. `weights_exercised`
