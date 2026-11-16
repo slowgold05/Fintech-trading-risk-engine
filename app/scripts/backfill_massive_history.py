@@ -35,6 +35,7 @@ INDEX_ETFS = (
     ("IWM", "Russell 2000 proxy"),
 )
 _SAMPLE_SYMBOLS = ("AAPL", "MSFT", "SPY", "QQQ", "DIA", "IWM", "BRK.B", "BF.B")
+DEFAULT_STATUS_FILENAME = "massive-backfill-status.json"
 
 
 def universe() -> list[tuple[str, str, bool]]:
@@ -157,7 +158,7 @@ def main() -> None:
     parser.add_argument("--day", help="Ingest one session date (YYYY-MM-DD) instead of the two-year window.")
     parser.add_argument(
         "--status-file",
-        default=str(Path(tempfile.gettempdir()) / "massive-backfill-fintechapp-117.json"),
+        default=str(Path(tempfile.gettempdir()) / DEFAULT_STATUS_FILENAME),
         help="Progress JSON path. Updated after each session.",
     )
     args = parser.parse_args()

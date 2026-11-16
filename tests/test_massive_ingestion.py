@@ -342,3 +342,9 @@ def test_http_get_massive_puts_the_day_and_key_in_the_url_and_rejects_non_200(mo
     monkeypatch.setattr("app.services.massive_client.requests.get", fake_timeout)
     with pytest.raises(ProviderUnavailable, match="Timeout"):
         http_get_massive("massive", day, "test-key")
+
+
+def test_backfill_status_filename_is_not_tied_to_a_worker_session():
+    from app.scripts.backfill_massive_history import DEFAULT_STATUS_FILENAME
+
+    assert DEFAULT_STATUS_FILENAME == "massive-backfill-status.json"
