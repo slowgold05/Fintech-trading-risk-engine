@@ -14,11 +14,14 @@ import math
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_reference_cache import MarketReferenceCache
+from app.models.market_symbol import MarketSymbol
 from app.services.market_providers import ProviderUnavailable
 from app.services.massive_client import http_get_massive_ticker
 from app.services.price_service import get_stock_quote
@@ -122,29 +125,74 @@ def _cached_shares(db: Session, symbol: str) -> MarketReferenceCache | None:
     return row
 
 
-def _store_shares(db: Session, symbol: str, shares: float | None, source: str) -> None:
-    row = db.get(MarketReferenceCache, symbol)
-    if row is None:
-        row = MarketReferenceCache(symbol=symbol, shares_outstanding=None, source=source, fetched_at=datetime.now(timezone.utc).replace(tzinfo=None))
-        db.add(row)
+def _listed_symbol(db: Session, symbol: str) -> bool:
+    if not isinstance(symbol, str) or not symbol or len(symbol) > 20:
+        return False
+    return (
+        db.query(MarketSymbol.symbol)
+        .filter(MarketSymbol.symbol == symbol, MarketSymbol.is_active.is_(True))
+        .first()
+        is not None
+    )
+
+
+def _assign_shares(row: MarketReferenceCache, shares: float | None, source: str) -> None:
     row.shares_outstanding = None if shares is None else Decimal(str(shares))
     row.source = source
     row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _store_shares(db: Session, symbol: str, shares: float | None, source: str) -> None:
+    if not isinstance(symbol, str) or not symbol or len(symbol) > 20:
+        return
+    row = db.get(MarketReferenceCache, symbol)
+    if row is None:
+        row = MarketReferenceCache(
+            symbol=symbol,
+            shares_outstanding=None,
+            source=source,
+            fetched_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db.add(row)
+    _assign_shares(row, shares, source)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        row = db.get(MarketReferenceCache, symbol)
+        if row is None:
+            return
+        _assign_shares(row, shares, source)
+        db.commit()
+
+
+def _keep_known_shares(db: Session, row: MarketReferenceCache) -> bool:
+    """A failed refresh must not wipe a count research is still using."""
+    if _positive(row.shares_outstanding) is None:
+        return False
+    row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
+    return True
 
 
 def massive_shares_outstanding(db: Session, symbol: str) -> tuple[float | None, str | None, str | None]:
     """Return the cached share count. This never calls Massive.
 
-    A miss records the symbol for the scheduled refresh and leaves the SEC
-    count in place. A cached failure is remembered so the next request does
-    not ask again.
+    A fresh miss for an active listed symbol records it for the scheduled
+    refresh and leaves the SEC count in place. A stale count is still
+    returned. The scheduled refresh replaces it without this request
+    clearing the value. A cached failure is remembered so the next request
+    does not ask again.
     """
-    cached = _cached_shares(db, symbol)
-    if cached is not None:
-        shares = _positive(cached.shares_outstanding)
-        return shares, cached.source, None
-    if settings.massive_api_key.strip():
+    row = db.get(MarketReferenceCache, symbol)
+    if row is not None:
+        shares = _positive(row.shares_outstanding)
+        if shares is not None:
+            return shares, row.source, None
+        if _cached_shares(db, symbol) is not None:
+            return None, row.source, None
+        return None, None, None
+    if settings.massive_api_key.strip() and _listed_symbol(db, symbol):
         _store_shares(db, symbol, None, _PENDING_SOURCE)
     return None, None, None
 
@@ -161,9 +209,26 @@ def refresh_wanted_references(db: Session, *, limit: int = _REFERENCE_BATCH, htt
     from app.services.massive_client import get_shared_pacer
 
     limiter = get_shared_pacer() if pacer is None else pacer
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    success_cutoff = now - timedelta(hours=_CACHE_HOURS)
+    failure_cutoff = now - timedelta(minutes=_FAILURE_MINUTES)
     rows = (
         db.query(MarketReferenceCache)
-        .filter(MarketReferenceCache.source == _PENDING_SOURCE)
+        .join(MarketSymbol, MarketSymbol.symbol == MarketReferenceCache.symbol)
+        .filter(MarketSymbol.is_active.is_(True))
+        .filter(
+            or_(
+                MarketReferenceCache.source == _PENDING_SOURCE,
+                and_(
+                    MarketReferenceCache.source == _FAILURE_SOURCE,
+                    MarketReferenceCache.fetched_at < failure_cutoff,
+                ),
+                and_(
+                    MarketReferenceCache.source.notin_([_PENDING_SOURCE, _FAILURE_SOURCE]),
+                    MarketReferenceCache.fetched_at < success_cutoff,
+                ),
+            )
+        )
         .order_by(MarketReferenceCache.fetched_at)
         .limit(limit)
         .all()
@@ -181,12 +246,14 @@ def refresh_wanted_references(db: Session, *, limit: int = _REFERENCE_BATCH, htt
                 sleeper=sleeper,
             )
         except ProviderUnavailable:
-            _store_shares(db, symbol, None, _FAILURE_SOURCE)
+            if not _keep_known_shares(db, row):
+                _store_shares(db, symbol, None, _FAILURE_SOURCE)
             errors += 1
             continue
         parsed = shares_from_ticker_payload(payload if isinstance(payload, dict) else {})
         if parsed is None:
-            _store_shares(db, symbol, None, "massive_unavailable")
+            if not _keep_known_shares(db, row):
+                _store_shares(db, symbol, None, "massive_unavailable")
             continue
         shares, source = parsed
         _store_shares(db, symbol, shares, source)

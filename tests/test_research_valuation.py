@@ -107,6 +107,7 @@ def test_fresh_share_cache_skips_the_reference_call(db_session, monkeypatch):
 
 def test_stale_share_cache_is_replaced(db_session, monkeypatch):
     _key(monkeypatch)
+    _symbol(db_session)
     stale = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=25)
     db_session.add(MarketReferenceCache(
         symbol="EXMP", shares_outstanding=1, source="massive_weighted", fetched_at=stale,
@@ -117,10 +118,10 @@ def test_stale_share_cache_is_replaced(db_session, monkeypatch):
     shares, source, error = massive_shares_outstanding(db_session, "EXMP")
 
     assert calls == []
-    assert (shares, source, error) == (None, None, None)
-    pending = db_session.get(MarketReferenceCache, "EXMP")
-    assert pending.source == "massive_pending"
-    assert pending.shares_outstanding is None
+    assert (shares, source, error) == (1, "massive_weighted", None)
+    kept = db_session.get(MarketReferenceCache, "EXMP")
+    assert kept.source == "massive_weighted"
+    assert float(kept.shares_outstanding) == 1
     summary = refresh_wanted_references(db_session, http_get=fetch, pacer=_pacer())
     assert summary == {"requested": 1, "refreshed": 1, "errors": 0}
     assert calls == [("EXMP", "fixture-key")]
@@ -132,6 +133,8 @@ def test_stale_share_cache_is_replaced(db_session, monkeypatch):
 
 def test_missing_share_count_is_remembered_for_a_day(db_session, monkeypatch):
     _key(monkeypatch)
+    _symbol(db_session)
+    db_session.commit()
     calls, fetch = _http({"results": {}})
 
     first = massive_shares_outstanding(db_session, "EXMP")
@@ -151,6 +154,8 @@ def test_missing_share_count_is_remembered_for_a_day(db_session, monkeypatch):
 
 def test_throttled_reference_lookup_does_not_delay_or_repeat(db_session, monkeypatch):
     _key(monkeypatch)
+    _symbol(db_session)
+    db_session.commit()
     http_calls = []
     retry_sleeps = []
 
@@ -198,13 +203,60 @@ def test_throttled_reference_lookup_does_not_delay_or_repeat(db_session, monkeyp
 
 def test_expired_reference_failure_is_queued_again(db_session, monkeypatch):
     _key(monkeypatch)
+    _symbol(db_session)
+    db_session.commit()
     expired = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=16)
     _cached_shares(db_session, shares=None, source="massive_error", fetched_at=expired)
+    calls, fetch = _http({"results": {"weighted_shares_outstanding": 9}})
 
     assert massive_shares_outstanding(db_session, "EXMP") == (None, None, None)
     stored = db_session.get(MarketReferenceCache, "EXMP")
-    assert stored.source == "massive_pending"
+    assert stored.source == "massive_error"
     assert stored.shares_outstanding is None
+    summary = refresh_wanted_references(db_session, http_get=fetch, pacer=_pacer())
+    assert summary == {"requested": 1, "refreshed": 1, "errors": 0}
+    assert calls == [("EXMP", "fixture-key")]
+    refreshed = db_session.get(MarketReferenceCache, "EXMP")
+    assert refreshed.source == "massive_weighted"
+    assert float(refreshed.shares_outstanding) == 9
+
+
+def test_unlisted_or_overlong_symbol_is_not_queued(db_session, monkeypatch):
+    _key(monkeypatch)
+    _symbol(db_session, "GONE")
+    db_session.commit()
+    listed = db_session.query(MarketSymbol).filter(MarketSymbol.symbol == "GONE").one()
+    listed.is_active = False
+    db_session.commit()
+
+    assert massive_shares_outstanding(db_session, "NOPE") == (None, None, None)
+    assert massive_shares_outstanding(db_session, "GONE") == (None, None, None)
+    assert massive_shares_outstanding(db_session, "TOOLONGSYMBOL123456789") == (None, None, None)
+    assert db_session.query(MarketReferenceCache).count() == 0
+
+
+def test_reference_queue_tolerates_a_concurrent_insert(db_session, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    _key(monkeypatch)
+    _symbol(db_session)
+    db_session.commit()
+    real_commit = db_session.commit
+    state = {"raised": False}
+
+    def commit():
+        if not state["raised"]:
+            state["raised"] = True
+            raise IntegrityError("INSERT", {}, Exception("duplicate key"))
+        real_commit()
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    assert massive_shares_outstanding(db_session, "EXMP") == (None, None, None)
+    assert state["raised"] is True
+    monkeypatch.setattr(db_session, "commit", real_commit)
+    assert massive_shares_outstanding(db_session, "EXMP") == (None, None, None)
+    stored = db_session.get(MarketReferenceCache, "EXMP")
+    assert stored.source == "massive_pending"
 
 
 def test_unset_key_does_not_call_the_reference_endpoint(db_session, monkeypatch):

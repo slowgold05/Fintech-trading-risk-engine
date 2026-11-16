@@ -255,11 +255,21 @@ def _quarter_set(items: list[dict], fiscal_periods: tuple[str, ...]) -> list[dic
 
 
 def _belongs_to_year(item: dict, year: dict) -> bool:
-    if item["start"] < year["start"] or item["end"] > year["end"]:
+    """The quarter's dates fall inside the annual period.
+
+    SEC ``fy`` names the filing that reported the fact, not the fact's own
+    year. A 10-Q comparative keeps the prior period's dates and carries the
+    later filing's ``fy``, so membership is dates only.
+    """
+    return item["start"] >= year["start"] and item["end"] <= year["end"]
+
+
+def _follows_year(item: dict, year: dict) -> bool:
+    """The quarter starts after the annual period and still belongs to the next year."""
+    if item["start"] <= year["end"]:
         return False
-    if item["fy"] is not None and year["fy"] is not None and item["fy"] != year["fy"]:
-        return False
-    return True
+    gap = _period_days(year["end"], item["start"])
+    return gap is not None and gap <= 320
 
 
 def _day_after(value: str) -> str | None:
@@ -312,12 +322,7 @@ def _trailing_from_annual(quarters: list[dict], years: list[dict]) -> dict | Non
     if derived is None:
         return None
     annual = _trailing_result(year["val"], [*three, derived])
-    if year["fy"] is None:
-        return annual
-    later = [
-        item for item in quarters
-        if item["end"] > year["end"] and item["fy"] == year["fy"] + 1
-    ]
+    later = [item for item in quarters if _follows_year(item, year)]
     three_later = _quarter_set(later, ("Q1", "Q2", "Q3"))
     if three_later is None:
         return annual

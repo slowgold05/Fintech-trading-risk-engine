@@ -391,6 +391,35 @@ def test_trailing_eps_derives_the_fourth_quarter_from_the_annual_filing():
     assert periods[3]["end"] == "2024-12-31"
 
 
+def test_trailing_eps_rolls_forward_when_comparatives_carry_the_later_filing_year():
+    """A 10-Q repeats the prior-year quarter with the later filing's fy.
+
+    The kept row for each 2024 quarter is the comparative, tagged fy=2025.
+    The 2025 quarters were reported again with fy=2026. Dates still place
+    the 2024 quarters inside the 2024 10-K and the 2025 quarters after it.
+    """
+    rows = [
+        _eps("2024-01-01", "2024-03-31", 1.0, "Q1", 2024, "2024-05-02"),
+        _eps("2024-04-01", "2024-06-30", 1.1, "Q2", 2024, "2024-08-02"),
+        _eps("2024-07-01", "2024-09-30", 1.2, "Q3", 2024, "2024-11-01"),
+        _eps("2024-01-01", "2024-03-31", 1.0, "Q1", 2025, "2025-05-02"),
+        _eps("2024-04-01", "2024-06-30", 1.1, "Q2", 2025, "2025-08-01"),
+        _eps("2024-07-01", "2024-09-30", 1.2, "Q3", 2025, "2025-11-01"),
+        _eps("2024-01-01", "2024-12-31", 4.6, "FY", 2024, "2025-02-14", form="10-K"),
+        _eps("2025-01-01", "2025-03-31", 1.4, "Q1", 2026, "2026-05-02"),
+        _eps("2025-04-01", "2025-06-30", 1.5, "Q2", 2026, "2026-08-01"),
+        _eps("2025-07-01", "2025-09-30", 1.6, "Q3", 2026, "2026-11-01"),
+    ]
+    parsed = _parsed(_diluted(rows))
+
+    assert parsed["ttm_diluted_eps"] == pytest.approx(5.8)
+    periods = parsed["ttm_diluted_eps_periods"]
+    assert [item["fp"] for item in periods] == ["Q4", "Q1", "Q2", "Q3"]
+    assert periods[0]["fy"] == 2024
+    assert [item["fy"] for item in periods[1:]] == [2026, 2026, 2026]
+    assert periods[-1]["end"] == "2025-09-30"
+
+
 def test_trailing_eps_rolls_forward_from_the_derived_fourth_quarter():
     rows = [
         _eps("2024-01-01", "2024-03-31", 1.0, "Q1", 2024, "2024-05-02"),
