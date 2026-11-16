@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.forecast_universe import require_featured_forecast_symbol
 from app.services.exchange_calendar import is_nyse_trading_day
 from app.services.market_history import read_symbol_history
 
@@ -79,6 +80,7 @@ def generate_forecast(
         raise ValueError(f"horizon must not exceed {settings.forecast_kronos_max_horizon}.")
     if sample_count > settings.forecast_kronos_max_sample_count:
         raise ValueError(f"sample_count must not exceed {settings.forecast_kronos_max_sample_count}.")
+    symbol = require_featured_forecast_symbol(symbol)
 
     history = read_symbol_history(
         db, symbol=symbol, interval="1d", range_token="2y",

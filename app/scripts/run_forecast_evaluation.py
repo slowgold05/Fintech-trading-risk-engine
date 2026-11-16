@@ -1,19 +1,23 @@
-"""Offline walk-forward evaluation for one cached symbol.
+"""Offline walk-forward evaluation for one cached featured symbol.
 
 Queries ``MarketBarDaily``, scores ``app.services.forecast_evaluation``, and
 writes one ``ForecastEvaluation`` row only when a real forecaster returns.
-Tests and CI do not run this script.
+Tests and CI do not run this script. The row's review status stays pending.
+This script does not enable ``forecast_kronos_enabled``, does not write a
+``ForecastResult``, and does not schedule precompute.
 
 ``_make_kronos_forecaster`` adapts ``generate_forecast`` to that callback.
 Each window's ``as_of`` is the last observed session, so the model re-read
 cannot include bars after the cutoff. Lookback is capped at
-``settings.forecast_kronos_max_lookback``. A real run still needs
-``requirements-forecast.txt`` installed and ``forecast_kronos_enabled`` on.
-Do not store a placeholder run as if the weights had been exercised.
+``settings.forecast_kronos_max_lookback``. A real run needs
+``requirements-forecast.txt`` installed. Do not store a placeholder run as
+if the weights had been exercised. Symbols outside the 12 featured stocks
+are rejected before any row is written.
 """
 
 import argparse
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -25,6 +29,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.forecast_universe import ForecastSymbolRejected, require_featured_forecast_symbol
 from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.market_bar_daily import MarketBarDaily
 from app.services.forecast_evaluation import run_walk_forward_evaluation
@@ -105,11 +110,17 @@ def main() -> None:
         parser.error("--horizon must be at least 1")
     if args.window_count < 1:
         parser.error("--window-count must be at least 1")
+    try:
+        symbol = require_featured_forecast_symbol(args.symbol)
+    except ForecastSymbolRejected as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(2)
 
+    started = time.perf_counter()
     with SessionLocal() as db:
         bars = _load_bars(
             db,
-            symbol=args.symbol,
+            symbol=symbol,
             provider=args.provider,
             adjustment_type=args.adjustment_type,
         )
@@ -119,20 +130,23 @@ def main() -> None:
                 horizon=args.horizon,
                 window_count=args.window_count,
                 forecaster=_make_kronos_forecaster(
-                    db, args.symbol, args.provider, args.adjustment_type,
+                    db, symbol, args.provider, args.adjustment_type,
                 ),
             )
         except RuntimeError:
             print(
                 "A real evaluation requires the optional forecast dependencies "
-                "(requirements-forecast.txt) with forecast_kronos_enabled on. "
-                "No ForecastEvaluation row was written.",
+                "(requirements-forecast.txt). forecast_kronos_enabled was not "
+                "turned on. No ForecastEvaluation row was written.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
+        elapsed = time.perf_counter() - started
+        # review_status is omitted on purpose. Its server default is pending,
+        # and the app role is not granted INSERT on that column.
         row = ForecastEvaluation(
-            symbol=args.symbol,
+            symbol=symbol,
             provider=args.provider,
             adjustment_type=args.adjustment_type,
             horizon=report["horizon"],
@@ -143,14 +157,34 @@ def main() -> None:
             baseline_mae=report["baseline_mae"],
             baseline_directional_accuracy=report["baseline_directional_accuracy"],
             weights_exercised=True,
-            notes=None,
+            notes=(
+                "Model-owner review: PENDING (user). "
+                "Walk-forward result only. Not a published forecast."
+            ),
         )
         db.add(row)
         db.commit()
         print(
+            f"model={settings.forecast_kronos_model_name} "
+            f"tokenizer={settings.forecast_kronos_tokenizer_name} "
+            f"bars={len(bars)} elapsed_s={elapsed:.3f}"
+        )
+        for window in report["windows"]:
+            print(
+                "window "
+                f"cutoff={window['cutoff_date']} "
+                f"model_mae={window['model_mae']:.6f} "
+                f"model_dir={window['model_directional_accuracy']:.6f} "
+                f"baseline_mae={window['baseline_mae']:.6f} "
+                f"baseline_dir={window['baseline_directional_accuracy']:.6f}"
+            )
+        print(
             f"Wrote forecast evaluation {row.id} for {row.symbol}: "
             f"model_mae={row.model_mae} baseline_mae={row.baseline_mae} "
-            f"weights_exercised={row.weights_exercised}"
+            f"model_dir={row.model_directional_accuracy} "
+            f"baseline_dir={row.baseline_directional_accuracy} "
+            f"weights_exercised={row.weights_exercised} "
+            f"review_status={row.review_status}"
         )
 
 

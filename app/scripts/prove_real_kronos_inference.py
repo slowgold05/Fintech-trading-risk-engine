@@ -32,7 +32,7 @@ from app.models.market_symbol import MarketSymbol
 from app.services.exchange_calendar import is_nyse_trading_day
 from app.services.forecast_kronos import generate_forecast
 
-SYMBOL = "KRNPROOF"
+SYMBOL = "AAPL"
 LOOKBACK = 400
 HORIZON = 10
 
