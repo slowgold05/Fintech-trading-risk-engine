@@ -15,7 +15,7 @@ def main() -> None:
         "--source",
         choices=["eod", "alpha_vantage", "massive"],
         default=None,
-        help="Quote provider. Omit to use MARKET_QUOTE_SOURCE (default eod).",
+        help="Quote provider. Omit to use MARKET_QUOTE_SOURCE (default massive).",
     )
     parser.add_argument("--limit", type=int, default=50)
     args = parser.parse_args()

@@ -162,8 +162,8 @@ def test_eod_bar_keeps_decimal_price_and_change():
     assert quote.change == Decimal("0.2")
 
 
-def test_quote_source_setting_stays_on_eod_until_a_live_refresh():
-    assert settings.market_quote_source == "eod"
+def test_quote_source_setting_defaults_to_massive():
+    assert settings.market_quote_source == "massive"
 
 
 def test_latest_entitled_session_is_the_previous_nyse_day():
