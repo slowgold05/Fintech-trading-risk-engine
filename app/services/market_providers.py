@@ -40,12 +40,13 @@ def grouped_payload_has_no_bars(payload: dict) -> bool:
     """True when a grouped day returned no aggregate bars.
 
     A session with no trades comes back as status OK and resultsCount 0, often
-    with the results list omitted, or as an empty results list. That is not a
-    provider failure. A non-OK status such as ERROR stays a failure.
+    with the results list omitted, or as an empty results list. A missing
+    status with a zero count is the same shape. NOT_FOUND and DELAYED are not
+    an empty session: the parser leaves them incomplete so a rerun can retry.
     """
     if not isinstance(payload, dict):
         return False
-    if payload.get("status") not in {None, "OK", "NOT_FOUND", "DELAYED"}:
+    if payload.get("status") not in {None, "OK"}:
         return False
     rows = payload.get("results")
     if isinstance(rows, list):

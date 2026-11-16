@@ -13,7 +13,11 @@ from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_symbol import MarketSymbol
 from app.services.exchange_calendar import expected_session_dates
 from app.services.market_history import two_calendar_years_before
-from app.services.market_providers import ProviderUnavailable
+from app.services.market_providers import (
+    ProviderUnavailable,
+    grouped_payload_has_no_bars,
+    parse_massive_grouped,
+)
 from app.services.massive_client import RequestPacer, http_get_massive
 from app.services.massive_ingestion import (
     backfill_two_years,
@@ -447,6 +451,58 @@ def test_empty_last_session_is_not_remembered_and_is_requested_again(db_session,
     assert again["sessions_failed"] == 0
     assert again["sessions_not_yet_available"] == 1
     assert again["symbols_with_gaps"] == {"AAPL": [days[-1].isoformat()]}
+
+
+def test_grouped_empty_day_accepts_only_ok_or_a_missing_status():
+    day = date(2026, 11, 10)
+    assert parse_massive_grouped({"status": "OK", "results": []}, day) == []
+    assert parse_massive_grouped({"resultsCount": 0}, day) == []
+    assert grouped_payload_has_no_bars({"status": "OK", "queryCount": 0}) is True
+    for status in ("NOT_FOUND", "DELAYED"):
+        payload = {"status": status, "results": [], "resultsCount": 0, "queryCount": 0}
+        assert grouped_payload_has_no_bars(payload) is False
+        with pytest.raises(ValueError, match="incomplete"):
+            parse_massive_grouped(payload, day)
+
+
+@pytest.mark.parametrize("status", ["NOT_FOUND", "DELAYED"])
+def test_not_found_or_delayed_empty_day_fails_and_is_requested_again(db_session, monkeypatch, status):
+    # 2026-11-10 is strictly before the latest finished session for this window,
+    # so a mistaken empty-day classification would remember it as closed.
+    problem = date(2026, 11, 10)
+    later = date(2026, 11, 13)
+    days = [problem, later]
+    monkeypatch.setattr(massive_ingestion, "expected_session_dates", lambda start, end: days)
+    _seed_symbols(db_session, ["AAPL"])
+    calls = []
+
+    def http_get(kind, arg, key):
+        calls.append(arg)
+        if arg == problem:
+            return {"status": status, "results": [], "resultsCount": 0, "queryCount": 0}
+        return _grouped([_ticker("AAPL", 10, open_=10, high=11, low=9)])
+
+    closed: set[date] = set()
+    report = backfill_two_years(
+        db_session, ["AAPL"], "test-key", http_get=http_get, today=later, closed_dates=closed,
+    )
+
+    assert calls == days
+    assert problem not in closed
+    assert report["sessions_failed"] == 1
+    assert report["sessions_not_yet_available"] == 0
+    failed = next(item for item in report["per_day"] if item["day"] == problem.isoformat())
+    assert failed["error"] == "Massive grouped payload is incomplete"
+    assert failed.get("skip_reason") is None
+    assert failed["missing"] == ["AAPL"]
+
+    calls.clear()
+    again = backfill_two_years(
+        db_session, ["AAPL"], "test-key", http_get=http_get, today=later, closed_dates=closed,
+    )
+    assert problem in calls
+    assert problem not in closed
+    assert again["sessions_failed"] == 1
 
 
 def test_observed_carter_closure_is_skipped_without_a_request(db_session, monkeypatch):
