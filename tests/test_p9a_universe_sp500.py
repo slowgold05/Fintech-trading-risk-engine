@@ -64,6 +64,22 @@ def test_universe_search_labels_member(client, db_session):
     assert item["universe_label"] is None
 
 
+def test_universe_search_member_matches_lowercase_ticker_and_company_name(client, db_session):
+    _active_symbol(db_session, MEMBER)
+    _active_symbol(db_session, OUTSIDER)
+    db_session.flush()
+    db_session.query(MarketSymbol).filter(MarketSymbol.symbol == MEMBER).one().company_name = "3M Company"
+    db_session.commit()
+
+    by_ticker = client.get("/market/universe", params={"search": "mmm"})
+    assert by_ticker.status_code == 200, by_ticker.text
+    assert [item["symbol"] for item in by_ticker.json()["items"]] == [MEMBER]
+
+    by_name = client.get("/market/universe", params={"search": "3m company"})
+    assert by_name.status_code == 200, by_name.text
+    assert [item["symbol"] for item in by_name.json()["items"]] == [MEMBER]
+
+
 def test_universe_search_labels_explicit_non_member(client, db_session):
     _active_symbol(db_session, MEMBER)
     _active_symbol(db_session, OUTSIDER)
@@ -109,6 +125,35 @@ def test_universe_browse_shows_held_non_member(client, db_session, auth_headers)
     anonymous = client.get("/market/universe")
     assert anonymous.status_code == 200, anonymous.text
     assert OUTSIDER not in {item["symbol"] for item in anonymous.json()["items"]}
+
+
+def test_held_symbol_is_not_repeated_across_pages(client, db_session, auth_headers):
+    for symbol in ("AAPL", "MSFT", "ZTS"):
+        _active_symbol(db_session, symbol)
+    headers = auth_headers("holder-zts@example.com", "password123")
+    user = db_session.query(User).filter(User.email == "holder-zts@example.com").one()
+    asset = Asset(symbol="ZTS", asset_type="stock", name="Zoetis")
+    db_session.add(asset)
+    db_session.flush()
+    db_session.add(Holding(
+        user_id=user.id,
+        asset_id=asset.id,
+        quantity=Decimal("1"),
+        avg_cost=Decimal("5"),
+    ))
+    db_session.commit()
+
+    first = client.get("/market/universe", headers=headers, params={"limit": 2, "offset": 0})
+    second = client.get("/market/universe", headers=headers, params={"limit": 2, "offset": 2})
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    first_symbols = [item["symbol"] for item in first.json()["items"]]
+    second_symbols = [item["symbol"] for item in second.json()["items"]]
+    assert len(first_symbols) <= 2
+    assert len(second_symbols) <= 2
+    assert first_symbols == ["ZTS", "AAPL"]
+    assert second_symbols == ["MSFT"]
+    assert not (set(first_symbols) & set(second_symbols))
 
 
 def test_non_member_history_remains_readable(client, db_session):

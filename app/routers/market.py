@@ -3,7 +3,7 @@ from math import isfinite
 
 import requests
 from fastapi import APIRouter, Depends, Header, Query
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -293,8 +293,8 @@ def market_universe(
     if term:
         pattern = f"%{term}%"
         name_or_symbol = or_(
-            MarketSymbol.symbol.like(pattern),
-            MarketSymbol.company_name.like(pattern),
+            MarketSymbol.symbol.ilike(pattern),
+            MarketSymbol.company_name.ilike(pattern),
         )
         # A non-member is returned only for an exact ticker, or when this user holds it.
         query = query.filter(
@@ -310,18 +310,15 @@ def market_universe(
         query = query.filter(MarketSymbol.symbol.in_(visible))
 
     total = query.count()
-    page = query.order_by(MarketSymbol.symbol).offset(offset).limit(limit)
-    rows = page.all()
-    if offset == 0 and held:
-        present = {item.symbol for item in rows}
-        missing = [symbol for symbol in held if symbol not in present]
-        if missing:
-            # A held name can sort past the first page. Keep it on that page.
-            rows.extend(
-                query.filter(MarketSymbol.symbol.in_(missing))
-                .order_by(MarketSymbol.symbol)
-                .all()
-            )
+    # Held names sort first so one offset/limit ordering never repeats a row.
+    if held:
+        query = query.order_by(
+            case((MarketSymbol.symbol.in_(held), 0), else_=1),
+            MarketSymbol.symbol,
+        )
+    else:
+        query = query.order_by(MarketSymbol.symbol)
+    rows = query.offset(offset).limit(limit).all()
     return {
         "total": total,
         "limit": limit,
