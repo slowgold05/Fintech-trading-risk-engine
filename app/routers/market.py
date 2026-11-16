@@ -21,6 +21,7 @@ from app.services.price_service import (
     get_stock_quote,
     get_top_gainers_losers,
 )
+from app.services.research_valuation import build_research_valuation
 from app.services.sec_service import get_sec_company_fundamentals
 from app.services.sector_classifier import infer_sector
 from app.services.sp500_constituents import load_sp500_constituents
@@ -47,13 +48,6 @@ SECTOR_SYMBOLS = [
     {"symbol": "XLU", "sector": "Utilities", "weight": "small", "leaders": ["NEE", "SO"]},
     {"symbol": "XLB", "sector": "Materials", "weight": "small", "leaders": ["LIN", "APD"]},
 ]
-
-
-def _quote_or_error(symbol: str) -> tuple[dict | None, str | None]:
-    try:
-        return get_stock_quote(symbol), None
-    except ValueError as exc:
-        return None, str(exc)
 
 
 def _to_float(value) -> float | None:
@@ -345,7 +339,15 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
     except (ValueError, requests.RequestException) as exc:
         errors.append({"source": "SEC EDGAR", "detail": str(exc)})
 
-    quote, quote_error = _quote_or_error(normalized_symbol)
+    valuation = build_research_valuation(
+        db,
+        normalized_symbol,
+        overview,
+        sec_fundamentals,
+        quote_getter=get_stock_quote,
+    )
+    quote = valuation["quote"]
+    errors.extend(valuation["errors"])
     profit_margin = _to_float(sec_fundamentals.get("profit_margin"))
     profit_margin_period = sec_fundamentals.get("profit_margin_period")
     if profit_margin is None or not isinstance(profit_margin_period, dict):
@@ -354,24 +356,28 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
         profit_margin = _to_float(overview.get("ProfitMargin"))
         profit_margin_period = None
     scoring_overview = dict(overview, ProfitMargin=profit_margin)
+    if valuation["pe_basis"] is not None:
+        scoring_overview["PERatio"] = valuation["pe_ratio"]
     score, label, factors = _score_company_research(scoring_overview, quote)
-    if quote_error:
-        errors.append({"source": "Alpha Vantage quote", "detail": quote_error})
-
     return {
         "symbol": normalized_symbol,
         "name": sec_fundamentals.get("name") or overview.get("Name"),
         "exchange": overview.get("Exchange"),
         "sector": overview.get("Sector"),
         "industry": overview.get("Industry"),
-        "market_cap": _to_float(overview.get("MarketCapitalization")),
-        "pe_ratio": _to_float(overview.get("PERatio")),
+        "market_cap": valuation["market_cap"],
+        "market_cap_basis": valuation["market_cap_basis"],
+        "pe_ratio": valuation["pe_ratio"],
+        "pe_basis": valuation["pe_basis"],
+        "price_basis": valuation["price_basis"],
+        "price_as_of": valuation["price_as_of"],
+        "valuation_notice": valuation["valuation_notice"],
         "profit_margin": profit_margin,
         "profit_margin_period": profit_margin_period,
         "beta": _to_float(overview.get("Beta")),
         "analyst_target_price": _to_float(overview.get("AnalystTargetPrice")),
-        "price": quote.get("price") if quote else None,
-        "change_percent": quote.get("change_percent") if quote else None,
+        "price": valuation["price"],
+        "change_percent": valuation["change_percent"],
         "research_risk_score": score,
         "research_risk_label": label,
         "risk_factors": factors,

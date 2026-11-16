@@ -326,6 +326,17 @@ function formatOptionalPercent(value?: number | null) {
   return value === null || value === undefined ? "--" : formatPercent(value * 100);
 }
 
+function formatResearchPe(value?: number | null) {
+  return value == null || !Number.isFinite(value) ? "--" : value.toFixed(2);
+}
+
+function endOfDayCaption(show: boolean, asOf?: string | null): string | null {
+  if (!show || !asOf) {
+    return null;
+  }
+  return `End of day ${asOf}`;
+}
+
 function formatMarginPeriod(period: MarketResearchResponse["profit_margin_period"]): string | null {
   if (period == null) {
     return null;
@@ -489,6 +500,18 @@ export function Home() {
   const marginPeriod = research.profit_margin != null
     ? formatMarginPeriod(research.profit_margin_period)
     : null;
+  const priceAsOf = research.price_basis === "end_of_day_previous_close" ? research.price_as_of : null;
+  const priceCaption = endOfDayCaption(research.price != null && research.price > 0, priceAsOf);
+  const marketCapCaption = endOfDayCaption(
+    research.market_cap != null && research.market_cap_basis === "end_of_day_price_times_shares",
+    research.price_as_of,
+  );
+  const peCaption = endOfDayCaption(
+    research.pe_ratio != null
+      && research.pe_basis === "sec_ttm_diluted_eps"
+      && research.price_basis === "end_of_day_previous_close",
+    research.price_as_of,
+  );
   const hasResearchInputs = (research.pe_ratio != null && research.pe_ratio > 0)
     || research.profit_margin != null || research.beta != null
     || (research.analyst_target_price != null && research.analyst_target_price > 0 && research.price != null && research.price > 0);
@@ -869,6 +892,11 @@ export function Home() {
                     <div className="mt-1 font-mono text-sm text-slate-100">
                       {research.price != null && research.price > 0 ? formatCurrency(research.price) : "Unavailable"}
                     </div>
+                    {priceCaption ? (
+                      <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {priceCaption}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="metric-tile px-3 py-2">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
@@ -877,14 +905,24 @@ export function Home() {
                     <div className="mt-1 font-mono text-sm text-slate-100">
                       {formatMarketCap(research.market_cap)}
                     </div>
+                    {marketCapCaption ? (
+                      <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {marketCapCaption}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="metric-tile px-3 py-2">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
                       P/E
                     </div>
                     <div className="mt-1 font-mono text-sm text-slate-100">
-                      {research.pe_ratio ?? "--"}
+                      {formatResearchPe(research.pe_ratio)}
                     </div>
+                    {peCaption ? (
+                      <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {peCaption}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="metric-tile px-3 py-2">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">

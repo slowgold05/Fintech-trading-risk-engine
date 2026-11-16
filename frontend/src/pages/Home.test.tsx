@@ -455,6 +455,62 @@ describe("public market data truth", () => {
     expect(within(margin).queryByText(/10-K/)).not.toBeInTheDocument();
   });
 
+  it("labels end-of-day research price, market cap, and P/E with the quote date", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      price_basis: "end_of_day_previous_close",
+      price_as_of: "2026-11-13",
+      market_cap: 1000000,
+      market_cap_basis: "end_of_day_price_times_shares",
+      pe_ratio: 25,
+      pe_basis: "sec_ttm_diluted_eps",
+      errors: [],
+    });
+    historyApi.fetchDailyHistory.mockImplementation(async (symbol: string, provider: string, adjustment: string, range: string) => (
+      historyResponse(symbol, range, ["10.000000", "14.000000"], provider, adjustment)
+    ));
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(researchCard).findAllByText("End of day 2026-11-13")).toHaveLength(3);
+    const pe = within(researchCard).getByText("P/E").parentElement as HTMLElement;
+    expect(within(pe).getByText("25.00")).toBeInTheDocument();
+  });
+
+  it("shows a research P/E with two decimal places", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      pe_ratio: 31.47619047619048,
+      pe_basis: "sec_ttm_diluted_eps",
+      errors: [],
+    });
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const value = await within(researchCard).findByText("31.48");
+    expect(value.closest(".metric-tile")).toHaveTextContent("P/E");
+  });
+
+  it("does not label an Alpha Vantage research quote as end of day", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 100,
+      price_basis: "alpha_vantage",
+      market_cap: 1000000,
+      market_cap_basis: "alpha_vantage",
+      pe_ratio: 10,
+      pe_basis: "alpha_vantage",
+      errors: [],
+    });
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    expect(await within(researchCard).findByText("$100.00")).toBeInTheDocument();
+    expect(within(researchCard).queryByText(/End of day/)).not.toBeInTheDocument();
+  });
+
   it("renders market headlines from the news endpoint", async () => {
     api.fetchMarketNews.mockResolvedValue({
       as_of: "2026-11-13T15:04:00Z",
