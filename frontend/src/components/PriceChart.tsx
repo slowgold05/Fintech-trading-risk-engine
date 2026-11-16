@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { IChartApi, MouseEventParams, Time } from "lightweight-charts";
-import type { HistoryBar } from "../api/history";
+import type { HistoryBar, HistoryCoverageStatus } from "../api/history";
 import { formatCurrency, formatQuantity } from "../utils/format";
 import {
   type ChartRange,
@@ -40,11 +40,14 @@ export function PriceChart({
   symbol,
   bars,
   endDate,
+  coverageStatus,
   seriesLabel,
 }: {
   symbol: string;
   bars: readonly HistoryBar[];
   endDate: string;
+  /** Coverage of the full history window the bars came from, as reported by the API. */
+  coverageStatus?: HistoryCoverageStatus;
   seriesLabel?: string;
 }) {
   const summaryId = useId();
@@ -55,8 +58,8 @@ export function PriceChart({
   const frameRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rangeBars = useMemo(() => sliceBars(bars, range, endDate), [bars, range, endDate]);
-  const series = useMemo(() => buildSeries(rangeBars), [rangeBars]);
-  const summary = chartSummary(symbol, series.plotted, series.gapCount, range);
+  const series = useMemo(() => buildSeries(rangeBars, coverageStatus), [rangeBars, coverageStatus]);
+  const summary = chartSummary(symbol, series.plotted, series.gapCount, range, coverageStatus);
   const plottedByTime = useMemo(
     () => new Map(series.plotted.map((bar) => [bar.time, bar])),
     [series.plotted],
@@ -67,6 +70,7 @@ export function PriceChart({
     if (!container || series.plotted.length === 0) return undefined;
     let cancelled = false;
     let chart: IChartApi | null = null;
+    let created: IChartApi | null = null;
     const lineMode = chartType === "line";
     const barsByTime = plottedByTime;
 
@@ -87,7 +91,7 @@ export function PriceChart({
       .then((charts) => {
         if (cancelled) return;
         try {
-          const created = charts.createChart(container, {
+          created = charts.createChart(container, {
             autoSize: true,
             height: 320,
             layout: {
@@ -138,7 +142,13 @@ export function PriceChart({
           chart = created;
           setFailed((current) => (current ? false : current));
         } catch {
-          chart?.remove();
+          // A throw after createChart leaves `chart` unset, so remove the created instance.
+          try {
+            created?.remove();
+          } catch {
+            // The chart is already unusable. Fall through to the table.
+          }
+          created = null;
           chart = null;
           if (!cancelled) setFailed(true);
         }

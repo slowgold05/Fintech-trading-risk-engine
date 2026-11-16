@@ -174,6 +174,7 @@ describe("stock detail", () => {
     const stats = screen.getByRole("region", { name: "Key stats" });
     expect(within(stats).getByText("52-week high").parentElement).toHaveTextContent("$192.00");
     expect(within(stats).getByText("52-week low").parentElement).toHaveTextContent("$179.00");
+    expect(within(stats).queryByText("Raw prices, not split-adjusted")).not.toBeInTheDocument();
     expect(within(stats).getByText("Avg volume (52-week)").parentElement).toHaveTextContent("2,000");
     expect(within(stats).getByText("Market cap").parentElement).toHaveTextContent("$2,500,000,000,000");
     expect(within(stats).getByText("P/E").parentElement).toHaveTextContent("28.5");
@@ -181,9 +182,25 @@ describe("stock detail", () => {
     expect(within(stats).getByText("SEC margin").parentElement).toHaveTextContent("10-K · 2025-01-01 to 2025-12-31");
     expect(screen.getByRole("link", { name: "Paper trade AAPL" })).toHaveAttribute("href", "/trades?symbol=AAPL");
     expect(screen.getByText("Sign in to read company headlines.")).toBeInTheDocument();
-    expect(await screen.findByText(/2 missing weekdays shown as gaps and not filled in/)).toBeInTheDocument();
+    expect(await screen.findByText(/2 weekdays without a bar are shown as gaps and not filled in/)).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-09" })).toBeInTheDocument();
     expect(screen.queryByRole("rowheader", { name: "2026-11-10" })).not.toBeInTheDocument();
+  });
+
+  it("passes complete coverage to the chart so a holiday is not reported as a gap", async () => {
+    historyApi.fetchDailyHistory.mockResolvedValue({
+      ...history([
+        bar("2025-11-26", "180", "181", "179", "1000"),
+        bar("2025-11-28", "190", "192", "188", "3000"),
+      ]),
+      coverage_status: "complete",
+    });
+    renderDetail();
+
+    expect(
+      await screen.findByText(/2 sessions\. No trading sessions are missing against the NYSE calendar\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/without a bar/)).not.toBeInTheDocument();
   });
 
   it("shows company headlines after sign-in", async () => {
@@ -206,6 +223,9 @@ describe("stock detail", () => {
     expect(await screen.findByText("Massive raw prices. Split-adjusted bars are not cached.")).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-12" })).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+    const stats = screen.getByRole("region", { name: "Key stats" });
+    expect(within(stats).getByText("52-week high").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
+    expect(within(stats).getByText("52-week low").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
   });
 
   it("shows an empty chart when the cache has no bars", async () => {

@@ -198,6 +198,7 @@ export function StockDetail() {
         researchLoading={researchQuery.isLoading}
         researchFailed={researchQuery.isError}
         bars={historyQuery.data?.bars ?? []}
+        coverageStatus={historyQuery.data?.coverage_status ?? "not_verified"}
         endDate={historyQuery.data?.requested_end ?? ""}
         articles={newsQuery.data?.articles ?? []}
         newsMessage={newsQuery.data?.error ?? null}
@@ -209,6 +210,7 @@ export function StockDetail() {
 function DetailBody({
   quote,
   bars,
+  coverageStatus,
   endDate,
   historyLoading,
   historyError,
@@ -226,6 +228,7 @@ function DetailBody({
 }: {
   quote: SymbolQuoteResponse;
   bars: Parameters<typeof PriceChart>[0]["bars"];
+  coverageStatus: Parameters<typeof PriceChart>[0]["coverageStatus"];
   endDate: string;
   historyLoading: boolean;
   historyError: string | null;
@@ -252,6 +255,10 @@ function DetailBody({
   const changeDown = (quote.change_amount ?? 0) < 0 || ((quote.change_amount ?? 0) === 0 && (quote.change_percent ?? 0) < 0);
   const period = marginPeriod(research?.profit_margin_period);
   const hasSecPeriod = research?.profit_margin != null && period != null;
+  // The 52-week range comes from the plotted series, so say when that series is unadjusted.
+  const rawRangeNote = priceSeries === "raw" && !historyLoading && !historyError
+    ? "Raw prices, not split-adjusted"
+    : null;
   const statValue = (loading: boolean, value: string) => (loading ? "Loading" : value);
 
   return (
@@ -305,6 +312,7 @@ function DetailBody({
       ) : (
         <PriceChart
           bars={bars}
+          coverageStatus={coverageStatus}
           endDate={endDate}
           seriesLabel={
             priceSeries === "raw"
@@ -321,8 +329,8 @@ function DetailBody({
             <h2 className="text-lg leading-7 font-semibold text-ink" id="key-stats-title">Key stats</h2>
           </div>
           <dl className="grid grid-cols-2 gap-6 p-6 sm:grid-cols-3">
-            <Stat label="52-week high" value={historyError ? "unavailable" : statValue(historyLoading, stats.high == null ? "unavailable" : formatCurrency(stats.high))} />
-            <Stat label="52-week low" value={historyError ? "unavailable" : statValue(historyLoading, stats.low == null ? "unavailable" : formatCurrency(stats.low))} />
+            <Stat detail={rawRangeNote} label="52-week high" value={historyError ? "unavailable" : statValue(historyLoading, stats.high == null ? "unavailable" : formatCurrency(stats.high))} />
+            <Stat detail={rawRangeNote} label="52-week low" value={historyError ? "unavailable" : statValue(historyLoading, stats.low == null ? "unavailable" : formatCurrency(stats.low))} />
             <Stat
               label="Avg volume (52-week)"
               value={historyError

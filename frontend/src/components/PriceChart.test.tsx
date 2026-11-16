@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe("PriceChart", () => {
-  it("draws missing weekdays as gaps and keeps range controls reachable", async () => {
+  it("draws weekdays without a bar as gaps and keeps range controls reachable", async () => {
     const user = userEvent.setup();
     render(
       <PriceChart
@@ -73,7 +73,7 @@ describe("PriceChart", () => {
 
     expect(screen.getByRole("button", { name: "1 year" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "1 year" })).toHaveClass("min-h-11");
-    expect(screen.getByText(/2 missing weekdays shown as gaps and not filled in/)).toBeInTheDocument();
+    expect(screen.getByText(/2 weekdays without a bar are shown as gaps and not filled in\. That count includes market holidays\./)).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-09" })).toBeInTheDocument();
     expect(screen.queryByRole("rowheader", { name: "2026-11-10" })).not.toBeInTheDocument();
 
@@ -89,5 +89,54 @@ describe("PriceChart", () => {
     await user.click(screen.getByRole("button", { name: "Candlestick" }));
     expect(screen.getByRole("button", { name: "Candlestick" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Line" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("does not draw a holiday as a gap when the history coverage is complete", async () => {
+    render(
+      <PriceChart
+        bars={[bar("2025-11-26", "10"), bar("2025-11-28", "11")]}
+        coverageStatus="complete"
+        endDate="2025-11-28"
+        symbol="AAPL"
+      />,
+    );
+
+    const summary = /2 sessions\. No trading sessions are missing against the NYSE calendar\./;
+    expect(screen.getByText(summary)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: summary })).toBeInTheDocument();
+    expect(screen.queryByText(/without a bar/)).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      const line = chartApi.mounted.find((series) => series.type === "area");
+      expect(line?.setData).toHaveBeenCalled();
+    });
+    for (const series of chartApi.mounted) {
+      const points = series.setData.mock.calls.at(-1)?.[0] as { time: string }[];
+      expect(points.map((point) => point.time)).toEqual(["2025-11-26", "2025-11-28"]);
+    }
+  });
+
+  it("removes a chart that fails after it was created", async () => {
+    const remove = vi.fn();
+    chartApi.createChart.mockImplementationOnce(() => ({
+      addSeries: () => {
+        throw new Error("series failed");
+      },
+      remove,
+      priceScale: () => ({ applyOptions: vi.fn() }),
+      timeScale: () => ({ fitContent: vi.fn() }),
+      subscribeCrosshairMove: vi.fn(),
+      unsubscribeCrosshairMove: vi.fn(),
+    }));
+    render(
+      <PriceChart
+        bars={[bar("2026-11-12", "10"), bar("2026-11-13", "11")]}
+        endDate="2026-11-13"
+        symbol="AAPL"
+      />,
+    );
+
+    expect(await screen.findByText(/The price chart could not be drawn/)).toBeInTheDocument();
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 });

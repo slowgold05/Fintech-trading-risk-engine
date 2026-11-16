@@ -1,4 +1,4 @@
-import type { HistoryBar } from "../api/history";
+import type { HistoryBar, HistoryCoverageStatus } from "../api/history";
 import { formatCurrency, formatQuantity } from "../utils/format";
 
 export const CHART_RANGES = ["1M", "3M", "6M", "YTD", "1Y", "2Y"] as const;
@@ -110,7 +110,15 @@ function addDays(isoDate: string, days: number): string | null {
   return formatIsoDate(date);
 }
 
-function missingWeekdays(previous: string, next: string): string[] {
+/**
+ * True when the server compared the returned sessions against the NYSE calendar and
+ * found none missing. A weekday without a bar is then a market holiday, not a hole.
+ */
+export function sessionsVerified(coverageStatus: HistoryCoverageStatus | undefined): boolean {
+  return coverageStatus === "complete" || coverageStatus === "unexpected_sessions";
+}
+
+function weekdaysWithoutBar(previous: string, next: string): string[] {
   const missing: string[] = [];
   let cursor = addDays(previous, 1);
   while (cursor && cursor < next) {
@@ -170,7 +178,10 @@ function plottedBar(bar: HistoryBar): PlottedBar | null {
   };
 }
 
-export function buildSeries(bars: readonly HistoryBar[]): {
+export function buildSeries(
+  bars: readonly HistoryBar[],
+  coverageStatus?: HistoryCoverageStatus,
+): {
   plotted: PlottedBar[];
   candles: Array<CandlePoint | WhitespacePoint>;
   line: Array<LinePoint | WhitespacePoint>;
@@ -184,12 +195,16 @@ export function buildSeries(bars: readonly HistoryBar[]): {
   const candles: Array<CandlePoint | WhitespacePoint> = [];
   const line: Array<LinePoint | WhitespacePoint> = [];
   const volume: Array<VolumePoint | WhitespacePoint> = [];
+  // The coverage status covers the whole requested window, so a verified window has no
+  // missing session in any slice of it. Without that check the client cannot tell a
+  // market holiday from a missing session, so every weekday without a bar stays a gap.
+  const drawGaps = !sessionsVerified(coverageStatus);
   let gapCount = 0;
   let previous: PlottedBar | null = null;
   for (const bar of plotted) {
-    if (previous) {
+    if (previous && drawGaps) {
       // A whitespace point has a time and no price, so the line breaks instead of bridging the hole.
-      for (const time of missingWeekdays(previous.time, bar.time)) {
+      for (const time of weekdaysWithoutBar(previous.time, bar.time)) {
         gapCount += 1;
         candles.push({ time });
         line.push({ time });
@@ -243,14 +258,21 @@ export function chartSummary(
   plotted: readonly PlottedBar[],
   gapCount: number,
   range: ChartRange,
+  coverageStatus?: HistoryCoverageStatus,
 ): string {
   const label = rangeLabel(range);
   if (plotted.length === 0) {
     return `No cached daily bars for ${symbol} in the ${label} range.`;
   }
   const sessions = `${plotted.length} session${plotted.length === 1 ? "" : "s"}`;
-  const gaps = gapCount === 0
-    ? "No missing weekdays in this range."
-    : `${gapCount} missing weekday${gapCount === 1 ? "" : "s"} shown as gaps and not filled in.`;
+  let gaps: string;
+  if (sessionsVerified(coverageStatus)) {
+    gaps = "No trading sessions are missing against the NYSE calendar.";
+  } else if (gapCount === 0) {
+    gaps = "Every weekday in this range has a bar.";
+  } else {
+    // Holidays cannot be told apart from missing sessions here, so the count says so.
+    gaps = `${gapCount} weekday${gapCount === 1 ? "" : "s"} without a bar ${gapCount === 1 ? "is shown as a gap" : "are shown as gaps"} and not filled in. That count includes market holidays.`;
+  }
   return `${symbol} daily prices, ${label}, ${plotted[0].time} to ${plotted[plotted.length - 1].time}, ${sessions}. ${gaps}`;
 }
