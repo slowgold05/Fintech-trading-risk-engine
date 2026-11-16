@@ -74,6 +74,9 @@ describe("mobile shell", () => {
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
     fireEvent.click(open);
     const dialog = screen.getByRole("dialog", { name: "Mobile navigation" });
+    expect(dialog.className).toContain("left-0");
+    expect(dialog.className).toContain("w-[min(320px,calc(100%-3rem))]");
+    expect(dialog.className).toContain("motion-safe:[&[open]]:animate-[drawer-in_200ms_ease-out_both]");
     expect(open).toHaveAttribute("aria-expanded", "true");
     expect(document.body.style.overflow).toBe("hidden");
     expect(await within(dialog).findByRole("link", { name: "Trades" })).toBeInTheDocument();
@@ -127,7 +130,9 @@ describe("mobile shell", () => {
     const formattedDate = new Intl.DateTimeFormat("en-US", {
       weekday: "long", month: "long", day: "numeric",
     }).format(new Date());
-    expect(within(header).getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    const openNavigation = within(header).getByRole("button", { name: "Open navigation" });
+    const brand = within(header).getByText("Sentinel Markets");
+    expect(openNavigation.compareDocumentPosition(brand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(header).getByText("Sentinel Markets")).toBeInTheDocument();
     expect(header.firstElementChild).toHaveClass("h-14");
     expect(within(header).queryByRole("link", { name: "Search markets" })).not.toBeInTheDocument();
@@ -170,6 +175,7 @@ describe("desktop shell", () => {
     renderShell("/portfolio");
     const sidebar = screen.getByLabelText("Sidebar");
     expect(sidebar).toHaveClass("w-60");
+    expect(sidebar.className).not.toContain("drawer-in");
     expect(sidebar).not.toHaveClass("w-[72px]");
     const collapse = within(sidebar).getByRole("button", { name: "Collapse sidebar" });
     expect(collapse).toHaveAttribute("type", "button");
