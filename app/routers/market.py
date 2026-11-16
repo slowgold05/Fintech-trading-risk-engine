@@ -273,8 +273,12 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
 
     quote, quote_error = _quote_or_error(normalized_symbol)
     profit_margin = _to_float(sec_fundamentals.get("profit_margin"))
+    profit_margin_period = sec_fundamentals.get("profit_margin_period")
+    if profit_margin is None or not isinstance(profit_margin_period, dict):
+        profit_margin_period = None
     if profit_margin is None:
         profit_margin = _to_float(overview.get("ProfitMargin"))
+        profit_margin_period = None
     scoring_overview = dict(overview, ProfitMargin=profit_margin)
     score, label, factors = _score_company_research(scoring_overview, quote)
     if quote_error:
@@ -289,6 +293,7 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
         "market_cap": _to_float(overview.get("MarketCapitalization")),
         "pe_ratio": _to_float(overview.get("PERatio")),
         "profit_margin": profit_margin,
+        "profit_margin_period": profit_margin_period,
         "beta": _to_float(overview.get("Beta")),
         "analyst_target_price": _to_float(overview.get("AnalystTargetPrice")),
         "price": quote.get("price") if quote else None,

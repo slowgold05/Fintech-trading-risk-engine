@@ -359,6 +359,46 @@ describe("public market data truth", () => {
     expect(await within(researchCard).findByRole("img", { name: "NVDA closing prices over 6M, up" })).toBeInTheDocument();
   });
 
+  it("shows the SEC period for a matched margin and does not scale the ratio twice", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      profit_margin: 0.25,
+      profit_margin_period: {
+        form: "10-K",
+        start: "2024-01-01",
+        end: "2024-12-31",
+        fp: "FY",
+        fy: 2024,
+      },
+      errors: [],
+    });
+    historyApi.fetchDailyHistory.mockImplementation(async (symbol: string, provider: string, adjustment: string, range: string) => (
+      historyResponse(symbol, range, ["10.000000", "14.000000"], provider, adjustment)
+    ));
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const margin = (await within(researchCard).findByText("Margin")).parentElement as HTMLElement;
+    expect(await within(margin).findByText("25.00%")).toBeInTheDocument();
+    expect(within(margin).getByText("10-K · 2024-01-01 to 2024-12-31")).toBeInTheDocument();
+    expect(within(margin).queryByText("2500.00%")).not.toBeInTheDocument();
+  });
+
+  it("leaves the margin blank when the SEC ratio has no period", async () => {
+    api.fetchMarketResearch.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA Corporation",
+      profit_margin: null,
+      profit_margin_period: null,
+      errors: [],
+    });
+    open();
+    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const margin = (await within(researchCard).findByText("Margin")).parentElement as HTMLElement;
+    expect(within(margin).getByText("--")).toBeInTheDocument();
+    expect(within(margin).queryByText(/10-K/)).not.toBeInTheDocument();
+  });
+
   it("renders market headlines from the news endpoint", async () => {
     api.fetchMarketNews.mockResolvedValue({
       as_of: "2026-11-13T15:04:00Z",
