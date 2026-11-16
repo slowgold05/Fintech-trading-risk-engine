@@ -14,7 +14,9 @@ import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
 import { IconBadge } from "../features/dashboard/components";
 import { DailyHistory } from "../components/DailyHistory";
+import { IndexComparisonChart } from "../components/IndexComparisonChart";
 import { MarketSearch } from "../components/MarketSearch";
+import { PULSE_RANGES, type PulseChartRange } from "../components/indexComparisonData";
 import { Sparkline } from "../components/Sparkline";
 import { Watchlists } from "../components/Watchlists";
 import { FreshnessBadge } from "../components/FreshnessBadge";
@@ -34,15 +36,16 @@ import { getRiskTone as getSharedRiskTone } from "../utils/riskTone";
 
 type HeatmapScale = "compact" | "standard" | "expanded";
 type HeatmapView = "stocks" | "sectors";
-type SparkRange = Extract<HistoryRange, "1m" | "3m" | "6m" | "1y">;
+type SparkRange = PulseChartRange;
 
 const heatmapScales: HeatmapScale[] = ["compact", "standard", "expanded"];
-const sparkRanges: SparkRange[] = ["1m", "3m", "6m", "1y"];
+const researchRanges: SparkRange[] = ["1m", "3m", "6m", "1y"];
 const sparkRangeLabels: Record<SparkRange, string> = {
   "1m": "1M",
   "3m": "3M",
   "6m": "6M",
   "1y": "1Y",
+  "2y": "2Y",
 };
 const pageSections = [
   { id: "trending-movers", label: "Trending movers" },
@@ -354,10 +357,12 @@ function closingPrices(bars: readonly { session_date: string; close: string }[])
 function TimeframeToggle({
   label,
   onChange,
+  ranges,
   value,
 }: {
   label: string;
   onChange: (range: SparkRange) => void;
+  ranges: readonly SparkRange[];
   value: SparkRange;
 }) {
   return (
@@ -366,7 +371,7 @@ function TimeframeToggle({
       className="flex flex-wrap rounded border border-slate-800 bg-slate-950 p-1"
       role="group"
     >
-      {sparkRanges.map((range) => {
+      {ranges.map((range) => {
         const selected = value === range;
         return (
           <button
@@ -442,7 +447,7 @@ export function Home() {
     useState<HeatmapScale>("standard");
   const [heatmapView, setHeatmapView] = useState<HeatmapView>("stocks");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [pulseRange, setPulseRange] = useState<SparkRange>("1m");
+  const [pulseRange, setPulseRange] = useState<PulseChartRange>("1m");
   const [researchRange, setResearchRange] = useState<SparkRange>("1m");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuPanelRef = useRef<HTMLDivElement>(null);
@@ -905,6 +910,7 @@ export function Home() {
                       <TimeframeToggle
                         label="Company research range"
                         onChange={setResearchRange}
+                        ranges={researchRanges}
                         value={researchRange}
                       />
                     </div>
@@ -940,19 +946,20 @@ export function Home() {
           <div className="dashboard-card-header flex-wrap gap-3">
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-100" id="market-pulse">Market pulse</h2>
-              <p className="mt-1 text-xs text-slate-400">Cached ETF proxy quotes. Historical trends are unavailable.</p>
+              <p className="mt-1 text-xs text-slate-400">End-of-day percent change for SPY, QQQ, DIA, and IWM, plus the latest cached proxy quotes.</p>
               {marketQuery.data?.data_notice ? (
                 <p className="mt-1 text-xs text-slate-400">{marketQuery.data.data_notice}</p>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <TimeframeToggle label="Market pulse range" onChange={setPulseRange} value={pulseRange} />
+              <TimeframeToggle label="Market pulse range" onChange={setPulseRange} ranges={PULSE_RANGES} value={pulseRange} />
               <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
                 {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
               </span>
             </div>
           </div>
-          <div className="dashboard-card-body">
+          <div className="dashboard-card-body min-w-0 space-y-4">
+            <IndexComparisonChart range={pulseRange} />
             {trends.length === 0 ? (
               <EmptyState message={marketQuery.isLoading ? "Loading quote cache" : "Market quotes unavailable"}
                 detail="Index quotes will appear when the market cache has data." />
