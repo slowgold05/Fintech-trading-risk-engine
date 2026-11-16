@@ -426,6 +426,7 @@ def test_scheduler_uses_one_massive_batch_above_fifty(monkeypatch):
 
     monkeypatch.setattr("app.services.scheduled_jobs.refresh_quote_cache", fake)
     monkeypatch.setattr(settings, "market_quote_source", "massive")
+    monkeypatch.setattr(settings, "massive_api_key", "unit-key")
     monkeypatch.setattr(settings, "scheduled_market_hot_limit", 80)
     monkeypatch.setattr(settings, "scheduled_market_daily_limit", 0)
 
@@ -434,6 +435,68 @@ def test_scheduler_uses_one_massive_batch_above_fifty(monkeypatch):
     assert calls == [("hot", 80, "massive")]
     assert summary["hot"]["source"] == "massive"
     assert summary["daily"] == {"requested": 0, "refreshed": 0, "error_count": 0, "source": "massive"}
+
+
+def test_massive_refresh_with_an_empty_key_uses_yahoo(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "massive_api_key", "   ")
+    db_session.add(MarketSymbol(
+        symbol="AAPL", company_name="Apple Inc.", exchange="NASDAQ", sector="Technology",
+        is_etf=False, is_test=False, is_active=True, refresh_tier="daily",
+        heatmap_size="large", source="test",
+    ))
+    db_session.commit()
+
+    def grouped(*args, **kwargs):
+        raise AssertionError("grouped fetch must not run without a key")
+
+    monkeypatch.setattr("app.services.market_cache_service.fetch_massive_grouped", grouped)
+    monkeypatch.setattr(
+        "app.services.eod_service.fetch_yahoo_quote",
+        lambda symbol: EodQuote(symbol, date(2026, 11, 13), 10, 11, 9, 10, 100),
+    )
+
+    result = refresh_quote_cache(db_session, "daily", 5, source="massive")
+
+    assert result["source"] == "yahoo"
+    assert result["fallback_from"] == "massive"
+    assert result["refreshed"] == 1
+    reason = result["fallback_reason"]
+    assert reason == result["notice"]
+    assert "not configured" in reason.lower()
+    lowered = reason.lower()
+    assert "api_key" not in lowered
+    assert "apikey" not in lowered
+    stored = db_session.query(MarketQuoteCache).filter_by(symbol="AAPL").one()
+    assert stored.source == "yahoo"
+    assert stored.price == Decimal("10")
+
+
+def test_scheduler_without_a_massive_key_keeps_batches_of_fifty(monkeypatch):
+    calls = []
+
+    def fake(db, tier, limit, source):
+        calls.append((limit, source))
+        return {
+            "requested": limit,
+            "refreshed": limit,
+            "errors": [],
+            "source": "yahoo",
+            "fallback_from": "massive",
+            "fallback_reason": "Massive is not configured. This refresh used Yahoo end-of-day quotes.",
+        }
+
+    monkeypatch.setattr("app.services.scheduled_jobs.refresh_quote_cache", fake)
+    monkeypatch.setattr(settings, "market_quote_source", "massive")
+    monkeypatch.setattr(settings, "massive_api_key", "")
+    monkeypatch.setattr(settings, "scheduled_market_hot_limit", 80)
+    monkeypatch.setattr(settings, "scheduled_market_daily_limit", 0)
+
+    summary = refresh_market_caches(object())
+
+    assert calls == [(50, "massive"), (30, "massive")]
+    assert summary["hot"]["source"] == "yahoo"
+    assert "not configured" in summary["hot"]["fallback_reason"].lower()
+    assert "api_key" not in summary["hot"]["fallback_reason"].lower()
 
 
 def test_scheduler_keeps_batches_of_fifty_for_eod(monkeypatch):

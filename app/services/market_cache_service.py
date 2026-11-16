@@ -124,6 +124,16 @@ def latest_entitled_session(today: date | None = None) -> date:
     raise ProviderUnavailable("No entitled NYSE session was found before today.")
 
 
+MISSING_MASSIVE_KEY_NOTICE = (
+    "Massive is not configured. This refresh used Yahoo end-of-day quotes."
+)
+
+
+def massive_key_is_set() -> bool:
+    """True when a Massive key is present. Blank configuration is not a key."""
+    return bool(settings.massive_api_key.strip())
+
+
 def _scrub_provider_detail(detail: str) -> str:
     text = str(detail)
     lowered = text.lower()
@@ -405,6 +415,18 @@ def refresh_quote_cache(
     else:
         rows = _stale_symbol_rows(db, tier, limit)
 
+    if source == "massive" and not massive_key_is_set():
+        result = _refresh_eod_quote_cache(db, rows, tier)
+        if extra_errors:
+            result = {
+                **result,
+                "requested": result["requested"] + len(extra_errors),
+                "errors": extra_errors + result["errors"],
+            }
+        result["fallback_from"] = "massive"
+        result["fallback_reason"] = MISSING_MASSIVE_KEY_NOTICE
+        result["notice"] = MISSING_MASSIVE_KEY_NOTICE
+        return result
     if source == "massive":
         return _refresh_massive_quote_cache(db, rows, tier, extra_errors)
     if source == "alpha_vantage":
