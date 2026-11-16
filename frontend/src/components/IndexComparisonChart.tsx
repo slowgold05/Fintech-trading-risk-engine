@@ -209,7 +209,7 @@ export function IndexComparisonChart({
     <div className="min-w-0 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-400">
-          {asOf ? `End-of-day as of ${asOf}.` : "End-of-day history."} Percent change from the first stored close in the range.
+          {asOf ? `End-of-day as of ${asOf}.` : "End-of-day history."} Percent change from the first stored close in the range. {adjustment === "raw" ? "Raw" : "Split-adjusted"} prices.
         </p>
         <div aria-label="Index comparison layout" className="flex flex-wrap rounded border border-slate-800 bg-slate-950 p-1" role="group">
           <button

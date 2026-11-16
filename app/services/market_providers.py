@@ -23,6 +23,9 @@ def _now() -> datetime:
 
 
 def _bar(symbol: str, day: date, open_, high, low, close, volume, source: str) -> Bar:
+    parsed_volume = Decimal(str(volume))
+    if not parsed_volume.is_finite() or parsed_volume != parsed_volume.quantize(Decimal("0.000001")):
+        raise ValueError("Provider volume cannot be stored exactly")
     return Bar(
         symbol=symbol.upper(),
         day=day,
@@ -30,7 +33,7 @@ def _bar(symbol: str, day: date, open_, high, low, close, volume, source: str) -
         high=Decimal(str(high)),
         low=Decimal(str(low)),
         close=Decimal(str(close)),
-        volume=int(volume),
+        volume=parsed_volume,
         source=source,
         fetched_at=_now(),
     )
@@ -105,10 +108,19 @@ def parse_twelve_series(symbol: str, payload: dict) -> list[Bar]:
     return bars
 
 
-def fetch_massive_grouped(day: date, api_key: str, http_get) -> list[Bar]:
+def fetch_massive_grouped(day: date, api_key: str, http_get, *, adjustment_type: str = "raw") -> list[Bar]:
     if not api_key:
         raise ProviderUnavailable("MASSIVE_API_KEY is empty")
-    payload = http_get("massive", day, api_key)
+    if adjustment_type not in {"raw", "split_adjusted"}:
+        raise ValueError("adjustment_type must be raw or split_adjusted")
+    payload = (http_get("massive", day, api_key, adjusted=True) if adjustment_type == "split_adjusted"
+               else http_get("massive", day, api_key))
+    if not isinstance(payload, dict):
+        raise ValueError("Massive grouped payload is incomplete")
+    if payload.get("adjusted") is not None and payload["adjusted"] != (adjustment_type == "split_adjusted"):
+        raise ValueError("Massive grouped adjustment does not match the requested series")
+    if adjustment_type == "split_adjusted" and payload.get("adjusted") is not True:
+        raise ValueError("Massive grouped response did not confirm split adjustment")
     return parse_massive_grouped(payload, day)
 
 

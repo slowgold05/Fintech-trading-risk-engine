@@ -21,7 +21,7 @@ from app.services.sector_classifier import SECTOR_ORDER, infer_sector
 
 # Free Stocks Basic returns the completed session, not the current one.
 MASSIVE_EOD_NOTICE = (
-    "Massive prices are the prior session close (end of day), not real-time quotes. "
+    "Massive prices are raw prior session closes (end of day), not real-time quotes. "
     "They are not suitable for order execution."
 )
 MASSIVE_FALLBACK_NOTICE = (

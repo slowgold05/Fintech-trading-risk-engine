@@ -103,6 +103,17 @@ def test_http_get_honors_retry_after_without_a_tight_loop(monkeypatch):
     assert "test-key" in seen[0]
 
 
+def test_http_get_requests_split_adjusted_bars_only_when_explicit(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        "app.services.massive_client.requests.get",
+        lambda url, **_kwargs: (seen.append(url) or _Response(200, body={"adjusted": True, "status": "OK", "results": []})),
+    )
+    http_get_massive("massive", date(2026, 11, 13), "test-key",
+                     pacer=RequestPacer(4.8, sleep=lambda _seconds: None), adjusted=True)
+    assert "adjusted=true" in seen[0]
+
+
 def test_http_get_treats_an_unparseable_retry_after_as_backoff(monkeypatch):
     responses = [
         _Response(429, {"Retry-After": "soon"}),

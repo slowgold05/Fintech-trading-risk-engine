@@ -21,7 +21,7 @@ class Bar:
     high: Decimal
     low: Decimal
     close: Decimal
-    volume: int
+    volume: Decimal | int
     source: str
     fetched_at: datetime
 
@@ -48,7 +48,7 @@ def batch_checksum(bars: list[Bar]) -> str:
             "high": format(bar.high, "f"),
             "low": format(bar.low, "f"),
             "close": format(bar.close, "f"),
-            "volume": bar.volume,
+            "volume": int(bar.volume) if bar.volume == int(bar.volume) else str(bar.volume),
             "source": bar.source,
         }
         for bar in bars

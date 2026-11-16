@@ -24,7 +24,7 @@ from app.models.market_symbol import MarketSymbol
 from app.services.exchange_calendar import expected_session_dates
 from app.services.market_history import two_calendar_years_before
 from app.services.market_providers import ProviderUnavailable
-from app.services.massive_ingestion import backfill_two_years, ingest_one_day, nyse_calendar_today
+from app.services.massive_ingestion import backfill_two_years, ingest_one_day, latest_finished_nyse_session, nyse_calendar_today
 from app.services.sp500_constituents import load_sp500_constituents
 
 # Same ETF proxies the market overview uses for the major indexes.
@@ -89,13 +89,13 @@ def ensure_symbols(db, rows: list[tuple[str, str, bool]]) -> int:
     return added
 
 
-def _quality(db, day: date, symbols: list[str], report: dict) -> dict:
+def _quality(db, day: date, symbols: list[str], report: dict, adjustment_type: str) -> dict:
     rows = (
         db.query(MarketBarDaily)
         .filter(
             MarketBarDaily.session_date == day,
             MarketBarDaily.provider == "massive",
-            MarketBarDaily.adjustment_type == "raw",
+            MarketBarDaily.adjustment_type == adjustment_type,
             MarketBarDaily.symbol.in_(symbols),
         )
         .all()
@@ -195,12 +195,17 @@ def _compact(report: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill Massive daily bars for the S&P 500 and index ETFs.")
     parser.add_argument("--day", help="Ingest one session date (YYYY-MM-DD) instead of the two-year window.")
+    parser.add_argument("--adjustment", choices=("raw", "split_adjusted"), default="raw")
+    parser.add_argument("--refresh-adjusted", action="store_true",
+                        help="Atomically re-fetch the full adjusted window after a split; requires --adjustment split_adjusted.")
     parser.add_argument(
         "--status-file",
         default=str(Path(tempfile.gettempdir()) / DEFAULT_STATUS_FILENAME),
         help="Progress JSON path. Updated after each session.",
     )
     args = parser.parse_args()
+    if args.refresh_adjusted and (args.adjustment != "split_adjusted" or args.day):
+        parser.error("--refresh-adjusted requires --adjustment split_adjusted and no --day")
     if not settings.massive_api_key:
         print("MASSIVE_API_KEY is empty.", file=sys.stderr)
         raise SystemExit(2)
@@ -215,7 +220,8 @@ def main() -> None:
         if args.day:
             day = date.fromisoformat(args.day)
             as_of = nyse_calendar_today()
-            report = ingest_one_day(db, day, symbols, settings.massive_api_key, today=as_of)
+            report = ingest_one_day(db, day, symbols, settings.massive_api_key,
+                                    today=as_of, adjustment_type=args.adjustment)
             reason = report.get("skip_reason")
             if reason in {"market_closed", "not_yet_available"}:
                 db.rollback()
@@ -233,7 +239,7 @@ def main() -> None:
                 })
                 return
             db.commit()
-            summary = _quality(db, day, symbols, report)
+            summary = _quality(db, day, symbols, report, args.adjustment)
             print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
             _write_status(status_path, {"state": "done", "mode": "day", **summary})
             if summary["ohlc_problems"] or summary["rows"] == 0:
@@ -241,7 +247,8 @@ def main() -> None:
             return
 
         end = nyse_calendar_today()
-        sessions = expected_session_dates(two_calendar_years_before(end), end)
+        last = latest_finished_nyse_session(end) if args.refresh_adjusted else end
+        sessions = expected_session_dates(two_calendar_years_before(end), last)
         state = {"done": 0, "failed": 0, "skipped": 0}
         closed = load_closed_sessions()
 
@@ -285,10 +292,18 @@ def main() -> None:
             symbols,
             settings.massive_api_key,
             today=end,
-            commit_each=True,
+            commit_each=not args.refresh_adjusted,
             on_day=on_day,
             closed_dates=closed,
+            adjustment_type=args.adjustment,
+            refresh_adjusted=args.refresh_adjusted,
         )
+        if args.refresh_adjusted:
+            if report["sessions_failed"] or report["sessions_not_yet_available"]:
+                db.rollback()
+                _write_status(status_path, {"state": "failed", "reason": "adjusted refresh incomplete; rolled back"})
+                raise SystemExit("Adjusted refresh incomplete; no bars were changed.")
+            db.commit()
         summary = _compact(report)
         print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
         _write_status(status_path, {"state": "done", "mode": "two_years", **summary})

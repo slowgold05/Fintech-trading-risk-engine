@@ -169,10 +169,12 @@ def http_get_massive(
     sleeper=None,
     max_attempts: int | None = None,
     retry_cap: float | None = None,
+    adjusted: bool = False,
 ) -> dict:
     """GET one grouped-daily payload. ``arg`` is the session date.
 
-    ``adjusted=false`` so the bars match the raw series this app stores.
+    ``adjusted=false`` serves raw quote/history ingestion; ``True`` serves the
+    separately labeled split-adjusted research series.
     A 429 is retried up to the configured attempt count, waiting on
     Retry-After with a floor and a cap. Any other non-2xx fails immediately.
     """
@@ -186,7 +188,7 @@ def http_get_massive(
         raise ValueError("max_attempts must be positive")
 
     session_day = arg.isoformat() if isinstance(arg, date) else str(arg)
-    query = urlencode((("adjusted", "false"), ("apiKey", api_key)))
+    query = urlencode((("adjusted", str(adjusted).lower()), ("apiKey", api_key)))
     url = _GROUPED_URL.format(day=session_day) + "?" + query
     for attempt in range(1, attempts + 1):
         limiter.wait()

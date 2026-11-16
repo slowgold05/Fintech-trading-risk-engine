@@ -16,7 +16,7 @@ const CANONICAL_PRICE = /^(?:0|[1-9]\d{0,11})\.\d{6}$/;
 const CANONICAL_SIGNED_VALUE = /^-?(?:0|[1-9]\d{0,11})\.\d{6}$/;
 /** MACD status uses the fixed slow period. The request period is the signal length. */
 const MACD_CLOSES_REQUIRED = 26;
-const CANONICAL_VOLUME = /^(?:0|[1-9]\d*)$/;
+const CANONICAL_VOLUME = /^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/;
 const VOLUME_UP_COLOR = "rgba(52, 211, 153, 0.5)";
 const VOLUME_DOWN_COLOR = "rgba(251, 113, 133, 0.5)";
 
@@ -245,7 +245,7 @@ function parseVolume(value: unknown): number {
     throw new Error("Volume is invalid.");
   }
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) {
+  if (!Number.isFinite(parsed) || !Number.isSafeInteger(Math.trunc(parsed))) {
     throw new Error("Volume is invalid.");
   }
   return parsed;
