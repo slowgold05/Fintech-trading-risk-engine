@@ -77,7 +77,7 @@ describe("mobile shell", () => {
     expect(dialog.className).toContain("left-0");
     expect(dialog.className).toContain("w-[min(320px,calc(100%-3rem))]");
     expect(dialog.className).not.toContain("animate-");
-    expect(dialog.firstElementChild).toHaveClass("mobile-drawer-panel");
+    expect(dialog.className).not.toContain("drawer-in");
     expect(open).toHaveAttribute("aria-expanded", "true");
     expect(document.body.style.overflow).toBe("hidden");
     expect(await within(dialog).findByRole("link", { name: "Trades" })).toBeInTheDocument();
