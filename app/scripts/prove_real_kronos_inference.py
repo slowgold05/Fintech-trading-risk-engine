@@ -32,6 +32,9 @@ from app.models.market_symbol import MarketSymbol
 from app.services.exchange_calendar import is_nyse_trading_day
 from app.services.forecast_kronos import generate_forecast
 
+# generate_forecast accepts only the 12 featured symbols, so the synthetic
+# series borrows one of their tickers. The bars are a seeded random walk in
+# an in-memory SQLite database. They are not AAPL prices.
 SYMBOL = "AAPL"
 LOOKBACK = 400
 HORIZON = 10

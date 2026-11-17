@@ -5,6 +5,8 @@ vendored model. A caller passes ``forecaster(bars, horizon) -> list[float]``.
 The offline script is what adapts a real model to that convention.
 """
 
+import math
+
 
 def _mean_absolute_error(actual: list[float], predicted: list[float]) -> float:
     return sum(abs(a - p) for a, p in zip(actual, predicted)) / len(actual)
@@ -39,10 +41,18 @@ def evaluate_walk_forward_window(
     actual_bars = history_bars[cutoff_index:cutoff_index + horizon]
     actual = [bar["close"] for bar in actual_bars]
     reference = observed[-1]["close"]
-    predicted = forecaster(observed, horizon)
+    predicted = [float(value) for value in forecaster(observed, horizon)]
+    if len(predicted) != len(actual) or not all(math.isfinite(value) for value in predicted):
+        raise ValueError(
+            f"forecaster returned {len(predicted)} close(s) for {len(actual)} actual session(s), "
+            "or a value that is not finite."
+        )
     baseline = _baseline_last_close(reference, horizon)
     return {
         "cutoff_date": observed[-1]["session_date"],
+        "reference_close": reference,
+        "actual_closes": actual,
+        "predicted_closes": predicted,
         "model_mae": _mean_absolute_error(actual, predicted),
         "model_directional_accuracy": _directional_accuracy(reference, actual, predicted),
         "baseline_mae": _mean_absolute_error(actual, baseline),
