@@ -23,6 +23,7 @@ from app.models.asset import Asset
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
+from app.services.exchange_calendar import last_closed_nyse_session
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = h.disposable_api
@@ -41,7 +42,9 @@ _DETAIL_VALUES = {
 
 def _seed(engine) -> None:
     now = datetime.now(timezone.utc)
-    sessions = [now.date() - timedelta(days=2), now.date() - timedelta(days=1)]
+    # The history window ends on the last closed New York session, not the UTC date.
+    last_closed = last_closed_nyse_session(now)
+    sessions = [last_closed - timedelta(days=2), last_closed - timedelta(days=1)]
     quoted_at = now.replace(tzinfo=None)
     with Session(engine) as db:
         if db.execute(text("SELECT current_database()")).scalar() != h.DISPOSABLE_DATABASE:
