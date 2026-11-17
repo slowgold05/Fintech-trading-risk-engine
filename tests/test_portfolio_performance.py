@@ -265,7 +265,7 @@ def test_performance_requires_authentication(client):
 def test_reference_six_day_series_and_reconciliation_match(client, auth_headers, db_session, monkeypatch):
     _forbid_providers(monkeypatch)
     days = _reference_sessions()
-    clock = datetime.combine(days[5], time(18, 0))
+    clock = datetime.combine(days[5], time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-reference@example.com")
     user = db_session.query(User).one()
@@ -280,7 +280,7 @@ def test_reference_six_day_series_and_reconciliation_match(client, auth_headers,
     assert body["requested_start"] == one_calendar_year_before(days[5]).isoformat()
     assert body["requested_end"] == "2026-03-13"
     assert body["inception_at"] == "2026-03-06T14:03:00Z"
-    assert body["read_at"] == "2026-03-13T18:00:00Z"
+    assert body["read_at"] == "2026-03-13T21:30:00Z"
     assert body["status"] == "incomplete"
     assert body["series"] == REFERENCE_SERIES
     assert body["reconciliation"] == {
@@ -300,23 +300,65 @@ def test_reconciliation_is_null_when_today_is_not_a_trading_day(client, auth_hea
     days = _reference_sessions()
     saturday = date(2026, 3, 14)
     assert exchange_calendar.is_nyse_trading_day(saturday) is False
-    clock = datetime.combine(saturday, time(18, 0))
+    clock = datetime.combine(saturday, time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-weekend@example.com")
     user = db_session.query(User).one()
     _seed_reference(db_session, user, days, include_last_bar=True)
 
     body = client.get("/portfolio/performance", headers=headers, params={"range": "1y"}).json()
-    assert body["requested_end"] == "2026-03-14"
+    # Saturday: the window ends on Friday's closed session, not the weekend day.
+    assert body["requested_end"] == "2026-03-13"
     assert body["series"] == REFERENCE_SERIES
     assert body["series"][-1]["status"] == "available"
     assert body["reconciliation"] is None
 
 
+@pytest.mark.parametrize(
+    ("label", "clock", "reconciles"),
+    [
+        # Friday 2026-03-13 21:00 EDT. The UTC date is already Saturday 2026-03-14; the
+        # window must still end on Friday's session and reconcile against it.
+        ("9pm_et_utc_next_day", datetime(2026, 3, 14, 1, 0), True),
+        # Sunday 2026-03-15 20:30 EDT; the UTC date is already Monday 2026-03-16.
+        ("weekend_sunday_evening", datetime(2026, 3, 16, 0, 30), False),
+        # Monday 2026-03-16 14:00 EDT, market open but not closed: Monday is not in the window.
+        ("market_hours_before_close", datetime(2026, 3, 16, 18, 0), False),
+    ],
+)
+def test_performance_window_ends_on_the_last_closed_new_york_session(
+    client, auth_headers, db_session, monkeypatch, label, clock, reconciles
+):
+    _forbid_providers(monkeypatch)
+    days = _reference_sessions()
+    _pin_clock(monkeypatch, clock)
+    headers = auth_headers(f"perf-ny-{label.replace('_', '-')}@example.com")
+    user = db_session.query(User).one()
+    _seed_reference(db_session, user, days, include_last_bar=True)
+
+    response = client.get("/portfolio/performance", headers=headers, params={"range": "1y"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["requested_end"] == "2026-03-13", label
+    assert body["requested_start"] == one_calendar_year_before(date(2026, 3, 13)).isoformat(), label
+    # No unavailable placeholder for a session that has not closed (or not opened).
+    assert body["series"] == REFERENCE_SERIES, label
+    if reconciles:
+        assert body["reconciliation"] == {
+            "latest_series_date": "2026-03-13",
+            "latest_series_value": "1075.00",
+            "current_total_account_value": "1075.00",
+            "matches": True,
+        }, label
+    else:
+        # Today in New York is not the series' last session, so there is no comparison.
+        assert body["reconciliation"] is None, label
+
+
 def test_reconciliation_is_null_when_today_is_unavailable(client, auth_headers, db_session, monkeypatch):
     _forbid_providers(monkeypatch)
     days = _reference_sessions()
-    clock = datetime.combine(days[5], time(18, 0))
+    clock = datetime.combine(days[5], time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-gap-today@example.com")
     user = db_session.query(User).one()
@@ -357,7 +399,7 @@ def test_reset_is_the_same_inception_boundary_as_realized_pnl(client, auth_heade
     ]
     assert all(exchange_calendar.is_nyse_trading_day(day) for day in sessions)
     opened, traded, _between, reset_day, after = sessions
-    clock = datetime.combine(after, time(18, 0))
+    clock = datetime.combine(after, time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-reset@example.com")
     user = db_session.query(User).one()
@@ -486,7 +528,7 @@ def test_ambiguous_raw_providers_make_the_day_unavailable(client, auth_headers, 
     assert len(sessions) == 2
     assert all(exchange_calendar.is_nyse_trading_day(day) for day in sessions)
     opened, priced = sessions
-    clock = datetime.combine(priced, time(18, 0))
+    clock = datetime.combine(priced, time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-ambiguous@example.com")
     user = db_session.query(User).one()
@@ -546,7 +588,7 @@ def test_deposit_and_withdrawal_are_excluded_from_the_return_ratio(client, auth_
         "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19",
     ]
     day6, day7, day8, day9 = days[6:10]
-    clock = datetime.combine(day9, time(18, 0))
+    clock = datetime.combine(day9, time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-flows@example.com")
     user = db_session.query(User).one()
@@ -685,7 +727,7 @@ def test_money_weighted_return_is_null_on_a_single_available_day(client, auth_he
     sessions = exchange_calendar.expected_session_dates(date(2026, 5, 4), date(2026, 5, 4))
     assert sessions == [date(2026, 5, 4)]
     session = sessions[0]
-    clock = datetime.combine(session, time(18, 0))
+    clock = datetime.combine(session, time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-mwr-one-day@example.com")
     user = db_session.query(User).one()
@@ -719,7 +761,7 @@ def test_spy_benchmark_index_is_independent_of_the_account_chain(client, auth_he
     ]
     window = days[:10]
     day6, day7, day8, day9 = window[6:10]
-    clock = datetime.combine(day9, time(18, 0))
+    clock = datetime.combine(day9, time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-benchmark@example.com")
     user = db_session.query(User).one()
@@ -821,7 +863,7 @@ def test_drawdown_peak_survives_a_gap_day(client, auth_headers, db_session, monk
     _forbid_providers(monkeypatch)
     days = exchange_calendar.expected_session_dates(date(2026, 3, 6), date(2026, 3, 20))
     day6, day7, day8, day9 = days[6:10]
-    clock = datetime.combine(day9, time(18, 0))
+    clock = datetime.combine(day9, time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-drawdown-gap@example.com")
     user = db_session.query(User).one()
@@ -890,7 +932,7 @@ def test_query_count_does_not_grow_with_trading_days(client, auth_headers, db_se
     _forbid_providers(monkeypatch)
     end = date(2026, 11, 5)
     assert exchange_calendar.is_nyse_trading_day(end) is True
-    clock = datetime(2026, 11, 5, 18, 0)
+    clock = datetime(2026, 11, 5, 21, 30)
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("perf-queries@example.com")
     user = db_session.query(User).one()

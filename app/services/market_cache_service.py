@@ -12,7 +12,7 @@ from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.price_history_daily import PriceHistoryDaily
 from app.services.eod_service import EodQuote, fetch_eod_batch
-from app.services.exchange_calendar import is_nyse_trading_day
+from app.services.exchange_calendar import is_nyse_trading_day, nyse_now
 from app.services.market_providers import ProviderUnavailable, fetch_massive_grouped
 from app.services.market_quality import Bar, fails_price_checks
 from app.services.massive_client import http_get_massive
@@ -461,7 +461,9 @@ def _freshness(quote: MarketQuoteCache, tier: str, now: datetime | None = None) 
         age_days = (clock.date() - observed.date()).days
         if quote.source == "massive":
             try:
-                entitled = latest_entitled_session(None if now is None else clock.date())
+                # New York date, as latest_entitled_session expects. The UTC date is a day
+                # ahead after 20:00 ET and would demand a session Massive has not published.
+                entitled = latest_entitled_session(None if now is None else nyse_now(clock).date())
             except (ProviderUnavailable, ValueError):
                 entitled = None
             # A Friday close read on Sunday is still the latest entitled session.

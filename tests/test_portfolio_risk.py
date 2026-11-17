@@ -323,7 +323,7 @@ def test_route_requires_authentication_and_rejects_an_invalid_range(client, auth
 def test_route_end_to_end_with_a_real_seeded_account(client, auth_headers, db_session, monkeypatch):
     _forbid_providers(monkeypatch)
     days = _reference_sessions()
-    _pin_clock(monkeypatch, datetime.combine(days[5], time(18, 0)))
+    _pin_clock(monkeypatch, datetime.combine(days[5], time(21, 30)))  # after the 16:00 ET close
     headers = auth_headers("risk-e2e@example.com")
     user = db_session.query(User).one()
     _seed_reference(db_session, user, days, include_last_bar=True)

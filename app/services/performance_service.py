@@ -182,7 +182,7 @@ def _performance(
     if known is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    requested_end = clock.date()
+    requested_end = _performance_end(clock)
     requested_start = (
         one_calendar_year_before(requested_end)
         if range_token == "1y"
@@ -367,6 +367,19 @@ def _inception_at(entries: list[LedgerEntry]) -> datetime | None:
     if parsed is None:
         raise HTTPException(status_code=500, detail="Ledger entry time is missing.")
     return parsed
+
+
+def _performance_end(clock: datetime) -> date:
+    """Inclusive window end: the last NYSE session that has closed as of `clock` (naive UTC).
+
+    The UTC date would, after 20:00 ET, be the next New York day, whose session has not
+    opened, and the series would list it as an unavailable day. Outside the calendar's
+    supported years, fall back to the New York calendar date.
+    """
+    try:
+        return exchange_calendar.last_closed_nyse_session(clock)
+    except ValueError:
+        return exchange_calendar.nyse_now(clock).date()
 
 
 def _series_days(requested_start: date, requested_end: date, inception_date: date) -> list[date]:
@@ -604,8 +617,12 @@ def _reconciliation(
     """Compare the series to today's valuation only when the series actually reaches today."""
     if not series:
         return None
-    today = clock.date()
-    if not exchange_calendar.is_nyse_trading_day(today):
+    # New York market date, not the UTC date: after 20:00 ET the UTC date is tomorrow.
+    today = exchange_calendar.nyse_now(clock).date()
+    try:
+        if not exchange_calendar.is_nyse_trading_day(today):
+            return None
+    except ValueError:
         return None
     last = series[-1]
     if last["session_date"] != today.isoformat() or last["status"] != "available":
