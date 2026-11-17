@@ -16,7 +16,14 @@ from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.forecast_job import ForecastJob
 from app.models.forecast_result import ForecastResult
 from app.models.market_symbol import MarketSymbol
-from app.scripts.run_forecast_evaluation import _make_kronos_forecaster, main
+from app.models.market_bar_daily import MarketBarDaily
+from app.scripts.run_forecast_evaluation import (
+    EvaluationCoverageError,
+    _make_kronos_forecaster,
+    _require_complete_coverage,
+    _require_current,
+    main,
+)
 from app.services.forecast_kronos import generate_forecast
 from app.services.forecast_publication import (
     UNREVIEWED_PUBLICATION,
@@ -110,7 +117,7 @@ def test_kronos_forecaster_passes_the_window_cutoff_as_as_of(monkeypatch):
 
     def fake_generate(db, **kwargs):
         seen.update(kwargs)
-        return {"bars": [{"close": 1.5}, {"close": 2.5}]}
+        return {"input_cutoff": "2024-01-03", "bars": [{"close": 1.5}, {"close": 2.5}]}
 
     monkeypatch.setattr("app.scripts.run_forecast_evaluation.generate_forecast", fake_generate)
     bars = [
@@ -124,6 +131,16 @@ def test_kronos_forecaster_passes_the_window_cutoff_as_as_of(monkeypatch):
     assert seen["as_of"] == date(2024, 1, 3)
     assert seen["lookback"] == min(len(bars), settings.forecast_kronos_max_lookback)
     assert predicted == [1.5, 2.5]
+
+
+def test_kronos_forecaster_refuses_model_input_past_the_cutoff(monkeypatch):
+    monkeypatch.setattr(
+        "app.scripts.run_forecast_evaluation.generate_forecast",
+        lambda db, **kwargs: {"input_cutoff": "2024-01-04", "bars": [{"close": 1.0}]},
+    )
+    bars = [{"session_date": "2024-01-03", "close": 10.0}]
+    with pytest.raises(ValueError, match="not the cutoff 2024-01-03"):
+        _make_kronos_forecaster(object(), "AAPL", "massive", "split_adjusted")(bars, 1)
 
 
 def _evaluation(symbol: str, *, review_status: str) -> ForecastEvaluation:
@@ -222,3 +239,41 @@ def test_unreviewed_evaluation_cannot_reach_any_publish_path(
     db_session.commit()
     assert published.symbol == "AAPL"
     assert db_session.query(ForecastResult).count() == 1
+
+
+def _bars(*days: str) -> list[dict]:
+    return [{"session_date": day, "close": 1.0} for day in days]
+
+
+def test_coverage_accepts_the_recorded_2025_01_09_closure():
+    # 2025-01-08 Wed, 2025-01-09 national day of mourning, 2025-01-10 Fri.
+    _require_complete_coverage(_bars("2025-01-08", "2025-01-10"))
+
+
+def test_coverage_rejects_a_missing_standard_session():
+    with pytest.raises(EvaluationCoverageError, match="1 session"):
+        _require_complete_coverage(_bars("2025-01-13", "2025-01-15"))
+
+
+def test_coverage_rejects_an_empty_series():
+    with pytest.raises(EvaluationCoverageError, match="no valid bars"):
+        _require_complete_coverage([])
+
+
+def _store_bar(db: Session, day: date, adjustment_type: str) -> None:
+    db.add(MarketBarDaily(
+        symbol="AAPL", session_date=day, provider="massive", adjustment_type=adjustment_type,
+        open=1, high=1, low=1, close=1, volume=1,
+        fetched_at=datetime(2026, 11, 16, 12, 0, 0), quality_status="valid",
+    ))
+
+
+def test_current_rejects_an_adjusted_series_that_stops_before_the_raw_series(db_session: Session):
+    db_session.add(MarketSymbol(symbol="AAPL", company_name="AAPL", exchange="NASDAQ", is_active=True))
+    _store_bar(db_session, date(2026, 11, 13), "split_adjusted")
+    _store_bar(db_session, date(2026, 11, 13), "raw")
+    _store_bar(db_session, date(2026, 11, 16), "raw")
+    db_session.commit()
+    with pytest.raises(EvaluationCoverageError, match="stored through 2026-11-16"):
+        _require_current(db_session, _bars("2026-11-13"), symbol="AAPL", provider="massive")
+    _require_current(db_session, _bars("2026-11-13", "2026-11-16"), symbol="AAPL", provider="massive")

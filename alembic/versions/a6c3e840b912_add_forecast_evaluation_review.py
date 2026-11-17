@@ -1,7 +1,7 @@
 """add forecast evaluation review status
 
 Revision ID: a6c3e840b912
-Revises: 8f3a1c6d9e20
+Revises: b7c91a0e4d62
 Create Date: 2026-11-15
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "a6c3e840b912"
-down_revision: Union[str, Sequence[str], None] = "8f3a1c6d9e20"
+down_revision: Union[str, Sequence[str], None] = "b7c91a0e4d62"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
