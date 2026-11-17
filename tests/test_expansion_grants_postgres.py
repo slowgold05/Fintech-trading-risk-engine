@@ -104,9 +104,14 @@ def datetime_now():
 
 
 @pytest.fixture(scope="module")
-def app_sessions():
-    owner_url = preview._disposable_url()
-    preview._upgrade(owner_url)
+def owner_url():
+    url = preview._disposable_url()
+    preview._upgrade(url)
+    return url
+
+
+@pytest.fixture(scope="module")
+def app_sessions(owner_url):
     password = secrets.token_urlsafe(24)
     configure(owner_url, password)
     app_url = make_url(owner_url).set(username="fintech_app", password=password)
@@ -163,7 +168,33 @@ def test_expansion_column_grants_are_minimum(app_sessions):
         assert role_create is False
 
 
-def test_app_role_can_write_research_and_forecast_and_cannot_mutate_role_or_ledger(app_sessions, monkeypatch):
+def _approve_evaluation(owner_url: str, *, symbol: str, provider: str, adjustment_type: str) -> None:
+    """A reviewer approves outside the app role, which cannot set review_status."""
+    engine = create_engine(owner_url, poolclass=NullPool, future=True)
+    try:
+        with sessionmaker(bind=engine, future=True)() as owner_db:
+            owner_db.add(ForecastEvaluation(
+                symbol=symbol,
+                provider=provider,
+                adjustment_type=adjustment_type,
+                horizon=1,
+                window_count=5,
+                model_mae=0.25,
+                model_directional_accuracy=0.6,
+                baseline_type="last_observed_close",
+                baseline_mae=0.4,
+                baseline_directional_accuracy=0.5,
+                weights_exercised=True,
+                review_status="approved",
+            ))
+            owner_db.commit()
+    finally:
+        engine.dispose()
+
+
+def test_app_role_can_write_research_and_forecast_and_cannot_mutate_role_or_ledger(
+    app_sessions, owner_url, monkeypatch,
+):
     symbol = "AAPL"
     fail_symbol = "MSFT"
     monkeypatch.setattr(research_worker.settings, "research_synthesis_enabled", True)
@@ -306,6 +337,7 @@ def test_app_role_can_write_research_and_forecast_and_cannot_mutate_role_or_ledg
             db,
             owner,
         )
+        _approve_evaluation(owner_url, symbol=symbol, provider="yahoo", adjustment_type="raw")
         monkeypatch.setattr(forecast_worker, "_claim_job", _claim(ForecastJob, forecast_done["id"]))
         finished = forecast_worker.process_one_job(db)
         assert finished is not None and finished.id == forecast_done["id"]
