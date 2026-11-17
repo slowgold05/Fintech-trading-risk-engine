@@ -393,14 +393,19 @@ def test_massive_quote_on_the_latest_session_is_delayed_not_live(db_session):
 
 
 def test_heatmap_says_end_of_day_when_a_quote_came_from_massive(db_session, monkeypatch):
+    now = datetime(2026, 11, 15, 18, 0)
     monkeypatch.setattr(
         "app.services.market_cache_service._utcnow",
-        lambda: datetime(2026, 11, 15, 18, 0),
+        lambda: now,
+    )
+    monkeypatch.setattr(
+        "app.services.market_cache_service.latest_entitled_session",
+        lambda today=None: latest_entitled_session(now.date() if today is None else today),
     )
     _symbol(db_session, "AAPL")
     db_session.add(MarketQuoteCache(
         symbol="AAPL", price=10, change_amount=1, change_percent=1, volume=100,
-        source="massive", fetched_at=datetime(2026, 11, 15, 18, 0),
+        source="massive", fetched_at=now,
         quote_at=datetime(2026, 11, 13),
     ))
     db_session.commit()
