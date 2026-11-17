@@ -7,7 +7,7 @@ own Easter/shift logic. That keeps the test an independent check rather than a r
 of the implementation.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -15,6 +15,7 @@ from app.services.exchange_calendar import (
     expected_session_count,
     expected_session_dates,
     is_nyse_trading_day,
+    last_closed_nyse_session,
 )
 
 
@@ -105,3 +106,38 @@ def test_date_outside_supported_range_raises() -> None:
         is_nyse_trading_day(date(2036, 1, 1))
     with pytest.raises(ValueError):
         expected_session_dates(date(1989, 1, 1), date(1989, 12, 31))
+
+
+# last_closed_nyse_session. Clocks are UTC. November 2026 is EST (UTC-5); June is EDT (UTC-4).
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        # 21:00 EST Thursday is already Friday in UTC. Friday has not opened.
+        (datetime(2026, 11, 6, 2, 0), date(2026, 11, 5)),
+        # Same instant, timezone-aware input.
+        (datetime(2026, 11, 6, 2, 0, tzinfo=timezone.utc), date(2026, 11, 5)),
+        # 13:00 EST Monday, before the close: Monday is not finished, so Friday.
+        (datetime(2026, 11, 9, 18, 0), date(2026, 11, 6)),
+        # 15:59 EST, one minute before the close.
+        (datetime(2026, 11, 9, 20, 59), date(2026, 11, 6)),
+        # 16:00 EST exactly: the close has happened.
+        (datetime(2026, 11, 9, 21, 0), date(2026, 11, 9)),
+        # Saturday and Sunday evening (Sunday 20:00 EST is Monday in UTC): Friday.
+        (datetime(2026, 11, 7, 15, 0), date(2026, 11, 6)),
+        (datetime(2026, 11, 9, 1, 0), date(2026, 11, 6)),
+        # Before the open on Monday (04:00 EST): still Friday.
+        (datetime(2026, 11, 9, 9, 0), date(2026, 11, 6)),
+        # Thanksgiving 2026-11-26 after 16:00 EST: the holiday is skipped.
+        (datetime(2026, 11, 26, 22, 0), date(2026, 11, 25)),
+        # EDT: 16:30 EDT Monday 2026-06-15 is 20:30 UTC.
+        (datetime(2026, 6, 15, 20, 30), date(2026, 6, 15)),
+        (datetime(2026, 6, 15, 19, 30), date(2026, 6, 12)),
+    ],
+)
+def test_last_closed_nyse_session_uses_new_york_time_and_the_close(now, expected):
+    assert last_closed_nyse_session(now) == expected
+
+
+def test_last_closed_nyse_session_outside_supported_range_raises():
+    with pytest.raises(ValueError):
+        last_closed_nyse_session(datetime(2036, 6, 15, 21, 0))

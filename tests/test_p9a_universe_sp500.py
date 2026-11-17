@@ -159,7 +159,8 @@ def test_held_symbol_is_not_repeated_across_pages(client, db_session, auth_heade
 def test_non_member_history_remains_readable(client, db_session):
     _active_symbol(db_session, OUTSIDER)
     db_session.flush()
-    session_date = (datetime.now(timezone.utc) - timedelta(days=3)).date()
+    # Far enough back to be inside the history window, which ends on the last closed NYSE session.
+    session_date = (datetime.now(timezone.utc) - timedelta(days=10)).date()
     close_price = Decimal("42.500000")
     fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
     db_session.add(MarketBarDaily(

@@ -28,6 +28,7 @@ import test_p3b_ticket as t
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_symbol import MarketSymbol
 from app.models.user import User
+from app.services.exchange_calendar import last_closed_nyse_session
 from app.services.ledger_service import reconcile_account
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
@@ -53,7 +54,8 @@ def _seed(engine) -> None:
                     item.refresh_tier, item.heatmap_size, item.source = "daily", "micro", "nasdaq_trader"
                 db.flush()
                 now = datetime.now(timezone.utc)
-                session = now.date() - timedelta(days=2)
+                # Inside the history window, which ends on the last closed New York session.
+                session = last_closed_nyse_session(now) - timedelta(days=2)
                 provider = "fixture-watchlists-ui"
                 bar = db.get(MarketBarDaily, (ONE, session, provider, "raw"))
                 if bar is None:

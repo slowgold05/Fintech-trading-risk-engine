@@ -101,7 +101,7 @@ def test_performance_range_bounds_follow_one_and_two_calendar_years(
 ):
     _forbid_providers(monkeypatch)
     days = _reference_sessions()
-    clock = datetime.combine(days[-1], time(18, 0))
+    clock = datetime.combine(days[-1], time(21, 30))
     _pin_clock(monkeypatch, clock)
     headers = auth_headers("analytics-bounds@example.com")
     user = db_session.query(User).one()
@@ -127,7 +127,7 @@ def test_performance_range_bounds_follow_one_and_two_calendar_years(
 def test_full_withdrawal_seals_the_growth_chain(client, auth_headers, db_session, monkeypatch):
     _forbid_providers(monkeypatch)
     days = _reference_sessions()
-    _pin_clock(monkeypatch, datetime.combine(days[-1], time(18, 0)))
+    _pin_clock(monkeypatch, datetime.combine(days[-1], time(21, 30)))
     headers = auth_headers("analytics-withdraw@example.com")
     user = db_session.query(User).one()
     _replace_opening(db_session, user, Decimal("1000.00"), datetime.combine(days[0], time(14, 0)))
@@ -179,7 +179,7 @@ def test_empty_account_establishes_index_on_first_positive_capital(
 ):
     _forbid_providers(monkeypatch)
     days = _reference_sessions()
-    _pin_clock(monkeypatch, datetime.combine(days[-1], time(18, 0)))
+    _pin_clock(monkeypatch, datetime.combine(days[-1], time(21, 30)))
     headers = auth_headers("analytics-empty@example.com")
     user = db_session.query(User).one()
     _replace_opening(db_session, user, Decimal("0.00"), datetime.combine(days[0], time(14, 0)))
@@ -368,7 +368,7 @@ def _seed_risk_book(seed):
 
 def test_risk_metrics_use_one_clock_and_one_sqlite_snapshot(monkeypatch):
     days = _reference_sessions()
-    _pin_clock(monkeypatch, datetime.combine(days[-1], time(18, 0)))
+    _pin_clock(monkeypatch, datetime.combine(days[-1], time(21, 30)))
     _forbid_providers(monkeypatch)
     import app.services.portfolio_risk as portfolio_risk
 

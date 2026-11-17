@@ -11,7 +11,7 @@ from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.order import Order
 from app.models.trade import Trade
-from app.services.exchange_calendar import is_nyse_trading_day
+from app.services.exchange_calendar import is_nyse_trading_day, last_closed_nyse_session
 
 # Quote, opening fill, and the crossing limit are the same price. The local
 # test client prices an unknown symbol at 100, and the reference band is 20%.
@@ -25,8 +25,12 @@ PRICE_QUANTUM = Decimal("0.000001")
 
 
 def _recent_nyse_sessions(count: int) -> list:
-    """Consecutive NYSE sessions ending on or before today's UTC date, oldest first."""
-    day = datetime.now(timezone.utc).date()
+    """Consecutive NYSE sessions ending on the last closed New York session, oldest first.
+
+    The history window ends there, so a bar for a session that has not closed (or for the
+    UTC date after 20:00 ET) would fall outside it.
+    """
+    day = last_closed_nyse_session(datetime.now(timezone.utc))
     found = []
     while len(found) < count:
         if is_nyse_trading_day(day):

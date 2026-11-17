@@ -392,6 +392,17 @@ def test_massive_quote_on_the_latest_session_is_delayed_not_live(db_session):
     assert _freshness(quote, "hot", now)[0] == "delayed"
 
 
+def test_massive_freshness_uses_the_new_york_date_after_8pm_et(db_session):
+    # Tuesday 2026-11-17 21:00 EST is already Wednesday in UTC. Monday's close is still the
+    # latest session the plan publishes, so it is delayed, not cached.
+    now = datetime(2026, 11, 18, 2, 0)
+    quote = MarketQuoteCache(
+        symbol="AAPL", price=1, change_amount=0, change_percent=0, volume=1,
+        source="massive", fetched_at=now, quote_at=datetime(2026, 11, 16),
+    )
+    assert _freshness(quote, "hot", now)[0] == "delayed"
+
+
 def test_heatmap_says_end_of_day_when_a_quote_came_from_massive(db_session, monkeypatch):
     now = datetime(2026, 11, 15, 18, 0)
     monkeypatch.setattr(

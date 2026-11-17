@@ -87,7 +87,9 @@ def _open_prices(driver):
 
 def test_cached_daily_chart(chart_api):
     now = datetime.now(timezone.utc)
-    sessions = [(now - timedelta(days=4)).date(), (now - timedelta(days=2)).date()]
+    # The history window ends on the last closed New York session, not the UTC date.
+    window_end = exchange_calendar.last_closed_nyse_session(now)
+    sessions = [window_end - timedelta(days=4), window_end - timedelta(days=2)]
     with Session(chart_api.engine) as db:
         for symbol in ("P3HISTORY", "P3EMPTY", "P3INVALID"):
             item = db.get(MarketSymbol, symbol)
@@ -144,8 +146,8 @@ def test_cached_daily_chart(chart_api):
         assert "volume" in header_text.lower()
         _capture(driver, canvas, artifacts / "chart-desktop.png")
 
-        two_year_start = two_calendar_years_before(now.date())
-        one_year_start = one_calendar_year_before(now.date())
+        two_year_start = two_calendar_years_before(window_end)
+        one_year_start = one_calendar_year_before(window_end)
         assert two_year_start.isoformat() in _section(driver).text
         Select(_section(driver).find_element(By.ID, "daily-history-range")).select_by_value("1y")
         harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))

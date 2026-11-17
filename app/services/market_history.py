@@ -347,7 +347,7 @@ def _symbol_history(
     if known is None:
         raise HTTPException(status_code=404, detail="Unknown symbol.")
 
-    end = clock.date()
+    end = _history_end(clock)
     start = _RANGE_START[range_token](end)
     # Inclusive session bounds stay in SQL. The primary key already makes a
     # session unique for this symbol, provider, and adjustment.
@@ -416,6 +416,20 @@ def _symbol_history(
         "excluded_row_count": excluded,
         "bars": bars,
     }
+
+
+def _history_end(clock: datetime) -> date:
+    """Inclusive window end: the last NYSE session that has closed as of `clock`.
+
+    `clock` is naive UTC. Using its UTC date would, after 20:00 ET, end the window on the
+    next New York day, whose session has not opened, and coverage would count it as a gap.
+    Outside the calendar's supported years, fall back to the New York calendar date; coverage
+    reports not_verified there anyway.
+    """
+    try:
+        return exchange_calendar.last_closed_nyse_session(clock)
+    except ValueError:
+        return exchange_calendar.nyse_now(clock).date()
 
 
 def _coverage_status_from_dates(expected: set[date], actual: set[date]) -> str:
