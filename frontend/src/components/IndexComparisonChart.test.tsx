@@ -51,11 +51,11 @@ function history(
   };
 }
 
-function renderChart() {
+function renderChart(quotes?: { symbol: string; value: number; changePercent: number }[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <IndexComparisonChart range="1m" />
+      <IndexComparisonChart quotes={quotes} range="1m" />
     </QueryClientProvider>,
   );
 }
@@ -70,8 +70,8 @@ describe("IndexComparisonChart", () => {
     const setData = vi.fn();
     chartApi.createChart.mockImplementation(() => ({
       addSeries: () => ({ setData }),
-      subscribeCrosshairMove: (listener: (param: { time?: string; seriesData: Map<unknown, { value?: number }> }) => void) => {
-        listener({ time: "2026-11-04", seriesData: new Map([[{}, { value: 10 }]]) });
+      subscribeCrosshairMove: (listener: (param: { time?: string; point?: { x: number; y: number } }) => void) => {
+        listener({ time: "2026-11-04", point: { x: 30, y: 40 } });
       },
       timeScale: () => ({ fitContent: vi.fn() }),
       remove: vi.fn(),
@@ -86,30 +86,40 @@ describe("IndexComparisonChart", () => {
       return history(symbol, ["100.000000", "110.000000"], ["2026-11-03", "2026-11-04"]);
     });
 
-    renderChart();
+    renderChart([{ symbol: "DIA", value: 123.45, changePercent: -1.5 }]);
 
-    const table = await screen.findByRole("table", { name: "End-of-day percent change for the index proxies" });
-    await waitFor(() => expect(table).toHaveTextContent("+10.00%"));
-    expect(table).toHaveTextContent("IWM");
-    expect(table).toHaveTextContent("-20.00%");
-    expect(table).toHaveTextContent("DIA");
-    expect(table).toHaveTextContent("Unavailable");
+    const list = await screen.findByRole("list", { name: "End-of-day percent change for the index proxies" });
+    await waitFor(() => expect(list).toHaveTextContent("+10.00%"));
+    expect(list).toHaveTextContent("IWM");
+    expect(list).toHaveTextContent("-20.00%");
+    expect(list).toHaveTextContent("DIA");
+    expect(within(list).getByRole("listitem", { name: /DIA/ })).toHaveTextContent("Unavailable");
+    expect(within(list).getByRole("listitem", { name: /DIA/ })).toHaveTextContent("Provider change -1.50%");
+    expect(within(list).getByRole("listitem", { name: /DIA/ })).toHaveTextContent("$123.45");
+    expect(within(list).getByRole("listitem", { name: /SPY/ })).toHaveTextContent("$110.00");
+    expect(within(list).getByRole("listitem", { name: /SPY/ })).not.toHaveTextContent("Provider change");
     const swatches: Record<string, string> = {
       SPY: "rgb(52, 211, 153)",
       QQQ: "rgb(56, 189, 248)",
+      DIA: "rgb(251, 191, 36)",
       IWM: "rgb(192, 132, 252)",
     };
     for (const [symbol, color] of Object.entries(swatches)) {
-      const header = within(table).getByRole("rowheader", { name: new RegExp(symbol) });
-      const swatch = header.querySelector("[aria-hidden='true']");
-      expect(swatch).toHaveStyle({ backgroundColor: color });
+      const item = within(list).getByRole("listitem", { name: new RegExp(symbol) });
+      expect(item.querySelector("[aria-hidden='true']")).toHaveStyle({ backgroundColor: color });
     }
-    expect(within(table).getByRole("rowheader", { name: /DIA/ }).querySelector("[aria-hidden='true']")).toBeNull();
     expect(screen.getByText(/End-of-day as of 2026-11-09/)).toBeInTheDocument();
     expect(screen.getByText(/Missing sessions stay open for IWM/)).toBeInTheDocument();
     expect(screen.getByText(/End-of-day history unavailable for DIA/)).toBeInTheDocument();
     expect(screen.getByText(/Horizontal axis: session date/)).toBeInTheDocument();
+    expect(screen.getByText("Nov 4, 2026: SPY +10.00%, QQQ +10.00%")).toBeInTheDocument();
+    expect(within(list).getByText("S&P 500")).toBeInTheDocument();
     await waitFor(() => expect(setData).toHaveBeenCalled());
+    const options = chartApi.createChart.mock.calls.at(-1)?.[1] as {
+      localization: { priceFormatter: (price: number) => string };
+    };
+    expect(options.localization.priceFormatter(1.5)).toBe("+1.50%");
+    expect(options.localization.priceFormatter(-1.1)).toBe("-1.10%");
     expect(setData.mock.calls.some((call) => (
       Array.isArray(call[0]) && call[0].some((point: { time: string; value?: number }) => point.time === "2026-11-03" && point.value == null)
     ))).toBe(true);
@@ -117,10 +127,10 @@ describe("IndexComparisonChart", () => {
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "1m");
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "massive", "split_adjusted", "1m");
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("IWM", "massive", "split_adjusted", "1m");
+    expect(screen.queryByRole("button", { name: "Separate" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Separate" }));
-    expect(screen.getByRole("button", { name: "Separate" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Compare" })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.keyDown(screen.getByRole("application", { name: "Index proxy percent change chart" }), { key: "ArrowRight" });
+    expect(screen.getByText("Nov 2, 2026: IWM +0.00%")).toBeInTheDocument();
   });
 
   it("says the line spans a single missing session", async () => {

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import { fetchDailyHistory, type HistoryCoverageStatus, type HistoryResponse } from "../api/history";
-import { formatSignedPercent } from "../utils/format";
+import { formatCurrency, formatSignedPercent } from "../utils/format";
 import {
   INDEX_PROXIES,
+  type NormalizedPoint,
   type NormalizedSeries,
   type PulseChartRange,
   normalizeCloses,
@@ -13,10 +14,17 @@ import {
 const COLORS = ["#34d399", "#38bdf8", "#fbbf24", "#c084fc", "#fb7185", "#a5b4fc"];
 const HISTORY_PROVIDER = "massive";
 const HISTORY_ADJUSTMENT = "split_adjusted";
+const CHART_HEIGHT = 224;
 
 type Proxy = {
   symbol: string;
   name: string;
+};
+
+type Quote = {
+  symbol: string;
+  value: number;
+  changePercent: number;
 };
 
 type PlotRow = {
@@ -28,9 +36,17 @@ type PlotRow = {
   series: NormalizedSeries | null;
 };
 
-type HoverRow = {
+type HoverPoint = {
   symbol: string;
-  value: string;
+  name: string;
+  color: string;
+  value: number;
+};
+
+type PointerHover = {
+  date: string;
+  x: number;
+  y: number;
 };
 
 function coverageHasGaps(status: HistoryCoverageStatus | null) {
@@ -48,72 +64,146 @@ function plotFromResponse(response: HistoryResponse | undefined, failed: boolean
   return { state: "ready", coverage: response.coverage_status, series };
 }
 
-function chartOptions(charts: typeof import("lightweight-charts"), height: number) {
+function pointValue(point: NormalizedPoint) {
+  return "value" in point && typeof point.value === "number" ? point.value : null;
+}
+
+function valuesOn(rows: readonly PlotRow[], date: string) {
+  const found: HoverPoint[] = [];
+  for (const row of rows) {
+    if (!row.series) continue;
+    for (const point of row.series.points) {
+      if (point.time !== date) continue;
+      const value = pointValue(point);
+      if (value == null) continue;
+      found.push({ symbol: row.symbol, name: row.name, color: row.color, value });
+    }
+  }
+  return found;
+}
+
+function sessionDates(rows: readonly PlotRow[]) {
+  const dates = new Set<string>();
+  for (const row of rows) {
+    for (const point of row.series?.points ?? []) {
+      if (typeof point.time === "string" && pointValue(point) != null) {
+        dates.add(point.time);
+      }
+    }
+  }
+  return [...dates].sort();
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatSessionDate(iso: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const month = match ? MONTHS[Number(match[2]) - 1] : undefined;
+  if (!match || !month) return iso;
+  return `${month} ${Number(match[3])}, ${match[1]}`;
+}
+
+function signedAxis(price: number) {
+  const sign = price > 0 ? "+" : "";
+  return `${sign}${price.toFixed(2)}%`;
+}
+
+function percentClass(value: number) {
+  return [
+    "font-mono text-lg font-semibold leading-6",
+    value > 0 ? "text-emerald-300" : value < 0 ? "text-rose-300" : "text-slate-200",
+  ].join(" ");
+}
+
+function chartOptions(charts: typeof import("lightweight-charts")) {
   return {
     autoSize: true,
-    height,
+    height: CHART_HEIGHT,
     layout: {
-      background: { type: charts.ColorType.Solid, color: "#020617" },
-      textColor: "#cbd5e1",
       attributionLogo: true,
+      background: { type: charts.ColorType?.Solid ?? "solid", color: "#020617" },
       fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      textColor: "#cbd5e1",
     },
     grid: {
-      vertLines: { color: "#1e293b" },
       horzLines: { color: "#1e293b" },
+      vertLines: { color: "#1e293b" },
     },
-    rightPriceScale: { borderColor: "#334155", visible: true },
-    timeScale: { borderColor: "#334155", visible: true, secondsVisible: false, timeVisible: false },
-    localization: {
-      priceFormatter: (price: number) => `${price.toFixed(2)}%`,
+    localization: { priceFormatter: signedAxis },
+    rightPriceScale: {
+      borderColor: "#334155",
+      minimumWidth: 72,
+      scaleMargins: { top: 0.12, bottom: 0.12 },
     },
-    handleScroll: false,
-    handleScale: false,
+    timeScale: { borderColor: "#334155" },
+    ...crosshairOption(charts),
+  };
+}
+
+function crosshairOption(charts: object) {
+  try {
+    const mode = (charts as { CrosshairMode?: { Normal?: number } }).CrosshairMode?.Normal;
+    return mode == null ? {} : { crosshair: { mode } };
+  } catch {
+    return {};
+  }
+}
+
+function lineOptions(color: string) {
+  return {
+    color,
+    lastValueVisible: false,
+    lineWidth: 2 as const,
+    priceLineVisible: false,
   };
 }
 
 export function IndexComparisonChart({
-  range,
-  symbols = INDEX_PROXIES,
-  provider = HISTORY_PROVIDER,
   adjustment = HISTORY_ADJUSTMENT,
+  provider = HISTORY_PROVIDER,
+  quotes = [],
+  range,
+  rangeControl = null,
+  symbols = INDEX_PROXIES,
 }: {
-  range: PulseChartRange;
-  symbols?: readonly Proxy[];
-  provider?: string;
   adjustment?: string;
+  provider?: string;
+  quotes?: readonly Quote[];
+  range: PulseChartRange;
+  rangeControl?: ReactNode;
+  symbols?: readonly Proxy[];
 }) {
-  const [mode, setMode] = useState<"compare" | "separate">("compare");
-  const [chartFailed, setChartFailed] = useState(false);
-  const [hover, setHover] = useState<{ date: string; rows: HoverRow[] } | null>(null);
-  const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const queries = useQueries({
-    queries: symbols.map((item) => ({
-      queryKey: ["market", "history", item.symbol, provider, adjustment, range],
-      queryFn: () => fetchDailyHistory(item.symbol, provider, adjustment, range),
+  const results = useQueries({
+    queries: symbols.map((proxy) => ({
+      queryKey: ["market", "history", proxy.symbol, provider, adjustment, range],
+      queryFn: () => fetchDailyHistory(proxy.symbol, provider, adjustment, range),
       retry: false,
-      staleTime: 300_000,
+      staleTime: 300000,
     })),
   });
-
-  const rows: PlotRow[] = symbols.map((item, index) => {
-    const query = queries[index];
-    const response = query?.data;
-    const mismatched = response != null && response.symbol !== item.symbol;
-    const plot = query?.isLoading
-      ? { state: "loading" as const, coverage: null, series: null }
-      : plotFromResponse(mismatched ? undefined : response, Boolean(query?.isError) || mismatched);
+  const rows: PlotRow[] = symbols.map((proxy, index) => {
+    const result = results[index];
     return {
-      symbol: item.symbol,
-      name: item.name,
+      symbol: proxy.symbol,
+      name: proxy.name,
       color: COLORS[index % COLORS.length],
-      ...plot,
+      ...plotFromResponse(result?.data, result?.isError ?? false),
+      ...(result?.isPending ? { state: "loading" as const, series: null } : {}),
     };
   });
   const plotKey = rows.map((row) => (
-    `${row.symbol}:${row.state}:${row.series?.asOf ?? ""}:${row.series?.sessionCount ?? 0}:${row.series?.hasGap ? "gap" : "solid"}`
+    `${row.symbol}:${row.state}:${row.series?.sessionCount ?? 0}:${row.series?.asOf ?? ""}:${row.series?.hasGap ? "gap" : "solid"}`
   )).join("|");
+  const dates = sessionDates(rows);
   const rowsRef = useRef(rows);
+  const chartNode = useRef<HTMLDivElement | null>(null);
+  const [failureKey, setFailureKey] = useState<string | null>(null);
+  const [keyboard, setKeyboard] = useState<{ key: string; index: number } | null>(null);
+  const [pointer, setPointer] = useState<(PointerHover & { key: string }) | null>(null);
+  const chartFailed = failureKey === plotKey;
+  const keyboardIndex = keyboard?.key === plotKey ? keyboard.index : null;
+  const activePointer = pointer?.key === plotKey ? pointer : null;
+
   useEffect(() => {
     rowsRef.current = rows;
   });
@@ -121,199 +211,185 @@ export function IndexComparisonChart({
   useEffect(() => {
     let cancelled = false;
     const active: IChartApi[] = [];
-    const nodes = mode === "compare"
-      ? [["compare", nodeRefs.current.compare ?? null, rowsRef.current.filter((row) => row.state === "ready")] as const]
-      : rowsRef.current
-        .filter((row) => row.state === "ready")
-        .map((row) => [row.symbol, nodeRefs.current[row.symbol] ?? null, [row]] as const);
+    const node = chartNode.current;
+    if (!node) return undefined;
 
     void import("lightweight-charts").then((charts) => {
-      if (cancelled) {
-        return;
-      }
+      if (cancelled) return;
+      const seriesRows = rowsRef.current.filter((row) => row.series);
+      if (seriesRows.length === 0) return;
+      const drawn: ISeriesApi<SeriesType>[] = [];
       try {
-        for (const [, node, seriesRows] of nodes) {
-          if (!node || seriesRows.length === 0) {
-            continue;
+        const chart = charts.createChart(node, chartOptions(charts));
+        active.push(chart);
+        for (const row of seriesRows) {
+          if (!row.series) continue;
+          const series = chart.addSeries(charts.LineSeries, lineOptions(row.color));
+          series.setData(row.series.points);
+          drawn.push(series);
+        }
+        chart.timeScale().fitContent();
+        chart.subscribeCrosshairMove((param) => {
+          const date = typeof param.time === "string" ? param.time : "";
+          const point = param.point;
+          if (!date || !point || point.x < 0 || point.y < 0) {
+            setPointer(null);
+            return;
           }
-          const chart = charts.createChart(node, chartOptions(charts, mode === "compare" ? 256 : 112));
-          active.push(chart);
-          const painted: { symbol: string; series: ISeriesApi<SeriesType> }[] = [];
-          for (const row of seriesRows) {
-            if (!row.series) {
-              continue;
-            }
-            const series = chart.addSeries(charts.LineSeries, {
-              color: row.color,
-              title: row.symbol,
-              lineWidth: 2,
-              priceLineVisible: false,
-              lastValueVisible: mode === "separate",
-            });
-            series.setData(row.series.points);
-            painted.push({ symbol: row.symbol, series });
-          }
-          chart.timeScale().fitContent();
-          chart.subscribeCrosshairMove((param) => {
-            if (!param.time || !param.seriesData.size) {
-              setHover(null);
-              return;
-            }
-            const date = typeof param.time === "string" ? param.time : "";
-            const hoverRows: HoverRow[] = [];
-            for (const item of painted) {
-              const datum = param.seriesData.get(item.series);
-              if (datum && "value" in datum && typeof datum.value === "number") {
-                hoverRows.push({ symbol: item.symbol, value: `${datum.value.toFixed(2)}%` });
-              }
-            }
-            setHover(date && hoverRows.length ? { date, rows: hoverRows } : null);
+          const width = node.clientWidth || 320;
+          setPointer({
+            date,
+            key: plotKey,
+            x: Math.min(Math.max(8, point.x + 12), Math.max(8, width - 188)),
+            y: Math.max(8, point.y - 28),
           });
-        }
-        if (!cancelled) {
-          setChartFailed(active.length === 0 && nodes.some((entry) => entry[2].length > 0));
-        }
+        });
+        if (drawn.length === 0) setFailureKey(plotKey);
       } catch {
-        if (!cancelled) {
-          setChartFailed(true);
-        }
+        if (!cancelled) setFailureKey(plotKey);
       }
     }).catch(() => {
-      if (!cancelled) {
-        setChartFailed(true);
-      }
+      if (!cancelled) setFailureKey(plotKey);
     });
 
     return () => {
       cancelled = true;
-      for (const chart of active) {
-        chart.remove();
-      }
-      setHover(null);
+      for (const chart of active) chart.remove();
     };
-  }, [mode, plotKey]);
+  }, [plotKey]);
 
-  const ready = rows.filter((row) => row.state === "ready" && row.series);
-  const asOf = ready.reduce<string | null>((latest, row) => {
-    const date = row.series?.asOf ?? "";
-    return !latest || date > latest ? date : latest;
-  }, null);
-  const brokenNames = rows.filter((row) => row.series?.hasGap).map((row) => row.symbol);
-  const spannedNames = rows
-    .filter((row) => !row.series?.hasGap && coverageHasGaps(row.coverage))
-    .map((row) => row.symbol);
-  const missing = rows.filter((row) => row.state === "unavailable").map((row) => row.symbol);
-  const loading = rows.some((row) => row.state === "loading");
+  const ready = rows.filter((row) => row.series);
+  const missing = rows.filter((row) => row.state === "unavailable");
+  const openGaps = ready.filter((row) => row.series?.hasGap);
+  const spanned = ready.filter((row) => !row.series?.hasGap && coverageHasGaps(row.coverage));
+  const latest = ready.map((row) => row.series?.asOf).filter((value): value is string => Boolean(value)).sort().at(-1);
+  const activeDate = activePointer?.date ?? (keyboardIndex != null ? dates[keyboardIndex] : null);
+  const hoverRows = activeDate ? valuesOn(rows, activeDate) : [];
+  const reading = activeDate && hoverRows.length > 0
+    ? `${formatSessionDate(activeDate)}: ${hoverRows.map((row) => `${row.symbol} ${formatSignedPercent(row.value)}`).join(", ")}`
+    : "Arrow keys or hover read each session.";
+
+  function onChartKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (dates.length === 0) return;
+    if (!["ArrowLeft", "ArrowRight", "End", "Escape", "Home"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Escape") {
+      setKeyboard(null);
+      setPointer(null);
+      return;
+    }
+    setPointer(null);
+    setKeyboard((current) => {
+      const index = current?.key === plotKey ? current.index : -1;
+      let next = index;
+      if (event.key === "Home" || (event.key === "ArrowRight" && index < 0)) next = 0;
+      else if (event.key === "End") next = dates.length - 1;
+      else if (event.key === "ArrowRight") next = Math.min(dates.length - 1, index + 1);
+      else if (event.key === "ArrowLeft") next = index < 0 ? dates.length - 1 : Math.max(0, index - 1);
+      return { key: plotKey, index: next };
+    });
+  }
 
   return (
-    <div className="min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-slate-400">
-          {asOf ? `End-of-day as of ${asOf}.` : "End-of-day history."} Percent change from the first stored close in the range. {adjustment === "raw" ? "Raw" : "Split-adjusted"} prices.
-        </p>
-        <div aria-label="Index comparison layout" className="flex flex-wrap rounded border border-slate-800 bg-slate-950 p-1" role="group">
-          <button
-            aria-pressed={mode === "compare"}
-            className={modeButtonClass(mode === "compare")}
-            onClick={() => setMode("compare")}
-            type="button"
-          >
-            Compare
-          </button>
-          <button
-            aria-pressed={mode === "separate"}
-            className={modeButtonClass(mode === "separate")}
-            onClick={() => setMode("separate")}
-            type="button"
-          >
-            Separate
-          </button>
-        </div>
-      </div>
-      <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
-        Horizontal axis: session date. Vertical axis: percent change.
+    <div className="space-y-3">
+      <p className="text-xs text-slate-400">
+        {latest
+          ? `End-of-day as of ${latest}. Percent change from the first stored close in the range. Levels are ETF closes, not index prints.`
+          : "End-of-day percent change from stored closes. Levels are ETF closes, not index prints."}
       </p>
-      {mode === "compare" ? (
-        <div className="h-64 w-full min-w-0 overflow-hidden rounded-xl border border-slate-800" ref={(node) => { nodeRefs.current.compare = node; }} />
-      ) : (
-        <div className="grid min-w-0 gap-3">
-          {rows.map((row) => (
-            <div className="min-w-0" key={row.symbol}>
-              <div className="mb-1 font-mono text-xs text-slate-300">{row.symbol}</div>
-              <div
-                className="h-28 w-full min-w-0 overflow-hidden rounded-xl border border-slate-800"
-                ref={(node) => { nodeRefs.current[row.symbol] = node; }}
+      <ul
+        aria-label="End-of-day percent change for the index proxies"
+        className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4"
+      >
+        {rows.map((row) => {
+          const quote = quotes.find((item) => item.symbol === row.symbol);
+          return (
+            <li aria-label={`${row.symbol} ${row.name}`} className="relative min-w-0 py-1 pl-3" key={row.symbol}>
+              <span
+                aria-hidden="true"
+                className="absolute bottom-1 left-0 top-1 w-1 rounded-full"
+                style={{ backgroundColor: row.color }}
               />
-            </div>
-          ))}
-        </div>
-      )}
-      <p aria-live="polite" className="min-h-6 text-xs text-slate-300">
-        {hover
-          ? `${hover.date}: ${hover.rows.map((row) => `${row.symbol} ${row.value}`).join(", ")}`
-          : "Hover a session to see its date and percent change."}
-      </p>
-      {chartFailed ? (
-        <p className="text-xs text-slate-400" role="status">The chart could not be drawn. The table lists the same end-of-day changes.</p>
-      ) : null}
-      {loading ? <p className="text-xs text-slate-400" role="status">Loading end-of-day history.</p> : null}
-      {missing.length > 0 ? (
-        <p className="text-xs text-slate-400" role="status">End-of-day history unavailable for {missing.join(", ")}.</p>
-      ) : null}
-      {brokenNames.length > 0 ? (
-        <p className="text-xs text-slate-400" role="status">
-          Missing sessions stay open for {brokenNames.join(", ")}. The line does not connect across those gaps.
-        </p>
-      ) : null}
-      {spannedNames.length > 0 ? (
-        <p className="text-xs text-slate-400" role="status">
-          Sessions are missing for {spannedNames.join(", ")}. The line spans those sessions.
-        </p>
-      ) : null}
-      <div className="min-w-0 overflow-x-auto">
-        <table className="w-full table-fixed text-left text-xs text-slate-300">
-          <caption className="sr-only">End-of-day percent change for the index proxies</caption>
-          <thead className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
-            <tr>
-              <th className="py-2 pr-2 font-semibold" scope="col">Proxy</th>
-              <th className="py-2 pr-2 font-semibold" scope="col">Change</th>
-              <th className="py-2 font-semibold" scope="col">As of</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr className="border-t border-slate-800" key={row.symbol}>
-                <th className="py-2 pr-2 font-semibold text-slate-100" scope="row">
-                  <span className="flex items-start gap-2">
-                    {row.series ? (
-                      <span
-                        aria-hidden="true"
-                        className="mt-1 inline-block size-2 shrink-0 rounded-sm"
-                        style={{ backgroundColor: row.color }}
-                      />
-                    ) : null}
-                    <span className="min-w-0 font-mono">
-                      {row.symbol}
-                      <span className="mt-0.5 block font-sans text-[10px] font-normal text-slate-500">{row.name}</span>
-                    </span>
+              <div className="text-xs font-semibold leading-4 text-slate-100">{row.name}</div>
+              <div className="font-mono text-[10px] text-slate-500">{row.symbol}</div>
+              {row.state === "loading" ? (
+                <div className="text-xs text-slate-400">Loading</div>
+              ) : row.series ? (
+                <>
+                  <div className={percentClass(row.series.changePercent)}>
+                    <span className="sr-only">Range change </span>
+                    {formatSignedPercent(row.series.changePercent)}
+                  </div>
+                  <div className="font-mono text-sm text-slate-200">
+                    <span className="sr-only">ETF close </span>
+                    {formatCurrency(row.series.lastClose)}
+                  </div>
+                </>
+              ) : (
+                <div className="text-xs text-slate-400">Unavailable</div>
+              )}
+              {quote ? (
+                <>
+                  <div className="text-[10px] leading-4 text-slate-400">
+                    Provider change {formatSignedPercent(quote.changePercent)}
+                  </div>
+                  <div className="font-mono text-[10px] text-slate-300">{formatCurrency(quote.value)}</div>
+                </>
+              ) : row.state !== "loading" && !row.series ? (
+                <div className="font-mono text-xs text-slate-500">—</div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-[11px] text-slate-500">Vertical axis: percent change. Horizontal axis: session date.</p>
+      <div className="relative min-w-0">
+        <div
+          aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+          aria-label="Index proxy percent change chart"
+          className="h-56 w-full overflow-hidden rounded-xl border border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
+          onKeyDown={onChartKeyDown}
+          ref={chartNode}
+          role="application"
+          tabIndex={0}
+        />
+        {activeDate && hoverRows.length > 0 ? (
+          <div
+            className="pointer-events-none absolute z-10 max-w-[12rem] rounded-md border border-slate-700 bg-slate-900/95 px-2.5 py-2 text-xs shadow-lg"
+            style={{ left: activePointer?.x ?? 8, top: activePointer?.y ?? 8 }}
+          >
+            <div className="text-slate-200">{formatSessionDate(activeDate)}</div>
+            <ul>
+              {hoverRows.map((row) => (
+                <li className="mt-1 flex items-center justify-between gap-3" key={row.symbol}>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span aria-hidden="true" className="inline-block size-2 shrink-0 rounded-sm" style={{ backgroundColor: row.color }} />
+                    <span className="truncate text-slate-100">{row.name}</span>
                   </span>
-                </th>
-                <td className="py-2 pr-2 font-mono">
-                  {row.series ? formatSignedPercent(row.series.changePercent) : row.state === "loading" ? "Loading" : "Unavailable"}
-                </td>
-                <td className="py-2 font-mono">{row.series?.asOf ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <span className={row.value < 0 ? "font-mono text-rose-300" : "font-mono text-emerald-300"}>
+                    {formatSignedPercent(row.value)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
+      <p aria-live="polite" className="min-h-6 text-xs text-slate-300">{reading}</p>
+      {rangeControl ? <div className="flex max-w-full justify-center">{rangeControl}</div> : null}
+      {chartFailed ? (
+        <p className="text-xs text-amber-200" role="status">The comparison chart could not be drawn. The percent changes above still use the stored closes.</p>
+      ) : null}
+      {rows.some((row) => row.state === "loading") ? <p className="text-xs text-slate-400">Loading end-of-day history.</p> : null}
+      {missing.length > 0 ? (
+        <p className="text-xs text-slate-400">End-of-day history unavailable for {missing.map((row) => row.symbol).join(", ")}.</p>
+      ) : null}
+      {openGaps.length > 0 ? (
+        <p className="text-xs text-slate-400">Missing sessions stay open for {openGaps.map((row) => row.symbol).join(", ")}. The line does not connect across that break.</p>
+      ) : null}
+      {spanned.length > 0 ? (
+        <p className="text-xs text-slate-400">Sessions are missing for {spanned.map((row) => row.symbol).join(", ")}. The line spans those sessions.</p>
+      ) : null}
     </div>
   );
-}
-
-function modeButtonClass(selected: boolean) {
-  return [
-    "min-h-11 rounded px-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-300/40",
-    selected ? "bg-emerald-400 text-slate-950" : "text-slate-200 hover:bg-slate-900 hover:text-slate-50",
-  ].join(" ");
 }

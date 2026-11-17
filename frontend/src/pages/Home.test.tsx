@@ -294,7 +294,7 @@ describe("public market data truth", () => {
     const links: Array<[string, string, string]> = [
       ["Trending movers", "#trending-movers", "Trending movers"],
       ["Market pulse", "#market-pulse", "Market pulse"],
-      ["Sector ETF heatmap", "#sector-etf-heatmap", "Sector ETF heatmap"],
+      ["Sector ETF performance", "#sector-etf-heatmap", "Sector ETF performance"],
       ["Company research", "#company-research", "Company research"],
       ["Stock heatmap", "#stock-heatmap", "Stock heatmap"],
       ["Market news", "#market-news", "Market news"],
@@ -350,7 +350,7 @@ describe("public market data truth", () => {
     expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
   });
 
-  it("toggles the shared market-pulse timeframe and draws index sparklines", async () => {
+  it("toggles the shared market-pulse range and lists every index proxy", async () => {
     api.fetchMarketOverview.mockResolvedValue({
       as_of: "2026-11-13T00:00:00Z", errors: [],
       trends: [
@@ -374,24 +374,21 @@ describe("public market data truth", () => {
     expect(oneMonth).toHaveAttribute("aria-pressed", "true");
     expect(threeMonth).toHaveAttribute("aria-pressed", "false");
     const pulse = screen.getByRole("heading", { name: "Market pulse" }).closest(".dashboard-card") as HTMLElement;
-    const spy = await within(pulse).findByRole("img", { name: "SPY closing prices over 1M, up" });
-    const qqq = await within(pulse).findByRole("img", { name: "QQQ closing prices over 1M, down" });
-    expect(spy.querySelector("polyline")).toHaveClass("stroke-emerald-400");
-    expect(qqq.querySelector("polyline")).toHaveClass("stroke-rose-400");
-    expect(within(pulse).getByText("Provider change +1.20%")).toBeInTheDocument();
+    expect(await within(pulse).findByText("Provider change +1.20%")).toBeInTheDocument();
     expect(within(pulse).getByText("$123.45")).toBeInTheDocument();
+    expect(within(pulse).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
+    const comparison = await within(pulse).findByRole("list", { name: "End-of-day percent change for the index proxies" });
+    await waitFor(() => expect(comparison).toHaveTextContent("+20.00%"));
+    expect(within(comparison).getByText("DIA")).toBeInTheDocument();
+    expect(within(comparison).getByText("IWM")).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "1m");
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "1m");
 
     fireEvent.click(threeMonth);
     expect(threeMonth).toHaveAttribute("aria-pressed", "true");
     expect(oneMonth).toHaveAttribute("aria-pressed", "false");
-    expect(await within(pulse).findByRole("img", { name: "SPY closing prices over 3M, up" })).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "3m");
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "3m");
-    const comparison = await within(pulse).findByRole("table", { name: "End-of-day percent change for the index proxies" });
-    expect(within(comparison).getByRole("rowheader", { name: /DIA/ })).toBeInTheDocument();
-    expect(within(comparison).getByRole("rowheader", { name: /IWM/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Market pulse range 2Y" }));
     await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "2y"));
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "massive", "split_adjusted", "2y");
@@ -628,7 +625,7 @@ describe("public market data truth", () => {
       expect(stack.className).toContain("contents");
       expect(stack.className).toContain("min-[1200px]:flex-col");
       expect(stack.className).toContain("min-[1200px]:gap-6");
-      expect(Array.from(stack.querySelectorAll("h2")).map((heading) => heading.id)).toEqual(columns[index]);
+      expect(columns[index].map((id) => stack.querySelector(`#${id}`)?.id)).toEqual(columns[index]);
     });
     const heatmap = document.getElementById("stock-heatmap")?.closest(".dashboard-card") as HTMLElement;
     const heatmapBody = within(heatmap).getByRole("region", { name: "Stock heatmap" });
@@ -699,7 +696,7 @@ describe("public market data truth", () => {
     expect(within(heatmap).queryByText("Loading cache")).not.toBeInTheDocument();
     expect(within(heatmap).getByText("1 returned sector proxy")).toBeInTheDocument();
     expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
-    expect(within(screen.getByRole("heading", { name: "Sector ETF heatmap" }).closest(".dashboard-card") as HTMLElement).getByText("XLK")).toBeInTheDocument();
+    expect(within(screen.getByRole("heading", { name: "Sector ETF performance" }).closest(".dashboard-card") as HTMLElement).getByRole("listitem", { name: /XLK/ })).toBeInTheDocument();
   });
 
   it("shows the sector proxy count when stock items are empty", async () => {
@@ -812,8 +809,8 @@ describe("public market data truth", () => {
     expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
     expect(within(heatmap).queryByRole("img")).not.toBeInTheDocument();
-    const sectorCard = screen.getByRole("heading", { name: "Sector ETF heatmap" }).closest(".dashboard-card") as HTMLElement;
-    expect(within(sectorCard).getByText("Sector quotes unavailable")).toBeInTheDocument();
+    const sectorCard = screen.getByRole("heading", { name: "Sector ETF performance" }).closest(".dashboard-card") as HTMLElement;
+    expect(within(sectorCard).getByText("No sector ETF proxies.")).toBeInTheDocument();
     expect(within(sectorCard).queryByText("XLK")).not.toBeInTheDocument();
   });
 });
