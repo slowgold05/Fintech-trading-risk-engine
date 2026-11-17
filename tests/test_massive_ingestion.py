@@ -108,7 +108,9 @@ def test_ingest_one_day_writes_valid_rows_for_requested_symbols(db_session):
 
 
 def test_split_adjusted_history_preserves_raw_rows_and_fractional_volume(client, db_session):
-    older = date.today() - timedelta(days=3)
+    # Far enough back that both days are inside the history window, which ends on the last
+    # closed NYSE session (up to several days before today around weekends and holidays).
+    older = date.today() - timedelta(days=10)
     newer = older + timedelta(days=1)
     _seed_symbols(db_session, ["AAPL"])
     raw = _grouped([_ticker("AAPL", 100, volume=100)])
