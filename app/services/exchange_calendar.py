@@ -30,7 +30,8 @@ Supported range: 1990-01-01 through 2035-12-31 inclusive. A date outside that ra
 ValueError rather than guessing.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 _MIN_YEAR = 1990
 _MAX_YEAR = 2035
@@ -40,6 +41,12 @@ _MAX_YEAR = 2035
 _NEW_YEARS_OBSERVANCE_WAIVED_YEARS = frozenset({2011, 2022})
 
 _ONE_DAY = timedelta(days=1)
+
+NYSE_TIMEZONE = ZoneInfo("America/New_York")
+# Regular-session close. Early-close days (13:00) are not modeled, so on those afternoons a
+# session counts as closed a few hours late. That only delays it; it never counts a session
+# that is still open.
+NYSE_REGULAR_CLOSE = time(16, 0)
 
 _holiday_cache: dict[int, frozenset[date]] = {}
 
@@ -168,3 +175,30 @@ def expected_session_dates(start: date, end: date) -> list[date]:
 def expected_session_count(start: date, end: date) -> int:
     """Count of standard-schedule NYSE trading days from `start` to `end`, inclusive."""
     return len(expected_session_dates(start, end))
+
+
+def nyse_now(now: datetime) -> datetime:
+    """`now` in America/New_York. A naive `now` is read as UTC, matching the read clock."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now.astimezone(NYSE_TIMEZONE)
+
+
+def last_closed_nyse_session(now: datetime) -> date:
+    """The most recent standard-schedule NYSE session whose regular close is at or before `now`.
+
+    Uses the New York calendar date, not the UTC date: at 21:00 ET the UTC date is already
+    tomorrow, but tomorrow's session has not opened. Today's session counts only from 16:00 ET.
+    Weekends and holidays walk back to the prior session. A naive `now` is read as UTC.
+    Raises ValueError if the walk leaves the supported calendar range.
+    """
+    local = nyse_now(now)
+    cursor = local.date()
+    if not (is_nyse_trading_day(cursor) and local.time() >= NYSE_REGULAR_CLOSE):
+        cursor -= _ONE_DAY
+    # The longest standard-schedule closure run is a 4-day weekend; 14 days is a safe bound.
+    for _ in range(14):
+        if is_nyse_trading_day(cursor):
+            return cursor
+        cursor -= _ONE_DAY
+    raise ValueError(f"no NYSE session found before {local.date().isoformat()}")

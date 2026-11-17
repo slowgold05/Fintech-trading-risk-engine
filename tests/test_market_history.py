@@ -482,7 +482,8 @@ def test_calendar_month_bounds_clamp_the_day():
 
 
 def test_month_ranges_are_accepted_and_report_the_helper_start(client, db_session, monkeypatch):
-    clock = datetime(2026, 3, 31, 16, 0)
+    # 20:30 UTC is 16:30 EDT, after the close, so that Tuesday's session is the window end.
+    clock = datetime(2026, 3, 31, 20, 30)
     _pin_clock(monkeypatch, clock)
     end = clock.date()
     _symbol(db_session, "NVDA")
@@ -522,7 +523,8 @@ def test_leap_day_bounds_and_requested_window(client, db_session, monkeypatch):
     assert one_calendar_year_before(date(2026, 11, 5)) == date(2025, 11, 5)
     assert one_calendar_year_before(date(2024, 3, 1)) == date(2023, 3, 1)
 
-    clock = datetime(2024, 2, 29, 15, 0)
+    # 21:30 UTC is 16:30 EST: the 29 February session has closed.
+    clock = datetime(2024, 2, 29, 21, 30)
     _pin_clock(monkeypatch, clock)
     start = date(2022, 2, 28)
     end = date(2024, 2, 29)
@@ -548,7 +550,7 @@ def test_leap_day_bounds_and_requested_window(client, db_session, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     _assert_bounded_bar_read(statements, fetches, start, end, in_window=3)
-    assert body["read_at"] == "2024-02-29T15:00:00Z"
+    assert body["read_at"] == "2024-02-29T21:30:00Z"
     assert body["requested_start"] == "2022-02-28"
     assert body["requested_end"] == "2024-02-29"
     assert [bar["session_date"] for bar in body["bars"]] == ["2022-02-28", "2024-02-29"]
@@ -566,7 +568,7 @@ def test_leap_day_bounds_and_requested_window(client, db_session, monkeypatch):
 
 
 def test_one_year_range_shrinks_the_window_and_reports_the_request(client, db_session, monkeypatch):
-    clock = datetime(2026, 11, 5, 18, 27, 2)
+    clock = datetime(2026, 11, 5, 21, 27, 2)
     _pin_clock(monkeypatch, clock)
     end = clock.date()
     one_start = one_calendar_year_before(end)
@@ -601,7 +603,7 @@ def test_one_year_range_shrinks_the_window_and_reports_the_request(client, db_se
 
 def test_coverage_status_complete_when_every_expected_session_is_present(client, db_session, monkeypatch):
     end = date(2026, 6, 15)
-    _pin_clock(monkeypatch, datetime(2026, 6, 15, 16, 0))
+    _pin_clock(monkeypatch, datetime(2026, 6, 15, 20, 30))  # 16:30 EDT, after the close
     start = two_calendar_years_before(end)
     _symbol(db_session, "FULL")
     fetched = _aware(datetime(2026, 6, 15, 10, 0))
@@ -621,7 +623,7 @@ def test_coverage_status_complete_when_every_expected_session_is_present(client,
 
 def test_coverage_status_unexpected_sessions_when_bar_on_non_trading_day(client, db_session, monkeypatch):
     end = date(2026, 6, 15)
-    _pin_clock(monkeypatch, datetime(2026, 6, 15, 16, 0))
+    _pin_clock(monkeypatch, datetime(2026, 6, 15, 20, 30))  # 16:30 EDT, after the close
     start = two_calendar_years_before(end)
     _symbol(db_session, "STRAY")
     fetched = _aware(datetime(2026, 6, 15, 10, 0))
@@ -645,7 +647,7 @@ def test_coverage_status_unexpected_sessions_when_bar_on_non_trading_day(client,
 
 def test_coverage_status_gaps_and_unexpected_sessions_combined(client, db_session, monkeypatch):
     end = date(2026, 6, 15)
-    _pin_clock(monkeypatch, datetime(2026, 6, 15, 16, 0))
+    _pin_clock(monkeypatch, datetime(2026, 6, 15, 20, 30))  # 16:30 EDT, after the close
     start = two_calendar_years_before(end)
     _symbol(db_session, "MIXED")
     fetched = _aware(datetime(2026, 6, 15, 10, 0))
@@ -670,6 +672,59 @@ def test_coverage_status_gaps_and_unexpected_sessions_combined(client, db_sessio
     assert non_trading_day.isoformat() in returned_dates
 
 
+def _seed_every_session(db_session, symbol: str, start: date, end: date) -> list[date]:
+    _symbol(db_session, symbol)
+    fetched = _aware(datetime(2026, 11, 1, 12, 0))
+    days = exchange_calendar.expected_session_dates(start, end)
+    for day in days:
+        _bar(db_session, symbol, day, fetched_at=fetched, close_price=Decimal("1.000000"))
+    db_session.commit()
+    return days
+
+
+@pytest.mark.parametrize(
+    ("label", "clock", "last_closed"),
+    [
+        # 21:00 EST Thursday 2026-11-05. The UTC date is already Friday 2026-11-06,
+        # which has not opened, so it must not be the window end or a gap.
+        ("9pm_et_utc_next_day", datetime(2026, 11, 6, 2, 0), date(2026, 11, 5)),
+        # Saturday 2026-11-07 10:00 EST: the window ends on Friday.
+        ("weekend_saturday", datetime(2026, 11, 7, 15, 0), date(2026, 11, 6)),
+        # Sunday 2026-11-08 20:00 EST; the UTC date is already Monday.
+        ("weekend_sunday_evening", datetime(2026, 11, 9, 1, 0), date(2026, 11, 6)),
+        # Monday 2026-11-09 13:00 EST, market open but not closed: Monday is not counted.
+        ("market_hours_before_close", datetime(2026, 11, 9, 18, 0), date(2026, 11, 6)),
+    ],
+)
+def test_history_window_ends_on_the_last_closed_new_york_session(
+    client, db_session, monkeypatch, label, clock, last_closed
+):
+    _pin_clock(monkeypatch, clock)
+    start = one_month_before(last_closed)
+    expected = _seed_every_session(db_session, "NYC", start, last_closed)
+
+    response = client.get("/market/symbols/NYC/history", params=_history_params(range="1m"))
+    assert response.status_code == 200, label
+    body = response.json()
+    assert body["requested_end"] == last_closed.isoformat(), label
+    assert body["requested_start"] == start.isoformat(), label
+    assert body["available_end"] == last_closed.isoformat(), label
+    # Every closed session is stored, so nothing is missing. Under the old UTC-date end the
+    # not-yet-closed day would have been expected and reported as a gap.
+    assert body["coverage_status"] == "complete", label
+    assert body["expected_session_count"] == len(expected), label
+
+
+def test_history_end_includes_today_once_the_session_has_closed(client, db_session, monkeypatch):
+    # Monday 2026-11-09 16:30 EST: Monday's session is closed, so a missing Monday bar is a gap.
+    _pin_clock(monkeypatch, datetime(2026, 11, 9, 21, 30))
+    _seed_every_session(db_session, "LATE", one_month_before(date(2026, 11, 9)), date(2026, 11, 6))
+
+    body = client.get("/market/symbols/LATE/history", params=_history_params(range="1m")).json()
+    assert body["requested_end"] == "2026-11-09"
+    assert body["coverage_status"] == "gaps"
+
+
 def test_coverage_status_falls_back_to_not_verified_outside_calendar_range(client, db_session, monkeypatch):
     # The calendar supports 1990-2035. Pin the clock past that range so the requested
     # window itself falls outside it, forcing the documented ValueError fallback.
@@ -688,7 +743,7 @@ def test_coverage_status_falls_back_to_not_verified_outside_calendar_range(clien
 
 
 def test_history_query_fetches_only_the_requested_window(client, db_session, monkeypatch):
-    clock = datetime(2026, 11, 5, 18, 27, 2, 258005)
+    clock = datetime(2026, 11, 5, 21, 27, 2, 258005)
     _pin_clock(monkeypatch, clock)
     start = date(2024, 11, 5)
     end = date(2026, 11, 5)
