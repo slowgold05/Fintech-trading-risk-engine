@@ -6,6 +6,7 @@ import type {
   MarketResearchResponse,
   MarketTrendingResponse,
   MarketUniverseResponse,
+  SymbolQuoteResponse,
 } from "../types/schemas";
 
 export async function fetchMarketHeatmap(): Promise<MarketHeatmapResponse> {
@@ -33,6 +34,13 @@ export async function fetchMarketResearch(
 ): Promise<MarketResearchResponse> {
   const response = await apiClient.get<MarketResearchResponse>(
     `/market/research/${encodeURIComponent(symbol)}`,
+  );
+  return response.data;
+}
+
+export async function fetchSymbolQuote(symbol: string): Promise<SymbolQuoteResponse> {
+  const response = await apiClient.get<SymbolQuoteResponse>(
+    `/market/symbols/${encodeURIComponent(symbol)}/quote`,
   );
   return response.data;
 }

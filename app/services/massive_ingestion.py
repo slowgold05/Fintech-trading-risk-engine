@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.market_bar_daily import MarketBarDaily
@@ -62,14 +62,15 @@ def empty_session_skip_reason(day: date, today: date) -> str:
     return "not_yet_available"
 
 
-def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive, *, today: date | None = None) -> dict:
+def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive, *, today: date | None = None,
+                   adjustment_type: str = _ADJUSTMENT) -> dict:
     """Fetch one grouped day, quality-check the requested symbols, and upsert them.
 
     ``today`` is the New York calendar date used to decide whether an empty
     payload is a closed session or a file that is not published yet. It defaults
     to the current New York date.
     """
-    fetched = fetch_massive_grouped(day, api_key, http_get)
+    fetched = fetch_massive_grouped(day, api_key, http_get, adjustment_type=adjustment_type)
     requested = [str(symbol).upper() for symbol in symbols]
     if not fetched:
         as_of = nyse_calendar_today() if today is None else today
@@ -96,7 +97,7 @@ def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive, *, toda
     # symbols and as_of stay the filtered set and this session date.
     db.flush()
     findings = check_bars(
-        [*_latest_prior_bars(db, [bar.symbol for bar in filtered], day), *filtered],
+        [*_latest_prior_bars(db, [bar.symbol for bar in filtered], day, adjustment_type), *filtered],
         symbols=[bar.symbol for bar in filtered],
         as_of=day,
     )
@@ -112,7 +113,7 @@ def ingest_one_day(db, day, symbols, api_key, http_get=http_get_massive, *, toda
             rejected.append(bar.symbol)
             continue
         quality_status = "flagged" if bar.symbol in flagged else "valid"
-        _upsert_daily_bar(db, bar, quality_status)
+        _upsert_daily_bar(db, bar, quality_status, adjustment_type)
         if quality_status == "flagged":
             written_flagged += 1
         else:
@@ -141,6 +142,8 @@ def backfill_two_years(
     commit_each: bool = False,
     on_day=None,
     closed_dates: set[date] | None = None,
+    adjustment_type: str = _ADJUSTMENT,
+    refresh_adjusted: bool = False,
 ) -> dict:
     """Ingest every NYSE session from two calendar years before ``today`` through ``today``.
 
@@ -157,10 +160,15 @@ def backfill_two_years(
     the days already stored.
     """
     end = nyse_calendar_today() if today is None else today
-    sessions = expected_session_dates(two_calendar_years_before(end), end)
+    last = latest_finished_nyse_session(end) if refresh_adjusted else end
+    sessions = expected_session_dates(two_calendar_years_before(end), last)
     requested = [str(symbol).upper() for symbol in symbols]
-    stored = _stored_symbols_by_day(db, requested, sessions)
-    skip = _dates_to_skip(stored)
+    if refresh_adjusted and adjustment_type != "split_adjusted":
+        raise ValueError("refresh_adjusted requires split_adjusted")
+    if refresh_adjusted and commit_each:
+        raise ValueError("refresh_adjusted must commit atomically")
+    stored = _stored_symbols_by_day(db, requested, sessions, adjustment_type)
+    skip = set() if refresh_adjusted else _dates_to_skip(stored)
     remembered = closed_dates if closed_dates is not None else set()
     per_day = []
     for session_day in sessions:
@@ -172,6 +180,7 @@ def backfill_two_years(
             try:
                 report = ingest_one_day(
                     db, session_day, symbols, api_key, http_get=http_get, today=end,
+                    adjustment_type=adjustment_type,
                 )
             except (ProviderUnavailable, ValueError) as exc:
                 # A malformed/incomplete payload (parse_massive_grouped) raises
@@ -190,18 +199,25 @@ def backfill_two_years(
                     "error": str(exc),
                 }
             else:
-                if report.get("skip_reason") == "market_closed":
+                if refresh_adjusted and report.get("skip_reason") in {"market_closed", "not_yet_available"}:
+                    report["error"] = "Adjusted refresh returned an empty session"
+                elif report.get("skip_reason") == "market_closed":
                     remembered.add(session_day)
+                if refresh_adjusted and set(report["missing"] + report["rejected"]) & stored.get(session_day, set()):
+                    report["error"] = "Adjusted refresh omitted an existing bar"
         per_day.append(report)
         if on_day is not None:
             on_day(report)
+        if refresh_adjusted and report.get("error"):
+            break
         if commit_each:
             db.commit()
     return _coverage(symbols, per_day)
 
 
-def _stored_symbols_by_day(db: Session, symbols: list[str], sessions: list[date]) -> dict[date, set[str]]:
-    """Massive raw symbols already stored for each session in the window."""
+def _stored_symbols_by_day(db: Session, symbols: list[str], sessions: list[date],
+                           adjustment_type: str = _ADJUSTMENT) -> dict[date, set[str]]:
+    """Massive symbols already stored for this adjustment and session."""
     unique = list(dict.fromkeys(symbols))
     if not unique or not sessions:
         return {}
@@ -210,7 +226,7 @@ def _stored_symbols_by_day(db: Session, symbols: list[str], sessions: list[date]
         .filter(
             MarketBarDaily.symbol.in_(unique),
             MarketBarDaily.provider == _PROVIDER,
-            MarketBarDaily.adjustment_type == _ADJUSTMENT,
+            MarketBarDaily.adjustment_type == adjustment_type,
             MarketBarDaily.session_date >= sessions[0],
             MarketBarDaily.session_date <= sessions[-1],
             MarketBarDaily.quality_status.in_(("valid", "flagged")),
@@ -292,7 +308,7 @@ def _coverage(symbols, per_day: list[dict]) -> dict:
     }
 
 
-def _latest_prior_bars(db: Session, symbols: list[str], day: date) -> list[Bar]:
+def _latest_prior_bars(db: Session, symbols: list[str], day: date, adjustment_type: str) -> list[Bar]:
     if not symbols:
         return []
     latest_session = (
@@ -303,37 +319,22 @@ def _latest_prior_bars(db: Session, symbols: list[str], day: date) -> list[Bar]:
         .filter(
             MarketBarDaily.symbol.in_(symbols),
             MarketBarDaily.session_date < day,
+            MarketBarDaily.provider == _PROVIDER,
+            MarketBarDaily.adjustment_type == adjustment_type,
+            MarketBarDaily.quality_status.in_(("valid", "flagged")),
         )
         .group_by(MarketBarDaily.symbol)
         .subquery()
     )
-    rows = (
-        db.query(MarketBarDaily)
-        .join(
-            latest_session,
-            and_(
-                MarketBarDaily.symbol == latest_session.c.symbol,
-                MarketBarDaily.session_date == latest_session.c.session_date,
-            ),
-        )
-        .all()
-    )
-    chosen: dict[str, MarketBarDaily] = {}
-    for row in rows:
-        current = chosen.get(row.symbol)
-        if current is None or _prior_sort_key(row) > _prior_sort_key(current):
-            chosen[row.symbol] = row
-    return [_bar_from_row(row) for row in chosen.values()]
-
-
-def _prior_sort_key(row: MarketBarDaily) -> tuple:
-    # Latest session wins. On that session, prefer the massive raw series.
-    return (
-        row.session_date,
-        row.provider == _PROVIDER,
-        row.adjustment_type == _ADJUSTMENT,
-        row.quality_status == "valid",
-    )
+    rows = db.query(MarketBarDaily).join(
+        latest_session,
+        (MarketBarDaily.symbol == latest_session.c.symbol)
+        & (MarketBarDaily.session_date == latest_session.c.session_date),
+    ).filter(
+        MarketBarDaily.provider == _PROVIDER,
+        MarketBarDaily.adjustment_type == adjustment_type,
+    ).all()
+    return [_bar_from_row(row) for row in rows]
 
 
 def _bar_from_row(row: MarketBarDaily) -> Bar:
@@ -352,7 +353,7 @@ def _bar_from_row(row: MarketBarDaily) -> Bar:
         high=_as_decimal(row.high),
         low=_as_decimal(row.low),
         close=_as_decimal(row.close),
-        volume=int(row.volume),
+        volume=Decimal(str(row.volume)),
         source=str(row.provider),
         fetched_at=fetched_at,
     )
@@ -368,14 +369,14 @@ def _fails_table_checks(bar: Bar) -> bool:
     return fails_price_checks(bar)
 
 
-def _upsert_daily_bar(db: Session, bar: Bar, quality_status: str) -> None:
+def _upsert_daily_bar(db: Session, bar: Bar, quality_status: str, adjustment_type: str) -> None:
     row = (
         db.query(MarketBarDaily)
         .filter(
             MarketBarDaily.symbol == bar.symbol,
             MarketBarDaily.session_date == bar.day,
             MarketBarDaily.provider == _PROVIDER,
-            MarketBarDaily.adjustment_type == _ADJUSTMENT,
+            MarketBarDaily.adjustment_type == adjustment_type,
         )
         .first()
     )
@@ -384,7 +385,7 @@ def _upsert_daily_bar(db: Session, bar: Bar, quality_status: str) -> None:
             symbol=bar.symbol,
             session_date=bar.day,
             provider=_PROVIDER,
-            adjustment_type=_ADJUSTMENT,
+            adjustment_type=adjustment_type,
         )
         db.add(row)
     row.open = bar.open

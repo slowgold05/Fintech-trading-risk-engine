@@ -111,6 +111,7 @@ def _wait_for_lock(session_factory) -> bool:
 def test_migrations_and_app_role_grants_on_disposable_postgres():
     from alembic import command
     from alembic.config import Config
+    from alembic.script import ScriptDirectory
 
     from app.scripts.configure_postgres_role import configure
 
@@ -121,7 +122,7 @@ def test_migrations_and_app_role_grants_on_disposable_postgres():
     configure(owner_url, "audit-app-secret")
     with _engine().connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    assert version == "8f3a1c6d9e20"
+    assert version == ScriptDirectory.from_config(config).get_current_head()
 
     import psycopg
     from sqlalchemy.engine import make_url

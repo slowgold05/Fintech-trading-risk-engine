@@ -18,6 +18,7 @@ from app.models.forecast_job import ForecastJob
 from app.models.forecast_result import ForecastResult
 from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.market_quote_cache import MarketQuoteCache
+from app.models.market_reference_cache import MarketReferenceCache
 from app.models.market_symbol import MarketSymbol
 from app.models.refresh_token import RefreshToken
 from app.models.ledger_entry import LedgerEntry

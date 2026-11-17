@@ -22,7 +22,6 @@ from tests.test_massive_ingestion import _grouped, _http_get, _ticker
 pytestmark = pytest.mark.skipif(not os.environ.get("AUDIT_DATABASE_URL"), reason="AUDIT_DATABASE_URL is not set")
 
 _DAY = date(2026, 11, 10)
-_HEAD = "8f3a1c6d9e20"
 _CHECKS = {
     "ck_market_bars_daily_adjustment",
     "ck_market_bars_daily_ohlc",
@@ -50,6 +49,16 @@ def _upgrade() -> None:
     os.environ["MIGRATION_DATABASE_URL"] = owner_url
     config = Config("alembic.ini")
     command.upgrade(config, "head")
+
+
+def _head() -> str:
+    """The single Alembic head, read from the migration scripts."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+    assert head is not None
+    return head
 
 
 def _symbols() -> list[str]:
@@ -112,7 +121,7 @@ def test_migrations_create_market_bars_daily_checks_on_disposable_postgres():
                 "SELECT conname FROM pg_constraint "
                 "WHERE conrelid = 'market_bars_daily'::regclass AND contype = 'c'"
             )).scalars().all()
-        assert version == _HEAD
+        assert version == _head()
         assert set(names) == _CHECKS
     finally:
         engine.dispose()
@@ -203,7 +212,7 @@ def test_teardown_leaves_the_schema_in_place():
         with engine.connect() as connection:
             version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
             table = connection.execute(text("SELECT to_regclass('public.market_bars_daily')")).scalar()
-        assert version == _HEAD
+        assert version == _head()
         assert table is not None
     finally:
         engine.dispose()
@@ -212,7 +221,7 @@ def test_teardown_leaves_the_schema_in_place():
         with reopened.connect() as connection:
             version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
             table = connection.execute(text("SELECT to_regclass('public.market_bars_daily')")).scalar()
-        assert version == _HEAD
+        assert version == _head()
         assert table is not None
     finally:
         reopened.dispose()

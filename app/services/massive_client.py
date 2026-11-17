@@ -28,6 +28,7 @@ from app.services.market_providers import ProviderUnavailable
 # Same timeout nasdaq_universe_service uses for its requests.get calls.
 _TIMEOUT_SECONDS = 30
 _GROUPED_URL = "https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/{day}"
+_TICKER_URL = "https://api.massive.com/v3/reference/tickers/{symbol}"
 
 _shared_pacer: RequestPacer | None = None
 _shared_lock = threading.Lock()
@@ -169,10 +170,12 @@ def http_get_massive(
     sleeper=None,
     max_attempts: int | None = None,
     retry_cap: float | None = None,
+    adjusted: bool = False,
 ) -> dict:
     """GET one grouped-daily payload. ``arg`` is the session date.
 
-    ``adjusted=false`` so the bars match the raw series this app stores.
+    ``adjusted=false`` serves raw quote/history ingestion; ``True`` serves the
+    separately labeled split-adjusted research series.
     A 429 is retried up to the configured attempt count, waiting on
     Retry-After with a floor and a cap. Any other non-2xx fails immediately.
     """
@@ -186,7 +189,7 @@ def http_get_massive(
         raise ValueError("max_attempts must be positive")
 
     session_day = arg.isoformat() if isinstance(arg, date) else str(arg)
-    query = urlencode((("adjusted", "false"), ("apiKey", api_key)))
+    query = urlencode((("adjusted", str(adjusted).lower()), ("apiKey", api_key)))
     url = _GROUPED_URL.format(day=session_day) + "?" + query
     for attempt in range(1, attempts + 1):
         limiter.wait()
@@ -213,3 +216,54 @@ def http_get_massive(
         except ValueError as exc:
             raise ProviderUnavailable(exc.__class__.__name__) from exc
     raise ProviderUnavailable("Massive grouped request failed with status 429")
+
+
+def http_get_massive_ticker(
+    symbol: str,
+    api_key: str,
+    *,
+    pacer: RequestPacer | None = None,
+    sleeper=None,
+    max_attempts: int | None = None,
+    retry_cap: float | None = None,
+) -> dict:
+    """GET one ticker reference payload, paced by the shared Massive limiter.
+
+    Reference data, including share counts, is on every Massive plan including
+    the free tier. The request URL is not included in errors.
+    """
+    from urllib.parse import quote
+
+    limiter = get_shared_pacer() if pacer is None else pacer
+    pause = time.sleep if sleeper is None else sleeper
+    attempts = settings.massive_max_attempts if max_attempts is None else max_attempts
+    cap = settings.massive_retry_after_cap_seconds if retry_cap is None else retry_cap
+    if attempts < 1:
+        raise ValueError("max_attempts must be positive")
+    query = urlencode((("apiKey", api_key),))
+    url = _TICKER_URL.format(symbol=quote(symbol, safe="")) + "?" + query
+    for attempt in range(1, attempts + 1):
+        limiter.wait()
+        try:
+            response = requests.get(url, timeout=_TIMEOUT_SECONDS)
+        except requests.RequestException as exc:
+            raise ProviderUnavailable(exc.__class__.__name__) from exc
+        if response.status_code == 429 and attempt < attempts:
+            headers = getattr(response, "headers", {}) or {}
+            retry_after = headers.get("Retry-After") if hasattr(headers, "get") else None
+            pause(bounded_retry_delay(
+                retry_after,
+                attempt=attempt,
+                min_interval=limiter.min_interval,
+                cap=cap,
+            ))
+            continue
+        if response.status_code < 200 or response.status_code >= 300:
+            raise ProviderUnavailable(f"Massive reference request failed with status {response.status_code}")
+        try:
+            return response.json()
+        except requests.RequestException as exc:
+            raise ProviderUnavailable(exc.__class__.__name__) from exc
+        except ValueError as exc:
+            raise ProviderUnavailable(exc.__class__.__name__) from exc
+    raise ProviderUnavailable("Massive reference request failed with status 429")

@@ -21,9 +21,11 @@ from app.services.price_service import (
     get_stock_quote,
     get_top_gainers_losers,
 )
+from app.services.research_valuation import build_research_valuation
 from app.services.sec_service import get_sec_company_fundamentals
 from app.services.sector_classifier import infer_sector
 from app.services.sp500_constituents import load_sp500_constituents
+from app.services.symbol_quote import detail_available_symbols
 
 router = APIRouter()
 
@@ -49,13 +51,6 @@ SECTOR_SYMBOLS = [
 ]
 
 
-def _quote_or_error(symbol: str) -> tuple[dict | None, str | None]:
-    try:
-        return get_stock_quote(symbol), None
-    except ValueError as exc:
-        return None, str(exc)
-
-
 def _to_float(value) -> float | None:
     if value in (None, "", "None", "-"):
         return None
@@ -66,11 +61,12 @@ def _to_float(value) -> float | None:
         return None
 
 
-def _format_mover(item: dict) -> dict:
+def _format_mover(item: dict, detail_symbols: frozenset[str] = frozenset()) -> dict:
     price = _to_float(item.get("price"))
     volume = str(item.get("volume", "")).strip()
     return {
         "symbol": item.get("ticker", ""),
+        "detail_available": item.get("ticker", "") in detail_symbols,
         "price": price if price is not None and price > 0 else None,
         "change_amount": _to_float(item.get("change_amount")),
         "change_percent": _to_float(item.get("change_percentage")),
@@ -201,7 +197,7 @@ def market_news(db: Session = Depends(get_db)):
 
 
 @router.get("/trending")
-def market_trending():
+def market_trending(db: Session = Depends(get_db)):
     try:
         data = get_top_gainers_losers()
     except ValueError as exc:
@@ -213,11 +209,22 @@ def market_trending():
             "errors": [{"detail": str(exc)}],
         }
 
+    groups = {
+        "top_gainers": data.get("top_gainers", [])[:8],
+        "top_losers": data.get("top_losers", [])[:8],
+        "most_active": data.get("most_actively_traded", [])[:8],
+    }
+    # Provider movers are not limited to the symbols the detail page can read.
+    detail_symbols = detail_available_symbols(
+        db,
+        [item.get("ticker") for items in groups.values() for item in items],
+    )
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
-        "top_gainers": [_format_mover(item) for item in data.get("top_gainers", [])[:8]],
-        "top_losers": [_format_mover(item) for item in data.get("top_losers", [])[:8]],
-        "most_active": [_format_mover(item) for item in data.get("most_actively_traded", [])[:8]],
+        **{
+            name: [_format_mover(item, detail_symbols) for item in items]
+            for name, items in groups.items()
+        },
         "errors": [],
     }
 
@@ -345,7 +352,15 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
     except (ValueError, requests.RequestException) as exc:
         errors.append({"source": "SEC EDGAR", "detail": str(exc)})
 
-    quote, quote_error = _quote_or_error(normalized_symbol)
+    valuation = build_research_valuation(
+        db,
+        normalized_symbol,
+        overview,
+        sec_fundamentals,
+        quote_getter=get_stock_quote,
+    )
+    quote = valuation["quote"]
+    errors.extend(valuation["errors"])
     profit_margin = _to_float(sec_fundamentals.get("profit_margin"))
     profit_margin_period = sec_fundamentals.get("profit_margin_period")
     if profit_margin is None or not isinstance(profit_margin_period, dict):
@@ -354,24 +369,29 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
         profit_margin = _to_float(overview.get("ProfitMargin"))
         profit_margin_period = None
     scoring_overview = dict(overview, ProfitMargin=profit_margin)
+    if valuation["pe_basis"] is not None:
+        scoring_overview["PERatio"] = valuation["pe_ratio"]
     score, label, factors = _score_company_research(scoring_overview, quote)
-    if quote_error:
-        errors.append({"source": "Alpha Vantage quote", "detail": quote_error})
-
     return {
         "symbol": normalized_symbol,
+        "detail_available": normalized_symbol in detail_available_symbols(db, [normalized_symbol]),
         "name": sec_fundamentals.get("name") or overview.get("Name"),
         "exchange": overview.get("Exchange"),
         "sector": overview.get("Sector"),
         "industry": overview.get("Industry"),
-        "market_cap": _to_float(overview.get("MarketCapitalization")),
-        "pe_ratio": _to_float(overview.get("PERatio")),
+        "market_cap": valuation["market_cap"],
+        "market_cap_basis": valuation["market_cap_basis"],
+        "pe_ratio": valuation["pe_ratio"],
+        "pe_basis": valuation["pe_basis"],
+        "price_basis": valuation["price_basis"],
+        "price_as_of": valuation["price_as_of"],
+        "valuation_notice": valuation["valuation_notice"],
         "profit_margin": profit_margin,
         "profit_margin_period": profit_margin_period,
         "beta": _to_float(overview.get("Beta")),
         "analyst_target_price": _to_float(overview.get("AnalystTargetPrice")),
-        "price": quote.get("price") if quote else None,
-        "change_percent": quote.get("change_percent") if quote else None,
+        "price": valuation["price"],
+        "change_percent": valuation["change_percent"],
         "research_risk_score": score,
         "research_risk_label": label,
         "risk_factors": factors,
