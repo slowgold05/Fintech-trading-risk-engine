@@ -87,19 +87,20 @@ def _backend_pid(connection) -> int:
 
 
 def _seed_symbol(sessions) -> tuple[int, str]:
-    symbol = f"W{uuid4().hex[:8].upper()}"
+    symbol = "NEE"
     email = f"worker-{uuid4().hex}@example.com"
     with sessions() as seed:
         user = User(email=email, password_hash="fixture", cash_balance=Decimal("1000.00"))
         seed.add(user)
-        seed.add(MarketSymbol(
-            symbol=symbol,
-            company_name="Worker",
-            exchange="NASDAQ",
-            is_etf=False,
-            is_test=False,
-            is_active=True,
-        ))
+        if seed.get(MarketSymbol, symbol) is None:
+            seed.add(MarketSymbol(
+                symbol=symbol,
+                company_name="Worker",
+                exchange="NASDAQ",
+                is_etf=False,
+                is_test=False,
+                is_active=True,
+            ))
         seed.commit()
         return int(user.id), symbol
 
@@ -129,6 +130,16 @@ def _seed_bars(sessions, symbol: str) -> None:
         fetched = clock - timedelta(days=3)
         for index, session_date in enumerate(_past_trading_days(clock, 2)):
             price = Decimal("100.250000") + Decimal(index)
+            already = seed.execute(
+                select(MarketBarDaily.session_date).where(
+                    MarketBarDaily.symbol == symbol,
+                    MarketBarDaily.session_date == session_date,
+                    MarketBarDaily.provider == "yahoo",
+                    MarketBarDaily.adjustment_type == "raw",
+                )
+            ).first()
+            if already is not None:
+                continue
             seed.add(MarketBarDaily(
                 symbol=symbol,
                 session_date=session_date,

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.forecast_universe import ForecastSymbolRejected, require_featured_forecast_symbol
 from app.core.security import get_current_user
 from app.models.forecast_job import ForecastJob
 from app.models.forecast_result import ForecastResult
@@ -67,6 +68,10 @@ def create_forecast_job(
     ).first()
     if not known:
         raise HTTPException(status_code=400, detail=_UNKNOWN_SYMBOL)
+    try:
+        require_featured_forecast_symbol(payload.symbol)
+    except ForecastSymbolRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if payload.adjustment_type not in SUPPORTED_ADJUSTMENTS:
         raise HTTPException(status_code=422, detail=_INVALID_ADJUSTMENT)

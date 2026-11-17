@@ -61,7 +61,8 @@ def _seed(sessions, symbol: str, pending: int, kind: str) -> dict:
         other = User(email=f"job-{uuid4().hex}@example.com", password_hash="fixture", full_name="Job Other")
         db.add_all([user, other])
         db.flush()
-        db.add(MarketSymbol(symbol=symbol, company_name=symbol, exchange="NASDAQ", is_active=True))
+        if db.get(MarketSymbol, symbol) is None:
+            db.add(MarketSymbol(symbol=symbol, company_name=symbol, exchange="NASDAQ", is_active=True))
         db.flush()
         for _ in range(pending):
             if kind == "research":
@@ -245,7 +246,8 @@ def _status(error: BaseException | None) -> int | None:
 def _assert_one_admit(kind: str, cap: int, _job_schema) -> None:
     engine, sessions = _sessions()
     try:
-        seeded = _seed(sessions, _symbol(), cap - 1, kind)
+        symbol = "AAPL" if kind == "forecast" else _symbol()
+        seeded = _seed(sessions, symbol, cap - 1, kind)
 
         def work(user_id):
             def run(db):
@@ -287,7 +289,7 @@ def test_forecast_cap_race_admits_one_and_rejects_one(_job_schema) -> None:
 def test_other_owner_is_not_blocked_by_the_user_lock(_job_schema) -> None:
     engine, sessions = _sessions()
     try:
-        seeded = _seed(sessions, _symbol(), 0, "research")
+        seeded = _seed(sessions, "AAPL", 0, "research")
         done = threading.Event()
         waiter_box: dict = {}
 
@@ -335,12 +337,13 @@ def test_app_role_can_lock_owner_and_insert_when_grants_exist(_job_schema) -> No
     )
     try:
         app_sessions = sessionmaker(bind=app_engine, autoflush=False, future=True)
-        symbol = _symbol()
+        symbol = "AAPL"
         with sessions() as db:
             user = User(email=f"job-app-{uuid4().hex}@example.com", password_hash="fixture")
             db.add(user)
             db.flush()
-            db.add(MarketSymbol(symbol=symbol, company_name=symbol, exchange="NASDAQ", is_active=True))
+            if db.get(MarketSymbol, symbol) is None:
+                db.add(MarketSymbol(symbol=symbol, company_name=symbol, exchange="NASDAQ", is_active=True))
             user_id = int(user.id)
             db.commit()
         with app_sessions() as db:

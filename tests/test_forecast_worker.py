@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.forecast_job import ForecastJob
 from app.models.forecast_result import ForecastResult
 from app.models.market_symbol import MarketSymbol
@@ -27,8 +28,23 @@ _RESULT_FIELDS = (
 )
 
 
-def _seed(db: Session, symbol: str) -> None:
+def _seed(db: Session, symbol: str, *, provider: str = "yahoo", adjustment_type: str = "raw") -> None:
+    """One listed symbol whose series already has an approved evaluation."""
     db.add(MarketSymbol(symbol=symbol, company_name=symbol, exchange="NASDAQ", is_active=True))
+    db.add(ForecastEvaluation(
+        symbol=symbol,
+        provider=provider,
+        adjustment_type=adjustment_type,
+        horizon=10,
+        window_count=5,
+        model_mae=1.0,
+        model_directional_accuracy=0.5,
+        baseline_type="last_observed_close",
+        baseline_mae=1.0,
+        baseline_directional_accuracy=0.5,
+        weights_exercised=True,
+        review_status="approved",
+    ))
     db.commit()
 
 
@@ -252,7 +268,7 @@ def test_worker_replays_the_job_s_own_stored_parameters(
             sample_count=kwargs["sample_count"],
         )
 
-    _seed(db_session, "AAPL")
+    _seed(db_session, "AAPL", provider="stooq", adjustment_type="split_adjusted")
     _enable(monkeypatch, record)
     headers = auth_headers("forecast-worker-replay@example.com")
     created = _create(

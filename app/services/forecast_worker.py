@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.forecast_job import ForecastJob
-from app.models.forecast_result import ForecastResult
 from app.services.forecast_kronos import generate_forecast
+from app.services.forecast_publication import publish_forecast_result
 
 
 def _now():
@@ -60,22 +60,12 @@ def process_one_job(db: Session) -> ForecastJob | None:
                 horizon=job.horizon,
                 sample_count=job.sample_count,
             )
-        forecast_result = ForecastResult(
-            job_id=job.id,
-            user_id=job.user_id,
-            symbol=result["symbol"],
-            provider=result["provider"],
-            adjustment_type=result["adjustment_type"],
-            model_name=result["model_name"],
-            tokenizer_name=result["tokenizer_name"],
-            lookback=result["lookback"],
-            horizon=result["horizon"],
-            sample_count=result["sample_count"],
-            input_cutoff=result["input_cutoff"],
+        publish_forecast_result(
+            db,
+            job=job,
+            payload=result,
             generated_at=_parse_iso_z(result["generated_at"]),
-            bars=result["bars"],
         )
-        db.add(forecast_result)
         job.status = "completed"
     except Exception as exc:
         job.status = "failed"

@@ -3,6 +3,24 @@ from pydantic import Field, field_validator
 from decimal import Decimal
 
 
+# Chosen by the user on 2026-11-15. Not a Settings field: an environment
+# variable must not add or remove a Kronos forecast symbol.
+FEATURED_FORECAST_SYMBOLS: tuple[str, ...] = (
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "GOOGL",
+    "JPM",
+    "JNJ",
+    "XOM",
+    "PG",
+    "CAT",
+    "HD",
+    "NEE",
+)
+
+
 class Settings(BaseSettings):
     # DB
     database_url: str
