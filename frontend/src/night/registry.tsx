@@ -38,6 +38,8 @@ export const features: readonly Feature[] = [
     Screen: lazy(() => import("./features/simulate/SimulationModes").then(module => ({ default: module.SimulationModes })))},
   {id:"recurring", label:"Recurring contributions simulator", path:"/research/simulate", access:"authenticated", slot: "simulationMode", href:"/research/simulate?mode=recurring",
     Screen: lazy(() => import("./features/simulate/RecurringScreen").then(module => ({ default: module.RecurringScreen })))},
+  {id:"alerts", label:"Close alerts", path:"/activity/alerts", access:"trader",
+    Screen: lazy(() => import("./features/organize/Alerts").then(module => ({ default: module.Alerts })))},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;
