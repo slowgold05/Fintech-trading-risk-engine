@@ -147,9 +147,7 @@ def _chart(driver):
 
 
 def _open_prices(driver) -> None:
-    summary = _section(driver).find_element(By.TAG_NAME, "summary")
-    if not summary.find_element(By.XPATH, "..").get_attribute("open"):
-        h._click(driver, summary)
+    p3a._open_prices(driver)
 
 
 def _indicator_cells(driver) -> list[str]:

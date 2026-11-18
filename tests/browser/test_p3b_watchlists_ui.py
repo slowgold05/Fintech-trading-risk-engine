@@ -189,10 +189,6 @@ def _login_here(driver, email: str, password: str) -> None:
 
 
 def _sign_out(driver) -> None:
-    dashboards = [node for node in driver.find_elements(By.PARTIAL_LINK_TEXT, "Open dashboard") if node.is_displayed()]
-    if dashboards:
-        h._click(driver, dashboards[0])
-        h._wait(driver).until(EC.url_contains("/dashboard"))
     h._click(driver, h._wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='account-menu']"))))
     button = h._wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='sign-out']")))
     logout_before = _hits(driver, "/auth/logout")

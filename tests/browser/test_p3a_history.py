@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip("selenium")
 
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from sqlalchemy.orm import Session
 
@@ -87,9 +88,11 @@ def _no_plot(driver):
 
 
 def _open_prices(driver):
-    summary = _section(driver).find_element(By.TAG_NAME, "summary")
-    if not summary.find_element(By.XPATH, "..").get_attribute("open"):
-        harness._click(driver, summary)
+    summary = _section(driver).find_element(By.XPATH, ".//summary[normalize-space()='Session prices']")
+    disclosure = summary.find_element(By.XPATH, "..")
+    if not disclosure.get_property("open"):
+        summary.send_keys(Keys.ENTER)
+    harness._wait(driver).until(lambda _: disclosure.get_property("open"))
 
 
 def test_cached_daily_chart(chart_api):
@@ -210,7 +213,8 @@ def test_cached_daily_chart(chart_api):
         assert not _section(driver).find_elements(By.TAG_NAME, "summary")
         _capture(driver, _section(driver).find_element(By.CSS_SELECTOR, "[role='alert']"), artifacts / "chart-invalid.png")
 
-        assert _section(driver).find_element(By.LINK_TEXT, "https://www.tradingview.com/").get_attribute("href") == "https://www.tradingview.com/"
+        notice = driver.find_element(By.LINK_TEXT, "https://www.tradingview.com/")
+        assert notice.is_displayed() and notice.get_attribute("href") == "https://www.tradingview.com/"
         assets = driver.execute_async_script("""
             const done = arguments[arguments.length - 1];
             Promise.all([
