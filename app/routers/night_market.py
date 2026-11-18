@@ -82,3 +82,14 @@ def breadth(db: Db, sector: SectorFilter = ""):
     from app.services.night_market_breadth import read_breadth
 
     return read_breadth(db, sector=sector)
+
+
+@router.get("/news", response_model=schema.News)
+def news(
+    db: Db,
+    symbol: Annotated[str, Query(max_length=20)] = "",
+    limit: ArticleLimit = 20,
+):
+    from app.services.night_market_news import read_news
+
+    return read_news(db, symbol=symbol, limit=limit)

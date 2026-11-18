@@ -23,12 +23,19 @@ def market_error(
     return HTTPException(status_code=status, detail=detail)
 
 
-def normalize_symbol(raw: str, field: str = "symbol") -> str:
+def parse_symbol(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
     symbol = raw.strip()
-    if not _SYMBOL.fullmatch(symbol):
+    return symbol.upper() if _SYMBOL.fullmatch(symbol) else None
+
+
+def normalize_symbol(raw: str, field: str = "symbol") -> str:
+    symbol = parse_symbol(raw)
+    if symbol is None:
         message = "Use 1 to 20 letters, digits, dots, or hyphens for each symbol."
         raise market_error(422, "invalid_request", message, {field: message})
-    return symbol.upper()
+    return symbol
 
 
 def require_symbols(db: Session, symbols: list[str]) -> None:
