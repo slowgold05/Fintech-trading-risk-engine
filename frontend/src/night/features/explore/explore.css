@@ -1,0 +1,37 @@
+.explore {
+  max-width: 1460px; margin-inline: auto; padding: clamp(18px, 3.5vw, 54px);
+  color: var(--ink); font-family: var(--font-ui); overflow-wrap: anywhere;
+}
+.explore .nk-page-head { margin-bottom: clamp(16px, 2.5vw, 32px); }
+.explore .nk-page-head p, .explore .nk-panel header p, .explore .context { color: var(--muted); margin-top: 5px; }
+.explore .nk-layout { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.explore .nk-panel { min-width: 0; }
+.explore form { display: grid; align-items: end; gap: var(--gap); }
+.explore .nk-field { min-width: 0; }
+.explore .nk-field :is(input,select) { width: 100%; min-width: 0; }
+.explore .result-summary { display: flex; gap: clamp(16px,3vw,44px); flex-wrap: wrap; padding-bottom: var(--pad); }
+.explore .nk-scroll { padding-bottom: 4px; }
+.explore caption { padding: 10px 0; }
+.explore th { color: var(--muted); font-weight: 500; text-align: left; }
+.explore td, .explore .measure { font-variant-numeric: tabular-nums; }
+.explore a { text-decoration: underline; text-underline-offset: 3px; }
+.explore .ticker { color: var(--accent); font: 600 14px/1.4 var(--font-mono); }
+.explore .row-note { display: block; font: var(--label)/1.4 var(--font-ui); color: var(--muted); }
+.explore .pager { display: flex; gap: var(--gap); align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: var(--gap); }
+.explore .pager span { margin-right: auto; }
+.explore :is(a,button,input,select,summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.explore .nk-button:disabled { cursor: default; }
+@media (min-width: 900px) {
+  [data-look=terrain] .explore .nk-layout:has(.filters) { grid-template-columns: minmax(210px, 1fr) minmax(0, 3.5fr); }
+  [data-look=dial] .explore .filters form { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); }
+}
+[data-look=dial] .explore .nk-panel { border-inline: 0; border-radius: 0; background: var(--bg); }
+[data-look=dial] .explore .nk-stat strong { font-family: var(--font-mono); font-size: clamp(22px,2vw,32px); }
+@media (max-width: 767px) {
+  .explore { padding: 18px 12px 40px; }
+  .explore .filters form { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .explore .nk-field input, .explore .nk-field select { font-size: 16px; }
+  .explore .nk-panel { padding: 12px; }
+  .explore .result-summary { gap: 12px 20px; }
+  .explore td, .explore th { padding-inline: 6px; }
+}
