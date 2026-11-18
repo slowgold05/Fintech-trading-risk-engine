@@ -71,11 +71,14 @@ def _write_quote_cache(
     quote: dict,
     source: str,
     cache_row: MarketQuoteCache | None,
+    *,
+    only_advance_source: bool = False,
+    fetched_at: datetime | None = None,
 ) -> MarketQuoteCache:
     quote_date = quote.get("quote_date")
     observed_at = datetime.combine(date.fromisoformat(quote_date), datetime_time.min) if quote_date else None
     sweep = False
-    if settings.simulated_liquidity_enabled:
+    if settings.simulated_liquidity_enabled or only_advance_source:
         # Order submission takes these locks in the same order. Reload after
         # the provider call so concurrent refreshes compare committed dates.
         from app.services.order_book import sweep_resting_orders
@@ -86,10 +89,16 @@ def _write_quote_cache(
         symbol_row = db.execute(select(MarketSymbol).where(MarketSymbol.symbol == symbol)
                                 .with_for_update().execution_options(populate_existing=True)).scalar_one()
         cache_row = db.get(MarketQuoteCache, symbol, populate_existing=True)
-        previous = cache_row.quote_at if cache_row is not None and is_confirmed_close(cache_row) else None
-        if previous is not None and (observed_at is None or observed_at < previous):
-            return cache_row
-        sweep = symbol_row.is_active and observed_at is not None and (previous is None or observed_at > previous)
+        if only_advance_source and cache_row is not None:
+            if cache_row.source != source or observed_at is None or (
+                cache_row.quote_at is not None and observed_at <= cache_row.quote_at
+            ):
+                return cache_row
+        if settings.simulated_liquidity_enabled:
+            previous = cache_row.quote_at if cache_row is not None and is_confirmed_close(cache_row) else None
+            if previous is not None and (observed_at is None or observed_at < previous):
+                return cache_row
+            sweep = symbol_row.is_active and observed_at is not None and (previous is None or observed_at > previous)
 
     if cache_row is None:
         cache_row = MarketQuoteCache(symbol=symbol)
@@ -100,7 +109,7 @@ def _write_quote_cache(
     cache_row.volume = quote.get("volume", 0)
     cache_row.source = source
     cache_row.quote_at = observed_at
-    cache_row.fetched_at = _utcnow()
+    cache_row.fetched_at = _utcnow() if fetched_at is None else _as_naive_utc(fetched_at)
     if sweep:
         db.flush()
         db.refresh(cache_row)

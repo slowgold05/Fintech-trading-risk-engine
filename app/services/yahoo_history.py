@@ -24,6 +24,7 @@ from app.services.eod_service import EodQuote, REQUEST_HEADERS, _yahoo_symbol
 from app.services.exchange_calendar import is_nyse_trading_day
 from app.services.featured_market import INDEX_SYMBOLS, SECTOR_SYMBOLS
 from app.services.history_series import YAHOO_SERIES
+from app.services.market_cache_service import _write_quote_cache
 from app.services.market_history import PRICE_QUANTUM, two_calendar_years_before
 from app.services.market_quality import Bar, check_bars, fails_price_checks
 from app.services.massive_ingestion import latest_finished_nyse_session, nyse_calendar_today
@@ -208,21 +209,10 @@ def _store_latest_quote(db, bar):
         return
     # Reuse the existing Yahoo quote's open-to-close change and label.
     quote = EodQuote(bar.symbol, bar.day, bar.open, bar.high, bar.low, bar.close, int(bar.volume))
-    command = _insert(db, MarketQuoteCache).values(
-        symbol=quote.symbol, price=quote.price, change_amount=quote.change,
-        change_percent=quote.change_percent, volume=quote.volume, source=_PROVIDER,
-        quote_at=datetime.combine(quote.date, midnight()),
-        fetched_at=bar.fetched_at.replace(tzinfo=None),
+    _write_quote_cache(
+        db, quote.symbol, quote.as_quote(), _PROVIDER, None,
+        only_advance_source=True, fetched_at=bar.fetched_at,
     )
-    db.execute(command.on_conflict_do_update(
-        index_elements=["symbol"],
-        set_={field: getattr(command.excluded, field) for field in (
-            "price", "change_amount", "change_percent", "volume", "quote_at", "fetched_at",
-        )},
-        where=(MarketQuoteCache.source == _PROVIDER) & or_(
-            MarketQuoteCache.quote_at.is_(None), MarketQuoteCache.quote_at < command.excluded.quote_at,
-        ),
-    ))
 
 
 def refresh_yahoo_history(db, *, symbols=None, today: date | None = None, force=False, refresh_quotes=False, on_symbol=None):

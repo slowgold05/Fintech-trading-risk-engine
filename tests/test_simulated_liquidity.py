@@ -18,12 +18,13 @@ from app.models.trade import Trade
 from app.models.trading_halt import TradingHaltState
 from app.models.user import LIQUIDITY_PROVIDER_IDENTITY, User
 from app.scripts.reconcile_ledger import run as reconcile
-from app.services import aml_cases, surveillance_cases
+from app.services import aml_cases, surveillance_cases, yahoo_history
 from app.services.aml_detect import detect as detect_aml
 from app.services.aml_rules import load_rules as aml_rules
 from app.services.cash_movements import post_movement
 from app.services.eod_service import EodQuote, _latest_complete_daily_bar
 from app.services.market_cache_service import refresh_quote_cache
+from app.services.market_quality import Bar
 from app.services.surveillance_detect import detect as detect_surveillance
 from app.services.surveillance_rules import load_rules as surveillance_rules
 from app.services.trade_execution import reserved_cash
@@ -192,6 +193,27 @@ def test_crossing_close_sweeps_once_per_date_and_cancel_releases_remainder(
     assert client.post(f"/orders/{order['id']}/cancel", headers=headers).status_code == 200
     assert reserved_cash(db_session, owner_id) == 0
     assert reconcile(db_session)["failures"] == []
+
+
+def test_yahoo_history_top_up_sweeps_resting_limits_once(client, auth_headers, db_session, refresh, monkeypatch):
+    headers = auth_headers("tavi-linden@example.com")
+    refresh(QUOTES[1])
+    order = _place(client, headers, _order(limit="352"))
+    assert order["status"] == "open"
+    bars = [
+        Bar(q.symbol, q.date, q.open, q.high, q.low, q.close, q.volume, "yahoo", CLOCK.replace(tzinfo=timezone.utc))
+        for q in QUOTES[1:]
+    ]
+    monkeypatch.setattr(yahoo_history, "fetch_bars", lambda *_: bars)
+    for force in (False, True):
+        report = yahoo_history.refresh_yahoo_history(
+            db_session, symbols=["AAPL"], today=CLOCK.date(), refresh_quotes=True, force=force,
+        )
+        assert not report["errors"]
+        detail = _detail(client, headers, order)
+        assert detail["status"] == "filled" and detail["total_fill_count"] == 1
+        assert detail["fills"][0]["execution_price"] == "351.910004"
+    assert reconcile(db_session) == {"checked": 2, "initialized": 0, "failures": []}
 
 
 def test_refresh_rechecks_halt_price_bands_and_position_limit_per_order(
