@@ -42,6 +42,8 @@ export const features: readonly Feature[] = [
     Screen: lazy(() => import("./features/organize/Alerts").then(module => ({ default: module.Alerts })))},
   {id:"journal", label:"Trade journal", path:"/activity/journal", access:"trader",
     Screen: lazy(() => import("./features/organize/Journal").then(module => ({ default: module.Journal })))},
+  {id:"csv", label:"CSV transfer", path:"/account/data", access:"trader",
+    Screen: lazy(() => import("./features/transfer/CsvTransfer").then(module => ({ default: module.CsvTransfer })))},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;

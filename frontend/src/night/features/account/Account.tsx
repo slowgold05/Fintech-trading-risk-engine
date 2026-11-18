@@ -67,7 +67,9 @@ export function Account() {
         <Preference name="motion" hint="Use your device preference or settle transitions immediately." />
         <Preference name="historyProvider" hint="Choose a provider for daily chart history. Automatic uses a stored series." />
       </div>
-    </Panel><DataStatus /></Page.Main>
+    </Panel><DataStatus />{user?.role === "trader" && <Page.Full>
+      <Link className="nk-button" to="/account/data">CSV transfer</Link>
+    </Page.Full>}</Page.Main>
     <Page.Aside><Panel title="Signed-in account">{identity.isError ? <State kind="error" title="Account details unavailable" action={<Button onClick={() => void identity.refetch()}>Retry identity</Button>} /> :
       user ? <><strong>{user.is_demo ? user.display_name || "Demo trader" : user.email}</strong><p>{user.role.replace("_"," ")} · {user.is_demo ? "Demo account" : "Regular account"}</p></> :
       <State kind="loading" title="Reading account…" />}</Panel>
