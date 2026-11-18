@@ -901,7 +901,7 @@ describe("valuation display", () => {
     api.fetchPortfolio.mockResolvedValue(filled);
     await act(async () => { await refreshExecution(client, 1); });
     await waitFor(() => expect(row.querySelector('[data-label="Quantity"]')).toHaveTextContent("3"));
-    expect(row.querySelector('[data-label="Realized P&L"]')).toHaveTextContent("$12.34");
+    expect(within(row).getByRole("cell", { name: "$12.34" })).toBeVisible();
     expect(row.querySelector('[data-label="Account weight"]')).toHaveTextContent("0.30%");
   });
 
