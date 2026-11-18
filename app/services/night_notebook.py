@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.security import require_active_user
+from app.core import security
 from app.models.user import User
 
 
@@ -19,13 +19,14 @@ def owner_write(db: Session, user_id: int):
             connection = db.connection()
             if not connection.connection.driver_connection.in_transaction:
                 connection.exec_driver_sql("BEGIN IMMEDIATE")
-        user = db.scalar(select(User).where(User.id == user_id, ~User.is_system).with_for_update(key_share=True))
-        if user is None:
+        user = db.scalar(select(User).where(User.id == user_id).with_for_update(key_share=True))
+        if user is None or getattr(user, "is_system", False):
             raise HTTPException(status_code=401, detail="User not found", headers={"WWW-Authenticate": "Bearer"})
-        require_active_user(user)
-        if user.role != "trader":
-            raise HTTPException(status_code=403, detail="Trader role required")
-        yield user
+        # The main fallback uses trader auth without the Wave 1 demo lifecycle.
+        active_check = getattr(security, "require_active_user", None)
+        if active_check is not None:
+            active_check(user)
+        yield security.get_current_trader(user)
 
 
 def constraint_name(error: IntegrityError) -> str | None:
