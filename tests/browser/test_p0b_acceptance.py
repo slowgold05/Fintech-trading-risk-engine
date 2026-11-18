@@ -330,6 +330,16 @@ def disposable_api(monkeypatch):
         shutil.rmtree(log_dir, ignore_errors=True)
 
 
+@pytest.fixture
+def customer_order_book_api(monkeypatch, request):
+    """Exercise order-book-only operation in the API and in-process fixture seeding."""
+    from app.core.config import settings
+
+    monkeypatch.setenv("SIMULATED_LIQUIDITY_ENABLED", "false")
+    monkeypatch.setattr(settings, "simulated_liquidity_enabled", False)
+    return request.getfixturevalue("disposable_api")
+
+
 def _driver() -> webdriver.Chrome:
     options = Options()
     options.add_argument("--headless=new")

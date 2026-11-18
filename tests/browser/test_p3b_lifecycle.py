@@ -35,6 +35,7 @@ from app.services.trade_execution import execute_fill
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = h.disposable_api
+customer_order_book_api = h.customer_order_book_api
 ARTIFACTS = h.REPO_ROOT / ".local-tools" / "p3b-lifecycle"
 _CASH = Decimal("94800.00")
 _OPEN_BP = "$94,700"
@@ -310,7 +311,8 @@ def _persisted(engine, order_id: int, owner_id: int) -> dict:
         return {"status": order.status, "remaining": order.remaining_quantity, "trades": int(trades or 0)}
 
 
-def test_partial_fill_lifecycle(disposable_api) -> None:
+def test_partial_fill_lifecycle(customer_order_book_api) -> None:
+    disposable_api = customer_order_book_api
     password = os.environ.get("P0B_TRADER_PASSWORD", "")
     if not password:
         pytest.fail("P0B_TRADER_PASSWORD is required")

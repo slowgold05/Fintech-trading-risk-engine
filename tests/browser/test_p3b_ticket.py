@@ -22,6 +22,7 @@ from app.models.market_symbol import MarketSymbol
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = h.disposable_api
+customer_order_book_api = h.customer_order_book_api
 SYMBOL, ARTIFACTS = "P3BTICKET", h.REPO_ROOT / ".local-tools" / "p3b-ticket"
 _HEADER_OFFSET = """
 const offset = Array.from(document.querySelectorAll('header')).reduce((max, bar) => {
@@ -252,7 +253,8 @@ def _cash(engine, email: str) -> Decimal:
     return Decimal(value)
 
 
-def test_empty_market_ticket(disposable_api) -> None:
+def test_empty_market_ticket(customer_order_book_api) -> None:
+    disposable_api = customer_order_book_api
     password = os.environ.get("P0B_TRADER_PASSWORD", "")
     if not password:
         pytest.fail("P0B_TRADER_PASSWORD is required")
