@@ -1,14 +1,18 @@
 """Read customer activity from its existing records and store receipt timestamps."""
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 import hmac
+import logging
 import re
 
-from sqlalchemy import DateTime, Integer, Numeric, String, case, cast, func, literal, null, select, union_all
+from sqlalchemy import Date, DateTime, Integer, Numeric, String, case, cast, func, literal, null, select, union_all
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from app.core.config import settings
 from app.core.read_snapshot import consistent_read, snapshot_clock
@@ -17,11 +21,15 @@ from app.models.ledger_entry import LedgerEntry
 from app.models.night_inbox import NightInboxRead
 from app.models.order import Order
 from app.models.trade import Trade
-from app.schemas.night_inbox import EVENT_KEY_PATTERN, InboxFilter, InboxItem, InboxPage, InboxRead, InboxSources
+from app.schemas.night_inbox import (
+    EVENT_KEY_PATTERN, InboxFilter, InboxItem, InboxPage, InboxProvenance, InboxRead, InboxSources,
+)
 
 
 HISTORY_DAYS = 30
 CURSOR_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,191}\.[0-9a-f]{64}")
+AlertSource = Callable[[int], Select]
+logger = logging.getLogger(__name__)
 
 
 class InvalidCursor(ValueError):
@@ -73,6 +81,33 @@ def _ledger_posting_id(owner_id: int, event_kind: str, *, latest: bool):
     )
 
 
+def _nullable(column, column_type):
+    return cast(null(), column_type) if column is None else column
+
+
+def event_projection(
+    event_key, kind, occurred_at, *, symbol=None, order_id=None, alert_id=None, side=None,
+    quantity=None, price=None, target=None, quote_at=None, session_date=None, provider=None, observed_at=None,
+) -> Select:
+    """Build a source query with the columns and types shared by the inbox."""
+    return select(
+        event_key.label("event_key"),
+        kind.label("kind"),
+        occurred_at.label("occurred_at"),
+        _nullable(symbol, String).label("symbol"),
+        _nullable(order_id, Integer).label("order_id"),
+        _nullable(alert_id, Integer).label("alert_id"),
+        _nullable(side, String).label("side"),
+        _nullable(quantity, Numeric).label("quantity"),
+        _nullable(price, Numeric).label("price"),
+        _nullable(target, Numeric).label("target"),
+        _nullable(quote_at, DateTime).label("quote_at"),
+        _nullable(session_date, Date).label("session_date"),
+        _nullable(provider, String).label("provider"),
+        _nullable(observed_at, DateTime).label("observed_at"),
+    )
+
+
 def _fills(owner_id: int, latest_reset):
     posted_in_book = (
         select(LedgerEntry.id)
@@ -85,16 +120,10 @@ def _fills(owner_id: int, latest_reset):
         .exists()
     )
     return (
-        select(
-            (literal("fill:") + cast(Trade.id, String)).label("event_key"),
-            literal("fill").label("kind"),
-            Trade.executed_at.label("occurred_at"),
-            Asset.symbol,
-            Trade.order_id,
-            Trade.side,
-            Trade.quantity,
-            Trade.price_at_execution.label("price"),
-            Trade.simulated_quote_at.label("quote_at"),
+        event_projection(
+            literal("fill:") + cast(Trade.id, String), literal("fill"), Trade.executed_at,
+            symbol=Asset.symbol, order_id=Trade.order_id, side=Trade.side, quantity=Trade.quantity,
+            price=Trade.price_at_execution, quote_at=Trade.simulated_quote_at,
         )
         .select_from(Trade)
         .join(Asset, Asset.id == Trade.asset_id)
@@ -108,30 +137,21 @@ def _demo_events(owner_id: int, latest_reset):
     # Pick a single posting from each group. Posting IDs order the book even
     # when multiple ledger events were posted in the same UTC second.
     kind = case((LedgerEntry.event_kind == "reset", "demo_reset"), else_="demo_started")
-    return (
-        select(
-            (kind + literal(":") + LedgerEntry.event_id).label("event_key"),
-            kind.label("kind"),
-            LedgerEntry.created_at.label("occurred_at"),
-            cast(null(), String).label("symbol"),
-            cast(null(), Integer).label("order_id"),
-            cast(null(), String).label("side"),
-            cast(null(), Numeric).label("quantity"),
-            cast(null(), Numeric).label("price"),
-            cast(null(), DateTime).label("quote_at"),
-        )
-        .where(LedgerEntry.user_id == owner_id, LedgerEntry.id.in_((opening, latest_reset)))
+    return event_projection(kind + literal(":") + LedgerEntry.event_id, kind, LedgerEntry.created_at).where(
+        LedgerEntry.user_id == owner_id, LedgerEntry.id.in_((opening, latest_reset)),
     )
 
 
-def _events(owner_id: int, is_demo: bool):
+def _core_sources(owner_id: int, is_demo: bool) -> list[Select]:
     latest_reset = _ledger_posting_id(owner_id, "reset", latest=True)
-    fills = _fills(owner_id, latest_reset)
-    return (union_all(fills, _demo_events(owner_id, latest_reset)) if is_demo else fills).subquery()
+    sources = [_fills(owner_id, latest_reset)]
+    if is_demo:
+        sources.append(_demo_events(owner_id, latest_reset))
+    return sources
 
 
-def _eligible(owner_id: int, is_demo: bool, as_of: datetime):
-    events = _events(owner_id, is_demo)
+def _eligible(sources: list[Select], as_of: datetime):
+    events = (sources[0] if len(sources) == 1 else union_all(*sources)).subquery()
     return (
         select(events)
         .where(events.c.occurred_at.between(as_of - timedelta(days=HISTORY_DAYS), as_of))
@@ -146,6 +166,12 @@ def _with_read_markers(events, owner_id: int):
 
 
 def _item(row) -> InboxItem:
+    source = None
+    if row.provider is not None:
+        source = InboxProvenance(
+            provider=row.provider, basis="raw", session_date=row.session_date,
+            observed_at=_utc(row.observed_at) if row.observed_at is not None else None, coverage="available",
+        )
     return InboxItem(
         id=row.event_key,
         kind=row.kind,
@@ -153,47 +179,78 @@ def _item(row) -> InboxItem:
         read_at=_utc(row.read_at) if row.read_at is not None else None,
         symbol=row.symbol,
         order_id=row.order_id,
+        alert_id=row.alert_id,
         side=row.side,
         quantity=format(row.quantity, "f") if row.quantity is not None else None,
         price=format(row.price, "f") if row.price is not None else None,
+        target=format(row.target, "f") if row.target is not None else None,
         # The pinned execution schema stores the quote time and price, but
         # has no persisted provider to use for a complete Provenance object.
-        session_date=row.quote_at.date() if row.quote_at is not None else None,
+        session_date=row.quote_at.date() if row.quote_at is not None else row.session_date,
+        source=source,
+    )
+
+
+def _read_page(
+    db: Session, owner_id: int, inbox_filter: InboxFilter, boundary: tuple[datetime, str] | None,
+    limit: int, as_of: datetime, sources: list[Select], availability: InboxSources,
+) -> InboxPage:
+    events = _eligible(sources, as_of)
+    marked = _with_read_markers(events, owner_id).subquery()
+    unread = marked.c.read_at.is_(None)
+    unread_count = db.scalar(select(func.count()).select_from(marked).where(unread))
+    page = select(marked)
+    if inbox_filter == "unread":
+        page = page.where(unread)
+    occurred_at, event_key = marked.c.occurred_at, marked.c.event_key
+    if boundary is not None:
+        stamp, key = boundary
+        page = page.where((occurred_at < stamp) | ((occurred_at == stamp) & (event_key < key)))
+    rows = db.execute(page.order_by(occurred_at.desc(), event_key.desc()).limit(limit + 1)).all()
+    next_cursor = None
+    if len(rows) > limit:
+        last = rows[limit - 1]
+        next_cursor = _encode_cursor(owner_id, inbox_filter, last.occurred_at, last.event_key)
+    return InboxPage(
+        items=[_item(row) for row in rows[:limit]], next_cursor=next_cursor, unread_count=unread_count,
+        sources=availability, read_at=_utc(as_of),
     )
 
 
 def list_inbox(
-    db: Session, owner_id: int, is_demo: bool, inbox_filter: InboxFilter, cursor: str | None, limit: int
+    db: Session, owner_id: int, is_demo: bool, inbox_filter: InboxFilter, cursor: str | None, limit: int,
+    alert_source: AlertSource | None = None,
 ) -> InboxPage:
     boundary = _decode_cursor(owner_id, inbox_filter, cursor) if cursor is not None else None
     with consistent_read(db):
         as_of = snapshot_clock(db)
-        events = _eligible(owner_id, is_demo, as_of)
-        marked = _with_read_markers(events, owner_id).subquery()
-        unread = marked.c.read_at.is_(None)
-        unread_count = db.scalar(select(func.count()).select_from(marked).where(unread))
-        page = select(marked)
-        if inbox_filter == "unread":
-            page = page.where(unread)
-        occurred_at, event_key = marked.c.occurred_at, marked.c.event_key
-        if boundary is not None:
-            stamp, key = boundary
-            page = page.where((occurred_at < stamp) | ((occurred_at == stamp) & (event_key < key)))
-        rows = db.execute(page.order_by(occurred_at.desc(), event_key.desc()).limit(limit + 1)).all()
-        next_cursor = None
-        if len(rows) > limit:
-            last = rows[limit - 1]
-            next_cursor = _encode_cursor(owner_id, inbox_filter, last.occurred_at, last.event_key)
-        return InboxPage(
-            items=[_item(row) for row in rows[:limit]], next_cursor=next_cursor, unread_count=unread_count,
-            sources=InboxSources(demo=is_demo), read_at=_utc(as_of),
-        )
+        sources = _core_sources(owner_id, is_demo)
+        if alert_source is not None:
+            try:
+                # A PostgreSQL error in the optional query must leave the
+                # original snapshot usable for the core inbox.
+                with db.begin_nested():
+                    return _read_page(
+                        db, owner_id, inbox_filter, boundary, limit, as_of, [*sources, alert_source(owner_id)],
+                        InboxSources(demo=is_demo, alerts=True),
+                    )
+            except SQLAlchemyError:
+                logger.warning("Inbox alert query failed. Checking core sources.")
+        return _read_page(db, owner_id, inbox_filter, boundary, limit, as_of, sources, InboxSources(demo=is_demo))
 
 
-def mark_read(db: Session, owner_id: int, is_demo: bool, event_key: str) -> InboxRead:
+def mark_read(
+    db: Session, owner_id: int, is_demo: bool, event_key: str, alert_source: AlertSource | None = None,
+) -> InboxRead:
     db.rollback()  # End the implicit transaction opened by authentication.
     with db.begin():
-        events = _eligible(owner_id, is_demo, snapshot_clock(db))
+        if event_key.startswith("alert_triggered:"):
+            if alert_source is None:
+                raise EventNotFound
+            sources = [alert_source(owner_id)]
+        else:
+            sources = _core_sources(owner_id, is_demo)
+        events = _eligible(sources, snapshot_clock(db))
         eligible_key = select(literal(owner_id), events.c.event_key).where(events.c.event_key == event_key)
         insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
         marker = (

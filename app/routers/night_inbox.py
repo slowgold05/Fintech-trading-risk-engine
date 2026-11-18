@@ -11,7 +11,7 @@ from app.core.read_snapshot import SnapshotClockError
 from app.core.security import get_current_trader
 from app.models.user import User
 from app.schemas.night_inbox import EVENT_KEY_PATTERN, InboxPage, InboxQuery, InboxRead
-from app.services.night_inbox import EventNotFound, InvalidCursor, list_inbox, mark_read
+from app.services.night_inbox import AlertSource, EventNotFound, InvalidCursor, list_inbox, mark_read
 
 
 def _error(status: int, code: str, message: str, fields: dict[str, str] | None = None) -> HTTPException:
@@ -47,24 +47,28 @@ async def _empty_body(request: Request) -> None:
             raise _error(422, "invalid_request", "The inbox request body must be empty.", {"body": "Omit the body."})
 
 
-router = APIRouter(prefix="/night/inbox", tags=["Activity inbox"], route_class=InboxRoute)
+def build_inbox_router(alert_source: AlertSource | None = None) -> APIRouter:
+    router = APIRouter(prefix="/night/inbox", tags=["Activity inbox"], route_class=InboxRoute)
+
+    @router.get("")
+    def get_inbox(
+        query: Annotated[InboxQuery, Query()],
+        current_user: User = Depends(get_current_trader),
+        db: Session = Depends(get_db),
+        _empty: None = Depends(_empty_body),
+    ) -> InboxPage:
+        return list_inbox(db, current_user.id, current_user.is_demo, query.filter, query.cursor, query.limit, alert_source)
+
+    @router.put("/{id}/read")
+    def put_inbox_read(
+        id: Annotated[str, Path(pattern=EVENT_KEY_PATTERN)],
+        current_user: User = Depends(get_current_trader),
+        db: Session = Depends(get_db),
+        _empty: None = Depends(_empty_body),
+    ) -> InboxRead:
+        return mark_read(db, current_user.id, current_user.is_demo, id, alert_source)
+
+    return router
 
 
-@router.get("")
-def get_inbox(
-    query: Annotated[InboxQuery, Query()],
-    current_user: User = Depends(get_current_trader),
-    db: Session = Depends(get_db),
-    _empty: None = Depends(_empty_body),
-) -> InboxPage:
-    return list_inbox(db, current_user.id, current_user.is_demo, query.filter, query.cursor, query.limit)
-
-
-@router.put("/{id}/read")
-def put_inbox_read(
-    id: Annotated[str, Path(pattern=EVENT_KEY_PATTERN)],
-    current_user: User = Depends(get_current_trader),
-    db: Session = Depends(get_db),
-    _empty: None = Depends(_empty_body),
-) -> InboxRead:
-    return mark_read(db, current_user.id, current_user.is_demo, id)
+router = build_inbox_router()
