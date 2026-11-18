@@ -1,0 +1,34 @@
+.compliance-desk .nk-layout { grid-template-columns: minmax(230px,.78fr) minmax(0,1.8fr); align-items: start; }
+.compliance-desk .nk-layout > .nk-panel { grid-column: 1/-1; scroll-margin-top: 12px; }
+.compliance-desk .nk-layout > :is(#trading-halt,#operational-health) { grid-column: auto; }
+.compliance-counts { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border-block: 1px solid var(--line); }
+.compliance-counts .nk-stat { padding: var(--pad); border-inline-start: 1px solid var(--line); background: var(--surface); }
+.compliance-counts .nk-stat:last-child { border-inline-end: 1px solid var(--line); }
+.compliance-links { display: flex; flex-wrap: wrap; gap: 0 var(--pad); }
+.compliance-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.compliance-health { display: grid; gap: var(--gap); }
+.compliance-health .metric-tile { padding: 8px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; }
+.health-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.health-four { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.compliance-desk :is(button,input,select) { min-height: 44px; }
+.compliance-desk :is(input,select) { padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); background: var(--raised); }
+.compliance-desk form { align-items: end; }
+.compliance-desk .review-reason { display: grid; text-align: left; gap: 4px; }
+.compliance-desk :is(.table-shell,.metric-tile) { max-width: 100%; min-width: 0; }
+.compliance-desk .data-table :is(th,td) { padding: 8px; }
+.compliance-desk :is(.text-slate-400,.text-slate-500) { color: var(--muted); }
+.compliance-desk :is(.text-slate-100,.text-slate-300) { color: var(--ink); }
+.compliance-desk .text-emerald-300 { color: var(--up); }
+.compliance-desk .text-rose-300 { color: var(--down); }
+[data-look="dial"] .compliance-desk .nk-layout { grid-template-columns: minmax(0,1fr); }
+[data-look="dial"] .compliance-counts .nk-stat { background: transparent; border-right: 0; }
+[data-look="dial"] .compliance-counts .nk-stat strong { font-size: 42px; }
+[data-look="dial"] .compliance-health { grid-template-columns: repeat(2,minmax(0,1fr)); }
+[data-look="dial"] .compliance-health > :first-child { grid-column: 1/-1; }
+@media(max-width:767px) {
+  .compliance-desk .nk-layout,[data-look="dial"] .compliance-health { grid-template-columns: minmax(0,1fr); }
+  .compliance-counts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .compliance-counts .nk-stat { border-bottom: 1px solid var(--line); }
+  [data-look="dial"] .compliance-counts .nk-stat strong { font-size: 32px; }
+  .health-four { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

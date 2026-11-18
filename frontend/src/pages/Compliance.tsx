@@ -4,8 +4,11 @@ import { isAxiosError } from "axios";
 
 import { approveAmlActivation, approveIntent, approveRoleChange, approveSurveillanceActivation, downloadEvidenceBundle, fetchAccessReview, fetchAmlCases, fetchAmlRules, fetchControlStatuses, fetchFindings, fetchIncidents, fetchIntents, fetchKris, fetchOpsHealth, fetchRegisteredRisks, fetchRiskBrief, fetchRoleChanges, fetchRoleRequests, fetchSurveillanceCases, fetchSurveillanceRules, fetchTradingHalt, fetchTradingHaltEvents, openIncident, requestAmlActivation, requestRoleChange, requestSurveillanceActivation, setTradingHalt, submitAccessReview } from "../api/compliance";
 import { fetchMe } from "../api/auth";
-import { PageHeader } from "../components/PageHeader";
-import { DashboardCard, SkeletonBlock } from "../features/dashboard/components";
+import { Button, Field, Page, Panel, Stat, State } from "../night/kit";
+import { keys } from "../night/api";
+import "../night/features/desks/desks.css";
+import "../night/features/desks/compliance.css";
+import { SkeletonBlock } from "../features/dashboard/components";
 import type { OpsHealthResponse } from "../types/schemas";
 import { formatDateTime } from "../utils/format";
 import { useToast } from "../context/useToast";
@@ -74,74 +77,77 @@ export function Compliance() {
   const { showToast } = useToast();
   const [reviewReasons, setReviewReasons] = useState<Record<number, string>>({});
   const [haltReason, setHaltReason] = useState("");
-  const me = useQuery({ queryKey: ["me"], queryFn: fetchMe });
-  const query = useQuery({ queryKey: ["control-statuses"], queryFn: fetchControlStatuses });
-  const roleChanges = useQuery({ queryKey: ["role-changes"], queryFn: fetchRoleChanges });
-  const roleRequests = useQuery({ queryKey: ["role-requests"], queryFn: fetchRoleRequests });
-  const accessReview = useQuery({ queryKey: ["access-review"], queryFn: fetchAccessReview });
-  const registeredRisks = useQuery({ queryKey: ["registered-risks"], queryFn: fetchRegisteredRisks });
-  const surveillanceRules = useQuery({ queryKey: ["surveillance-rules"], queryFn: fetchSurveillanceRules });
-  const surveillanceCases = useQuery({ queryKey: ["surveillance-cases"], queryFn: fetchSurveillanceCases });
-  const amlRules = useQuery({ queryKey: ["aml-rules"], queryFn: fetchAmlRules });
-  const amlCases = useQuery({ queryKey: ["aml-cases"], queryFn: fetchAmlCases });
-  const incidents = useQuery({ queryKey: ["incidents"], queryFn: fetchIncidents });
-  const kris = useQuery({ queryKey: ["kris"], queryFn: fetchKris });
-  const findings = useQuery({ queryKey: ["findings"], queryFn: fetchFindings });
-  const riskBrief = useQuery({ queryKey: ["risk-brief"], queryFn: fetchRiskBrief });
-  const intents = useQuery({ queryKey: ["trade-intents"], queryFn: fetchIntents });
-  const tradingHalt = useQuery({ queryKey: ["trading-halt"], queryFn: fetchTradingHalt });
-  const haltEvents = useQuery({ queryKey: ["trading-halt-events"], queryFn: fetchTradingHaltEvents });
-  const opsHealth = useQuery({ queryKey: ["ops-health"], queryFn: fetchOpsHealth });
+  const me = useQuery({ queryKey: ["me"], queryFn: fetchMe, retry: false });
+  const scope = (name: string) => keys.account(me.data?.id ?? 0, "compliance", name);
+  const authorized = me.data && ["admin", "compliance_officer", "auditor"].includes(me.data.role);
+  const read = (name: string) => ({ queryKey: scope(name), enabled: Boolean(authorized), retry: false });
+  const query = useQuery({ ...read("control-statuses"), queryFn: fetchControlStatuses });
+  const roleChanges = useQuery({ ...read("role-changes"), queryFn: fetchRoleChanges });
+  const roleRequests = useQuery({ ...read("role-requests"), queryFn: fetchRoleRequests });
+  const accessReview = useQuery({ ...read("access-review"), queryFn: fetchAccessReview });
+  const registeredRisks = useQuery({ ...read("registered-risks"), queryFn: fetchRegisteredRisks });
+  const surveillanceRules = useQuery({ ...read("surveillance-rules"), queryFn: fetchSurveillanceRules });
+  const surveillanceCases = useQuery({ ...read("surveillance-cases"), queryFn: fetchSurveillanceCases });
+  const amlRules = useQuery({ ...read("aml-rules"), queryFn: fetchAmlRules });
+  const amlCases = useQuery({ ...read("aml-cases"), queryFn: fetchAmlCases });
+  const incidents = useQuery({ ...read("incidents"), queryFn: fetchIncidents });
+  const kris = useQuery({ ...read("kris"), queryFn: fetchKris });
+  const findings = useQuery({ ...read("findings"), queryFn: fetchFindings });
+  const riskBrief = useQuery({ ...read("risk-brief"), queryFn: fetchRiskBrief });
+  const intents = useQuery({ ...read("trade-intents"), queryFn: fetchIntents });
+  const tradingHalt = useQuery({ ...read("trading-halt"), queryFn: fetchTradingHalt });
+  const haltEvents = useQuery({ ...read("trading-halt-events"), queryFn: fetchTradingHaltEvents });
+  const opsHealth = useQuery({ ...read("ops-health"), queryFn: fetchOpsHealth });
   const haltMutation = useMutation({
     mutationFn: setTradingHalt,
     onSuccess: () => { setHaltReason(""); showToast("success", "Trading state updated.");
-      void queryClient.invalidateQueries({ queryKey: ["trading-halt"] });
-      void queryClient.invalidateQueries({ queryKey: ["trading-halt-events"] }); },
+      void queryClient.invalidateQueries({ queryKey: scope("trading-halt") });
+      void queryClient.invalidateQueries({ queryKey: scope("trading-halt-events") }); },
     onError: () => showToast("error", "Trading state could not be updated."),
   });
   const requestMutation = useMutation({
     mutationFn: requestRoleChange,
-    onSuccess: () => { showToast("success", "Role change requested."); void queryClient.invalidateQueries({ queryKey: ["role-requests"] }); },
+    onSuccess: () => { showToast("success", "Role change requested."); void queryClient.invalidateQueries({ queryKey: scope("role-requests") }); },
     onError: () => showToast("error", "Role request failed."),
   });
   const approvalMutation = useMutation({
     mutationFn: approveRoleChange,
-    onSuccess: () => { showToast("success", "Role change approved; operator application is pending."); void queryClient.invalidateQueries({ queryKey: ["role-requests"] }); },
+    onSuccess: () => { showToast("success", "Role change approved; operator application is pending."); void queryClient.invalidateQueries({ queryKey: scope("role-requests") }); },
     onError: () => showToast("error", "Role approval failed."),
   });
   const reviewMutation = useMutation({
     mutationFn: submitAccessReview,
-    onSuccess: () => { showToast("success", "Access review recorded."); void queryClient.invalidateQueries({ queryKey: ["access-review"] }); },
+    onSuccess: () => { showToast("success", "Access review recorded."); void queryClient.invalidateQueries({ queryKey: scope("access-review") }); },
     onError: () => showToast("error", "Access review could not be recorded."),
   });
   const activationMutation = useMutation({
     mutationFn: requestSurveillanceActivation,
-    onSuccess: () => { showToast("success", "Surveillance activation requested."); void queryClient.invalidateQueries({ queryKey: ["surveillance-rules"] }); },
+    onSuccess: () => { showToast("success", "Surveillance activation requested."); void queryClient.invalidateQueries({ queryKey: scope("surveillance-rules") }); },
     onError: () => showToast("error", "Surveillance activation could not be requested."),
   });
   const activationApprovalMutation = useMutation({
     mutationFn: approveSurveillanceActivation,
-    onSuccess: () => { showToast("success", "Surveillance rule activation recorded."); void queryClient.invalidateQueries({ queryKey: ["surveillance-rules"] }); },
+    onSuccess: () => { showToast("success", "Surveillance rule activation recorded."); void queryClient.invalidateQueries({ queryKey: scope("surveillance-rules") }); },
     onError: () => showToast("error", "Surveillance activation could not be approved."),
   });
   const amlActivationMutation = useMutation({
     mutationFn: requestAmlActivation,
-    onSuccess: () => { showToast("success", "AML activation requested."); void queryClient.invalidateQueries({ queryKey: ["aml-rules"] }); },
+    onSuccess: () => { showToast("success", "AML activation requested."); void queryClient.invalidateQueries({ queryKey: scope("aml-rules") }); },
     onError: () => showToast("error", "AML activation could not be requested."),
   });
   const amlApprovalMutation = useMutation({
     mutationFn: approveAmlActivation,
-    onSuccess: () => { showToast("success", "AML rule activation recorded."); void queryClient.invalidateQueries({ queryKey: ["aml-rules"] }); },
+    onSuccess: () => { showToast("success", "AML rule activation recorded."); void queryClient.invalidateQueries({ queryKey: scope("aml-rules") }); },
     onError: () => showToast("error", "AML activation could not be approved."),
   });
   const incidentMutation = useMutation({
     mutationFn: openIncident,
-    onSuccess: () => { showToast("success", "Incident opened."); void queryClient.invalidateQueries({ queryKey: ["incidents"] }); },
+    onSuccess: () => { showToast("success", "Incident opened."); void queryClient.invalidateQueries({ queryKey: scope("incidents") }); },
     onError: () => showToast("error", "Incident could not be opened."),
   });
   const intentApproval = useMutation({
     mutationFn: approveIntent,
-    onSuccess: () => { showToast("success", "Intent approved. No order was placed."); void queryClient.invalidateQueries({ queryKey: ["trade-intents"] }); },
+    onSuccess: () => { showToast("success", "Intent approved. No order was placed."); void queryClient.invalidateQueries({ queryKey: scope("trade-intents") }); },
     onError: () => showToast("error", "Intent could not be approved."),
   });
   function submitAmlActivation(event: FormEvent<HTMLFormElement>) {
@@ -152,8 +158,8 @@ export function Compliance() {
   function submitIncident(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
-    incidentMutation.mutate({ title: String(values.get("title") ?? "").trim(), severity: String(values.get("severity") ?? ""), summary: String(values.get("summary") ?? "").trim() });
-    event.currentTarget.reset();
+    const form = event.currentTarget;
+    incidentMutation.mutate({ title: String(values.get("title") ?? "").trim(), severity: String(values.get("severity") ?? ""), summary: String(values.get("summary") ?? "").trim() }, { onSuccess: () => form.reset() });
   }
   function submitActivation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -170,23 +176,32 @@ export function Compliance() {
   const passed = controls.filter((control) => control.status === "pass").length;
   const failed = controls.filter((control) => control.status === "fail" || control.status === "evidence_error").length;
 
+  if (me.isPending) return <State kind="loading" title="Checking compliance access…" />;
+  if (me.isError) return <State kind="error" title="Account access could not be checked." action={<Button onClick={() => void me.refetch()}>Retry</Button>} />;
+  if (!authorized) return <State kind="unavailable" title="Compliance access is restricted." />;
+
   return (
-    <div className="space-y-6">
-      <PageHeader badge="Compliance" title="Control Status" description="Control evidence, access approvals, and quarterly review. A run with no sample does not prove operating effectiveness." />
+    <Page className="desk-page compliance-desk" eyebrow={`Compliance · ${me.data.role.replaceAll("_", " ")}`} title="Control Status"
+      description="Review control evidence, trading restrictions and access decisions.">
       {query.isError ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 p-4 text-sm text-rose-200">
-          {isAxiosError(query.error) && query.error.response?.status === 403
-            ? "Compliance access is limited to compliance officers, admins, and auditors."
-            : "Control status could not be loaded."}
-        </div>
+        <Page.Full><State kind="error" title={isAxiosError(query.error) && query.error.response?.status === 403
+          ? "Compliance access is limited to compliance officers, admins, and auditors." : "Control status could not be loaded."}
+          action={<Button onClick={() => void query.refetch()}>Retry</Button>} /></Page.Full>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="metric-tile"><p className="text-xs text-slate-400">Controls</p><p className="mt-2 font-mono text-3xl text-slate-100">{controls.length}</p></div>
-            <div className="metric-tile"><p className="text-xs text-slate-400">Passing</p><p className="mt-2 font-mono text-3xl text-emerald-300">{passed}</p></div>
-            <div className="metric-tile"><p className="text-xs text-slate-400">Failed evidence</p><p className="mt-2 font-mono text-3xl text-rose-300">{failed}</p></div>
-          </div>
-          <DashboardCard title="Trading halt">
+          <Page.Full className="compliance-overview">
+            <div className="compliance-counts">
+              <Stat label="Controls" value={query.isPending ? null : controls.length} />
+              <Stat label="Passing" value={query.isPending ? null : passed} />
+              <Stat label="Failed evidence" value={query.isPending ? null : failed} />
+              <Stat label="Without a verdict" value={query.isPending ? null : controls.length - passed - failed} />
+            </div>
+            <nav aria-label="Compliance sections" className="compliance-links">
+              <a href="#control-tests">Control tests</a><a href="#access-review">Access review</a>
+              <a href="#surveillance">Surveillance</a><a href="#incidents">AML and incidents</a>
+            </nav>
+          </Page.Full>
+          <Panel id="trading-halt" title="Trading halt">
             {tradingHalt.isLoading ? <SkeletonBlock className="h-20" /> : tradingHalt.isError ? (
               <p className="text-sm text-rose-300">Trading state could not be loaded.</p>
             ) : tradingHalt.data && (
@@ -195,19 +210,20 @@ export function Compliance() {
                   {tradingHalt.data.halted ? "New trading is halted" : "New trading is open"}
                   {tradingHalt.data.emergency_override ? " (emergency configuration override)" : ""}
                 </p>
-                <p className="text-xs text-slate-400">Last change: {tradingHalt.data.reason} · {formatDateTime(tradingHalt.data.changed_at)}</p>
+                <p className="text-xs text-slate-400">Last change · {tradingHalt.data.reason} · {formatDateTime(tradingHalt.data.changed_at)}</p>
                 {me.data?.role === "admin" && (
-                  <form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault();
+                  <form className="desk-inline-form" onSubmit={(event) => { event.preventDefault();
                     haltMutation.mutate({ halted: !tradingHalt.data.operator_halted, reason: haltReason.trim() }); }}>
-                    <input aria-label="Trading halt reason" required minLength={3} maxLength={255} value={haltReason}
+                    <Field id="compliance-halt-reason" label="Trading halt reason"><input aria-label="Trading halt reason" required minLength={3} maxLength={255} value={haltReason}
                       onChange={(event) => setHaltReason(event.target.value)} placeholder="Reason for change"
-                      className="min-w-52 flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+                      /></Field>
                     <button type="submit" disabled={haltMutation.isPending || haltReason.trim().length < 3}
                       className="rounded border border-amber-400/60 px-3 py-2 text-sm font-semibold text-amber-200 disabled:opacity-50">
                       {tradingHalt.data.operator_halted ? "Resume trading" : "Halt trading"}
                     </button>
                   </form>
                 )}
+                {haltEvents.isError && <State kind="error" title="Trading halt history could not be loaded." action={<Button onClick={() => void haltEvents.refetch()}>Retry</Button>} />}
                 {haltEvents.data?.events.length ? <div className="space-y-1 text-xs text-slate-400">
                   {haltEvents.data.events.slice(0, 5).map((event) => (
                     <p key={event.id}>{formatDateTime(event.changed_at)} · {event.halted ? "Halted" : "Resumed"} · {event.reason}</p>
@@ -215,16 +231,16 @@ export function Compliance() {
                 </div> : null}
               </div>
             )}
-          </DashboardCard>
-          <DashboardCard title="Operational health">
+          </Panel>
+          <Panel id="operational-health" title="Operational health">
             {opsHealth.isLoading ? <SkeletonBlock className="h-28" /> : opsHealth.isError ? (
-              <p className="text-sm text-rose-300">Operational health could not be loaded.</p>
+              <State kind="error" title="Operational health could not be loaded." action={<Button onClick={() => void opsHealth.refetch()}>Retry</Button>} />
             ) : opsHealth.data && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-400">As of {formatDateTime(opsHealth.data.generated_at)}</p>
+              <div className="compliance-health">
+                <p className="desk-meta">As of {formatDateTime(opsHealth.data.generated_at)}</p>
                 <div>
                   <p className="mb-2 text-xs text-slate-400">Market data freshness</p>
-                  <div className="grid gap-3 sm:grid-cols-4">
+                  <div className="health-metrics health-four">
                     <div className="metric-tile"><p className="text-xs text-slate-400">live-ish</p><p className="mt-2 font-mono text-2xl text-emerald-300">{opsHealth.data.market_data_freshness["live-ish"]}</p></div>
                     <div className="metric-tile"><p className="text-xs text-slate-400">delayed</p><p className="mt-2 font-mono text-2xl text-amber-300">{opsHealth.data.market_data_freshness.delayed}</p></div>
                     <div className="metric-tile"><p className="text-xs text-slate-400">cached</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.market_data_freshness.cached}</p></div>
@@ -240,7 +256,7 @@ export function Compliance() {
                 </div>
                 <div>
                   <p className="mb-2 text-xs text-slate-400">AI usage</p>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="health-metrics">
                     <div className="metric-tile"><p className="text-xs text-slate-400">Prompt tokens</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.ai_usage.total_prompt_tokens}</p></div>
                     <div className="metric-tile"><p className="text-xs text-slate-400">Completion tokens</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.ai_usage.total_completion_tokens}</p></div>
                     <div className="metric-tile"><p className="text-xs text-slate-400">Avg duration</p><p className="mt-2 font-mono text-2xl text-slate-100">{formatDurationMs(opsHealth.data.ai_usage.avg_duration_ms)}</p></div>
@@ -248,7 +264,7 @@ export function Compliance() {
                 </div>
                 <div>
                   <p className="mb-2 text-xs text-slate-400">Massive ingestion</p>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="health-metrics">
                     <div className="metric-tile"><p className="text-xs text-slate-400">Symbols covered</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.massive_ingestion.symbols_covered}</p></div>
                     <div className="metric-tile"><p className="text-xs text-slate-400">Latest session</p><p className="mt-2 font-mono text-sm text-slate-100">{opsHealth.data.massive_ingestion.latest_session_date ?? "Never ingested"}</p></div>
                     <div className="metric-tile"><p className="text-xs text-slate-400">Flagged last 30d</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.massive_ingestion.flagged_last_30d_count}</p></div>
@@ -269,12 +285,12 @@ export function Compliance() {
                 </div>
               </div>
             )}
-          </DashboardCard>
-          <DashboardCard title="Control tests">
+          </Panel>
+          <Panel id="control-tests" title="Control tests">
             {query.isLoading ? <SkeletonBlock className="h-28" /> : controls.length === 0 ? (
               <p className="text-sm text-slate-400">No control definitions found.</p>
             ) : (
-              <div className="table-shell">
+              <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell">
                 <table className="data-table min-w-[760px]">
                   <thead><tr><th className="text-left">Control</th><th className="text-left">Owner</th><th className="text-left">Frequency</th><th className="text-right">Checked</th><th className="text-left">Latest run</th><th className="text-right">Status</th></tr></thead>
                   <tbody>{controls.map((control) => (
@@ -290,8 +306,8 @@ export function Compliance() {
                 </table>
               </div>
             )}
-          </DashboardCard>
-          <DashboardCard title="Risk register">
+          </Panel>
+          <Panel id="risk-register" title="Risk register">
             {registeredRisks.isLoading ? <SkeletonBlock className="h-24" /> : registeredRisks.isError ? (
               <p className="text-sm text-rose-300">Risk register could not be loaded.</p>
             ) : !registeredRisks.data?.risks.length ? (
@@ -299,7 +315,7 @@ export function Compliance() {
             ) : (
               <>
                 <p className="mb-4 text-xs text-slate-400">{registeredRisks.data.method}</p>
-                <div className="table-shell"><table className="data-table min-w-[760px]">
+                <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell"><table className="data-table min-w-[760px]">
                   <thead><tr><th className="text-left">Risk</th><th className="text-left">Owner</th><th className="text-left">Controls</th><th className="text-right">Inherent</th><th className="text-right">Residual</th><th className="text-right">Evidence</th></tr></thead>
                   <tbody>{registeredRisks.data.risks.map((risk) => (
                     <tr key={risk.id}>
@@ -314,16 +330,16 @@ export function Compliance() {
                 </table></div>
               </>
             )}
-          </DashboardCard>
-          <DashboardCard title="Role change requests">
+          </Panel>
+          <Panel id="role-requests" title="Role change requests">
             {me.data?.role === "admin" && (
               <form onSubmit={submitRoleRequest} className="mb-4 grid gap-2 sm:grid-cols-4">
-                <input name="email" type="email" required placeholder="Account email" aria-label="Account email" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
-                <select name="role" aria-label="Requested role" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                <Field id="compliance-account-email" label="Account email"><input name="email" type="email" required placeholder="Account email" aria-label="Account email" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" /></Field>
+                <Field id="compliance-requested-role" label="Requested role"><select name="role" aria-label="Requested role" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
                   <option value="trader">Trader</option><option value="analyst">Analyst</option><option value="compliance_officer">Compliance officer</option><option value="admin">Admin</option><option value="auditor">Auditor</option>
-                </select>
-                <input name="reason" required minLength={3} maxLength={255} placeholder="Reason" aria-label="Role change reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
-                <button type="submit" disabled={requestMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Request change</button>
+                </select></Field>
+                <Field id="compliance-role-change-reason" label="Role change reason"><input name="reason" required minLength={3} maxLength={255} placeholder="Reason" aria-label="Role change reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" /></Field>
+                <button type="submit" disabled={requestMutation.isPending} className="nk-button" data-variant="primary">Request change</button>
               </form>
             )}
             {roleRequests.isLoading ? <SkeletonBlock className="h-24" /> : roleRequests.isError ? (
@@ -331,7 +347,7 @@ export function Compliance() {
             ) : !roleRequests.data?.requests.length ? (
               <p className="text-sm text-slate-400">No role changes requested.</p>
             ) : (
-              <div className="table-shell"><table className="data-table min-w-[760px]">
+              <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell"><table className="data-table min-w-[760px]">
                 <thead><tr><th className="text-left">Account</th><th className="text-left">Change</th><th className="text-left">Reason</th><th className="text-left">Status</th><th className="text-right">Action</th></tr></thead>
                 <tbody>{roleRequests.data.requests.map((item) => (
                   <tr key={item.id}>
@@ -346,14 +362,14 @@ export function Compliance() {
                 ))}</tbody>
               </table></div>
             )}
-          </DashboardCard>
-          <DashboardCard title={`Access review ${accessReview.data?.period ?? ""}`}>
+          </Panel>
+          <Panel id="access-review" title={`Access review ${accessReview.data?.period ?? ""}`}>
             {accessReview.isLoading ? <SkeletonBlock className="h-24" /> : accessReview.isError ? (
               <p className="text-sm text-rose-300">Access review could not be loaded.</p>
             ) : !accessReview.data?.accounts.length ? (
               <p className="text-sm text-slate-400">No accounts to review.</p>
             ) : (
-              <div className="table-shell"><table className="data-table min-w-[760px]">
+              <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell"><table className="data-table min-w-[760px]">
                 <thead><tr><th className="text-left">Account</th><th className="text-left">Role</th><th className="text-left">Review</th><th className="text-right">Decision</th></tr></thead>
                 <tbody>{accessReview.data.accounts.map((account) => (
                   <tr key={account.user_id}>
@@ -362,7 +378,7 @@ export function Compliance() {
                     <td className="capitalize">{account.status}</td>
                     <td className="text-right">{account.status === "unreviewed" && me.data && me.data.id !== account.user_id && (me.data.role === "admin" || me.data.role === "compliance_officer") && (
                       <div className="flex justify-end gap-2">
-                        <input aria-label={`Review reason for ${account.email}`} value={reviewReasons[account.user_id] ?? ""} onChange={(event) => setReviewReasons((old) => ({ ...old, [account.user_id]: event.target.value }))} placeholder="Review reason" maxLength={255} className="w-36 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100" />
+                        <label className="review-reason">Review reason<input aria-label={`Review reason for ${account.email}`} value={reviewReasons[account.user_id] ?? ""} onChange={(event) => setReviewReasons((old) => ({ ...old, [account.user_id]: event.target.value }))} placeholder="Review reason" maxLength={255} className="w-36" /></label>
                         {(["retain", "remove"] as const).map((decision) => (
                           <button key={decision} type="button" disabled={reviewMutation.isPending || (reviewReasons[account.user_id] ?? "").trim().length < 3} onClick={() => reviewMutation.mutate({ user_id: account.user_id, decision, reason: reviewReasons[account.user_id] })} className="rounded border border-slate-600 px-2 py-1 text-xs capitalize text-slate-200 disabled:opacity-50">{decision}</button>
                         ))}
@@ -372,25 +388,25 @@ export function Compliance() {
                 ))}</tbody>
               </table></div>
             )}
-          </DashboardCard>
-          <DashboardCard title="Surveillance">
+          </Panel>
+          <Panel id="surveillance" title="Surveillance">
             {surveillanceRules.isLoading || surveillanceCases.isLoading ? <SkeletonBlock className="h-24" /> : surveillanceRules.isError || surveillanceCases.isError ? (
               <p className="text-sm text-rose-300">Surveillance could not be loaded.</p>
             ) : (
               <>
                 {(me.data?.role === "admin" || me.data?.role === "compliance_officer") && (surveillanceRules.data?.rules.length ?? 0) > 0 && (
                   <form onSubmit={submitActivation} className="mb-4 grid gap-2 sm:grid-cols-3">
-                    <select name="rule_id" aria-label="Surveillance rule" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                    <Field id="compliance-surveillance-rule" label="Surveillance rule"><select name="rule_id" aria-label="Surveillance rule" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
                       {surveillanceRules.data?.rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.id}</option>)}
-                    </select>
-                    <input name="reason" required minLength={3} maxLength={255} placeholder="Activation reason" aria-label="Activation reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
-                    <button type="submit" disabled={activationMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Request activation</button>
+                    </select></Field>
+                    <Field id="compliance-activation-reason" label="Activation reason"><input name="reason" required minLength={3} maxLength={255} placeholder="Activation reason" aria-label="Activation reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" /></Field>
+                    <button type="submit" disabled={activationMutation.isPending} className="nk-button" data-variant="primary">Request activation</button>
                   </form>
                 )}
                 {!surveillanceRules.data?.rules.length ? (
                   <p className="mb-3 text-sm text-slate-400">No surveillance rules loaded.</p>
                 ) : (
-                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                  <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell mb-4"><table className="data-table min-w-[640px]">
                     <thead><tr><th className="text-left">Rule</th><th className="text-left">Version</th><th className="text-left">Activation</th><th className="text-right">Action</th></tr></thead>
                     <tbody>{surveillanceRules.data.rules.map((rule) => (
                       <tr key={rule.id}>
@@ -407,7 +423,7 @@ export function Compliance() {
                 {!surveillanceCases.data?.cases.length ? (
                   <p className="text-sm text-slate-400">No surveillance cases.</p>
                 ) : (
-                  <div className="table-shell"><table className="data-table min-w-[760px]">
+                  <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell"><table className="data-table min-w-[760px]">
                     <thead><tr><th className="text-left">Rule</th><th className="text-left">Symbol</th><th className="text-left">Summary</th><th className="text-left">Status</th><th className="text-right">Due</th></tr></thead>
                     <tbody>{surveillanceCases.data.cases.map((item) => (
                       <tr key={item.id}>
@@ -422,25 +438,25 @@ export function Compliance() {
                 )}
               </>
             )}
-          </DashboardCard>
-          <DashboardCard title="AML and incidents">
+          </Panel>
+          <Panel id="incidents" title="AML and incidents">
             {amlRules.isLoading || amlCases.isLoading || incidents.isLoading || kris.isLoading ? <SkeletonBlock className="h-24" /> : amlRules.isError || amlCases.isError || incidents.isError || kris.isError ? (
               <p className="text-sm text-rose-300">AML and incident data could not be loaded.</p>
             ) : (
               <>
                 {(me.data?.role === "admin" || me.data?.role === "compliance_officer") && (amlRules.data?.rules.length ?? 0) > 0 && (
                   <form onSubmit={submitAmlActivation} className="mb-4 grid gap-2 sm:grid-cols-3">
-                    <select name="rule_id" aria-label="AML rule" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                    <Field id="compliance-aml-rule" label="AML rule"><select name="rule_id" aria-label="AML rule" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
                       {amlRules.data?.rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.id}</option>)}
-                    </select>
-                    <input name="reason" required minLength={3} maxLength={255} placeholder="Activation reason" aria-label="AML activation reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
-                    <button type="submit" disabled={amlActivationMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Request AML activation</button>
+                    </select></Field>
+                    <Field id="compliance-aml-activation-reason" label="AML activation reason"><input name="reason" required minLength={3} maxLength={255} placeholder="Activation reason" aria-label="AML activation reason" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" /></Field>
+                    <button type="submit" disabled={amlActivationMutation.isPending} className="nk-button" data-variant="primary">Request AML activation</button>
                   </form>
                 )}
                 {!amlCases.data?.cases.length ? (
                   <p className="mb-3 text-sm text-slate-400">No AML cases.</p>
                 ) : (
-                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                  <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell mb-4"><table className="data-table min-w-[640px]">
                     <thead><tr><th className="text-left">Rule</th><th className="text-left">Summary</th><th className="text-left">Status</th><th className="text-right">Due</th></tr></thead>
                     <tbody>{amlCases.data.cases.map((item) => (
                       <tr key={item.id}>
@@ -454,20 +470,20 @@ export function Compliance() {
                 )}
                 {(me.data?.role === "admin" || me.data?.role === "compliance_officer") && (
                   <form onSubmit={submitIncident} className="mb-4 grid gap-2 sm:grid-cols-4">
-                    <input name="title" required minLength={3} maxLength={255} aria-label="Incident title" placeholder="Incident title" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
-                    <select name="severity" aria-label="Incident severity" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                    <Field id="compliance-incident-title" label="Incident title"><input name="title" required minLength={3} maxLength={255} aria-label="Incident title" placeholder="Incident title" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" /></Field>
+                    <Field id="compliance-incident-severity" label="Incident severity"><select name="severity" aria-label="Incident severity" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
                       <option value="low">low</option>
                       <option value="moderate">moderate</option>
                       <option value="high">high</option>
-                    </select>
-                    <input name="summary" required minLength={3} maxLength={255} aria-label="Incident summary" placeholder="What was discovered" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
-                    <button type="submit" disabled={incidentMutation.isPending} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Open incident</button>
+                    </select></Field>
+                    <Field id="compliance-incident-summary" label="Incident summary"><input name="summary" required minLength={3} maxLength={255} aria-label="Incident summary" placeholder="What was discovered" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" /></Field>
+                    <button type="submit" disabled={incidentMutation.isPending} className="nk-button" data-variant="primary">Open incident</button>
                   </form>
                 )}
                 {!incidents.data?.incidents.length ? (
                   <p className="mb-3 text-sm text-slate-400">No incidents.</p>
                 ) : (
-                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                  <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell mb-4"><table className="data-table min-w-[640px]">
                     <thead><tr><th className="text-left">Title</th><th className="text-left">Severity</th><th className="text-left">Status</th><th className="text-right">Notice due</th></tr></thead>
                     <tbody>{incidents.data.incidents.map((item) => (
                       <tr key={item.id}>
@@ -482,7 +498,7 @@ export function Compliance() {
                 {!kris.data?.kris.length ? (
                   <p className="mb-3 text-sm text-slate-400">No KRI readings.</p>
                 ) : (
-                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                  <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell mb-4"><table className="data-table min-w-[640px]">
                     <thead><tr><th className="text-left">Indicator</th><th className="text-right">Value</th><th className="text-right">Threshold</th><th className="text-left">Status</th></tr></thead>
                     <tbody>{kris.data.kris.map((item) => (
                       <tr key={item.id}>
@@ -504,17 +520,17 @@ export function Compliance() {
                 ) : null}
               </>
             )}
-          </DashboardCard>
-          <DashboardCard title="Intents, findings, and risk brief">
+          </Panel>
+          <Panel id="risk-brief" title="Intents, findings, and risk brief">
             {findings.isLoading || riskBrief.isLoading || intents.isLoading ? <SkeletonBlock className="h-24" /> : findings.isError || riskBrief.isError || intents.isError ? (
               <p className="text-sm text-rose-300">Intent and brief data could not be loaded.</p>
             ) : (
               <>
-                <p className="mb-3 text-sm text-slate-400">Vendor register: Massive, Finnhub, Twelve Data, FRED, and Bluesky are not connected. The file is docs/vendors.md.</p>
+                <p className="mb-3 text-sm text-slate-400">Vendor register · docs/vendors.md</p>
                 {!intents.data?.intents.length ? (
                   <p className="mb-3 text-sm text-slate-400">No trade intents.</p>
                 ) : (
-                  <div className="table-shell mb-4"><table className="data-table min-w-[760px]">
+                  <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell mb-4"><table className="data-table min-w-[760px]">
                     <thead><tr><th className="text-left">Symbol</th><th className="text-left">Side</th><th className="text-left">Status</th><th className="text-left">Approver</th><th className="text-right">Decided</th></tr></thead>
                     <tbody>{intents.data.intents.map((item) => (
                       <tr key={item.id}>
@@ -532,7 +548,7 @@ export function Compliance() {
                 {!findings.data?.findings.length ? (
                   <p className="mb-3 text-sm text-slate-400">No findings.</p>
                 ) : (
-                  <div className="table-shell mb-4"><table className="data-table min-w-[640px]">
+                  <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell mb-4"><table className="data-table min-w-[640px]">
                     <thead><tr><th className="text-left">Control</th><th className="text-left">Summary</th><th className="text-left">Status</th><th className="text-right">Due</th></tr></thead>
                     <tbody>{findings.data.findings.map((item) => (
                       <tr key={item.id}>
@@ -551,14 +567,14 @@ export function Compliance() {
                 )}
               </>
             )}
-          </DashboardCard>
-          <DashboardCard title="Access changes">
+          </Panel>
+          <Panel id="access-changes" title="Access changes">
             {roleChanges.isLoading ? <SkeletonBlock className="h-24" /> : roleChanges.isError ? (
               <p className="text-sm text-rose-300">Role changes could not be loaded.</p>
             ) : !roleChanges.data?.changes.length ? (
               <p className="text-sm text-slate-400">No role changes recorded.</p>
             ) : (
-              <div className="table-shell">
+              <div tabIndex={0} role="region" aria-label="Scrollable records" className="table-shell">
                 <table className="data-table min-w-[760px]">
                   <thead><tr><th className="text-left">Account</th><th className="text-left">Change</th><th className="text-left">Operator</th><th className="text-left">Reason</th><th className="text-right">When</th></tr></thead>
                   <tbody>{roleChanges.data.changes.map((change) => (
@@ -573,9 +589,9 @@ export function Compliance() {
                 </table>
               </div>
             )}
-          </DashboardCard>
+          </Panel>
         </>
       )}
-    </div>
+    </Page>
   );
 }
