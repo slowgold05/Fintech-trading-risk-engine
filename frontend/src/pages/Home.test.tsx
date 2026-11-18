@@ -10,11 +10,13 @@ const api = vi.hoisted(() => ({
   fetchMarketTrending: vi.fn(), fetchMarketResearch: vi.fn(),
   fetchMarketNews: vi.fn(),
 }));
+const demoAuth = vi.hoisted(() => ({ startDemo: vi.fn(), signIn: vi.fn() }));
 const historyApi = vi.hoisted(() => ({
   fetchCachedSeries: vi.fn(),
   fetchDailyHistory: vi.fn(),
 }));
 vi.mock("../api/market", () => api);
+vi.mock("../api/auth", () => ({ startDemo: demoAuth.startDemo }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("lightweight-charts", () => ({
   ColorType: { Solid: "solid" },
@@ -38,7 +40,7 @@ vi.mock("lightweight-charts", () => ({
     applyOptions: () => undefined,
   }),
 }));
-vi.mock("../context/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false }) }));
+vi.mock("../context/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false, signIn: demoAuth.signIn }) }));
 vi.mock("../components/Watchlists", () => ({
   Watchlists: ({
     onUseInResearch,
@@ -110,6 +112,16 @@ describe("public market data truth", () => {
     historyApi.fetchDailyHistory.mockRejectedValue(new Error("No series selected"));
   });
   afterEach(() => { cleanup(); vi.resetAllMocks(); });
+
+  it("starts a demo directly from the public market", async () => {
+    demoAuth.startDemo.mockResolvedValue({ access_token: "demo-token" });
+    open();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try the demo" }));
+
+    await waitFor(() => expect(demoAuth.signIn).toHaveBeenCalledWith("demo-token"));
+    expect(demoAuth.startDemo).toHaveBeenCalledTimes(1);
+  });
 
   it("shows unavailable sections without fabricated prices, history or research", async () => {
     open();

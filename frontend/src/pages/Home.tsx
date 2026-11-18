@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, List, X } from "@phosphor-icons/react";
+import { Link, useNavigate } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { List, SpinnerGap, X } from "@phosphor-icons/react";
 import {
   fetchMarketHeatmap,
   fetchMarketNews,
@@ -9,6 +9,8 @@ import {
   fetchMarketResearch,
   fetchMarketTrending,
 } from "../api/market";
+import { isAxiosError } from "axios";
+import { startDemo } from "../api/auth";
 import { fetchDailyHistory, type HistoryRange } from "../api/history";
 import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
@@ -481,7 +483,16 @@ function SymbolSparkline({
 }
 
 export function Home() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitializing, signIn } = useAuth();
+  const navigate = useNavigate();
+  const demo = useMutation({
+    mutationFn: startDemo,
+    onSuccess: (session) => {
+      signIn(session.access_token);
+      navigate("/dashboard", { replace: true });
+    },
+  });
+  const demoError = isAxiosError(demo.error) ? demo.error.response?.data?.detail : null;
   const [symbolInput, setSymbolInput] = useState("NVDA");
   const [researchSymbol, setResearchSymbol] = useState("NVDA");
   const [historyDraft, setHistoryDraft] = useState("");
@@ -776,13 +787,22 @@ export function Home() {
               <MarketSearch />
             </div>
             {!isAuthenticated && (
-              <Link
-                className="inline-flex w-fit items-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition duration-150 hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/60 active:translate-y-px"
-                to="/login"
-              >
-                Get started
-                <ArrowRight className="size-4" weight="bold" />
-              </Link>
+              <div className="space-y-2">
+                <button
+                  className="inline-flex min-h-11 w-fit touch-manipulation items-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:opacity-60"
+                  disabled={isInitializing || demo.isPending}
+                  onClick={() => demo.mutate()}
+                  type="button"
+                >
+                  {demo.isPending && <SpinnerGap aria-hidden="true" className="size-4 motion-safe:animate-spin" />}
+                  Try the demo
+                </button>
+                {demo.isError && (
+                  <p className="text-sm text-rose-200" role="alert">
+                    {typeof demoError === "string" ? demoError : "Unable to start the demo. Please try again."}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
