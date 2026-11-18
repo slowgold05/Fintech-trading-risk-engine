@@ -339,7 +339,7 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
                       >
                         <td data-label="Symbol">
                           <div className="font-mono text-sm font-semibold text-slate-100">
-                            {position.symbol}
+                            <Link className="holding-ticket" aria-label={`Inspect ${position.symbol} holding`} to={"/portfolio/holdings?" + new URLSearchParams({symbol:position.symbol,returnTo:window.location.pathname + window.location.search + (window.location.hash || "#holding-" + position.symbol)})}>{position.symbol}</Link>
                           </div>
                           <div className="font-mono text-[11px] uppercase text-slate-500">
                             {position.asset_type}

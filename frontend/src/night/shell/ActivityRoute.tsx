@@ -1,4 +1,5 @@
-import { useSearchParams } from "react-router-dom";
+import { safeReturnTo } from "../registry";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMe } from "../../api/auth";
 import { Trades } from "../../pages/Trades";
@@ -17,7 +18,8 @@ export default function ActivityRoute() {
     else updated.set("order",String(next));
     setParams(updated);
   }
-  return <Trades owner={identity.data.id} canTrade={identity.data.role === "trader"} open={params.get("ticket") === "1"}
+  const back = safeReturnTo(params.get("returnTo"));
+  return <>{back.split(/[?#]/)[0] === "/portfolio/holdings" && id > 0 && <Link className="nk-button" to={back}>Back to holding</Link>}<Trades owner={identity.data.id} canTrade={identity.data.role === "trader"} open={params.get("ticket") === "1"}
     onOpen={() => {
       if (params.get("symbol")) saveDraft(identity.data.id, null);
       const next = new URLSearchParams(params);
@@ -25,5 +27,5 @@ export default function ActivityRoute() {
       next.delete("order");
       setParams(next);
     }}
-    receiptId={Number.isSafeInteger(id) && id > 0 ? id : null} onSelectOrder={selectOrder} />;
+    receiptId={Number.isSafeInteger(id) && id > 0 ? id : null} onSelectOrder={selectOrder} /></>;
 }
