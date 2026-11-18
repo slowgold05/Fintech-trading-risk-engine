@@ -1,3 +1,4 @@
+import { refreshExecution } from "../night/api";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -229,10 +230,14 @@ function cancelNoticeFor(orderId: number, error: unknown): CancelNotice {
   };
 }
 
-export function Trades() {
+export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId, onSelectOrder }: {
+  owner?: number; canTrade?: boolean; open?: boolean; onOpen?: () => void; receiptId?: number|null; onSelectOrder?: (id: number|null) => void;
+} = {}) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [localId, setLocalId] = useState<number | null>(null);
+  const selectedOrderId = receiptId === undefined ? localId : receiptId;
+  const setSelectedOrderId = onSelectOrder ?? setLocalId;
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelNotice, setCancelNotice] = useState<CancelNotice | null>(null);
   const [refreshIssue, setRefreshIssue] = useState(false);
@@ -246,7 +251,7 @@ export function Trades() {
   const ordersQuery = useQuery({ queryKey: ["orders"], queryFn: fetchOrders });
   const orders = ordersQuery.isSuccess ? ordersQuery.data.orders : null;
   const selectedVisible =
-    selectedOrderId != null && orders != null && orders.some((order) => order.id === selectedOrderId);
+    selectedOrderId != null && (receiptId != null || orders?.some(order => order.id === selectedOrderId));
 
   const cancelMutation = useMutation({ mutationFn: cancelOrder });
 
@@ -256,6 +261,7 @@ export function Trades() {
         queryClient.invalidateQueries({ queryKey: ["orders"] }, { throwOnError: true }),
         queryClient.invalidateQueries({ queryKey: ["portfolio"] }, { throwOnError: true }),
         queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] }, { throwOnError: true }),
+        ...(owner ? [refreshExecution(queryClient,owner)] : []),
       ]);
       return results.every((result) => result.status === "fulfilled");
     } catch {
@@ -309,7 +315,7 @@ export function Trades() {
   return (
     <div className="min-w-0 space-y-6">
       <PageHeader
-        title="Order Management"
+        title="Activity"
         description="Submit orders and review execution history with risk-aware trade context."
       />
 
@@ -321,7 +327,9 @@ export function Trades() {
           }
           title="Order Entry"
         >
-          <OrderTicket />
+          {canTrade ? open ? <OrderTicket owner={owner} onSubmitted={onSelectOrder} /> :
+            <button className="nk-button" data-testid="order-open" onClick={onOpen}>Open order ticket</button> :
+            <p>Order entry requires a trader role.</p>}
         </DashboardCard>
         </div>
 
@@ -437,7 +445,7 @@ export function Trades() {
                         Details
                       </button>
                       {order.status === "open" && (
-                        <button type="button" className="inline-flex min-h-11 items-center px-2 text-sm text-rose-300 hover:text-rose-200 disabled:text-slate-600" disabled={cancelBusy} onClick={() => { void handleCancel(order.id); }} aria-label={`Cancel ${order.symbol} order ${order.id}`}>Cancel</button>
+                        <button type="button" className="inline-flex min-h-11 items-center px-2 text-sm text-rose-300 hover:text-rose-200 disabled:text-slate-600" disabled={cancelBusy} data-testid="order-cancel" onClick={() => { void handleCancel(order.id); }} aria-label={`Cancel ${order.symbol} order ${order.id}`}>Cancel</button>
                       )}
                     </div>
                   </td>

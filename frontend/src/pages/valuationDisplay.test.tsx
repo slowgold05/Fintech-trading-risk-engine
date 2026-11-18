@@ -30,6 +30,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock("../api/portfolio", () => ({
   fetchPortfolio: api.fetchPortfolio,
+  fetchPortfolioPerformance: vi.fn().mockResolvedValue({series: []}),
   fetchPortfolioPnl: api.fetchPortfolioPnl,
 }));
 

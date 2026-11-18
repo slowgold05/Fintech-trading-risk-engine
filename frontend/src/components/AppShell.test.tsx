@@ -80,7 +80,7 @@ describe("mobile shell", () => {
     expect(dialog.className).not.toContain("drawer-in");
     expect(open).toHaveAttribute("aria-expanded", "true");
     expect(document.body.style.overflow).toBe("hidden");
-    expect(await within(dialog).findByRole("link", { name: "Trades" })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("link", { name: "Activity" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("link", { name: "Compliance" })).not.toBeInTheDocument();
     expect(within(dialog).getByText("Paper trading")).toBeInTheDocument();
     expect(screen.queryByText("System live")).not.toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("mobile shell", () => {
     renderShell();
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     expect(await screen.findByRole("link", { name: "Compliance" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Trades" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByRole("link", { name: "Activity" })).toBeInTheDocument();
     act(() => { desktop = true; changes.forEach((change) => change()); });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
@@ -181,7 +181,7 @@ describe("desktop shell", () => {
     const collapse = within(sidebar).getByRole("button", { name: "Collapse sidebar" });
     expect(collapse).toHaveAttribute("type", "button");
     expect(collapse).toHaveAttribute("aria-expanded", "true");
-    const trades = await within(sidebar).findByRole("link", { name: "Trades" });
+    const trades = await within(sidebar).findByRole("link", { name: "Activity" });
     expect(within(sidebar).getByRole("link", { name: "Portfolio" }).querySelector("span")).not.toHaveClass("sr-only");
     expect(trades.querySelector("span")).not.toHaveClass("sr-only");
     fireEvent.click(collapse);
@@ -189,7 +189,7 @@ describe("desktop shell", () => {
     expect(sidebar).not.toHaveClass("w-60");
     const expand = within(sidebar).getByRole("button", { name: "Expand sidebar" });
     expect(expand).toHaveAttribute("aria-expanded", "false");
-    for (const name of ["Market", "Dashboard", "Trades", "Portfolio", "Risk", "Research", "Forecast Lab"]) {
+    for (const name of ["Markets", "Today", "Activity", "Portfolio", "Risk", "Research", "Forecast Lab"]) {
       const link = within(sidebar).getByRole("link", { name });
       expect(link.querySelector("span")).toHaveClass("sr-only");
     }

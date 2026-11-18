@@ -1,3 +1,4 @@
+import type { Provenance } from "../night/api";
 import { apiClient } from "./client";
 
 const REQUEST_ERROR = "Invalid order detail request";
@@ -9,6 +10,9 @@ const MONEY_SIGNED = /^-?(?:0|[1-9]\d*)\.\d{2}$/;
 const UTC_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?Z$/;
 
 export interface OrderFill {
+  mode?: "eod_simulated" | "order_book";
+  source?: Provenance | null;
+  simulated_quote_source?: string;
   trade_id: number;
   quantity: string;
   execution_price: string;
@@ -109,6 +113,14 @@ function parseFill(value: unknown, afterId: number): OrderFill {
   if (!isRecord(value)) fail();
   const tradeId = value.trade_id;
   if (!isPositiveSafeInteger(tradeId) || tradeId <= afterId) fail();
+  const session = parseSimulatedDate(value.simulated_quote_date).simulated_quote_date;
+  const reported = isRecord(value.source) && value.source.basis === "raw" ? value.source : null;
+  const date = session ?? parseSimulatedDate(reported?.session_date ?? undefined).simulated_quote_date;
+  const nativeProvider = typeof value.simulated_quote_source === "string" ? value.simulated_quote_source.trim() : "";
+  const provider = nativeProvider || (reported?.session_date === date && typeof reported?.provider === "string" ? reported.provider.trim() : "");
+  const source: Provenance | null = date && provider
+    ? { provider, basis: "raw", session_date: date, observed_at: null, coverage: "available" }
+    : null;
   return {
     trade_id: tradeId,
     quantity: requireQty(value.quantity, true),
@@ -116,7 +128,10 @@ function parseFill(value: unknown, afterId: number): OrderFill {
     notional: requireMoney(value.notional, false),
     realized_pnl: requireMoney(value.realized_pnl, true),
     executed_at: requireUtc(value.executed_at),
-    ...parseSimulatedDate(value.simulated_quote_date),
+    ...(date ? { simulated_quote_date: date } : {}),
+    ...(provider && date ? { simulated_quote_source: provider } : {}),
+    mode: date || value.mode === "eod_simulated" ? "eod_simulated" : "order_book",
+    source,
   };
 }
 

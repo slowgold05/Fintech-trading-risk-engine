@@ -1,6 +1,8 @@
 import { type ReactNode } from "react";
 import { isAxiosError } from "axios";
 import { Link, useParams } from "react-router-dom";
+import { keys } from "../night/api";
+import { useLook } from "../night/looks/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMarketResearch, fetchSymbolQuote } from "../api/market";
 import { fetchDailyHistory, type AdjustmentType } from "../api/history";
@@ -229,18 +231,19 @@ function useStockIndicator(
 }
 
 export function StockDetail() {
+  const { prefs } = useLook();
   const params = useParams();
   const symbol = readSymbol(params.symbol);
   const { isAuthenticated } = useAuth();
   const quoteQuery = useQuery({
-    queryKey: ["stock-detail", "quote", symbol],
+    queryKey: keys.quote(symbol ?? ""),
     queryFn: () => fetchSymbolQuote(symbol ?? ""),
     enabled: symbol !== null,
     retry: false,
   });
   const historyQuery = useQuery({
-    queryKey: ["stock-detail", "history", symbol],
-    queryFn: () => fetchDailyHistory(symbol ?? "", "auto", "split_adjusted", "2y"),
+    queryKey: keys.history(symbol ?? "",prefs.historyProvider,"split_adjusted","2y"),
+    queryFn: () => fetchDailyHistory(symbol ?? "", prefs.historyProvider, "split_adjusted", "2y"),
     enabled: symbol !== null && quoteQuery.isSuccess,
     retry: false,
   });
@@ -462,9 +465,11 @@ function DetailBody({
       </div>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-        <div className="min-w-0">
+        <div className="min-w-0" data-testid="company-history">
+          {!historyLoading && !historyError && bars.length > 0 && <small className="nk-stamp" data-testid="close-provenance" data-session-date={bars.at(-1)?.session_date}
+            data-source={priceProvider ?? ""} data-basis={priceSeries ?? ""}>{priceProvider ?? "Source unavailable"} · {bars.at(-1)?.session_date} · {priceSeries?.replace("_"," ")} · end of day</small>}
           {historyLoading ? <p className="text-sm leading-6 text-copy" role="status">Loading daily prices</p> : historyError ? (
-            <div className="rounded-xl border border-line bg-surface p-6"><p className="text-sm leading-6 text-copy" role="alert">{historyError}</p><button className="mt-4 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" onClick={onRetryHistory} type="button">Retry daily prices</button></div>
+            <div className="rounded-xl border border-line bg-surface p-6"><p data-testid="night-state-error" className="text-sm leading-6 text-copy" role="alert">{historyError}</p><button className="mt-4 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" data-testid="history-retry" onClick={onRetryHistory} type="button">Retry daily prices</button></div>
           ) : (
             <PriceChart bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={seriesLabel} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
           )}

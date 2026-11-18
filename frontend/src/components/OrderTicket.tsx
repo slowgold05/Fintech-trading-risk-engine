@@ -1,3 +1,8 @@
+import { loadDraft, saveDraft } from "../night/shell/ticketDraft";
+import { refreshExecution } from "../night/api";
+import { previewTradeImpact } from "../api/tradeImpact";
+import { fetchSymbolQuote } from "../api/market";
+import type { TradeImpactResponse } from "../types/schemas";
 import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -203,20 +208,23 @@ function PreviewFact({
   );
 }
 
-export function OrderTicket() {
+export function OrderTicket({ owner, onSubmitted }: {owner?: number; onSubmitted?: (id: number) => void} = {}) {
   const [searchParams] = useSearchParams();
   // Read once on mount. An unresolved attempt seeds the ticket and its idempotency key.
+  const [saved] = useState(() => loadDraft(owner));
+  const [impact,setImpact] = useState<TradeImpactResponse|null>(null);
+  const [impactMessage,setImpactMessage] = useState("");
   const [persistedAttempt] = useState(readPersistedOrderAttempt);
-  const [side, setSide] = useState<TradeSide>(persistedAttempt?.preview.side ?? "buy");
+  const [side, setSide] = useState<TradeSide>(persistedAttempt?.preview.side ?? saved?.side ?? "buy");
   const [orderType, setOrderType] = useState<OrderType>(
-    persistedAttempt?.preview.order_type ?? "limit",
+    persistedAttempt?.preview.order_type ?? saved?.orderType ?? (owner ? "market" : "limit"),
   );
   const [symbol, setSymbol] = useState(
-    persistedAttempt?.preview.symbol ?? initialSymbolFromSearch(searchParams),
+    persistedAttempt?.preview.symbol ?? saved?.symbol ?? initialSymbolFromSearch(searchParams),
   );
-  const [quantity, setQuantity] = useState(persistedAttempt?.preview.quantity ?? "");
+  const [quantity, setQuantity] = useState(persistedAttempt?.preview.quantity ?? saved?.quantity ?? (owner ? "1" : ""));
   const [limitPrice, setLimitPrice] = useState(
-    persistedAttempt?.preview.limit_price ?? "",
+    persistedAttempt?.preview.limit_price ?? saved?.limitPrice ?? "",
   );
   const [stepUpCode, setStepUpCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -255,6 +263,7 @@ export function OrderTicket() {
     orderType: "limit",
   });
 
+  useEffect(() => { saveDraft(owner, {symbol,quantity,side,orderType,limitPrice}); }, [owner,symbol,quantity,side,orderType,limitPrice]);
   const draft: DraftValues = { symbol, quantity, limitPrice, side, orderType };
   // Handlers read these refs to see the latest committed values. Sync them at commit,
   // before any handler can run, so a discarded render never leaks into a confirmation.
@@ -361,6 +370,20 @@ export function OrderTicket() {
     if (payload === null) return;
 
     const requestRevision = ++previewRevisionRef.current;
+    setImpact(null);
+    setImpactMessage("Calculating estimated impact…");
+    if (owner) {
+      void (async () => {
+        try {
+          const reference = payload.limit_price ?? (await fetchSymbolQuote(payload.symbol)).price;
+          if (!reference || Number(reference) <= 0) throw new Error("Missing reference price");
+          const result = await previewTradeImpact({ symbol: payload.symbol,side: payload.side,order_type: payload.order_type,quantity: payload.quantity,reference_price:String(reference) });
+          if (mountedRef.current && requestRevision === previewRevisionRef.current) setImpact(result);
+        } catch {
+          if (mountedRef.current && requestRevision === previewRevisionRef.current) setImpactMessage("Estimated portfolio impact unavailable.");
+        }
+      })();
+    }
     previewRef.current = null;
     setPreviewPending(true);
     setPreview(null);
@@ -406,6 +429,7 @@ export function OrderTicket() {
   async function submitConfirmation(retry: boolean) {
     if (confirmLockRef.current) return;
     confirmLockRef.current = true;
+    let submittedId: number|undefined;
     let generation = 0;
     let requestStarted = false;
 
@@ -484,6 +508,7 @@ export function OrderTicket() {
       setOutcomeUnknown(false);
       setPreviewConfirmable(false);
       setFieldErrors((current) => (current.stepUp ? { ...current, stepUp: undefined } : current));
+      submittedId = result.id;
       const message = orderStatusMessage(result);
       setSuccessMessage(message);
       try {
@@ -506,9 +531,11 @@ export function OrderTicket() {
         queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
         queryClient.invalidateQueries({ queryKey: ["risk"] }),
       ]);
+      if (owner) await refreshExecution(queryClient,owner);
     } catch {
       // The order response is already known. A later list refresh is not an unknown outcome.
     }
+    if (submittedId && onSubmitted) { saveDraft(owner,null); onSubmitted(submittedId); }
   }
 
   const sideButtonClass = (selected: boolean, tone: "buy" | "sell") =>
@@ -536,7 +563,7 @@ export function OrderTicket() {
         : formatDateTime(preview.quote_observed_at);
 
   return (
-    <form
+    <form data-testid="order-ticket"
       aria-busy={previewPending || confirmPending}
       className="min-w-0 space-y-4"
       noValidate
@@ -588,7 +615,7 @@ export function OrderTicket() {
             autoCorrect="off"
             className={`${inputClass} font-mono uppercase`}
             disabled={financialLocked}
-            id="order-symbol"
+            data-testid="order-symbol" id="order-symbol"
             maxLength={20}
             onChange={(event) =>
               invalidateFinancialDraft({
@@ -615,7 +642,7 @@ export function OrderTicket() {
             autoComplete="off"
             className={`${inputClass} text-right font-mono`}
             disabled={financialLocked}
-            id="order-quantity"
+            data-testid="order-quantity" id="order-quantity"
             inputMode="decimal"
             onChange={(event) => invalidateFinancialDraft({ quantity: event.target.value })}
             placeholder="100"
@@ -637,7 +664,7 @@ export function OrderTicket() {
           aria-label="Order type"
           className={inputClass}
           disabled={financialLocked}
-          id="order-type"
+          data-testid="order-type" id="order-type"
           onChange={(event) =>
             invalidateFinancialDraft({
               orderType: event.target.value === "market" ? "market" : "limit",
@@ -660,7 +687,7 @@ export function OrderTicket() {
             autoComplete="off"
             className={`${inputClass} text-right font-mono`}
             disabled={financialLocked}
-            id="order-limit-price"
+            data-testid="order-limit" id="order-limit-price"
             inputMode="decimal"
             onChange={(event) => invalidateFinancialDraft({ limitPrice: event.target.value })}
             placeholder="150.00"
@@ -685,7 +712,7 @@ export function OrderTicket() {
       )}
 
       <p className="text-sm leading-6 text-slate-300">
-        Paper orders fill at matched order prices. Cached quotes can be delayed.{" "}
+        Paper orders match against the order book. When simulated liquidity is enabled, eligible quantities can fill at a confirmed cached close.{" "}
         {orderType === "market"
           ? "Unfilled market quantity is canceled."
           : "Unfilled limit quantity rests."}
@@ -698,7 +725,13 @@ export function OrderTicket() {
       ) : null}
 
       {preview ? (
-        <div className="border-t border-slate-800 pt-5">
+        <div data-testid="order-preview-result" className="border-t border-slate-800 pt-5">
+          {owner && <section data-testid="order-impact" aria-label="Estimated portfolio impact" className="nk-state">
+            <h3>Estimated portfolio impact</h3>{impact ? <>
+              <p>Cash (USD) · {impact.before.cash_balance ?? "Unavailable"} → {impact.after.cash_balance ?? "Unavailable"}</p>
+              <p>Position weight (%) · {impact.before.symbol_weight_pct ?? "Unavailable"} → {impact.after.symbol_weight_pct ?? "Unavailable"}</p>
+              <small>Assumes {impact.quantity} shares at {impact.reference_price} USD. {impact.warnings.join(" ")}</small></> : <p>{impactMessage}</p>}
+          </section>}
           <h3 className="text-base font-semibold tracking-tight text-slate-100">Order preview</h3>
           <p className="mt-1 text-sm leading-6 text-slate-100">{capturedIntentSummary(preview)}</p>
           <div className="mt-1 space-y-2">
@@ -837,7 +870,7 @@ export function OrderTicket() {
 
       <div className="flex flex-col gap-2">
         <button
-          aria-label="Preview order"
+          data-testid="order-preview" aria-label="Preview order"
           className={
             showConfirm || outcomeUnknown
               ? "min-h-11 w-full rounded-xl border border-slate-400 bg-slate-900 text-sm font-semibold text-slate-100 hover:border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
@@ -868,7 +901,7 @@ export function OrderTicket() {
         ) : null}
         {showConfirm ? (
           <button
-            aria-label="Confirm paper order"
+            data-testid="order-confirm" aria-label="Confirm paper order"
             className={[
               "primary-action min-h-11 w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-50",
               side === "sell"

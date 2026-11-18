@@ -26,9 +26,9 @@ import { fetchMe } from "../api/auth";
 import type { UserResponse } from "../types/schemas";
 
 const navigationItems: Array<{ label: string; to: string; Icon: Icon; end?: boolean }> = [
-  { label: "Market", to: "/market", Icon: HouseLine, end: true },
-  { label: "Dashboard", to: "/dashboard", Icon: SquaresFour },
-  { label: "Trades", to: "/trades", Icon: Swap },
+  { label: "Markets", to: "/market", Icon: HouseLine, end: true },
+  { label: "Today", to: "/dashboard", Icon: SquaresFour },
+  { label: "Activity", to: "/trades", Icon: Swap },
   { label: "Portfolio", to: "/portfolio", Icon: ChartPieSlice },
   { label: "Risk", to: "/risk", Icon: TrendUp },
   { label: "Research", to: "/research", Icon: Brain },
@@ -142,7 +142,7 @@ function Sidebar({
           Navigation
         </p>
         <ul className="space-y-0.5">
-          {[...navigationItems.filter((item) => item.to !== "/trades" || role === "trader"),
+          {[...navigationItems,
             ...(role === "compliance_officer" || role === "admin" || role === "auditor"
               ? [{ label: "Compliance", to: "/compliance", Icon: ShieldCheck }] : []),
           ].map(({ label, to, Icon, end }) => (

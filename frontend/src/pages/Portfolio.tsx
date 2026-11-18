@@ -9,7 +9,10 @@ import { fetchPortfolio, resetDemoPortfolio } from "../api/portfolio";
 import { fetchRiskMetrics } from "../api/riskMetrics";
 import { useToast } from "../context/useToast";
 import { AllocationRing } from "../components/AllocationRing";
-import { PageHeader } from "../components/PageHeader";
+import { Button, Sheet } from "../night/kit";
+import { PerformancePlot, ExposureBand } from "../night/shell/PortfolioOverview";
+import { saveDraft } from "../night/shell/ticketDraft";
+import { refreshExecution } from "../night/api";
 import {
   DashboardCard,
   EmptyState,
@@ -32,7 +35,7 @@ import type {
   RiskCorrelation,
   StressScenario,
 } from "../types/schemas";
-import { ArrowDown, ArrowUp, SpinnerGap } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { previewTradeImpact } from "../api/tradeImpact";
 import type { TradeImpactRequestBody, TradeImpactResponse } from "../types/schemas";
 import { previewRiskScenarios } from "../api/riskScenarios";
@@ -159,7 +162,8 @@ function CashPanel() {
   );
 }
 
-function DemoResetButton() {
+function DemoResetButton({ owner }: { owner: number }) {
+  const [open,setOpen] = useState(false);
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const resetKey = useRef<string | null>(null);
@@ -167,11 +171,9 @@ function DemoResetButton() {
     mutationFn: resetDemoPortfolio,
     onSuccess: async () => {
       resetKey.current = null;
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
-        queryClient.invalidateQueries({ queryKey: ["trades"] }),
-        queryClient.invalidateQueries({ queryKey: ["risk"] }),
-      ]);
+      saveDraft(owner,null);
+      setOpen(false);
+      await refreshExecution(queryClient,owner,true);
       showToast("success", "Demo portfolio restored.");
     },
     onError: (error) => {
@@ -181,21 +183,17 @@ function DemoResetButton() {
   });
 
   function confirmReset() {
-    if (reset.isPending || !window.confirm("Restore the starting demo cash, holdings, and trade history? Cancel any open orders first.")) return;
+    if (reset.isPending) return;
     resetKey.current ??= crypto.randomUUID();
     reset.mutate(resetKey.current);
   }
 
   return (
-    <button
-      className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-slate-600 px-3 text-sm text-slate-200 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:opacity-50"
-      type="button"
-      onClick={confirmReset}
-      disabled={reset.isPending}
-    >
-      {reset.isPending && <SpinnerGap aria-hidden="true" className="size-4 motion-safe:animate-spin" />}
-      Reset demo portfolio…
-    </button>
+    <><Button data-testid="demo-reset" onClick={() => setOpen(true)}>Reset demo portfolio…</Button>
+      <Sheet open={open} onOpenChange={setOpen} title="Restore starting portfolio">
+        <p>Restore demo cash, holdings and trade history. Cancel any open orders in Activity first.</p>
+        <Button variant="danger" data-testid="demo-reset-confirm" busy={reset.isPending} onClick={confirmReset}>Confirm reset</Button>
+      </Sheet></>
   );
 }
 
@@ -231,15 +229,11 @@ export function Portfolio() {
   const assetExposure = valuationIncomplete ? null : getAssetExposure(positions);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        badge="Portfolio"
-        title="Holdings &amp; Valuation"
-        description="Open positions, FIFO P&amp;L, cost basis, and exposure breakdown by asset class."
-      />
-
-      {portfolio?.user?.is_demo && <DemoResetButton />}
-
+    <div className="night-portfolio space-y-6">
+      <header className="nk-page-head"><div><small>Paper account</small><h1>Portfolio</h1></div>
+        <div className="portfolio-actions"><a href="/trades?ticket=1" className="nk-button">Open order ticket</a>
+          {portfolio?.user?.is_demo && <DemoResetButton owner={portfolio.user.id} />}</div>
+      </header>
       {portfolioQuery.isError ? (
         <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
           Portfolio data could not be loaded. Check the API server and
@@ -256,7 +250,7 @@ export function Portfolio() {
         </p>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="portfolio-overview"><div className="portfolio-values">
         {portfolioQuery.isLoading ? (
           [0, 1, 2, 3].map((item) => (
             <div className="metric-tile" key={item}>
@@ -314,9 +308,11 @@ export function Portfolio() {
         )}
       </div>
 
-      <CashPanel />
+      <PerformancePlot owner={portfolio?.user.id} />
+      <ExposureBand allocation={allocationQuery.data} loading={allocationQuery.isPending} retry={allocationQuery.isError ? () => void allocationQuery.refetch() : undefined} />
+      </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.85fr)]">
+      <div className="portfolio-detail grid min-w-0 gap-5">
         <DashboardCard
           action={
             <span className="font-mono text-xs text-slate-500">
@@ -362,7 +358,7 @@ export function Portfolio() {
                     const unrealizedPct = position.unrealized_pnl_pct;
 
                     return (
-                      <tr
+                      <tr data-testid={`holding-${position.symbol}`} id={`holding-${position.symbol}`}
                         className={[
                           "border-l-2",
                           unrealized == null
@@ -705,6 +701,7 @@ export function Portfolio() {
               </>
             )}
           </DashboardCard>
+          <CashPanel />
           <TradeImpactPreview />
           <CustomRiskScenarios />
         </div>

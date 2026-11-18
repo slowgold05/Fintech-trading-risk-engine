@@ -114,7 +114,8 @@ function DetailBody({
   const emptyPage = detail.fills.length === 0;
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div data-testid="order-receipt" data-order-id={detail.order_id} className="min-w-0 space-y-4">
+      {!isExactZero(detail.filled_quantity) && <a className="nk-button" data-testid="receipt-holding" href={`/portfolio#holding-${encodeURIComponent(detail.symbol)}`}>View {detail.symbol} holding</a>}
       <p className="text-sm text-slate-300">{executionSummary(detail)}</p>
       {detail.simulated_quote_date && !detail.fills.some((fill) => fill.simulated_quote_date) ? (
         <p className="text-sm text-slate-300">{simulatedLiquidityLabel(detail.simulated_quote_date)}</p>
@@ -194,15 +195,18 @@ function DetailBody({
                 </tr>
               </thead>
               <tbody>
-                {detail.fills.map((fill) => (
+                {detail.fills.map((fill) => {
+                const provider = fill.source?.provider ?? fill.simulated_quote_source;
+                const date = fill.simulated_quote_date;
+                return (
                   <tr key={fill.trade_id}>
                     <td className="text-slate-100">
                       <span className="font-mono">{fill.trade_id}</span>
-                      {fill.simulated_quote_date ? (
-                        <span className="block text-xs text-slate-300">
-                          {simulatedLiquidityLabel(fill.simulated_quote_date)}
+                      {date ? (
+                        <span data-testid="close-provenance" data-source={provider ?? ""} data-session-date={date} data-basis="raw" className="block text-xs text-slate-300">
+                          <span>{simulatedLiquidityLabel(date)}</span> · {provider ?? "Provider unavailable"} · raw close
                         </span>
-                      ) : null}
+                      ) : <small className="block">{fill.mode === "eod_simulated" ? "Simulated fill · session unavailable" : "Order book match"}</small>}
                     </td>
                     <td className="text-right font-mono tabular-nums">{fill.quantity}</td>
                     <td className="text-right font-mono tabular-nums">{moneyLabel(fill.execution_price, currency)}</td>
@@ -210,7 +214,7 @@ function DetailBody({
                     <td className="text-right font-mono tabular-nums">{moneyLabel(fill.realized_pnl, currency)}</td>
                     <td className="text-right font-mono text-slate-400">{utcLabel(fill.executed_at)}</td>
                   </tr>
-                ))}
+                ); })}
               </tbody>
             </table>
           </div>

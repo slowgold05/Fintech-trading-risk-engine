@@ -16,7 +16,7 @@ const Login = lazy(() => import("./pages/Login").then(m => ({default:m.Login})))
 const Portfolio = lazy(() => import("./pages/Portfolio").then(m => ({default:m.Portfolio})));
 const Research = lazy(() => import("./pages/Research").then(m => ({default:m.Research})));
 const Risk = lazy(() => import("./pages/Risk").then(m => ({default:m.Risk})));
-const Trades = lazy(() => import("./pages/Trades").then(m => ({default:m.Trades})));
+const Trades = lazy(() => import("./night/shell/ActivityRoute"));
 const Compliance = lazy(() => import("./pages/Compliance").then(m => ({default:m.Compliance})));
 
 function Index() {
