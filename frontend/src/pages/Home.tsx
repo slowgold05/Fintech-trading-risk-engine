@@ -15,7 +15,8 @@ export function Home() {
     <div className="night-market-tools">
       <div className="flex flex-wrap items-center gap-x-3">
         <span>Paper trading</span>
-        <Link className="underline underline-offset-4" to="/market/data-coverage">Data coverage</Link>
+        <Link className="underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          to="/market/data-coverage">Data coverage</Link>
       </div>
       <ChromeTools market />
     </div>
