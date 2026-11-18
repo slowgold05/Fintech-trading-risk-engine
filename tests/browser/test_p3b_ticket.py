@@ -336,13 +336,14 @@ def test_empty_market_ticket(customer_order_book_api) -> None:
         quantity.send_keys("2")
         driver.find_element(By.CSS_SELECTOR, "[data-testid='order-symbol']").send_keys(SYMBOL)
         sell = h._wait(driver).until(lambda current: next((
-            node for node in current.find_elements(By.CSS_SELECTOR, "button[aria-label='Sell']") if node.is_displayed()
+            node for node in current.find_elements(By.XPATH, "//button[normalize-space()='Sell']") if node.is_displayed()
         ), False))
         h._click(driver, sell)
         driver.execute_script("window.scrollTo(0, 0); const main = document.querySelector('main'); if (main) { main.scrollTo(0, 0); }")
         h._wait(driver).until(lambda current: current.execute_script(
             _HEADER_OFFSET + """
-            const sell = document.querySelector("button[aria-label='Sell']");
+            const sell = Array.from(document.querySelectorAll(".execution-side button"))
+              .find(button => button.textContent.trim() === "Sell");
             if (!sell) { return false; }
             const box = sell.getBoundingClientRect();
             if (box.top < offset || box.bottom > innerHeight) {
