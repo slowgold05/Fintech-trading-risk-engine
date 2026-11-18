@@ -33,3 +33,15 @@
 @media (prefers-reduced-motion: reduce) {
   .desk-page *, .desk-page *::before, .desk-page *::after { animation-duration: .01ms!important; transition-duration: .01ms!important; }
 }
+.desk-page .nk-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 44px;
+  padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 16px center, right 11px center;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.desk-page .desk-link { min-width: 44px; }
