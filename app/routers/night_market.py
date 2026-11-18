@@ -93,3 +93,10 @@ def news(
     from app.services.night_market_news import read_news
 
     return read_news(db, symbol=symbol, limit=limit)
+
+
+@router.get("/events/{symbol}", response_model=schema.Events, response_model_exclude_unset=True)
+def events(db: Db, symbol: Annotated[str, Path(max_length=20)], limit: ArticleLimit = 20):
+    from app.services.night_market_events import read_events
+
+    return read_events(db, symbol=symbol, limit=limit)
