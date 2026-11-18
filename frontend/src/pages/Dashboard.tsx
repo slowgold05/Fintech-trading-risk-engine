@@ -203,6 +203,17 @@ export function Dashboard() {
         </div>
       </div>
 
+      {portfolio?.user?.is_demo && (
+        <p className="rounded-xl border border-emerald-400/25 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
+          <strong>Demo account.</strong>{" "}
+          {portfolio.user.demo_seed_mode === "cached_quotes"
+            ? "Paper trades dated today use cached quotes. Daily history was unavailable."
+            : portfolio.user.demo_seed_mode === "cash_only"
+              ? "The account starts with paper cash because seed prices were unavailable."
+              : "The simulated trading history uses stored daily closing prices."}
+        </p>
+      )}
+
       {hasDashboardError && (
         <p className="rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
           Some dashboard data could not be loaded. Check the API server and authentication state.

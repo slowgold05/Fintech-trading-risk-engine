@@ -21,10 +21,11 @@ These capabilities are implemented in the merged source. Data coverage, provider
 ## Try the workflow
 
 1. **Discover:** open `/market` without an account. Search a company or compare the index ETF proxies SPY, QQQ, DIA, and IWM; open `/market/:symbol` for stock detail.
-2. **Organize and investigate:** sign in or register at `/login`. Save private watchlists and open `/research` for jobs, reports, and briefs. Company news requires a session and a Finnhub key.
-3. **Preview and practice:** open the paper-order ticket from a chart or `/trades`. Entry links prefill a draft; preview and confirmation are separate actions. A preview is non-binding and submission revalidates current state.
-4. **Review the outcome:** inspect fills and open orders, then use `/portfolio` and `/risk` to understand performance and exposure. Missing marks or insufficient history stay unavailable rather than becoming invented numbers.
-5. **Explore models separately:** `/forecasts` is an authenticated experimental workspace. Model output never authorizes a trade.
+2. **Try the demo:** choose **Try the demo** at `/login` to open a fresh paper-trading account and go straight to `/dashboard`. With daily history loaded, the account starts with a diversified portfolio and dated trades that you can explore in `/portfolio`, `/risk`, and `/trades`. See [demo data and reset](docs/DEMO_ACCOUNT.md).
+3. **Organize and investigate:** sign in or register at `/login` for an account you can return to. Save private watchlists and open `/research` for jobs, reports, and briefs. Company news requires a session and a Finnhub key.
+4. **Preview and practice:** open the paper-order ticket from a chart or `/trades`. Entry links prefill a draft; preview and confirmation are separate actions. A preview is non-binding and submission revalidates current state.
+5. **Review the outcome:** inspect fills and open orders, then use `/portfolio` and `/risk` to understand performance and exposure. Missing marks or insufficient history stay unavailable rather than becoming invented numbers.
+6. **Explore models separately:** `/forecasts` is an authenticated experimental workspace. Model output never authorizes a trade.
 
 The signed-in `/dashboard` provides the account overview. `/compliance` is restricted to authorized admin, compliance-officer, and auditor roles; traders cannot enter it. Privileged credentials are not published.
 
@@ -94,7 +95,7 @@ Raw and adjusted bars are separate series. After a later split, the adjusted bac
 ### Market data and analytics
 
 - **Daily data, not intraday:** discovery defaults to S&P 500 constituents plus SPY, QQQ, DIA, and IWM. Exact ticker searches and owned holdings can expose symbols outside that featured set; public stock detail is limited to the featured set. `all` means stored available history, not guaranteed full listing coverage. A real LSE adapter is not implemented.
-- **Adjustment is explicit:** stock detail prefers Massive split-adjusted history and labels its raw fallback. Market pulse requires the adjusted series and leaves an unavailable proxy blank. Quotes, portfolio performance/risk, and execution references remain raw. Split-adjusted bars are not dividend-adjusted total returns. See the [history contract](docs/DAILY_HISTORY_CONTRACT.md).
+- **Adjustment is explicit:** stock detail prefers Massive split-adjusted history and labels its raw fallback. Market pulse requires the adjusted series and leaves an unavailable proxy blank. Quotes, execution references, and ordinary portfolio analytics use raw prices. Demo history identifies the provider and adjustment it uses. Split-adjusted bars are not dividend-adjusted total returns. See the [history contract](docs/DAILY_HISTORY_CONTRACT.md).
 - **Metrics have defined scope:** portfolio performance supports `1y` and `2y`; chart ranges are a different contract. Volatility is sample per period, not annualized. Sparse history and undefined zero-capital percentages can return null. The SPY comparison is a price benchmark. See the [performance](docs/P4A_PERFORMANCE_CONTRACT.md) and [risk metrics](docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md) contracts.
 - **What-ifs are estimates:** trade impact ignores fees, slippage, margin, and open-order reservations. Neither trade-impact nor risk-scenario previews execute or approve orders. Same-tab unknown-order recovery uses `sessionStorage`; a failed storage write loses that recovery record ([retry boundaries](docs/P3B_ORDER_RETRY_DURABILITY_VERIFICATION.md)).
 

@@ -12,7 +12,12 @@ export interface UserResponse {
   id: number;
   email: string;
   role: "trader" | "analyst" | "compliance_officer" | "admin" | "auditor";
+  is_demo?: boolean;
+  display_name?: string | null;
+  demo_seed_mode?: DemoSeedMode | null;
 }
+
+export type DemoSeedMode = "historical" | "cached_quotes" | "cash_only";
 
 export interface ControlStatusResponse {
   id: string;
@@ -171,6 +176,12 @@ export interface TradeResponse {
   realized_pnl: number;
   realized_pnl_pct: number;
   executed_at: string;
+  demo_seed?: boolean;
+  seed_price?: {
+    provider: string;
+    adjustment: "raw" | "split_adjusted" | "legacy" | "cached_quote";
+    quote_at: string | null;
+  };
 }
 
 export interface TradesResponse {
@@ -250,6 +261,8 @@ export interface PortfolioResponse {
   user: {
     id: number;
     email: string;
+    is_demo?: boolean;
+    demo_seed_mode?: DemoSeedMode;
   };
   valuation_status: ValuationStatus;
   snapshot_read_at: string;

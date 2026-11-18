@@ -1,10 +1,23 @@
 import { apiClient } from "./client";
 import type {
+  DemoSeedMode,
   LoginCredentials,
   RegisterPayload,
   TokenResponse,
   UserResponse,
 } from "../types/schemas";
+
+export interface DemoSession extends TokenResponse {
+  is_demo: true;
+  display_name: string;
+  demo_seed_mode: DemoSeedMode;
+  message: string;
+}
+
+export async function startDemo(): Promise<DemoSession> {
+  const response = await apiClient.post<DemoSession>("/auth/demo");
+  return response.data;
+}
 
 export type LoginResult =
   | { mfa_required: false; access_token: string; token_type: string }
