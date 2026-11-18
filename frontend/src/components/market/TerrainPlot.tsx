@@ -1,6 +1,7 @@
 import { powerTime } from "./wallMotion";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useSessionPaint } from "./sessionCursor";
+import { reducedMotion } from "../../night/looks/preferences";
 import type { drawSurface } from "./terrainDrawing";
 import { createTerrainRenderer } from "./terrainGL";
 import { makeMesh, project, type Mesh } from "./terrainMesh";
@@ -354,6 +355,10 @@ export function TerrainPlot({ surface, symbol, inspect, release }: Props) {
   }
   function track(e: React.PointerEvent<HTMLCanvasElement>) {
     if (e.pointerType === "touch" && !e.buttons) return;
+    // Scrolling can move the canvas under a stationary mouse and trigger pointermove.
+    if (e.type === "pointermove" && e.pointerType === "mouse" && !e.movementX && !e.movementY && reducedMotion()) {
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left,
       y = e.clientY - rect.top;
