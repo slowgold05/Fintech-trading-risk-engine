@@ -11,6 +11,7 @@ import { useToast } from "../context/useToast";
 import { AllocationRing } from "../components/AllocationRing";
 import { Button, Sheet } from "../night/kit";
 import { PerformancePlot, ExposureBand } from "../night/shell/PortfolioOverview";
+import "../night/shell/portfolio.css";
 import { saveDraft } from "../night/shell/ticketDraft";
 import { refreshExecution } from "../night/api";
 import {
@@ -22,7 +23,7 @@ import {
 import { valuationReasonLabel } from "../features/dashboard/adapters";
 import {
   formatCurrency,
-  formatDateTime,
+  formatUtcDateTime,
   formatPercent,
   formatQuantity,
   formatSignedPercent,
@@ -167,6 +168,7 @@ function DemoResetButton({ owner }: { owner: number }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const resetKey = useRef<string | null>(null);
+  const opener = useRef<HTMLButtonElement>(null);
   const reset = useMutation({
     mutationFn: resetDemoPortfolio,
     onSuccess: async () => {
@@ -189,8 +191,8 @@ function DemoResetButton({ owner }: { owner: number }) {
   }
 
   return (
-    <><Button data-testid="demo-reset" onClick={() => setOpen(true)}>Reset demo portfolio…</Button>
-      <Sheet open={open} onOpenChange={setOpen} title="Restore starting portfolio">
+    <><Button data-testid="demo-reset" onClick={event => { opener.current = event.currentTarget; setOpen(true); }}>Reset demo portfolio…</Button>
+      <Sheet open={open} onOpenChange={setOpen} returnFocusRef={opener} title="Restore starting portfolio">
         <p>Restore demo cash, holdings and trade history. Cancel any open orders in Activity first.</p>
         <Button variant="danger" data-testid="demo-reset-confirm" busy={reset.isPending} onClick={confirmReset}>Confirm reset</Button>
       </Sheet></>
@@ -201,6 +203,7 @@ export function Portfolio() {
   const portfolioQuery = useQuery({
     queryKey: ["portfolio"],
     queryFn: fetchPortfolio,
+    retry: false,
   });
   const allocationQuery = useQuery({
     queryKey: ["portfolio", "allocation"],
@@ -235,9 +238,9 @@ export function Portfolio() {
           {portfolio?.user?.is_demo && <DemoResetButton owner={portfolio.user.id} />}</div>
       </header>
       {portfolioQuery.isError ? (
-        <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
-          Portfolio data could not be loaded. Check the API server and
-          authentication state.
+        <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200" role="alert">
+          <p>Portfolio data could not be loaded.</p>
+          <Button variant="quiet" onClick={() => void portfolioQuery.refetch()}>Retry portfolio</Button>
         </div>
       ) : null}
 
@@ -288,7 +291,7 @@ export function Portfolio() {
               <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                 Total P&L
               </div>
-              <div className="mt-1 text-sm">
+              <div className="mt-1 text-sm" data-testid="portfolio-total-pnl">
                 {totalPnl == null ? (
                   <span className="text-slate-400">Unavailable</span>
                 ) : (
@@ -394,7 +397,7 @@ export function Portfolio() {
                           )}
                           {position.quote_at ? (
                             <div className="mt-1 text-[11px] text-slate-500">
-                              {formatDateTime(position.quote_at)}
+                              Quote observed {formatUtcDateTime(position.quote_at) ?? "Unavailable"}
                             </div>
                           ) : null}
                         </td>

@@ -7,17 +7,11 @@ import {
   List,
   MagnifyingGlass,
   X,
-  SquaresFour,
-  Waveform,
-  GridFour,
-  Fingerprint,
-  ChartLine,
-  NewspaperClipping,
-  Pulse,
-  BookmarkSimple,
-  ArrowsDownUp,
-  Stack,
 } from "@phosphor-icons/react";
+import {
+  SquaresFour, Waveform, GridFour, Fingerprint, ChartLine, NewspaperClipping,
+  Pulse, BookmarkSimple, ArrowsDownUp, Stack,
+} from "./terrainIcons";
 import { ChartNotices } from "../ChartNotices";
 import { MarketSearch } from "../MarketSearch";
 
@@ -376,7 +370,7 @@ export function MarketHeader({ isAuthenticated }: { isAuthenticated: boolean }) 
         </nav>
       )}
       {menuOpen && compact && (
-        <TouchSheet title="Market sections" onClose={() => setMenuOpen(false)}>
+        <TouchSheet title="Market sections" onClose={() => setMenuOpen(false)} returnFocusRef={menuButtonRef}>
           <nav id="public-market-menu" className="sheet-links" aria-label="Page sections">
             {sections.map(([id, label]) => (
               <a key={id} href={"#" + id}>

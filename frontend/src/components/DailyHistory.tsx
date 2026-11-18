@@ -566,7 +566,7 @@ export function DailyHistory({
             </div>
   );
   return (
-    <section aria-labelledby="daily-price-history-title" className={embedded ? "history-tool-body" : "dashboard-card min-w-0"}>
+    <section data-testid="daily-history" aria-labelledby="daily-price-history-title" className={embedded ? "history-tool-body" : "dashboard-card min-w-0"}>
       {!embedded && <div className="dashboard-card-header">
         <div>
           <h2 id="daily-price-history-title" className="text-sm font-semibold text-slate-100">
@@ -1341,7 +1341,7 @@ function DailyHistoryCanvas({
     );
   }
 
-  return <div className="h-80 min-w-0 w-full" ref={containerRef} />;
+  return <div className="h-80 min-w-0 w-full" data-testid="daily-history-chart" ref={containerRef} />;
 }
 
 function historyErrorMessage(error: unknown): string {

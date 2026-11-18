@@ -69,7 +69,7 @@ function WatchlistCard({
   children: ReactNode;
 }) {
   return (
-    <section aria-labelledby="watchlists-title" className="dashboard-card min-w-0">
+    <section data-testid="market-watchlists" aria-labelledby="watchlists-title" className="dashboard-card min-w-0">
       <div className="dashboard-card-header">
         <div>
           <h2 className="text-sm font-semibold text-slate-100" id="watchlists-title">

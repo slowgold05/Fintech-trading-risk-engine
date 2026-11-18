@@ -3,7 +3,7 @@ import { inspectEvents } from "./inspectEvents";
 import { useSessionPaint } from "./sessionCursor";
 import { memo, useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChartLineUp } from "@phosphor-icons/react";
+import { ChartLineUp } from "./terrainIcons";
 import type { MarketTrendResponse } from "../../types/schemas";
 import { Figure, Skeleton, Tooltip } from "../../design/primitives";
 import { formatCurrency, formatSignedPercent } from "../../utils/format";
@@ -83,6 +83,7 @@ const IndexTile = memo(function IndexTile({
       )}
       onClick={() => choose(trend.source_symbol)}
       aria-label={`Compare ${trend.name} using ${trend.source_symbol}`}
+      data-testid={`market-index-${trend.source_symbol}`}
     >
       <div className="index-name">
         <b>{trend.source_symbol}</b>

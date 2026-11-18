@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
@@ -21,6 +21,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { useLook } from "../night/looks/preferences";
 import { ChromeTools } from "../night/shell/ChromeTools";
+import { State } from "../night/kit";
 import { allowed, destinations } from "../night/registry";
 import { fetchMe } from "../api/auth";
 import type { UserResponse } from "../types/schemas";
@@ -200,6 +201,13 @@ export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const navigationOpener = useRef<HTMLButtonElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
+  function openNavigation(event: MouseEvent<HTMLButtonElement>) {
+    navigationOpener.current = event.currentTarget;
+    setSidebarOpen(true);
+  }
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 768px)");
@@ -211,20 +219,29 @@ export function AppShell() {
     return () => media.removeEventListener("change", change);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog || !sidebarOpen || desktop) return;
+    const workspace = workspaceRef.current;
     const previousOverflow = document.body.style.overflow;
     dialog.showModal();
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
       if (dialog.open) dialog.close();
+      const opener = navigationOpener.current;
+      if (opener?.isConnected && !window.matchMedia("(min-width: 768px)").matches) {
+        opener.focus({ preventScroll: true });
+      } else {
+        requestAnimationFrame(() => {
+          workspace?.querySelector<HTMLElement>('aside nav a[aria-current="page"], .night-top-nav a[aria-current="page"]')?.focus({ preventScroll: true });
+        });
+      }
     };
   }, [sidebarOpen, desktop]);
 
   return (
-    <div className="night-workspace flex min-h-[100dvh]">
+    <div className="night-workspace flex min-h-[100dvh]" ref={workspaceRef}>
       <a
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-brand-300 focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-canvas"
         href="#main-content"
@@ -242,8 +259,7 @@ export function AppShell() {
       )}
 
       <dialog ref={dialogRef} id="mobile-navigation" aria-label="Mobile navigation"
-        onClose={() => setSidebarOpen(false)}
-        onCancel={() => setSidebarOpen(false)}
+        onCancel={event => { event.preventDefault(); setSidebarOpen(false); }}
         onKeyDown={(event) => {
           if (event.key !== "Tab") return;
           const controls = event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not([disabled])");
@@ -279,7 +295,7 @@ export function AppShell() {
             <div className="flex h-14 items-center gap-3">
               <button
                 className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-raised p-2 text-copy hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-                onClick={() => setSidebarOpen(true)}
+                onClick={openNavigation}
                 aria-label="Open navigation"
                 aria-expanded={sidebarOpen}
                 aria-controls="mobile-navigation"
@@ -299,7 +315,7 @@ export function AppShell() {
           {desktop && prefs.look === "dial" && <nav className="night-top-nav" aria-label="Workspace">{destinations.filter(d => allowed(d.access,me.data)).map(d => <NavLink key={d.id} to={d.path}>{d.label}</NavLink>)}</nav>}
         </header>
 
-        {!desktop && !sidebarOpen && <nav className="night-work-dock" aria-label="Workspace">{destinations.slice(0,4).map(d => <NavLink key={d.id} to={d.path}>{d.label}</NavLink>)}<button onClick={() => setSidebarOpen(true)}>More</button></nav>}
+        {!desktop && <nav className="night-work-dock" aria-label="Workspace">{destinations.slice(0,4).map(d => <NavLink key={d.id} to={d.path}>{d.label}</NavLink>)}<button type="button" onClick={openNavigation} aria-expanded={sidebarOpen} aria-controls="mobile-navigation">More</button></nav>}
         <main className="flex-1 overflow-auto" id="main-content">
           {!desktop && !me.data?.is_demo && (
             <div className="border-b border-line px-4 py-4">
@@ -309,7 +325,7 @@ export function AppShell() {
             </div>
           )}
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
-            <Outlet />
+            <Suspense fallback={<State kind="loading" title="Loading page…" />}><Outlet /></Suspense>
           </div>
         </main>
       </div>

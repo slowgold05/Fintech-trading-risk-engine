@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Broadcast, NewspaperClipping, ArrowUpRight } from "@phosphor-icons/react";
+import { ArrowUpRight } from "@phosphor-icons/react";
+import { Broadcast, NewspaperClipping } from "./terrainIcons";
 import { Card, Skeleton, EmptyState } from "../../design/primitives";
 import { fetchMarketNews } from "../../api/market";
 import { formatUtcDateTime } from "../../utils/format";

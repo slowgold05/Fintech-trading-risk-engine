@@ -323,7 +323,7 @@ export function Dashboard() {
             <IconBadge Icon={totalPnlMove.Icon} tone={totalPnlMove.tone} />
             Total P&amp;L
           </div>
-          <div className="mt-2 text-base font-semibold">
+          <div className="mt-2 text-base font-semibold" data-testid="today-total-pnl">
             {isPortfolioLoading
               ? <span className="font-mono text-slate-500">—</span>
               : totalPnl == null

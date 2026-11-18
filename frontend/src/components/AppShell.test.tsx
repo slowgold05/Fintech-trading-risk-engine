@@ -101,11 +101,13 @@ describe("mobile shell", () => {
 
   it("closes after navigation and cleans up the scroll lock on unmount", () => {
     const view = renderShell();
-    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
-    fireEvent.click(screen.getByRole("link", { name: "Portfolio" }));
+    const open = screen.getByRole("button", { name: "Open navigation" });
+    fireEvent.click(open);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("link", { name: "Portfolio" }));
     expect(screen.getByRole("heading", { name: "Portfolio destination" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(open).toHaveFocus();
+    fireEvent.click(open);
     view.unmount();
     expect(document.body.style.overflow).not.toBe("hidden");
     expect(changes.size).toBe(0);

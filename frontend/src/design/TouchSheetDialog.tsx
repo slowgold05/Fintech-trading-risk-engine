@@ -1,5 +1,5 @@
 import { reducedMotion } from "../night/looks/preferences";
-import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { X } from "@phosphor-icons/react";
 import { dragSpring } from "./dragSpring";
 
@@ -8,10 +8,12 @@ export default function TouchSheet({
   title,
   onClose,
   children,
+  returnFocusRef,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -32,7 +34,7 @@ export default function TouchSheet({
   useLayoutEffect(() => {
     const shell = dialog.current!,
       card = panel.current!;
-    const trigger = document.activeElement;
+    const trigger = returnFocusRef?.current ?? document.activeElement;
     const overflow = document.body.style.overflow;
     shell.showModal();
     document.body.style.overflow = "hidden";
@@ -53,7 +55,7 @@ export default function TouchSheet({
       document.body.style.overflow = overflow;
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true });
     };
-  }, []);
+  }, [returnFocusRef]);
   function dismiss(velocity = 0) {
     motor.current?.settle(panel.current!.offsetHeight, velocity, () => close.current());
   }

@@ -45,7 +45,7 @@ export function SheetSelect({
         <CaretDown size={13} />
       </button>
       {title && (
-        <TouchSheet title={title} onClose={() => setTitle(null)}>
+        <TouchSheet title={title} onClose={() => setTitle(null)} returnFocusRef={trigger}>
           <div id={listId} role="listbox" aria-label={title} className="sheet-options">
             {options.map((o) => (
               <button

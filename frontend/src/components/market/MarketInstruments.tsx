@@ -15,7 +15,7 @@ import {
   useState,
 } from "react";
 import { useQueries, type UseQueryResult, type NotifyOnChangeProps } from "@tanstack/react-query";
-import { ChartLine, Crosshair, Waveform, ChartBarHorizontal, Stack } from "@phosphor-icons/react";
+import { ChartLine, Crosshair, Waveform, ChartBarHorizontal, Stack } from "./terrainIcons";
 import { Card, EmptyState, Figure, Segmented, Skeleton } from "../../design/primitives";
 import type { HistoryResponse } from "../../api/history";
 import type { MarketHeatmapResponse, MarketSectorResponse } from "../../types/schemas";

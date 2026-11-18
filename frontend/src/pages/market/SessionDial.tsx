@@ -138,7 +138,7 @@ function DialCore({ items, index: pinned, trends, loading, sectors }: SessionDia
   }
 
   return (
-    <div className="dial-core">
+    <div className="dial-core" data-testid={`market-index-${index.source_symbol}`}>
       <span className="lbl">{index.name} · {index.source_symbol}</span>
       <span className="fig fig-xl flex items-baseline gap-2">
         <RollingNumber delay={940} value={formatSignedPercent(index.change_percent)} />

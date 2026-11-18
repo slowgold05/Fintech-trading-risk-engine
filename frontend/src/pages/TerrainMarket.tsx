@@ -8,7 +8,8 @@ import { compactWidth, phoneWidth, useMaxWidth } from "../components/market/comp
 import { InstrumentFold } from "../components/market/InstrumentFold";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarBlank, CaretDown, ChartLine, GlobeHemisphereWest } from "@phosphor-icons/react";
+import { CaretDown } from "@phosphor-icons/react";
+import { CalendarBlank, ChartLine, GlobeHemisphereWest } from "../components/market/terrainIcons";
 import { fetchMarketHeatmap, fetchMarketOverview } from "../api/market";
 import { useAuth } from "../context/useAuth";
 
@@ -372,6 +373,7 @@ export function TerrainMarket() {
             <details
               open={!compact || location.hash === "#daily-price-history-title"}
               className="desk-card history-tool"
+              data-testid="market-history-entry"
             >
               <summary>
                 <ChartLine size={22} />

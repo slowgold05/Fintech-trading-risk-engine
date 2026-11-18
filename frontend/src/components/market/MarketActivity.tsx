@@ -3,7 +3,7 @@ import { SheetSelect } from "../../design/SheetSelect";
 import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowsDownUp } from "@phosphor-icons/react";
+import { ArrowsDownUp } from "./terrainIcons";
 import { Card, Segmented, TableRow, EmptyState, Skeleton } from "../../design/primitives";
 import { fetchMarketTrending } from "../../api/market";
 import type { MarketHeatmapResponse } from "../../types/schemas";

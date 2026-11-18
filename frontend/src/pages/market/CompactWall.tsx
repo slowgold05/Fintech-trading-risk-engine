@@ -16,6 +16,7 @@ const stops = [
 export function WallDock() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const dock=useRef<HTMLElement>(null);
+  const tools = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const links = Array.from(dock.current!.querySelectorAll("[data-stop]"));
     const nodes = stops.map(s => document.getElementById(s.id)!);
@@ -34,10 +35,10 @@ export function WallDock() {
   return <nav className="wall-dock" aria-label="Market sections" ref={dock}>
     {stops.map(({id,label,Icon}) => {
       const content = <><Icon size={19} aria-hidden="true" /><span>{label}</span></>;
-      return id === "market-pulse" ? <button key={id} data-stop={id} type="button" aria-haspopup="dialog"
+      return id === "market-pulse" ? <button key={id} ref={tools} data-stop={id} type="button" aria-haspopup="dialog"
         onClick={() => setToolsOpen(true)}>{content}</button> : <a key={id} data-stop={id} href={`#${id}`}>{content}</a>;
     })}
-    {toolsOpen && <BottomSheet title="Market tools" close={() => setToolsOpen(false)}>
+    {toolsOpen && <BottomSheet title="Market tools" close={() => setToolsOpen(false)} returnFocusRef={tools}>
       {[
         ["market-pulse","Market pulse"], ["breadth-title","Breadth"], ["market-news","Market news"],
         ["company-research","Company research"], ["daily-price-history-title","Daily history"], ["watchlists-title","Watchlists"],
@@ -62,23 +63,27 @@ export function QuoteStrip({ trends, selected, choose }: { trends: readonly Mark
 }
 
 export function ToolFold({ compact, title, children }: { compact: boolean; title: string; children: ReactNode }) {
-  return compact ? <details className="tool-fold"><summary>{title}</summary>{children}</details> : children;
+  return <details className={compact ? "tool-fold" : undefined} open={compact ? undefined : true}
+    style={compact ? undefined : { display: "contents" }}>
+    <summary hidden={!compact}>{title}</summary>{children}
+  </details>;
 }
 
 export function HeatPager({ names, pages }: { names: string[]; pages: ReactNode[] }) {
   const pinned = usePinnedSector();
   const index = Math.max(0,names.findIndex(name => sectorKey(name) === pinned));
   const [open,setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   function choose(i:number) {pinSector(names[i]);}
   return <>
     <div className="pager-head">
-      <button type="button" className="sector-picker" aria-haspopup="dialog" onClick={() => setOpen(true)}>{names[index]} <span>⌄</span></button>
+      <button ref={trigger} type="button" className="sector-picker" aria-haspopup="dialog" onClick={() => setOpen(true)}>{names[index]} <span>⌄</span></button>
       <span className="num">{index+1} / {names.length}</span>
       <button className="pager-arrow" aria-label="Previous sector" disabled={index===0} onClick={() => choose(index-1)}>‹</button>
       <button className="pager-arrow" aria-label="Next sector" disabled={index===names.length-1} onClick={() => choose(index+1)}>›</button>
     </div>
     <SectorCarousel index={index} pages={pages} onSelect={choose} />
-    {open && <BottomSheet title="Select sector" close={() => setOpen(false)}>{names.map((name,i) =>
+    {open && <BottomSheet title="Select sector" close={() => setOpen(false)} returnFocusRef={trigger}>{names.map((name,i) =>
       <button key={name} aria-pressed={i===index} onClick={() => {choose(i);setOpen(false);}}>{name}</button>)}</BottomSheet>}
   </>;
 }

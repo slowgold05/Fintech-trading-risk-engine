@@ -1,4 +1,4 @@
-import { Children, isValidElement, type OptionHTMLAttributes, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent, type SelectHTMLAttributes } from "react";
+import { Children, isValidElement, type OptionHTMLAttributes, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent, type RefObject, type SelectHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { prefersReducedMotion } from "../../ui/lib";
 
@@ -28,7 +28,9 @@ function useSpringPosition(paint: (value: number) => void) {
 
 type Drag = { id: number; start: number; origin: number; last: number; time: number; velocity: number };
 
-export function BottomSheet({ title, children, close }: { title: string; children: ReactNode; close: () => void }) {
+export function BottomSheet({ title, children, close, returnFocusRef }: {
+  title: string; children: ReactNode; close: () => void; returnFocusRef: RefObject<HTMLElement | null>;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const plate = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -38,15 +40,15 @@ export function BottomSheet({ title, children, close }: { title: string; childre
   useLayoutEffect(() => {
     const node = dialog.current!;
     const old = document.body.style.overflow;
-    const opener = document.activeElement;
+    const opener = returnFocusRef.current;
     node.showModal();
     document.body.style.overflow = "hidden";
     if (!prefersReducedMotion()) spring.place(plate.current!.offsetHeight);
     spring.settle(0);
-    return () => { node.close(); document.body.style.overflow = old; if (opener instanceof HTMLElement) opener.focus({preventScroll:true}); };
+    return () => { node.close(); document.body.style.overflow = old; if (opener?.isConnected) opener.focus({preventScroll:true}); };
     // The spring belongs to this particular opening.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [returnFocusRef]);
   function dismiss(velocity = 0) { spring.settle(plate.current!.offsetHeight + 4, velocity, close); }
   return createPortal(<dialog ref={dialog} className="wall-sheet" aria-label={title}
     onCancel={e => { e.preventDefault(); dismiss(); }} onClick={e => { if (e.target === dialog.current) dismiss(); }}>
@@ -76,6 +78,7 @@ export function BottomSheet({ title, children, close }: { title: string; childre
 /** Use the native form value and change event for existing consumers. */
 export function WallSelect({ compact, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { compact: boolean }) {
   const select = useRef<HTMLSelectElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const [opened,setOpened] = useState(false);
   const options = Children.toArray(props.children).flatMap(child => {
     if (!isValidElement<OptionHTMLAttributes<HTMLOptionElement>>(child)) return [];
@@ -84,11 +87,11 @@ export function WallSelect({ compact, ...props }: SelectHTMLAttributes<HTMLSelec
   const current = options.find(o => o.value === String(props.value));
   return <>
     <select {...props} ref={select} hidden={compact} id={compact ? undefined : props.id} />
-    {compact && <button className="field-control select-trigger" id={props.id} type="button" disabled={props.disabled}
+    {compact && <button ref={trigger} className="field-control select-trigger" id={props.id} type="button" disabled={props.disabled}
       aria-haspopup="dialog" aria-invalid={props["aria-invalid"]} onClick={() => setOpened(true)}>
       {current?.text ?? options[0]?.text ?? String(props.value)} <span>⌄</span>
     </button>}
-    {compact && opened && <BottomSheet title={document.querySelector(`label[for="${props.id}"]`)?.textContent?.trim() || "Choose an option"} close={() => setOpened(false)}>
+    {compact && opened && <BottomSheet title={document.querySelector(`label[for="${props.id}"]`)?.textContent?.trim() || "Choose an option"} close={() => setOpened(false)} returnFocusRef={trigger}>
       {options.map(o => <button type="button" aria-pressed={o.value === String(props.value)} disabled={o.disabled} key={o.value} onClick={() => {
         const node=select.current!;
         node.value=o.value; node.dispatchEvent(new Event("change",{bubbles:true})); setOpened(false);

@@ -111,6 +111,7 @@ function StockMatrix({
                   .join(" / ");
                 const props = {
                   "data-tile": "stock:" + stock.symbol,
+                  "data-testid": "heatmap-stock-" + stock.symbol,
                   "data-sector": sectorName(name),
                   "data-linked": linked === stock.symbol,
                   "aria-description": description,
@@ -125,7 +126,7 @@ function StockMatrix({
                 const face = (
                   <>
                     <b>{stock.symbol}</b>
-                    <span>{change}</span>
+                    <span data-testid="heatmap-quote-status">{change}</span>
                   </>
                 );
                 return compact ? (

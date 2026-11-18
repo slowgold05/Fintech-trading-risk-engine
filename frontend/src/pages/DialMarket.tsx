@@ -339,13 +339,14 @@ const HeatTile = memo(function HeatTile({ stock, order, compact }: { compact: bo
     "data-mag": stale ? 0 : magnitudeStep(stock.change_percent),
     "data-size": stock.size,
     "data-sym": stock.symbol,
+    "data-testid": "heatmap-stock-" + stock.symbol,
     style: { "--i": order } as Vars,
     title: `${stock.company} ${change}${stock.data_status ? ` / ${stock.data_status} / ${stock.source}` : " / reference data"}${stock.price_basis === "end_of_day_previous_close" ? " / end-of-day previous close, not real-time" : ""}`,
   };
   const body = (
     <>
       <span className="hm-sym">{stock.symbol}</span>
-      <span className="hm-chg">{change}</span>
+      <span className="hm-chg" data-testid="heatmap-quote-status">{change}</span>
     </>
   );
 
@@ -483,6 +484,7 @@ export function DialMarket() {
   const wall = useWallOpening();
   const compact = useCompactWall();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterTrigger = useRef<HTMLButtonElement>(null);
   const [allMovers, setAllMovers] = useState(false);
   const [allNews, setAllNews] = useState(false);
   const [historyArea, historySeen] = useInView<HTMLDivElement>("250px");
@@ -811,8 +813,8 @@ export function DialMarket() {
                 <span aria-busy={heatmapHeader.loading} className="pill" role="status">
                   {heatmapHeader.label}
                 </span>
-                {compact ? <button className="btn heat-filters" onClick={() => setFiltersOpen(true)} aria-haspopup="dialog">Filters</button> : heatControls}
-                {compact && filtersOpen && <BottomSheet title="Heat map filters" close={() => setFiltersOpen(false)}>
+                {compact ? <button ref={filterTrigger} className="btn heat-filters" onClick={() => setFiltersOpen(true)} aria-haspopup="dialog">Filters</button> : heatControls}
+                {compact && filtersOpen && <BottomSheet title="Heat map filters" close={() => setFiltersOpen(false)} returnFocusRef={filterTrigger}>
                   <p className="lbl">View</p>{heatControls}
                   <button className="sheet-done" onClick={() => setFiltersOpen(false)}>Done</button>
                 </BottomSheet>}
@@ -1066,13 +1068,13 @@ export function DialMarket() {
             </Reveal>
 
             <Reveal className="watch-fold"><ToolFold compact={compact} title="Watchlists">
-              <div ref={watchArea} style={{minHeight:44}}>{watchSeen && <Suspense fallback={<p>Loading watchlists…</p>}><Watchlists onUseInChart={sendToChart} onUseInResearch={sendToResearch} /></Suspense>}</div>
+              <div ref={watchArea} id={watchSeen ? undefined : "watchlists-title"} style={{minHeight:44}}>{watchSeen && <Suspense fallback={<p>Loading watchlists…</p>}><Watchlists onUseInChart={sendToChart} onUseInResearch={sendToResearch} /></Suspense>}</div>
             </ToolFold></Reveal>
           </div>
         </div>
 
         <Reveal className="history-fold mt-3"><ToolFold compact={compact} title="Daily history">
-          <div ref={historyArea} id={historySeen || historyDraft ? undefined : "daily-price-history-title"} style={{minHeight:44}}>{(historySeen || historyDraft) && <Suspense fallback={<p>Loading daily history…</p>}><DailyHistory SelectControl={compact ? DialField : undefined} catalogEnabled={lowerSeen || Boolean(historyDraft)} onValueChange={setHistoryDraft} value={historyDraft} /></Suspense>}</div>
+          <div data-testid="market-history-entry" ref={historyArea} id={historySeen || historyDraft ? undefined : "daily-price-history-title"} style={{minHeight:44}}>{(historySeen || historyDraft) && <Suspense fallback={<p>Loading daily history…</p>}><DailyHistory SelectControl={compact ? DialField : undefined} catalogEnabled={lowerSeen || Boolean(historyDraft)} onValueChange={setHistoryDraft} value={historyDraft} /></Suspense>}</div>
         </ToolFold></Reveal>
       </div>
 

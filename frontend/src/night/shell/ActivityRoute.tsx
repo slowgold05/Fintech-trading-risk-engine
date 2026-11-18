@@ -13,7 +13,6 @@ export default function ActivityRoute() {
   const id = Number(params.get("order"));
   function selectOrder(next: number|null) {
     const updated = new URLSearchParams(params);
-    updated.delete("ticket");
     if (next === null) updated.delete("order");
     else updated.set("order",String(next));
     setParams(updated);

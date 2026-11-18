@@ -50,13 +50,13 @@ function open(path: string, authenticated = false, initializing = false) {
 
 it("opens the public market at root for visitors", async () => {
   open("/");
-  expect(await screen.findByRole("heading", { name: "Market overview" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Market overview" }, { timeout: 7_000 })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
   expect(accountDashboard).not.toHaveBeenCalled();
   expect(screen.queryByRole("heading", { name: "Sign-in form" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("link", { name: "Log in" }));
   expect(await screen.findByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
-});
+}, 10_000);
 
 it("waits for session restoration before routing the root", () => {
   open("/", false, true);

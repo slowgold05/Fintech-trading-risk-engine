@@ -18,7 +18,7 @@ export function InstrumentFold({
   children: ReactNode;
 }) {
   const [opened, setOpened] = useState(location.hash === "#" + id);
-  const [visited, setVisited] = useState(opened);
+  const [visited, setVisited] = useState(!compact || opened);
   const fold = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     if (!compact) return;
@@ -28,18 +28,18 @@ export function InstrumentFold({
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
   }, [compact, id]);
-  if (!compact) return children;
   return (
     <details
       ref={fold}
-      className="instrument-fold"
-      open={opened}
+      className={compact ? "instrument-fold" : undefined}
+      style={compact ? undefined : { display: "contents" }}
+      open={!compact || opened}
       onToggle={(event) => {
-        setOpened(event.currentTarget.open);
+        if (compact) setOpened(event.currentTarget.open);
         if (event.currentTarget.open) setVisited(true);
       }}
     >
-      <summary id={visited ? undefined : id}>
+      <summary hidden={!compact} id={visited ? undefined : id}>
         <span>
           <b>{title}</b>
           <small>{caption}</small>
@@ -47,7 +47,7 @@ export function InstrumentFold({
         {preview}
         <CaretDown size={18} />
       </summary>
-      {visited && children}
+      {(!compact || visited) && children}
     </details>
   );
 }
