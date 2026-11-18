@@ -898,6 +898,15 @@
   :where(html[data-look="dial"]) .hm .hm-t { opacity: 1; transform: none; transition: none; }
   :where(html[data-look="dial"]) .hm[data-on="true"] .hm-g { animation: matrix-sector-in 360ms var(--ease-out) backwards; }
 }
+@media (min-width: 960px) {
+  /* Keep the wide cache settled so entering a section doesn't animate every stock. */
+  :where(html[data-look="dial"]) .br-dot { opacity: 1; transform: none; transition: none; }
+  :where(html[data-look="dial"]) .hm-t {
+    opacity: 1;
+    transform: none;
+    transition: transform 160ms var(--ease-out), opacity 200ms var(--ease-out);
+  }
+}
 @keyframes matrix-sector-in { from { opacity: 0; transform: translateY(5px); } }
 
 :where(html[data-look="dial"]) .dial-core { transform: translate3d(-50%, -50%, 0); }
