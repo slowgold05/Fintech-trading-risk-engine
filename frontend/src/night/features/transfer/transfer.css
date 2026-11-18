@@ -1,0 +1,150 @@
+.transfer-page .nk-layout-analysis {
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  align-items: start;
+}
+
+.transfer-fields {
+  display: grid;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.transfer-fields > button,
+.transfer-review > button {
+  justify-self: start;
+}
+
+.transfer-fields :is(select, input) {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.transfer-fields select {
+  grid-area: 2 / 1;
+  appearance: none;
+  min-height: 44px;
+  padding-inline-end: 34px;
+}
+
+.transfer-fields .nk-field:has(> select)::after {
+  content: "";
+  grid-area: 2 / 1;
+  place-self: center end;
+  margin-inline-end: 15px;
+  width: 7px;
+  height: 7px;
+  border-block-end: 1px solid var(--muted);
+  border-inline-end: 1px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  pointer-events: none;
+}
+
+.transfer-fields input[aria-invalid="true"] {
+  border-color: var(--down);
+}
+
+.transfer-fields input::file-selector-button {
+  min-height: 28px;
+  margin-inline-end: 8px;
+  padding-inline: 8px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.transfer-review {
+  display: grid;
+  gap: var(--gap);
+  margin-top: calc(1.5 * var(--pad));
+}
+
+.transfer-review :is(th, td) {
+  overflow-wrap: anywhere;
+}
+
+.transfer-review :is(th, td):first-child {
+  width: 80px;
+  font-variant-numeric: tabular-nums;
+}
+
+.transfer-review td:last-child {
+  width: 44%;
+}
+
+.transfer-page :is(.transfer-summary, .transfer-export-block) h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.transfer-summary h3 {
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 4px;
+}
+
+.transfer-summary h3 span,
+.transfer-meta {
+  color: var(--muted);
+}
+
+.transfer-page [role="alert"] {
+  color: var(--down);
+}
+
+.transfer-error {
+  margin-top: var(--gap);
+}
+
+.transfer-export-block {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.transfer-export-block + .transfer-export-block {
+  margin-top: calc(1.5 * var(--pad));
+}
+
+.transfer-export-block > button {
+  margin-top: 4px;
+}
+
+@media (max-width: 767px) {
+  .transfer-page .nk-layout-analysis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .transfer-fields :is(select, input) {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 900px) {
+  :root[data-look="dial"] .transfer-page .nk-layout-analysis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :root[data-look="dial"] .transfer-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  :root[data-look="dial"] .transfer-export {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: var(--pad);
+  }
+
+  :root[data-look="dial"] .transfer-export > header {
+    grid-column: 1 / -1;
+  }
+
+  :root[data-look="dial"] .transfer-export-block + .transfer-export-block {
+    border-inline-start: 1px solid var(--line);
+    margin-top: 0;
+    padding-inline-start: var(--pad);
+  }
+}
