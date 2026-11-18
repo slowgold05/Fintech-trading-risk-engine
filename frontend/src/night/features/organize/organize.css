@@ -70,3 +70,13 @@
 @media (max-width: 767px) {
   .organize :is(input, select, textarea) { font-size: 16px; }
 }
+:root[data-motion="reduced"] :is(.organize, .organize *) {
+  transition: none !important;
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.organize, .organize *) {
+    transition: none !important;
+    animation: none !important;
+  }
+}
