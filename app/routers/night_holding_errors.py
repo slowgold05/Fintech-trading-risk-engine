@@ -2,6 +2,7 @@ from fastapi import HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.read_snapshot import SnapshotClockError
 from app.services.symbol_quote import _normalize
@@ -39,9 +40,13 @@ class NightHoldingRoute(APIRoute):
                     location = error["loc"]
                     if len(location) == 2 and location[1] in known:
                         fields[location[1]] = "Invalid value."
-                    elif location[0] == "body":
+                    elif location and location[0] == "body":
                         fields["body"] = "Invalid request body."
                 raise invalid_request(fields) from None
+            except StarletteHTTPException as exc:
+                if exc.status_code == 400:
+                    raise invalid_request({"body": "Invalid request body."}) from None
+                raise
             except (SQLAlchemyError, SnapshotClockError):
                 raise HTTPException(503, detail={
                     "code": "storage_unavailable", "message": "Holding details storage is temporarily unavailable.",
