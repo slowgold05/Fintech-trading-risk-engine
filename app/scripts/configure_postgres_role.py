@@ -138,6 +138,15 @@ def configure(database_url: str, app_password: str) -> None:
                 "ON forecast_evaluations TO fintech_app"
             )
 
+            cursor.execute("SELECT to_regclass(%s)", ("public.night_alerts",))
+            if cursor.fetchone()[0] is not None:
+                cursor.execute("GRANT DELETE ON night_alerts TO fintech_app")
+                cursor.execute("GRANT INSERT (user_id, symbol, direction, target) ON night_alerts TO fintech_app")
+                cursor.execute(
+                    "GRANT UPDATE (last_date, last_close, last_provider, last_observed_at, triggered_at) "
+                    "ON night_alerts TO fintech_app"
+                )
+
 
 def main() -> None:
     password = os.environ.get("POSTGRES_APP_PASSWORD")
