@@ -2,11 +2,17 @@ import { apiClient } from "./client";
 import type {
   CreateTradePayload,
   CreateTradeResponse,
+  TradeResponse,
   TradesResponse,
 } from "../types/schemas";
 
-export async function fetchTrades(): Promise<TradesResponse> {
-  const response = await apiClient.get<TradesResponse>("/trades/");
+export const TRADE_ACTIVITY_LIMIT = 20;
+
+export type ActivityTrade = TradeResponse & { simulated_quote_source?: string | null };
+type TradeList = TradesResponse & { trades: ActivityTrade[] };
+
+export async function fetchTrades(): Promise<TradeList> {
+  const response = await apiClient.get<TradeList>("/trades/");
   return response.data;
 }
 

@@ -1,283 +1,174 @@
-import { refreshExecution } from "../night/api";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { fetchTrades } from "../api/trades";
+import { useSearchParams } from "react-router-dom";
+import { fetchTrades, TRADE_ACTIVITY_LIMIT, type ActivityTrade } from "../api/trades";
 import { fetchTradeRisk } from "../api/risk";
-import { cancelOrder, fetchOrders } from "../api/orders";
+import { cancelOrder, fetchOrders, ORDER_ACTIVITY_LIMIT } from "../api/orders";
 import { OrderDetails } from "../components/OrderDetails";
 import { OrderTicket } from "../components/OrderTicket";
-import { PageHeader } from "../components/PageHeader";
-import {
-  DashboardCard,
-  EmptyState,
-  PnlValue,
-  SkeletonBlock,
-} from "../features/dashboard/components";
 import { useToast } from "../context/useToast";
-import {
-  formatDateTime,
-  formatCurrency,
-  formatQuantity,
-  simulatedLiquidityLabel,
-} from "../utils/format";
-import { getRiskTone } from "../utils/riskTone";
-import type { TradeResponse, TradeRiskResponse } from "../types/schemas";
+import { keys, refreshExecution } from "../night/api";
+import { Button, Field, Page, Panel, State, Table } from "../night/kit";
+import { formatCurrency, formatQuantity, formatUtcDateTime } from "../utils/format";
+import { readPersistedOrderAttempt } from "../utils/orderAttemptStorage";
+import type { OrderResponse, TradeResponse, TradeRiskResponse } from "../types/schemas";
+import "../night/features/execution/execution.css";
 
-function getTradeStatus(trade: TradeResponse) {
-  return trade.id ? "Executed" : "Pending";
+function Value({ label, value }: { label: string; value: string }) {
+  return <><span className="execution-mobile-label" aria-hidden="true">{label}</span><span className="execution-number">{value}</span></>;
 }
 
-function hasNoAssessment(
-  data: TradeRiskResponse,
-): data is { message: string } {
-  return "message" in data;
+function tradeTimestamp(trade: TradeResponse) {
+  if (trade.demo_seed) return trade.executed_at.slice(0, 10);
+  // The legacy trades endpoint serializes UTC database timestamps without the zone.
+  return formatUtcDateTime(trade.executed_at) ?? formatUtcDateTime(`${trade.executed_at}Z`) ?? "Unavailable";
 }
 
-function TradeHistoryRow({ trade }: { trade: TradeResponse }) {
+function tradeOrigin(trade: ActivityTrade) {
+  if (trade.demo_seed) return "Demo seed";
+  if (trade.simulated_quote_date) {
+    return `Paper fill · ${trade.simulated_quote_date} · ${trade.simulated_quote_source ?? "Provider unavailable"}`;
+  }
+  return trade.asset_type;
+}
+
+function TradeRisk({ trade, owner }: { trade: TradeResponse; owner?: number }) {
   const [expanded, setExpanded] = useState(false);
   const panelId = `trade-risk-${trade.id}`;
-  const riskQuery = useQuery({
-    queryKey: ["trade-risk", trade.id],
+  const label = `Risk for ${trade.symbol} trade ${trade.id}`;
+  const query = useQuery({
+    queryKey: owner ? keys.account(owner, "risk", "trade", trade.id) : ["trade-risk", trade.id],
     queryFn: () => fetchTradeRisk(trade.id),
     enabled: expanded,
+    retry: false,
   });
 
   return (
     <>
-      <tr
-        className={[
-          "border-l-2",
-          trade.side === "buy"
-            ? "border-l-emerald-400/70"
-            : "border-l-rose-400/70",
-        ].join(" ")}
-      >
-        <td>
-          <div className="font-mono text-sm font-semibold text-slate-100">
-            {trade.symbol}
-          </div>
-          <div className="font-mono text-[11px] uppercase text-slate-500">
-            {trade.demo_seed ? "Demo seed" : trade.asset_type}
-          </div>
-        </td>
-        <td>
-          <span
-            className={[
-              "risk-chip",
-              trade.side === "buy"
-                ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                : "border-rose-400/40 bg-rose-400/10 text-rose-300",
-            ].join(" ")}
-          >
-            {trade.side}
-          </span>
-        </td>
-        <td className="text-right font-mono tabular-nums">
-          {formatQuantity(trade.quantity)}
-        </td>
-        <td className="text-right font-mono tabular-nums">
-          {formatCurrency(trade.price_at_execution)}
-          {trade.simulated_quote_date && (
-            <small className="block">{simulatedLiquidityLabel(trade.simulated_quote_date)} · {trade.simulated_quote_source ?? "Provider unavailable"}</small>
-          )}
-        </td>
-        <td className="text-right font-mono tabular-nums text-slate-400">
-          {trade.demo_seed ? trade.executed_at.slice(0, 10) : formatDateTime(trade.executed_at)}
-        </td>
-        <td className="text-right">
-          <span className="status-badge border-slate-700 bg-slate-900 text-slate-300">
-            {getTradeStatus(trade)}
-          </span>
-        </td>
-        <td className="text-right">
-          {Number.isFinite(trade.realized_pnl) ? (
-            <PnlValue value={trade.realized_pnl} />
-          ) : (
-            <span className="font-mono text-slate-500">--</span>
-          )}
-        </td>
-        <td className="text-right">
-          <button
-            type="button"
-            className="inline-flex min-h-11 items-center px-2 text-sm text-emerald-300 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-            aria-expanded={expanded}
-            aria-controls={panelId}
-            aria-label={`Risk for ${trade.symbol} trade ${trade.id}`}
-            onClick={() => setExpanded((open) => !open)}
-          >
-            Risk
-          </button>
-        </td>
-      </tr>
-      {expanded ? (
-        <tr>
-          <td className="bg-slate-950/40 px-4 py-3" colSpan={8}>
-            <div
-              aria-busy={riskQuery.isLoading}
-              aria-label={`Risk for ${trade.symbol} trade ${trade.id}`}
-              id={panelId}
-              role="region"
-            >
-              <TradeRiskDetail
-                data={riskQuery.data}
-                isError={riskQuery.isError}
-                isLoading={riskQuery.isLoading}
-              />
-            </div>
-          </td>
-        </tr>
-      ) : null}
+      <Button aria-expanded={expanded} aria-controls={expanded ? panelId : undefined} aria-label={label}
+        onClick={() => setExpanded((value) => !value)}>Risk</Button>
+      {expanded && (
+        <div id={panelId} role="region" aria-label={label} aria-busy={query.isLoading} className="execution-risk">
+          {query.isLoading ? <p>Loading...</p> : query.isError ? (
+            <>
+              <p>Risk detail could not be loaded.</p>
+              <Button busy={query.isFetching} onClick={() => void query.refetch()}>Retry risk</Button>
+            </>
+          ) : query.data && <TradeRiskDetail data={query.data} />}
+        </div>
+      )}
     </>
   );
 }
 
-function TradeRiskDetail({
-  data,
-  isError,
-  isLoading,
-}: {
-  data: TradeRiskResponse | undefined;
-  isError: boolean;
-  isLoading: boolean;
-}) {
-  if (isLoading) {
-    return <p className="text-sm text-slate-400">Loading...</p>;
-  }
-
-  if (isError) {
-    return (
-      <p className="text-sm text-rose-200">
-        Risk detail could not be loaded.
-      </p>
-    );
-  }
-
-  if (data == null) {
-    return null;
-  }
-
-  if (hasNoAssessment(data)) {
-    return <p className="text-sm text-slate-300">{data.message}</p>;
-  }
-
-  const tone = getRiskTone(data.risk_score);
-
+function TradeRiskDetail({ data }: { data: TradeRiskResponse }) {
+  if ("message" in data) return <p>{data.message}</p>;
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-          Risk score
-        </span>
-        <span className={["risk-chip", tone.chip].join(" ")}>
-          {data.risk_score}
-        </span>
-      </div>
-      {data.alerts.length === 0 ? (
-        <p className="text-sm text-slate-400">No alerts triggered.</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {data.alerts.map((alert) => (
-            <li
-              className="text-sm text-slate-300"
-              key={`${alert.rule_code}-${alert.created_at}-${alert.reason}`}
-            >
-              <span className="font-mono text-slate-100">{alert.rule_code}</span>
-              <span className="mx-2 font-mono text-xs uppercase text-slate-500">
-                {alert.severity}
-              </span>
-              <span>{alert.reason}</span>
-            </li>
-          ))}
-        </ul>
+    <>
+      <p>Risk score <strong>{data.risk_score}</strong></p>
+      {data.alerts.length === 0 ? <p>No alerts triggered.</p> : (
+        <ul>{data.alerts.map((alert) => (
+          <li key={`${alert.rule_code}-${alert.created_at}-${alert.reason}`}>
+            <strong>{alert.rule_code}</strong> · <span>{alert.severity}</span><p>{alert.reason}</p>
+          </li>
+        ))}</ul>
       )}
-    </div>
+    </>
   );
 }
 
-type CancelNotice = {
-  orderId: number;
-  outcome: "canceled" | "conflict" | "unconfirmed" | "rejected";
-  message: string;
-};
-
-function cancelNoticeFor(orderId: number, error: unknown): CancelNotice {
-  if (isAxiosError(error)) {
-    const status = error.response?.status;
-    if (status === 409) {
-      return {
-        orderId,
-        outcome: "conflict",
-        message: `Order ${orderId}: cancellation conflict. The latest status changed.`,
-      };
+function cancellationError(orderId: number, error: unknown): string {
+  if (isAxiosError(error) && error.response) {
+    const { status, data } = error.response;
+    if (status === 409) return `Order ${orderId}: cancellation conflict. The latest status changed.`;
+    if (status < 500) {
+      return typeof data?.detail === "string"
+        ? `Order ${orderId}: ${data.detail}`
+        : `Order ${orderId}: cancellation was rejected.`;
     }
-    if (error.response == null || (typeof status === "number" && status >= 500)) {
-      return {
-        orderId,
-        outcome: "unconfirmed",
-        message: `Order ${orderId}: cancellation could not be confirmed.`,
-      };
-    }
-    const detail = error.response.data?.detail;
-    return {
-      orderId,
-      outcome: "rejected",
-      message: typeof detail === "string" && detail.length > 0
-        ? `Order ${orderId}: ${detail}`
-        : `Order ${orderId}: cancellation was rejected.`,
-    };
   }
-  return {
-    orderId,
-    outcome: "unconfirmed",
-    message: `Order ${orderId}: cancellation could not be confirmed.`,
-  };
+  return `Order ${orderId}: cancellation could not be confirmed.`;
 }
 
-export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId, onSelectOrder }: {
-  owner?: number; canTrade?: boolean; open?: boolean; onOpen?: () => void; receiptId?: number|null; onSelectOrder?: (id: number|null) => void;
-} = {}) {
+type TradesProps = {
+  owner?: number;
+  canTrade?: boolean;
+  open?: boolean;
+  onOpen?: () => void;
+  receiptId?: number | null;
+  onSelectOrder?: (id: number | null) => void;
+};
+
+export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId, onSelectOrder }: TradesProps = {}) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const [params, setParams] = useSearchParams();
+  const [filterInput, setFilterInput] = useState("");
+  const entrySymbol = (params.get("symbol") ?? "").trim().toUpperCase();
+  const filter = filterInput.trim().toUpperCase();
   const [localId, setLocalId] = useState<number | null>(null);
   const selectedOrderId = receiptId === undefined ? localId : receiptId;
-  const setSelectedOrderId = onSelectOrder ?? setLocalId;
   const [cancelBusy, setCancelBusy] = useState(false);
-  const [cancelNotice, setCancelNotice] = useState<CancelNotice | null>(null);
+  const [cancelNotice, setCancelNotice] = useState<{ id: number; message: string } | null>(null);
   const [refreshIssue, setRefreshIssue] = useState(false);
   const detailTriggers = useRef(new Map<number, HTMLButtonElement>());
+  const filterRef = useRef<HTMLInputElement>(null);
+  const returnToTicket = useRef(false);
   const cancelLock = useRef(false);
 
+  const ordersKey = owner ? keys.account(owner, "orders", ORDER_ACTIVITY_LIMIT) : ["orders"];
   const tradesQuery = useQuery({
-    queryKey: ["trades"],
+    queryKey: owner ? keys.account(owner, "trades", TRADE_ACTIVITY_LIMIT) : ["trades"],
     queryFn: fetchTrades,
+    retry: false,
   });
-  const ordersQuery = useQuery({ queryKey: ["orders"], queryFn: fetchOrders });
-  const orders = ordersQuery.isSuccess ? ordersQuery.data.orders : null;
-  const selectedVisible =
-    selectedOrderId != null && (receiptId != null || orders?.some(order => order.id === selectedOrderId));
+  const ordersQuery = useQuery({ queryKey: ordersKey, queryFn: fetchOrders, retry: false });
+  const orders = ordersQuery.data?.orders ?? [];
+  const trades = tradesQuery.data?.trades ?? [];
+  const visibleOrders = orders.filter((order) => !filter || order.symbol.toUpperCase().includes(filter));
+  const visibleTrades = trades.filter((trade) => !filter || trade.symbol.toUpperCase().includes(filter));
+  const selectedVisible = selectedOrderId !== null && (receiptId !== undefined ||
+    (!ordersQuery.isError && orders.some((order) => order.id === selectedOrderId)));
+  const ticketOpen = canTrade && open;
+  const hasPendingAttempt = canTrade && !ticketOpen && readPersistedOrderAttempt(owner) !== null;
 
-  const cancelMutation = useMutation({ mutationFn: cancelOrder });
+  const cancelMutation = useMutation({ mutationFn: cancelOrder, retry: false });
 
-  async function refreshAfterCancel(orderId: number): Promise<boolean> {
-    try {
-      const results = await Promise.allSettled([
-        queryClient.invalidateQueries({ queryKey: ["orders"] }, { throwOnError: true }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }, { throwOnError: true }),
-        queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] }, { throwOnError: true }),
-        ...(owner ? [refreshExecution(queryClient,owner)] : []),
-      ]);
-      return results.every((result) => result.status === "fulfilled");
-    } catch {
-      return false;
+  function selectReceipt(id: number | null) {
+    if (owner === undefined || receiptId === undefined) {
+      (onSelectOrder ?? setLocalId)(id);
+      return;
     }
+    const next = new URLSearchParams(params);
+    next.delete("ticket");
+    if (id === null) next.delete("order");
+    else next.set("order", String(id));
+    setParams(next);
+  }
+
+  async function refreshAfterCancel(orderId: number) {
+    if (owner !== undefined) {
+      await refreshExecution(queryClient, owner);
+      return !queryClient.getQueryState(ordersKey)?.error &&
+        !queryClient.getQueriesData({
+          queryKey: keys.account(owner, "receipt", orderId), type: "active",
+          predicate: (query) => query.state.status === "error",
+        }).length;
+    }
+    const results = await Promise.allSettled([
+      queryClient.invalidateQueries({ queryKey: ["orders"] }, { throwOnError: true }),
+      queryClient.invalidateQueries({ queryKey: ["portfolio"] }, { throwOnError: true }),
+      queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] }, { throwOnError: true }),
+    ]);
+    return results.every((result) => result.status === "fulfilled");
   }
 
   function notify(type: "success" | "error", message: string) {
     try {
       showToast(type, message);
     } catch {
-      // A toast failure must not change the cancel outcome.
+      // A toast failure does not affect the order.
     }
   }
 
@@ -288,182 +179,144 @@ export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId,
     setCancelNotice(null);
     setRefreshIssue(false);
     try {
-      await cancelMutation.mutateAsync(orderId);
-      setCancelNotice({
-        orderId,
-        outcome: "canceled",
-        message: `Order ${orderId} was canceled.`,
-      });
-      notify("success", "Order canceled.");
-    } catch (error) {
-      const notice = cancelNoticeFor(orderId, error);
-      setCancelNotice(notice);
-      notify("error", notice.message);
+      try {
+        await cancelMutation.mutateAsync(orderId);
+        setCancelNotice({ id: orderId, message: `Order ${orderId} was canceled.` });
+        if (!owner) notify("success", "Order canceled.");
+      } catch (error) {
+        const message = cancellationError(orderId, error);
+        setCancelNotice({ id: orderId, message });
+        notify("error", message);
+      }
+      setRefreshIssue(!(await refreshAfterCancel(orderId)));
+    } catch {
+      setRefreshIssue(true);
+    } finally {
+      cancelLock.current = false;
+      setCancelBusy(false);
     }
-    const loaded = await refreshAfterCancel(orderId);
-    setRefreshIssue(!loaded);
-    if (!loaded) notify("error", "Latest state could not be loaded.");
-    cancelLock.current = false;
-    setCancelBusy(false);
   }
 
   function closeDetails() {
-    const id = selectedOrderId;
-    setSelectedOrderId(null);
-    if (id == null) return;
-    queueMicrotask(() => detailTriggers.current.get(id)?.focus());
+    selectReceipt(null);
+    queueMicrotask(() => {
+      const target = selectedOrderId === null ? undefined : detailTriggers.current.get(selectedOrderId);
+      (target?.isConnected ? target : filterRef.current)?.focus();
+    });
   }
 
-  const trades = tradesQuery.data?.trades ?? [];
+  function toggleTicket(nextOpen: boolean) {
+    if (!owner && nextOpen) {
+      onOpen?.();
+      return;
+    }
+    if (!nextOpen) returnToTicket.current = true;
+    const next = new URLSearchParams(params);
+    if (nextOpen) {
+      next.set("ticket", "1");
+      next.delete("order");
+    } else {
+      next.delete("ticket");
+    }
+    setParams(next);
+  }
+
+  function orderActions(order: OrderResponse) {
+    const expanded = selectedVisible && selectedOrderId === order.id;
+    return (
+      <div className="execution-actions">
+        <Button aria-expanded={expanded} aria-controls={expanded ? "order-details-panel" : undefined}
+          aria-label={`Details for ${order.symbol} order ${order.id}`}
+          onClick={(event) => {
+            detailTriggers.current.set(order.id, event.currentTarget);
+            if (expanded) closeDetails();
+            else selectReceipt(order.id);
+          }}>Details</Button>
+        {canTrade && order.status === "open" && !expanded && (
+          <Button variant="danger" busy={cancelBusy} data-testid="activity-order-cancel"
+            aria-label={`Cancel ${order.symbol} order ${order.id}`}
+            onClick={() => { void handleCancel(order.id); }}>Cancel</Button>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="min-w-0 space-y-6">
-      <PageHeader
-        title="Activity"
-        description="Submit orders and review execution history with risk-aware trade context."
-      />
-
-      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="min-w-0">
-        <DashboardCard
-          action={
-            <span className="font-mono text-xs text-slate-500">Ticket</span>
+    <Page title="Activity" layout="analysis" className="execution-view"
+      actions={canTrade && !ticketOpen && (
+        <button className="nk-button" type="button" data-variant="primary" data-testid="order-open" ref={(node) => {
+          if (node && returnToTicket.current) {
+            returnToTicket.current = false;
+            node.focus();
           }
-          title="Order Entry"
-        >
-          {canTrade ? open ? <OrderTicket owner={owner} onSubmitted={onSelectOrder} /> :
-            <button className="nk-button" data-testid="order-open" onClick={onOpen}>Open order ticket</button> :
-            <p>Order entry requires a trader role.</p>}
-        </DashboardCard>
+        }} onClick={() => toggleTicket(true)}>
+          {hasPendingAttempt ? "Resume pending order" : "Open order ticket"}
+        </button>
+      )}>
+      {ticketOpen && (
+        <Page.Aside className="execution-entry">
+          <Panel title="Paper order ticket" actions={owner && <Button onClick={() => toggleTicket(false)}>Close ticket</Button>}>
+            <OrderTicket key={`${owner ?? ""}:${entrySymbol}`} owner={owner}
+              onSubmitted={owner !== undefined || onSelectOrder ? selectReceipt : undefined} />
+          </Panel>
+        </Page.Aside>
+      )}
+      <Page.Main className="execution-activity">
+        {selectedVisible && selectedOrderId !== null && (
+          <OrderDetails key={`${owner ?? ""}:${selectedOrderId}`} owner={owner} orderId={selectedOrderId} onClose={closeDetails}
+            onCancel={canTrade ? () => { void handleCancel(selectedOrderId); } : undefined} cancelBusy={cancelBusy}
+            cancelMessage={cancelNotice?.id === selectedOrderId ? cancelNotice.message : undefined} />
+        )}
+        <div className="execution-filter">
+          <Field id="activity-ticker" label="Filter by ticker">
+            <input ref={filterRef} data-testid="activity-symbol" maxLength={20}
+              autoComplete="off" spellCheck={false} placeholder="All symbols"
+              value={filterInput} onChange={(event) => setFilterInput(event.target.value.toUpperCase())} />
+          </Field>
+          {filterInput && <Button onClick={() => { setFilterInput(""); filterRef.current?.focus(); }}>Clear filter</Button>}
+          <p>Up to {ORDER_ACTIVITY_LIMIT} recent orders and {TRADE_ACTIVITY_LIMIT} recent trades. Filters apply to these records.</p>
         </div>
-
-        <div className="min-w-0">
-        <DashboardCard
-          action={
-            <span className="font-mono text-xs text-slate-500">
-              {tradesQuery.isLoading ? "--" : `${trades.length} rows`}
-            </span>
-          }
-          title="Trade History"
-        >
-          {tradesQuery.isLoading ? (
-            <div className="space-y-3">
-              {[0, 1, 2, 3, 4].map((item) => (
-                <SkeletonBlock className="h-10" key={item} />
-              ))}
-            </div>
-          ) : tradesQuery.isError ? (
-            <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
-              Trade history could not be loaded. Check the API server and
-              authentication state.
-            </div>
-          ) : trades.length === 0 ? (
-            <EmptyState
-              action={
-                <span className="text-xs font-medium text-emerald-300">
-                  Use the order ticket to submit the first trade.
-                </span>
-              }
-              detail="Matched orders appear here with execution price, timestamp, and realized P&L."
-              message="No trade history yet."
-            />
+        {cancelNotice && (!selectedVisible || cancelNotice.id !== selectedOrderId) && (
+          <p className="execution-notice" role="status">{cancelNotice.message}</p>
+        )}
+        {refreshIssue && <p className="execution-error" role="status">Latest state could not be loaded.</p>}
+        <Panel title="Your Orders">
+          {ordersQuery.isPending ? <State kind="loading" title="Loading orders…" /> : ordersQuery.isError ? (
+            <State kind="error" title="Orders could not be loaded."
+              action={<Button busy={ordersQuery.isFetching} onClick={() => void ordersQuery.refetch()}>Retry orders</Button>} />
+          ) : visibleOrders.length === 0 ? (
+            <State kind="empty" title={filter ? "No orders match this ticker." : "No orders yet."} />
           ) : (
-            <div className="table-shell max-h-[620px]">
-              <table className="data-table min-w-[780px]">
-                <thead className="sticky top-0 z-10">
-                  <tr>
-                    <th className="text-left">Symbol</th>
-                    <th className="text-left">Side</th>
-                    <th className="text-right">Quantity</th>
-                    <th className="text-right">Price</th>
-                    <th className="text-right">Timestamp</th>
-                    <th className="text-right">Status</th>
-                    <th className="text-right">P&L</th>
-                    <th className="text-right">Risk</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map((trade) => (
-                    <TradeHistoryRow key={trade.id} trade={trade} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <div className="execution-table execution-orders"><Table caption="Recent order activity" rows={visibleOrders} rowKey={(order) => order.id}
+              columns={[
+                { key: "symbol", header: "Order", cell: (order) => <><strong>{order.symbol}</strong><small>Order {order.id} · {order.side} · {order.order_type}</small></> },
+                { key: "qty", header: "Requested", align: "right", cell: (order) => <Value label="Requested" value={formatQuantity(order.quantity)} /> },
+                { key: "remaining", header: "Unfilled", align: "right", cell: (order) => <Value label="Unfilled" value={formatQuantity(order.remaining_quantity)} /> },
+                { key: "limit", header: "Limit", align: "right", cell: (order) => <Value label="Limit" value={order.limit_price === null ? "Market" : formatCurrency(order.limit_price)} /> },
+                { key: "status", header: "Status", cell: (order) => <span data-order-status={order.status}>{order.status}</span> },
+                { key: "actions", header: "Actions", cell: orderActions },
+              ]} /></div>
           )}
-        </DashboardCard>
-        </div>
-      </div>
-      <DashboardCard title="Your Orders">
-        {cancelNotice && (
-          <p className="mb-3 text-sm text-slate-200" role="status">{cancelNotice.message}</p>
-        )}
-        {refreshIssue && (
-          <p className="mb-3 text-sm text-rose-200" role="status">Latest state could not be loaded.</p>
-        )}
-        {ordersQuery.isLoading ? <SkeletonBlock className="h-24" /> : ordersQuery.isError ? (
-          <div>
-            <p className="text-sm text-rose-300">Orders could not be loaded.</p>
-            <button
-              type="button"
-              className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-emerald-300 hover:text-emerald-200 disabled:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              disabled={ordersQuery.isFetching}
-              onClick={() => { void ordersQuery.refetch(); }}
-            >
-              Retry orders
-            </button>
-          </div>
-        ) : !ordersQuery.data?.orders.length ? (
-          <p className="text-sm text-slate-400">No orders yet.</p>
-        ) : (
-          <>
-          <div className="table-shell min-w-0">
-            <table className="data-table min-w-[650px]">
-              <thead><tr><th className="text-left">Symbol</th><th className="text-left">Side</th><th className="text-left">Type</th><th className="text-right">Remaining</th><th className="text-right">Price</th><th className="text-left">Status</th><th className="text-right">Action</th></tr></thead>
-              <tbody>{ordersQuery.data.orders.map((order) => {
-                const expanded = selectedVisible && selectedOrderId === order.id;
-                return (
-                <tr key={order.id}>
-                  <td className="font-mono font-semibold">{order.symbol}</td>
-                  <td className="capitalize">{order.side}</td>
-                  <td className="capitalize">{order.order_type}</td>
-                  <td className="text-right font-mono">{formatQuantity(order.remaining_quantity)}</td>
-                  <td className="text-right font-mono">{order.limit_price === null ? "Market" : formatCurrency(order.limit_price)}</td>
-                  <td className="capitalize">{order.status}</td>
-                  <td className="text-right">
-                    <div className="flex flex-wrap justify-end gap-1">
-                      <button
-                        type="button"
-                        className="inline-flex min-h-11 items-center px-2 text-sm text-emerald-300 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                        aria-expanded={expanded}
-                        aria-controls="order-details-panel"
-                        aria-label={`Details for ${order.symbol} order ${order.id}`}
-                        ref={(node) => {
-                          if (node) detailTriggers.current.set(order.id, node);
-                          else detailTriggers.current.delete(order.id);
-                        }}
-                        onClick={() => {
-                          if (expanded) closeDetails();
-                          else setSelectedOrderId(order.id);
-                        }}
-                      >
-                        Details
-                      </button>
-                      {order.status === "open" && (
-                        <button type="button" className="inline-flex min-h-11 items-center px-2 text-sm text-rose-300 hover:text-rose-200 disabled:text-slate-600" disabled={cancelBusy} data-testid="order-cancel" onClick={() => { void handleCancel(order.id); }} aria-label={`Cancel ${order.symbol} order ${order.id}`}>Cancel</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-                );
-              })}</tbody>
-            </table>
-          </div>
-          {selectedVisible && selectedOrderId != null && (
-            <OrderDetails key={selectedOrderId} orderId={selectedOrderId} onClose={closeDetails} />
+        </Panel>
+        <Panel title="Trade history">
+          {tradesQuery.isPending ? <State kind="loading" title="Loading trade history…" /> : tradesQuery.isError ? (
+            <State kind="error" title="Trade history could not be loaded."
+              action={<Button busy={tradesQuery.isFetching} onClick={() => void tradesQuery.refetch()}>Retry trades</Button>} />
+          ) : visibleTrades.length === 0 ? (
+            <State kind="empty" title={filter ? "No trades match this ticker." : "No trade history yet."} />
+          ) : (
+            <div className="execution-table execution-trades"><Table caption="Executed trades" rows={visibleTrades} rowKey={(trade) => trade.id}
+              columns={[
+                { key: "symbol", header: "Trade", cell: (trade) => <><strong>{trade.symbol}</strong><small>{trade.side} · {tradeOrigin(trade)}</small></> },
+                { key: "quantity", header: "Quantity", align: "right", cell: (trade) => <Value label="Quantity" value={formatQuantity(trade.quantity)} /> },
+                { key: "price", header: "Fill price", align: "right", cell: (trade) => <Value label="Fill price" value={formatCurrency(trade.price_at_execution)} /> },
+                { key: "pnl", header: "Realized P&L", align: "right", cell: (trade) => <Value label="Realized P&L" value={Number.isFinite(trade.realized_pnl) ? formatCurrency(trade.realized_pnl) : "Unavailable"} /> },
+                { key: "time", header: "Executed", cell: (trade) => <Value label={trade.demo_seed ? "Seed date" : "Executed"} value={tradeTimestamp(trade)} /> },
+                { key: "risk", header: "Risk detail", cell: (trade) => <TradeRisk trade={trade} owner={owner} /> },
+              ]} /></div>
           )}
-          </>
-        )}
-      </DashboardCard>
-    </div>
+        </Panel>
+      </Page.Main>
+    </Page>
   );
 }

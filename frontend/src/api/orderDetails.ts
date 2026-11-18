@@ -10,8 +10,8 @@ const MONEY_SIGNED = /^-?(?:0|[1-9]\d*)\.\d{2}$/;
 const UTC_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?Z$/;
 
 export interface OrderFill {
-  mode?: "eod_simulated" | "order_book";
-  source?: Provenance | null;
+  mode: "eod_simulated" | "order_book";
+  source: Provenance | null;
   simulated_quote_source?: string;
   trade_id: number;
   quantity: string;
@@ -41,6 +41,7 @@ export interface OrderDetailResponse {
   has_more: boolean;
   next_after_id: number | null;
   fills: OrderFill[];
+  reservation?: { amount: string; unit: "USD" | "shares" } | null;
   simulated_quote_date?: string;
   simulated_quote_source?: string | null;
   remainder_reason?: string;
@@ -108,6 +109,31 @@ function parseSimulatedDate(value: unknown): { simulated_quote_date?: string } {
   if (value === undefined) return {};
   if (typeof value !== "string" || !isUtcTimestamp(`${value}T00:00:00Z`)) fail();
   return { simulated_quote_date: value };
+}
+
+function parseReservation(value: unknown): NonNullable<OrderDetailResponse["reservation"]> | null {
+  if (!isRecord(value)) return null;
+  if (value.unit === "USD" && typeof value.amount === "string" && MONEY.test(value.amount)) {
+    return { amount: value.amount, unit: "USD" };
+  }
+  if (value.unit === "shares" && typeof value.amount === "string" && QTY.test(value.amount)) {
+    return { amount: value.amount, unit: "shares" };
+  }
+  return null;
+}
+
+function legacyReservation(
+  side: OrderDetailResponse["side"],
+  status: OrderDetailResponse["status"],
+  remaining: string,
+  limitPrice: string | null,
+): OrderDetailResponse["reservation"] {
+  if (side === "sell") return { amount: status === "open" ? remaining : "0.000000", unit: "shares" };
+  if (status !== "open") return { amount: "0.00", unit: "USD" };
+  if (limitPrice === null) return null;
+  // Both inputs have six decimal places. Round the product to cents, half up.
+  const cents = (scaled6(remaining) * scaled6(limitPrice) + 5_000_000_000n) / 10_000_000_000n;
+  return { amount: `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`, unit: "USD" };
 }
 
 function parseFill(value: unknown, afterId: number): OrderFill {
@@ -212,6 +238,9 @@ function parseOrderDetail(data: unknown, orderId: number, limit: number, afterId
     has_more: data.has_more,
     next_after_id: nextAfterId,
     fills,
+    reservation: "reservation" in data
+      ? parseReservation(data.reservation)
+      : legacyReservation(data.side, data.status, remaining, limitPrice),
     ...parseSimulatedDate(data.simulated_quote_date),
     ...(typeof data.simulated_quote_source === "string" && data.simulated_quote_source.trim()
       ? { simulated_quote_source: data.simulated_quote_source.trim() } : {}),

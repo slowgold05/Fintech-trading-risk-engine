@@ -15,7 +15,9 @@ function respond(data: unknown) {
   vi.mocked(apiClient.get).mockResolvedValueOnce({ data } as Awaited<ReturnType<typeof apiClient.get>>);
 }
 
-function fill(overrides: Partial<OrderFill> = {}): OrderFill {
+type WireFill = Omit<OrderFill, "mode" | "source"> & Partial<Pick<OrderFill, "mode" | "source">>;
+
+function fill(overrides: Partial<WireFill> = {}): WireFill {
   return {
     trade_id: 8,
     quantity: "1.250000",
@@ -154,6 +156,17 @@ describe("fetchOrderDetail", () => {
       realized_pnl: "-1234567890123456.78",
       executed_at: "2026-11-06T15:04:05.500000Z",
     });
+  });
+
+  it("normalizes receipt reserves when the server provides only legacy order fields", async () => {
+    respond(detail({ quantity: "1.000000", remaining_quantity: "1.000000", limit_price: "10.005000" }));
+    expect((await fetchOrderDetail(42)).reservation).toEqual({ amount: "10.01", unit: "USD" });
+
+    respond(detail({ side: "sell" }));
+    expect((await fetchOrderDetail(42)).reservation).toEqual({ amount: "2.000000", unit: "shares" });
+
+    respond(detail({ side: "sell", status: "canceled", canceled_at: CREATED }));
+    expect((await fetchOrderDetail(42)).reservation).toEqual({ amount: "0.000000", unit: "shares" });
   });
 
   it("normalizes persisted close provenance and leaves an unknown provider unavailable", async () => {

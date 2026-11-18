@@ -1,0 +1,389 @@
+.execution-view,
+.execution-view :is(section, form, fieldset, input, select) {
+  min-width: 0;
+}
+
+.execution-view :is(dd, strong, small, p, td) {
+  overflow-wrap: anywhere;
+}
+
+.execution-view .nk-layout {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.execution-activity,
+.execution-ticket,
+.execution-receipt-body,
+.execution-recorded {
+  display: grid;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.execution-ticket fieldset,
+.execution-ticket dl,
+.execution-receipt dl {
+  margin: 0;
+}
+
+.execution-ticket :is(input, select),
+.execution-filter input {
+  width: 100%;
+  font-size: 16px;
+}
+
+.execution-ticket .nk-field:has(select) {
+  position: relative;
+}
+
+.execution-ticket select {
+  appearance: none;
+  padding-inline-end: 28px;
+}
+
+.execution-ticket .nk-field:has(select)::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 13px;
+  inset-block-end: 20px;
+  width: 7px;
+  height: 7px;
+  border-inline-end: 1px solid var(--muted);
+  border-block-end: 1px solid var(--muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.execution-number,
+.execution-receipt-values dd,
+.execution-receipt-title {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.execution-muted,
+.execution-filter p,
+.execution-receipt dt,
+.execution-side legend,
+.execution-facts dt {
+  color: var(--muted);
+}
+
+.execution-notice,
+.execution-error {
+  padding: 8px 12px;
+  border-inline-start: 2px solid currentColor;
+}
+
+.execution-error,
+.execution-view .nk-field p {
+  color: var(--down);
+}
+
+.execution-view .nk-state {
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  justify-items: start;
+  padding-inline: 0;
+}
+
+.execution-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px var(--gap);
+  padding: var(--pad);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.execution-filter .nk-field {
+  width: min(100%, 12rem);
+  flex: 0 1 auto;
+}
+
+.execution-filter p {
+  align-self: end;
+  flex: 1 1 14rem;
+  padding-block: 12px;
+}
+
+.execution-side > div,
+.execution-ticket-inputs,
+.execution-receipt-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.execution-side legend {
+  margin-bottom: 5px;
+}
+
+.execution-side .nk-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--raised);
+}
+
+.execution-ticket h3,
+.execution-recorded h3 {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.execution-preview {
+  display: grid;
+  gap: 8px;
+  padding-block: 12px;
+  border-block-start: 1px solid var(--line);
+}
+
+.execution-preview ul,
+.execution-risk ul {
+  padding-inline-start: 1.15em;
+  list-style: disc;
+}
+
+.execution-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  border-block-end: 1px solid var(--line);
+  padding-block: 6px;
+}
+
+.execution-facts dd {
+  text-align: end;
+}
+
+.execution-facts dt small {
+  display: block;
+}
+
+.execution-view :where(.nk-scroll caption, .execution-mobile-label) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.execution-view .nk-scroll {
+  position: relative;
+}
+
+.execution-view .nk-scroll th {
+  text-align: start;
+  color: var(--muted);
+  font-weight: 550;
+}
+
+.execution-view .nk-scroll :is(th, td) {
+  padding-inline: clamp(4px, .9vw, 14px);
+  vertical-align: middle;
+}
+
+.execution-view .nk-scroll td:first-child {
+  text-align: start;
+}
+
+.execution-view .nk-scroll small {
+  display: block;
+  font: inherit;
+  font-size: var(--label);
+  color: var(--muted);
+}
+
+.execution-view [data-order-status] {
+  text-transform: capitalize;
+}
+
+.execution-view [data-order-status="open"] {
+  color: var(--accent);
+}
+
+.execution-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.execution-orders .execution-actions {
+  justify-content: flex-end;
+}
+
+.execution-view .nk-scroll td:has(.execution-risk) {
+  min-width: 10rem;
+}
+
+.execution-risk {
+  margin-top: 8px;
+  text-align: start;
+  padding: 8px;
+  background: var(--raised);
+}
+
+.execution-risk li {
+  margin-top: 6px;
+}
+
+.execution-receipt-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  justify-content: space-between;
+  align-items: center;
+}
+
+.execution-receipt-title {
+  font-size: clamp(1.1rem, 2vw, 1.35rem);
+  font-weight: 600;
+}
+
+.execution-receipt-title span {
+  color: var(--muted);
+  font: var(--body)/var(--leading) var(--font-ui);
+  text-transform: capitalize;
+}
+
+.execution-receipt-values {
+  gap: 0;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.execution-receipt-values > div {
+  padding: var(--pad);
+  min-width: 0;
+}
+
+.execution-receipt-values dd {
+  font-size: clamp(.8rem, 1.1vw, 1.05rem);
+  margin-top: 3px;
+}
+
+.execution-receipt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--gap);
+}
+
+.execution-receipt-meta > div {
+  padding-inline-end: 8px;
+}
+
+.execution-view .execution-receipt .execution-recorded {
+  gap: 6px;
+}
+
+@media (min-width: 1050px) {
+  :root[data-look="terrain"] .execution-view .nk-layout:has(.execution-entry) {
+    grid-template-columns: minmax(360px, 1fr) minmax(0, 2fr);
+  }
+
+  :root[data-look="dial"] .execution-view .nk-panel {
+    border-inline: 0;
+  }
+
+  :root[data-look="dial"] .execution-ticket {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  :root[data-look="dial"] .execution-ticket > :not(.execution-side, .execution-ticket-inputs, .execution-preview) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  :root[data-look="dial"] .execution-ticket-inputs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  :root[data-look="dial"] .execution-side {
+    max-width: 18rem;
+  }
+}
+
+@media (min-width: 660px) {
+  .execution-table .execution-number {
+    white-space: nowrap;
+  }
+
+  .execution-receipt-values {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .execution-receipt-values > div + div {
+    border-inline-start: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 659px) {
+  .execution-receipt-values > div:nth-child(even) {
+    border-inline-start: 1px solid var(--line);
+  }
+
+  .execution-receipt-values > div:nth-child(n+3) {
+    border-block-start: 1px solid var(--line);
+  }
+
+  .execution-filter p {
+    padding-block: 0;
+  }
+
+  .execution-view .nk-scroll :is(table, tbody) {
+    display: block;
+  }
+
+  .execution-view .nk-scroll thead {
+    position: absolute;
+    clip-path: inset(50%);
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .execution-view .nk-scroll tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+    border-block-end: 1px solid var(--line);
+    padding-block: 10px;
+  }
+
+  .execution-view .nk-scroll td {
+    height: auto;
+    border: 0;
+    padding: 0;
+    text-align: start !important;
+  }
+
+  .execution-view .nk-scroll td:first-child,
+  .execution-view :is(.execution-orders, .execution-trades) td:last-child,
+  .execution-view .execution-fills td:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .execution-view .execution-mobile-label {
+    display: block;
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+    white-space: normal;
+    color: var(--muted);
+    font-size: var(--label);
+  }
+
+  .execution-orders .execution-actions {
+    justify-content: flex-start;
+  }
+}
