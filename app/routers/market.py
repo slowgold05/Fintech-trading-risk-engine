@@ -14,6 +14,8 @@ from app.models.holding import Holding
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.user import User
+from app.services.featured_market import INDEX_SYMBOLS, SECTOR_SYMBOLS
+from app.services.history_series import read_history_quotes
 from app.services.market_cache_service import MASSIVE_EOD_NOTICE, get_cached_heatmap
 from app.services.market_news_service import get_market_news
 from app.services.price_service import (
@@ -24,32 +26,9 @@ from app.services.price_service import (
 from app.services.research_valuation import build_research_valuation
 from app.services.sec_service import get_sec_company_fundamentals
 from app.services.sector_classifier import infer_sector
-from app.services.sp500_constituents import load_sp500_constituents
-from app.services.symbol_quote import detail_available_symbols
+from app.services.symbol_quote import SUPPORTED_DETAIL_SYMBOLS, detail_available_symbols
 
 router = APIRouter()
-
-INDEX_SYMBOLS = [
-    {"symbol": "SPY", "name": "S&P 500", "display_symbol": "SPX"},
-    {"symbol": "QQQ", "name": "Nasdaq 100", "display_symbol": "NDX"},
-    {"symbol": "DIA", "name": "Dow Jones", "display_symbol": "DJI"},
-    {"symbol": "IWM", "name": "Russell 2000", "display_symbol": "RUT"},
-]
-
-SECTOR_SYMBOLS = [
-    {"symbol": "XLK", "sector": "Technology", "weight": "large", "leaders": ["MSFT", "NVDA", "AAPL"]},
-    {"symbol": "XLF", "sector": "Financials", "weight": "medium", "leaders": ["JPM", "BAC"]},
-    {"symbol": "XLV", "sector": "Healthcare", "weight": "medium", "leaders": ["LLY", "UNH"]},
-    {"symbol": "XLY", "sector": "Consumer Disc.", "weight": "medium", "leaders": ["HD", "MCD", "NKE"]},
-    {"symbol": "XLP", "sector": "Consumer Staples", "weight": "small", "leaders": ["WMT", "COST", "PG"]},
-    {"symbol": "XLI", "sector": "Industrials", "weight": "small", "leaders": ["CAT", "GE"]},
-    {"symbol": "XLE", "sector": "Energy", "weight": "small", "leaders": ["XOM", "CVX"]},
-    {"symbol": "XLC", "sector": "Communication", "weight": "medium", "leaders": ["META", "GOOGL"]},
-    {"symbol": "XLRE", "sector": "Real Estate", "weight": "small", "leaders": ["PLD", "AMT"]},
-    {"symbol": "XLU", "sector": "Utilities", "weight": "small", "leaders": ["NEE", "SO"]},
-    {"symbol": "XLB", "sector": "Materials", "weight": "small", "leaders": ["LIN", "APD"]},
-]
-
 
 def _to_float(value) -> float | None:
     if value in (None, "", "None", "-"):
@@ -137,6 +116,7 @@ def market_overview(db: Session = Depends(get_db)):
         .filter(MarketQuoteCache.symbol.in_(requested_symbols))
         .all()
     }
+    cached_quotes.update(read_history_quotes(db, set(requested_symbols) - cached_quotes.keys()))
     latest = None
 
     for item in INDEX_SYMBOLS:
@@ -155,7 +135,9 @@ def market_overview(db: Session = Depends(get_db)):
             "change": round(float(quote.change_amount), 4),
             "change_percent": round(float(quote.change_percent), 4),
         }
-        if quote.source == "massive":
+        if hasattr(quote, "adjustment_type"):
+            trend.update(source=quote.source, adjustment_type=quote.adjustment_type, price_basis="end_of_day_open_to_close")
+        elif quote.source == "massive":
             massive_quotes = True
             trend["price_basis"] = "end_of_day_previous_close"
         trends.append(trend)
@@ -175,7 +157,9 @@ def market_overview(db: Session = Depends(get_db)):
             "weight": item["weight"],
             "leaders": item["leaders"],
         }
-        if quote.source == "massive":
+        if hasattr(quote, "adjustment_type"):
+            sector.update(source=quote.source, adjustment_type=quote.adjustment_type, price_basis="end_of_day_open_to_close")
+        elif quote.source == "massive":
             massive_quotes = True
             sector["price_basis"] = "end_of_day_previous_close"
         sectors.append(sector)
@@ -196,8 +180,48 @@ def market_news(db: Session = Depends(get_db)):
     return get_market_news(db, settings.finnhub_api_key)
 
 
+def _cached_trending(db: Session) -> dict:
+    now = datetime.now(timezone.utc)
+    quotes = (
+        db.query(MarketQuoteCache)
+        .join(MarketSymbol, MarketSymbol.symbol == MarketQuoteCache.symbol)
+        .filter(
+            MarketQuoteCache.symbol.in_(SUPPORTED_DETAIL_SYMBOLS),
+            MarketQuoteCache.quote_at <= now.replace(tzinfo=None),
+            MarketQuoteCache.fetched_at <= now.replace(tzinfo=None),
+            MarketSymbol.is_active.is_(True),
+            MarketSymbol.is_test.is_(False),
+        )
+        .all()
+    )
+    eligible = [quote for quote in quotes if (_to_float(quote.price) or 0) > 0]
+    session = max((quote.quote_at.date() for quote in eligible), default=None)
+    current = [quote for quote in eligible if quote.quote_at.date() == session]
+    movers = [
+        _format_mover({
+            "ticker": quote.symbol, "price": quote.price, "change_amount": quote.change_amount,
+            "change_percentage": quote.change_percent, "volume": quote.volume,
+        }, SUPPORTED_DETAIL_SYMBOLS)
+        for quote in current
+    ]
+    gainers = [mover for mover in movers if (mover["change_percent"] or 0) > 0]
+    losers = [mover for mover in movers if (mover["change_percent"] or 0) < 0]
+    active = [mover for mover in movers if (mover["volume"] or 0) > 0]
+    return {
+        "source": "featured_universe_cached_quotes",
+        "session_date": session.isoformat() if session else None,
+        "as_of": max((quote.fetched_at for quote in current)).replace(tzinfo=timezone.utc).isoformat() if current else None,
+        "top_gainers": sorted(gainers, key=lambda mover: (-mover["change_percent"], mover["symbol"]))[:8],
+        "top_losers": sorted(losers, key=lambda mover: (mover["change_percent"], mover["symbol"]))[:8],
+        "most_active": sorted(active, key=lambda mover: (-mover["volume"], mover["symbol"]))[:8],
+        "errors": [] if current else [{"detail": "Featured-universe cached quotes are unavailable."}],
+    }
+
+
 @router.get("/trending")
 def market_trending(db: Session = Depends(get_db)):
+    if not (settings.alpha_vantage_api_key or "").strip():
+        return _cached_trending(db)
     try:
         data = get_top_gainers_losers()
     except ValueError as exc:
@@ -240,10 +264,8 @@ def market_heatmap(
 OUTSIDE_FEATURED_UNIVERSE_LABEL = "Outside S&P 500"
 
 
-def _featured_universe_tickers() -> set[str]:
-    tickers = {row["ticker"] for row in load_sp500_constituents()}
-    tickers.update(item["symbol"] for item in INDEX_SYMBOLS)
-    return tickers
+def _featured_universe_tickers() -> frozenset[str]:
+    return SUPPORTED_DETAIL_SYMBOLS
 
 
 def _universe_viewer(db: Session, authorization: str | None) -> User | None:
@@ -385,6 +407,7 @@ def market_research(symbol: str, db: Session = Depends(get_db)):
         "pe_basis": valuation["pe_basis"],
         "price_basis": valuation["price_basis"],
         "price_as_of": valuation["price_as_of"],
+        **({key: valuation[key] for key in ("price_source", "adjustment_type")} if "price_source" in valuation else {}),
         "valuation_notice": valuation["valuation_notice"],
         "profit_margin": profit_margin,
         "profit_margin_period": profit_margin_period,

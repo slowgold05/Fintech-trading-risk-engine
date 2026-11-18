@@ -13,6 +13,7 @@ export type CanonicalHistorySeries = {
 export type MarketDataStatus = {
   read_at: string;
   collection: "disabled";
+  scheduled_history_provider?: "yahoo" | null;
   coverage_status: "not_verified";
   expected_session_count: null;
   canonical_history: {
@@ -60,8 +61,8 @@ export type HistoryResponse = {
   symbol: string;
   interval: "1d";
   range: HistoryRange;
-  provider: string;
-  adjustment_type: AdjustmentType;
+  provider: string | null;
+  adjustment_type: AdjustmentType | null;
   status: "unavailable" | "partial";
   coverage_status: HistoryCoverageStatus;
   expected_session_count: number | null;
@@ -84,7 +85,7 @@ export async function fetchCachedSeries(): Promise<MarketDataStatus> {
 
 export async function fetchDailyHistory(
   symbol: string,
-  provider: string,
+  provider: string | undefined,
   adjustment_type: string,
   range: HistoryRange,
 ): Promise<HistoryResponse> {

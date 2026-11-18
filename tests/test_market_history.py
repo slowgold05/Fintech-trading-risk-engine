@@ -426,7 +426,6 @@ def test_query_validation_and_unknown_symbol(client, db_session):
         {"interval": "1d", "range": "2y", "provider": "fixture ", "adjustment_type": "raw"},
         {"interval": "1d", "range": "2y", "provider": "", "adjustment_type": "raw"},
         {"interval": "1d", "range": "2y", "provider": "p" * 33, "adjustment_type": "raw"},
-        {"interval": "1d", "range": "2y", "adjustment_type": "raw"},
         {"interval": "1d", "provider": "fixture", "adjustment_type": "raw"},
     ]
     for params in cases:

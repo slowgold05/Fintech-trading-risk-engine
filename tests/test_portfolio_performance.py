@@ -952,3 +952,42 @@ def test_query_count_does_not_grow_with_trading_days(client, auth_headers, db_se
     assert len(one_ledger) == len(two_ledger)
     assert len(one_ledger) < len(one_year)
     assert len(one_statements) == len(two_statements)
+
+
+def test_portfolio_and_risk_use_yahoo_until_massive_raw_is_available(
+    client, auth_headers, db_session, monkeypatch,
+):
+    headers = auth_headers("history-fallback@example.com")
+    user = db_session.query(User).one()
+    days = _reference_sessions()
+    _seed_reference(db_session, user, days, include_last_bar=True)
+    _pin_clock(monkeypatch, datetime.combine(days[-1], time(20)))
+    _forbid_providers(monkeypatch)
+    db_session.query(MarketBarDaily).filter_by(adjustment_type="raw").update(
+        {"provider": "yahoo", "adjustment_type": "split_adjusted"}
+    )
+    db_session.commit()
+
+    def read(path):
+        response = client.get(f"/portfolio/{path}?range=1y", headers=headers)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    fallback = read("performance")
+    assert fallback["split_adjusted_history_sources"] == {"XYZ": "yahoo"}
+    assert fallback["series"] == REFERENCE_SERIES
+    risk = read("risk-metrics")
+    assert risk["split_adjusted_history_sources"] == {"XYZ": "yahoo"}
+    assert risk["historical_volatility_pct"] is not None
+
+    for row in db_session.query(MarketBarDaily).filter_by(provider="yahoo").all():
+        _bar(db_session, row.symbol, row.session_date, provider="massive",
+             fetched_at=row.fetched_at, close_price=row.close)
+        row.close = row.high = row.open = row.low = row.close + 1
+    db_session.commit()
+    paid = read("performance")
+    assert paid["series"] == fallback["series"]
+    assert "split_adjusted_history_sources" not in paid
+    risk_paid = read("risk-metrics")
+    assert risk_paid["historical_volatility_pct"] == risk["historical_volatility_pct"]
+    assert "split_adjusted_history_sources" not in risk_paid

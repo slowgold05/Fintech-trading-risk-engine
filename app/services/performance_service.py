@@ -124,9 +124,9 @@ from sqlalchemy.orm import Session
 from app.core.read_snapshot import SnapshotClockError, consistent_read, snapshot_clock
 from app.models.asset import Asset
 from app.models.ledger_entry import LedgerEntry
-from app.models.market_bar_daily import MarketBarDaily
 from app.models.user import User
 from app.services import exchange_calendar
+from app.services.history_series import read_analytics_closes
 from app.services.market_history import (
     one_calendar_year_before,
     two_calendar_years_before,
@@ -199,11 +199,13 @@ def _performance(
     series_days = [] if inception is None else _series_days(requested_start, requested_end, inception.date())
     states = _states_by_date(entries)
     symbols = _asset_symbols(db, entries)
-    closes = _raw_closes(db, symbols, series_days)
+    closes, adjusted_sources = _history_closes(db, symbols, series_days)
     # Own chain, own query. Not folded into `closes`: SPY is reported even
     # when the account does not hold it, and a missing account value does not
     # skip a SPY close.
-    benchmark_by_date = _benchmark_index_by_date(db, series_days)
+    benchmark_closes, benchmark_sources = _history_closes(db, {-1: BENCHMARK_SYMBOL}, series_days)
+    benchmark_by_date = _benchmark_index_by_date(benchmark_closes, series_days)
+    adjusted_sources.update(benchmark_sources)
     flows = _cash_flows(entries)
 
     series = []
@@ -296,6 +298,7 @@ def _performance(
             flows, base_date, base_value, last_available_date, last_value,
         ),
         "series": series,
+        **({"split_adjusted_history_sources": adjusted_sources} if adjusted_sources else {}),
         "reconciliation": _reconciliation(
             clock,
             series,
@@ -494,37 +497,23 @@ def _asset_symbols(db: Session, entries: list[LedgerEntry]) -> dict[int, str]:
     return {row.id: row.symbol for row in rows}
 
 
-def _raw_closes(
+def _history_closes(
     db: Session,
     symbols: dict[int, str],
     series_days: list[date],
-) -> dict[tuple[str, date], list[Decimal]]:
-    """One query for every raw close the window might need. More than one provider row is kept."""
+) -> tuple[dict[tuple[str, date], list[Decimal]], dict[str, str]]:
     if not symbols or not series_days:
-        return {}
-    rows = db.execute(
-        select(
-            MarketBarDaily.symbol,
-            MarketBarDaily.session_date,
-            MarketBarDaily.close,
-        ).where(
-            MarketBarDaily.symbol.in_(set(symbols.values())),
-            MarketBarDaily.adjustment_type == "raw",
-            MarketBarDaily.session_date >= series_days[0],
-            MarketBarDaily.session_date <= series_days[-1],
-        )
-    ).all()
+        return {}, {}
+    selected, adjusted_sources = read_analytics_closes(db, set(symbols.values()), series_days[0], series_days[-1])
     grouped: dict[tuple[str, date], list[Decimal]] = defaultdict(list)
-    for row in rows:
-        session_day = _as_date(row.session_date)
-        if session_day is None:
-            continue
-        grouped[(row.symbol, session_day)].append(_decimal(row.close))
-    return grouped
+    for symbol, rows in selected.items():
+        for day, close in rows:
+            grouped[(symbol, day)].append(close)
+    return grouped, adjusted_sources
 
 
-def _benchmark_index_by_date(db: Session, series_days: list[date]) -> dict[date, str]:
-    """SPY raw-close chain for series days that have exactly one raw close.
+def _benchmark_index_by_date(closes: dict[tuple[str, date], list[Decimal]], series_days: list[date]) -> dict[date, str]:
+    """SPY price chain for sessions that have one usable close.
 
     Same ratio and ``TWR_UNIT`` rounding as ``twr_index``, with no flow
     exclusion. ``last_spy_value`` / ``last_spy_index`` are local to this walk.
@@ -532,11 +521,6 @@ def _benchmark_index_by_date(db: Session, series_days: list[date]) -> dict[date,
     it and treat absence as null) and does not move the chain forward. More
     than one provider row is missing, the same rule as ``_account_value``.
     """
-    if not series_days:
-        return {}
-    # Reuse the held-asset query. The map key is not an asset id; only the
-    # symbol value is read.
-    closes = _raw_closes(db, {-1: BENCHMARK_SYMBOL}, series_days)
     indexed: dict[date, str] = {}
     last_spy_value: Decimal | None = None
     last_spy_index: Decimal | None = None
@@ -624,16 +608,3 @@ def _reconciliation(
         "current_total_account_value": current_text,
         "matches": matches,
     }
-
-
-def _as_date(value: object) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except ValueError:
-        return None
