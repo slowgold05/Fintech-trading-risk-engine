@@ -1,7 +1,12 @@
 .portfolio-review { min-width: 0; }
 .portfolio-review .nk-slot { min-width: 0; display: grid; align-content: start; gap: var(--gap); }
 .portfolio-review .review-controls, .portfolio-review .review-controls label { display:flex; flex-wrap:wrap; align-items:center; gap: .65rem; }
-.portfolio-review select { background: var(--surface); color:var(--ink); border:1px solid var(--line); padding:0 .65rem; min-height:44px; border-radius:var(--radius); }
+.portfolio-review select {
+  appearance:none; height:44px; padding:0 1.9rem 0 .7rem; color:var(--ink); background-color:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius);
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%);
+  background-position:calc(100% - 13px) center,calc(100% - 8px) center; background-size:5px 5px; background-repeat:no-repeat;
+}
 .portfolio-review .review-metrics { display:grid; gap:var(--gap); grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr)); }
 .portfolio-review p { margin-block:.5rem; color:var(--muted); }
 .portfolio-review strong, .portfolio-review b { color:var(--ink); }
