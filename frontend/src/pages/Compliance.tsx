@@ -255,11 +255,11 @@ export function Compliance() {
                   </div>
                 </div>
                 <div>
-                  <p className="mb-2 text-xs text-slate-400">AI usage</p>
+                  <p className="mb-2 text-xs text-slate-400">AI usage · {opsHealth.data.ai_usage.research_jobs_with_token_counts} sampled research jobs</p>
                   <div className="health-metrics">
                     <div className="metric-tile"><p className="text-xs text-slate-400">Prompt tokens</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.ai_usage.total_prompt_tokens}</p></div>
                     <div className="metric-tile"><p className="text-xs text-slate-400">Completion tokens</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.ai_usage.total_completion_tokens}</p></div>
-                    <div className="metric-tile"><p className="text-xs text-slate-400">Avg duration</p><p className="mt-2 font-mono text-2xl text-slate-100">{formatDurationMs(opsHealth.data.ai_usage.avg_duration_ms)}</p></div>
+                    <div className="metric-tile"><p className="text-xs text-slate-400">Avg duration</p><p className="mt-2 font-mono text-2xl text-slate-100">{opsHealth.data.ai_usage.research_jobs_with_token_counts ? formatDurationMs(opsHealth.data.ai_usage.avg_duration_ms) : "No samples"}</p></div>
                   </div>
                 </div>
                 <div>
