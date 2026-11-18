@@ -26,3 +26,5 @@
   .today-returns .nk-stat {display:flex;align-items:center;justify-content:space-between}
   :root[data-look=dial] .today-activity dl {grid-template-columns: minmax(0,1fr) minmax(0,2fr)}
 }
+
+.today-basis summary {min-height:44px;line-height:44px;color:var(--accent);cursor:pointer;font-family:var(--font-mono);font-size:var(--label)}

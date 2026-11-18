@@ -39,7 +39,9 @@ export function ClosingSessions({ owner }: { owner: number }) {
               </div>
               <p>Account return removes deposits and withdrawals between these closes. SPY measures price change over the same dates and excludes dividends.</p>
               {spyReturn == null ? <p data-testid="today-benchmark-missing">{absentSpy.length ? "SPY has no usable benchmark observation on " + absentSpy.join(" or ") + "." : "SPY’s starting index cannot support a return."}</p> :
-                <small>SPY · {spySource}</small>}
+                <details className="today-basis"><summary>SPY · {spySource}</summary>
+                  <p>A split-adjusted close accounts for share splits across chart dates. A raw close records the session’s traded price. Check the execution price on the order receipt.</p>
+                </details>}
               {accountReturn == null && <p>Account return needs a funded, comparable index at both closes.</p>}
             </>}
           {gaps.length > 0 && <p data-testid="today-gaps">Unpriced intervening sessions: {gaps.map(row => row.session_date).join(", ")}.</p>}

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { fetchMe } from "../api/auth";
 import { keys } from "../night/api";
 import { Button, Page, State } from "../night/kit";
@@ -5,6 +6,8 @@ import { ClosingSessions } from "../features/dashboard/ClosingSessions";
 import { ActivityBrief } from "../features/dashboard/ActivityBrief";
 import type { UserResponse } from "../types/schemas";
 import "../features/dashboard/today.css";
+import { DemoGuide } from "../night/features/account/DemoGuide";
+import { useGuide } from "../night/features/account/guideState";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -80,6 +83,9 @@ export function Dashboard() {
 }
 
 function Today({ identity }: { identity: UserResponse }) {
+  const entry = useRef<HTMLAnchorElement>(null);
+  const guide = useGuide(identity.id);
+  const demo = import.meta.env.VITE_DEMO_ENABLED !== "false" && identity.is_demo && identity.role === "trader";
   const portfolioQuery = useQuery({
     queryKey: keys.account(identity.id, "portfolio"),
     retry: false,
@@ -140,12 +146,13 @@ function Today({ identity }: { identity: UserResponse }) {
 
   return (
     <Page className="today" title="Today" description="Closing values, recent activity and current holdings."
-      actions={identity.role === "trader" && portfolio && <Link className="nk-button" data-variant="primary" data-testid="order-open"
+      actions={identity.role === "trader" && portfolio && !(demo && guide === "active") && <Link ref={entry} className="nk-button" data-variant="primary" data-testid="order-open"
         to="/trades?ticket=1">Open order preview</Link>}>
       <div className="today-brief">
         <ClosingSessions owner={identity.id} />
-        <ActivityBrief fills={tradesQuery.isSuccess ? trades?.trades : undefined} orders={ordersQuery.isSuccess ? ordersQuery.data?.orders : undefined} />
+        <ActivityBrief loadingFills={tradesQuery.isPending} loadingOrders={ordersQuery.isPending} fills={tradesQuery.isSuccess ? trades?.trades : undefined} orders={ordersQuery.isSuccess ? ordersQuery.data?.orders : undefined} />
       </div>
+      {demo && portfolio && <DemoGuide owner={identity.id} state={guide} onDismiss={() => requestAnimationFrame(() => entry.current?.focus())} orders={ordersQuery.isSuccess ? ordersQuery.data.orders : undefined} />}
       {portfolio?.user?.is_demo && (
         <p className="rounded-xl border border-emerald-400/25 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
           <strong>Demo account.</strong>{" "}
