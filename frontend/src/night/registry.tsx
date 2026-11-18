@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { lazy, type ComponentType } from "react";
 import type { UserResponse } from "../types/schemas";
 
 export type Role = UserResponse["role"];
@@ -15,7 +15,10 @@ export const destinations: readonly Destination[] = [
   {id:"compliance", label:"Compliance", path:"/compliance", access:"privileged"},
 ];
 export type Feature = Destination & { Screen: ComponentType; slot?: "companyEvents" };
-export const features: readonly Feature[] = [];
+const WatchlistsScreen = lazy(() => import("./features/discover/WatchlistsScreen").then(module => ({ default: module.WatchlistsScreen })));
+export const features: readonly Feature[] = [
+  {id:"watchlists", label:"Watchlists", path:"/watchlists", access:"authenticated", Screen:WatchlistsScreen},
+];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;
   if (!identity) return false;
