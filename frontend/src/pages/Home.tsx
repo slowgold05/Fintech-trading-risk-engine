@@ -58,7 +58,7 @@ const pageSections = [
   { id: "market-news", label: "Market news" },
   { id: "daily-price-history-title", label: "Daily history chart" },
 ] as const;
-const HISTORY_PROVIDER = "massive";
+const HISTORY_PROVIDER = "auto";
 const HISTORY_ADJUSTMENT = "split_adjusted";
 const stockSectorOrder = [
   "Technology",
@@ -1064,6 +1064,7 @@ export function Home() {
           </div>
           <div className="dashboard-card-body min-w-0 space-y-4">
             <IndexComparisonChart
+              provider={HISTORY_PROVIDER}
               quotes={trends.map((trend) => ({
                 symbol: trend.source_symbol,
                 value: trend.value,

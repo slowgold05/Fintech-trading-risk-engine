@@ -376,7 +376,7 @@ describe("public market data truth", () => {
         symbol,
         range,
         symbol === "QQQ" ? ["12.000000", "9.000000"] : ["10.000000", "12.000000"],
-        provider,
+        provider === "auto" ? "yahoo" : provider,
         adjustment,
       )
     ));
@@ -393,18 +393,18 @@ describe("public market data truth", () => {
     await waitFor(() => expect(comparison).toHaveTextContent("+20.00%"));
     expect(within(comparison).getByText("DIA")).toBeInTheDocument();
     expect(within(comparison).getByText("IWM")).toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "1m");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "auto", "split_adjusted", "1m");
 
     fireEvent.click(threeMonth);
     expect(threeMonth).toHaveAttribute("aria-pressed", "true");
     expect(oneMonth).toHaveAttribute("aria-pressed", "false");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "3m");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "3m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "3m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "auto", "split_adjusted", "3m");
     fireEvent.click(screen.getByRole("button", { name: "Market pulse range 2Y" }));
-    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "2y"));
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "massive", "split_adjusted", "2y");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("IWM", "massive", "split_adjusted", "2y");
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "2y"));
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "auto", "split_adjusted", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("IWM", "auto", "split_adjusted", "2y");
   });
 
   it("keeps market-pulse tiles text-only when history is unavailable", async () => {
@@ -419,7 +419,7 @@ describe("public market data truth", () => {
     open();
     const pulse = screen.getByRole("heading", { name: "Market pulse" }).closest(".dashboard-card") as HTMLElement;
     expect(await within(pulse).findByText("Provider change -1.50%")).toBeInTheDocument();
-    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "1m"));
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "1m"));
     expect(within(pulse).getByText("$123.45")).toBeInTheDocument();
     expect(within(pulse).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
   });
@@ -441,7 +441,7 @@ describe("public market data truth", () => {
     const nope = screen.getByText("NOPE").closest("tr") as HTMLElement;
     expect(await within(nope).findByText("—")).toBeInTheDocument();
     expect(within(nope).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NOPE", "massive", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NOPE", "auto", "split_adjusted", "1m");
   });
 
   it("shows the company research chart only after research inputs load", async () => {
@@ -456,7 +456,7 @@ describe("public market data truth", () => {
     const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
     expect(within(researchCard).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
     expect(within(researchCard).queryByRole("button", { name: /Company research range/i })).not.toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("NVDA", "massive", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("NVDA", "auto", "split_adjusted", "1m");
 
     resolveResearch({ symbol: "NVDA", name: "NVIDIA Corporation", pe_ratio: 28, price: 100, errors: [] });
     expect(await within(researchCard).findByRole("img", { name: "NVDA closing prices over 1M, up" })).toBeInTheDocument();
@@ -465,7 +465,7 @@ describe("public market data truth", () => {
     expect(oneMonth).toHaveAttribute("aria-pressed", "true");
     expect(sixMonth).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Market pulse range 1M" })).toHaveAttribute("aria-pressed", "true");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NVDA", "massive", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NVDA", "auto", "split_adjusted", "1m");
 
     fireEvent.click(sixMonth);
     expect(sixMonth).toHaveAttribute("aria-pressed", "true");
