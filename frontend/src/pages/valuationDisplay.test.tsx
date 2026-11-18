@@ -30,6 +30,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock("../api/portfolio", () => ({
   fetchPortfolio: api.fetchPortfolio,
+  fetchPerformanceRange: vi.fn().mockResolvedValue({series: []}),
   fetchPortfolioPerformance: vi.fn().mockResolvedValue({series: []}),
   fetchPortfolioPnl: api.fetchPortfolioPnl,
 }));
@@ -344,6 +345,12 @@ function fill(realizedPnl = 0) {
   };
 }
 
+async function expandPortfolioDetails() {
+  for (const label of ["Allocation & P&L detail", "Risk metrics & stress scenarios", "Paper cash & trade impact"]) {
+    fireEvent.click(await screen.findByText(label, { selector: "summary" }));
+  }
+}
+
 function riskTile() {
   return screen.getByText("Latest assessment").parentElement as HTMLElement;
 }
@@ -480,12 +487,13 @@ describe("valuation display", () => {
       daily_pnl: 0,
       total_pnl: 0,
     });
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     expect(await screen.findByText("Valuation incomplete")).toBeInTheDocument();
-    const portfolioValue = screen.getByText("Portfolio value").parentElement as HTMLElement;
+    const portfolioValue = screen.getByText("Account value").parentElement as HTMLElement;
     expect(within(portfolioValue).getByText("Unavailable")).toBeInTheDocument();
     expect(within(portfolioValue).queryByText("$100,000")).not.toBeInTheDocument();
     expect(screen.getByText("Cash").parentElement).toHaveTextContent("$100,000");
@@ -502,11 +510,11 @@ describe("valuation display", () => {
     expect(within(fifo).getByText("$160")).toBeInTheDocument();
     expect(within(fifo).getByLabelText("gain: $0.00")).toBeInTheDocument();
 
-    const apple = screen.getByText("AAPL").closest("tr") as HTMLElement;
+    const apple = screen.getByTestId("holding-AAPL") as HTMLElement;
     expect(within(apple).getAllByText("$50.00")).toHaveLength(2);
     expect(within(apple).getByLabelText("gain: $0.00")).toBeInTheDocument();
     expect(within(apple).getByText("2")).toBeInTheDocument();
-    const microsoft = screen.getByText("MSFT").closest("tr") as HTMLElement;
+    const microsoft = screen.getByTestId("holding-MSFT") as HTMLElement;
     expect(within(microsoft).getAllByText("Unavailable").length).toBeGreaterThan(0);
     expect(within(microsoft).getByText("Quote missing")).toBeInTheDocument();
     expect(within(microsoft).queryByLabelText("gain: $0.00")).not.toBeInTheDocument();
@@ -880,9 +888,10 @@ describe("valuation display", () => {
   it("renders cash and sector rows on the sector allocation card", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
     api.fetchAllocation.mockResolvedValue(allocation("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Sector allocation" })).closest("section") as HTMLElement;
     // The ring legend repeats these labels. Assert the table, which is this card's data check.
@@ -902,9 +911,10 @@ describe("valuation display", () => {
   it("shows the sector allocation card as unavailable when allocation is incomplete", async () => {
     api.fetchPortfolio.mockResolvedValue(book("incomplete"));
     api.fetchAllocation.mockResolvedValue(allocation("incomplete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Sector allocation" })).closest("section") as HTMLElement;
     expect(await within(card).findByText("Sector allocation unavailable")).toBeInTheDocument();
@@ -918,9 +928,10 @@ describe("valuation display", () => {
   it("renders securities and a negative contribution on the P&L attribution card", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
     api.fetchAttribution.mockResolvedValue(attribution("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "P&L attribution" })).closest("section") as HTMLElement;
     expect(await within(card).findByText("+130.31%")).toBeInTheDocument();
@@ -943,9 +954,10 @@ describe("valuation display", () => {
   it("shows the P&L attribution card as unavailable when attribution is incomplete", async () => {
     api.fetchPortfolio.mockResolvedValue(book("incomplete"));
     api.fetchAttribution.mockResolvedValue(attribution("incomplete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "P&L attribution" })).closest("section") as HTMLElement;
     expect(await within(card).findByText("P&L attribution unavailable")).toBeInTheDocument();
@@ -958,7 +970,7 @@ describe("valuation display", () => {
 
   it("test_risk_metrics_card_renders_available_and_unavailable_fields_independently", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     api.fetchRiskMetrics.mockResolvedValue(
       riskMetrics({
         status: "complete",
@@ -973,6 +985,7 @@ describe("valuation display", () => {
     );
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -992,7 +1005,7 @@ describe("valuation display", () => {
 
   it("test_risk_metrics_card_renders_beta_as_a_plain_ratio_not_a_percent", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     api.fetchRiskMetrics.mockResolvedValue(
       riskMetrics({
         status: "complete",
@@ -1005,6 +1018,7 @@ describe("valuation display", () => {
     );
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -1018,7 +1032,7 @@ describe("valuation display", () => {
 
   it("test_stress_scenario_table_renders_three_fixed_scenarios", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     api.fetchRiskMetrics.mockResolvedValue(
       riskMetrics({
         stress_scenarios: [
@@ -1046,6 +1060,7 @@ describe("valuation display", () => {
     );
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -1078,9 +1093,10 @@ describe("valuation display", () => {
 
   it("test_stress_scenario_table_shows_unavailable_when_null", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -1098,7 +1114,7 @@ describe("valuation display", () => {
 
   it("test_correlation_table_renders_pairs_with_a_null_entry", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     api.fetchRiskMetrics.mockResolvedValue(
       riskMetrics({
         correlations: [
@@ -1109,6 +1125,7 @@ describe("valuation display", () => {
     );
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -1132,10 +1149,11 @@ describe("valuation display", () => {
 
   it("test_correlation_table_shows_unavailable_when_null", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     api.fetchRiskMetrics.mockResolvedValue(riskMetrics({ correlations: null }));
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -1150,7 +1168,7 @@ describe("valuation display", () => {
 
   it("test_risk_contribution_table_renders_rows_and_sums_to_one_hundred_percent", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     api.fetchRiskMetrics.mockResolvedValue(
       riskMetrics({
         risk_contributions: [
@@ -1161,6 +1179,7 @@ describe("valuation display", () => {
     );
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -1182,10 +1201,11 @@ describe("valuation display", () => {
 
   it("test_risk_contribution_table_shows_unavailable_when_null", async () => {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     api.fetchRiskMetrics.mockResolvedValue(riskMetrics({ risk_contributions: null }));
 
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
 
     const card = (await screen.findByRole("heading", { name: "Risk metrics (1y)" })).closest(
       "section",
@@ -1200,10 +1220,11 @@ describe("valuation display", () => {
 
   async function renderSettledPortfolio() {
     api.fetchPortfolio.mockResolvedValue(book("complete"));
-    api.fetchMe.mockResolvedValue({ role: "analyst", email: "trader@example.com" });
+    api.fetchMe.mockResolvedValue({ id: 1, role: "analyst", email: "trader@example.com" });
     renderPage(<Portfolio />);
+    await expandPortfolioDetails();
     expect(await screen.findByRole("heading", { name: "Trade impact preview" })).toBeInTheDocument();
-    expect(await screen.findByText("$50,000")).toBeInTheDocument();
+    expect(await screen.findByText("$50,000.00")).toBeInTheDocument();
     expect(await screen.findByText(/Paper deposits and withdrawals are available/)).toBeInTheDocument();
     expect(await screen.findByText("Sector allocation unavailable")).toBeInTheDocument();
     expect(await screen.findByText("P&L attribution unavailable")).toBeInTheDocument();
