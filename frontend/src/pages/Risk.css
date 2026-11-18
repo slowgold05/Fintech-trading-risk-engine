@@ -1,0 +1,30 @@
+.risk-split { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:var(--gap); }
+.risk-workbench .nk-panel p,.risk-company .company-readings p { color:var(--muted); font-size:var(--body); }
+.assessment-reading { display:flex; align-items:baseline; gap:10px; }
+.assessment-reading strong { font:550 clamp(48px,6vw,82px)/1.1 var(--font-ui); letter-spacing:-.06em; }
+.assessment-reading span { color:var(--muted); font:var(--body)/1 var(--font-mono); }
+.assessment-reading b { margin-left:auto; color:var(--accent); }
+.risk-rules dl > div,.risk-weight { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; align-items:baseline; border-top:1px solid var(--line); padding:9px 0; }
+.risk-rules small,.risk-weight small,.risk-feed small { display:block; color:var(--muted); }
+.risk-rules dd,.risk-weight span,.risk-facts dd,.notional-value { font:500 20px/1.4 var(--font-mono); }
+.risk-facts { display:flex; flex-wrap:wrap; gap:var(--gap) 32px; margin-bottom:8px; }
+.risk-facts dt { color:var(--muted); font-size:var(--label); }
+.risk-weight { margin-top:var(--gap); }
+.risk-weight small { grid-column:1/-1; }
+.risk-feed { overflow:auto; max-height:440px; }
+.risk-feed table { width:100%; border-collapse:collapse; }
+.risk-feed th,.risk-feed td { text-align:left; padding:9px; border-bottom:1px solid var(--line); }
+.risk-feed th { color:var(--muted); font-weight:500; }
+.risk-feed :is(td,th):nth-child(2),.risk-feed :is(td,th):nth-child(3) { text-align:right; font-variant-numeric:tabular-nums; }
+[data-look=dial] .risk-split { grid-template-columns:minmax(0,1fr); }
+[data-look=dial] .risk-rules dl { display:grid; grid-template-columns:1fr 1fr; gap:var(--pad); }
+[data-look=dial] .risk-workbench .nk-panel { border-width:1px 0 0; border-radius:0; background:var(--bg); }
+@media(max-width:767px) {
+ .risk-split,[data-look=dial] .risk-rules dl { grid-template-columns:minmax(0,1fr); }
+ .risk-workbench .nk-panel > header { flex-wrap:wrap; }
+ .risk-feed thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .risk-feed tr { display:grid; grid-template-columns:1fr 1fr; padding:8px 0; border-bottom:1px solid var(--line); }
+ .risk-feed td,.risk-feed td:nth-child(2),.risk-feed td:nth-child(3) { border:0; padding:4px; text-align:left; }
+ .risk-feed td:first-child,.risk-feed td:last-child { grid-column:1/-1; }
+ .risk-feed td[data-label]::before { content:attr(data-label); color:var(--muted); display:block; font-size:var(--label); }
+}
