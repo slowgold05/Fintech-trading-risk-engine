@@ -52,9 +52,11 @@ export async function fetchMarketNews(): Promise<MarketNewsResponse> {
 
 export async function fetchMarketUniverse(
   search: string,
+  limit = 20,
+  offset = 0,
 ): Promise<MarketUniverseResponse> {
   const response = await apiClient.get<MarketUniverseResponse>("/market/universe", {
-    params: { search, limit: 20 },
+    params: { search, limit, offset },
   });
   return response.data;
 }
