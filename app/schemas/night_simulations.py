@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, ValidationInfo, field_validator
 
 from app.services.exchange_calendar import is_nyse_trading_day
 
@@ -43,7 +43,7 @@ class BacktestRequest(BaseModel):
 
     @field_validator("end")
     @classmethod
-    def validate_window(cls, end: date, info) -> date:
+    def validate_window(cls, end: date, info: ValidationInfo) -> date:
         start = info.data.get("start")
         if start is not None:
             year = start.year + 3
@@ -54,6 +54,13 @@ class BacktestRequest(BaseModel):
         return end
 
 
+class RecurringRequest(BacktestRequest):
+    monthly_usd: Annotated[
+        Decimal, BeforeValidator(_decimal_input), Field(gt=0, le=100_000, decimal_places=2, allow_inf_nan=False)
+    ]
+
+
+SimulationMode = Literal["backtest", "recurring"]
 Coverage = Literal["available", "partial", "missing", "stale"]
 
 
@@ -73,7 +80,7 @@ class SimulationPoint(BaseModel):
 
 class Simulation(BaseModel):
     symbol: str
-    mode: Literal["backtest"]
+    mode: SimulationMode
     coverage: Coverage
     source: SimulationSource | None = None
     start_used: date | None = None

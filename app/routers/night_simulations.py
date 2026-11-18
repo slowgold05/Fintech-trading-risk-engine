@@ -10,8 +10,8 @@ from starlette.exceptions import HTTPException
 from app.core.database import get_db
 from app.core.read_snapshot import SnapshotClockError
 from app.core.security import get_current_user
-from app.schemas.night_simulations import BacktestRequest, Simulation, SimulationError
-from app.services.night_simulations import run_backtest
+from app.schemas.night_simulations import BacktestRequest, RecurringRequest, Simulation, SimulationError
+from app.services.night_simulations import run_simulation
 
 
 class SimulationRoute(APIRoute):
@@ -26,7 +26,7 @@ class SimulationRoute(APIRoute):
                 for error in exc.errors():
                     location = error["loc"]
                     field = location[-1]
-                    if field not in BacktestRequest.model_fields or error["type"] == "extra_forbidden":
+                    if field not in RecurringRequest.model_fields or error["type"] == "extra_forbidden":
                         field = "body"
                     fields.setdefault(field, error["msg"])
                 raise HTTPException(422, detail={"code": "invalid_request", "message": "Check the simulation inputs.",
@@ -59,4 +59,9 @@ router = APIRouter(
 
 @router.post("/backtest", response_model=Simulation)
 def backtest(request: BacktestRequest, db: Session = Depends(get_db)) -> Simulation:
-    return run_backtest(db, request)
+    return run_simulation(db, request)
+
+
+@router.post("/recurring", response_model=Simulation)
+def recurring(request: RecurringRequest, db: Session = Depends(get_db)) -> Simulation:
+    return run_simulation(db, request)
