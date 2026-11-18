@@ -230,3 +230,46 @@ describe("Login", () => {
     expect(authApi.login).not.toHaveBeenCalled();
   });
 });
+
+describe("registration and authenticator setup", () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllEnvs(); });
+
+  it("associates server validation messages with the failed input", async () => {
+    authApi.register.mockRejectedValueOnce(new AxiosError("Invalid", undefined, undefined, undefined, {
+      status:422, data:{detail:[{loc:["body","password"],msg:"Value error, Password is too common"}]},
+    } as AxiosError["response"]));
+    renderLogin();
+    fireEvent.click(screen.getByRole("button",{name:/Need an account/}));
+    fireEvent.change(screen.getByLabelText("Email"),{target:{value:"tester@example.com"}});
+    fireEvent.change(screen.getByLabelText("Password"),{target:{value:"qwerty123"}});
+    fireEvent.click(screen.getByTestId("auth-submit"));
+    expect(await screen.findByText("Password is too common")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toHaveAttribute("aria-invalid","true");
+    expect(screen.getByLabelText("Password")).toHaveAccessibleDescription(/Password is too common/);
+    expect(authApi.login).not.toHaveBeenCalled();
+  });
+
+  it("enrolls an authenticator and returns to the password form", async () => {
+    authApi.enrollMfa.mockResolvedValueOnce({secret:"fixture"});
+    authApi.confirmMfaEnrollment.mockResolvedValueOnce(undefined);
+    renderLogin();
+    fireEvent.click(screen.getByRole("button",{name:"Set up an authenticator"}));
+    fireEvent.change(screen.getByLabelText("Email"),{target:{value:"tester@example.com"}});
+    fireEvent.change(screen.getByLabelText("Password"),{target:{value:"password123"}});
+    fireEvent.click(screen.getByTestId("auth-submit"));
+    fireEvent.change(await screen.findByLabelText("Enrollment code"),{target:{value:"123456"}});
+    fireEvent.click(screen.getByTestId("auth-submit"));
+    expect(await screen.findByText("Authenticator saved. Sign in to continue.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Authenticator secret")).not.toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"Sign in"})).toBeEnabled();
+  });
+
+  it("keeps regular sign-in and registration available with demo disabled", () => {
+    vi.stubEnv("VITE_DEMO_ENABLED","false");
+    renderLogin();
+    expect(screen.queryByTestId("demo-start")).not.toBeInTheDocument();
+    expect(screen.getByTestId("auth-submit")).toBeEnabled();
+    fireEvent.click(screen.getByRole("button",{name:/Need an account/}));
+    expect(screen.getByRole("heading",{name:"Create account"})).toBeInTheDocument();
+  });
+});
