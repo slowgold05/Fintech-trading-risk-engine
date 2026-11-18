@@ -822,3 +822,7 @@
   :where(html[data-look="terrain"]) .market-desk .header-inner .symbol-results { position:absolute; left:-28px; right:auto; width:min(340px,90vw); }
   :where(html[data-look="terrain"]) .market-desk .header-inner .symbol-search>svg { display:none; }
 }
+
+@media (max-width: 767px) {
+  :where(html[data-look="terrain"]) .market-desk .header-inner .brand-link { min-width:44px; justify-content:center; }
+}
