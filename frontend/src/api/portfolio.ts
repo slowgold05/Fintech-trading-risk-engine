@@ -5,3 +5,9 @@ export async function fetchPortfolio(): Promise<PortfolioResponse> {
   const response = await apiClient.get<PortfolioResponse>("/portfolio/");
   return response.data;
 }
+
+export async function resetDemoPortfolio(idempotencyKey: string): Promise<void> {
+  await apiClient.post("/portfolio/reset", undefined, {
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}

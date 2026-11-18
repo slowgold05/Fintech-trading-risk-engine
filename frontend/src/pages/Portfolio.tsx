@@ -1,11 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { fetchMe, setLegalName } from "../api/auth";
 import { createCashMovement } from "../api/cash";
 import { fetchAllocation } from "../api/allocation";
 import { fetchAttribution } from "../api/attribution";
-import { fetchPortfolio } from "../api/portfolio";
+import { fetchPortfolio, resetDemoPortfolio } from "../api/portfolio";
 import { fetchRiskMetrics } from "../api/riskMetrics";
 import { useToast } from "../context/useToast";
 import { AllocationRing } from "../components/AllocationRing";
@@ -32,7 +32,7 @@ import type {
   RiskCorrelation,
   StressScenario,
 } from "../types/schemas";
-import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, SpinnerGap } from "@phosphor-icons/react";
 import { previewTradeImpact } from "../api/tradeImpact";
 import type { TradeImpactRequestBody, TradeImpactResponse } from "../types/schemas";
 import { previewRiskScenarios } from "../api/riskScenarios";
@@ -159,6 +159,46 @@ function CashPanel() {
   );
 }
 
+function DemoResetButton() {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const resetKey = useRef<string | null>(null);
+  const reset = useMutation({
+    mutationFn: resetDemoPortfolio,
+    onSuccess: async () => {
+      resetKey.current = null;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+        queryClient.invalidateQueries({ queryKey: ["risk"] }),
+      ]);
+      showToast("success", "Demo portfolio restored.");
+    },
+    onError: (error) => {
+      const detail = isAxiosError(error) ? error.response?.data?.detail : null;
+      showToast("error", typeof detail === "string" ? detail : "Demo reset could not be confirmed. Try again.");
+    },
+  });
+
+  function confirmReset() {
+    if (reset.isPending || !window.confirm("Restore the starting demo cash, holdings, and trade history? Cancel any open orders first.")) return;
+    resetKey.current ??= crypto.randomUUID();
+    reset.mutate(resetKey.current);
+  }
+
+  return (
+    <button
+      className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-slate-600 px-3 text-sm text-slate-200 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:opacity-50"
+      type="button"
+      onClick={confirmReset}
+      disabled={reset.isPending}
+    >
+      {reset.isPending && <SpinnerGap aria-hidden="true" className="size-4 motion-safe:animate-spin" />}
+      Reset demo portfolio…
+    </button>
+  );
+}
+
 export function Portfolio() {
   const portfolioQuery = useQuery({
     queryKey: ["portfolio"],
@@ -197,6 +237,8 @@ export function Portfolio() {
         title="Holdings &amp; Valuation"
         description="Open positions, FIFO P&amp;L, cost basis, and exposure breakdown by asset class."
       />
+
+      {portfolio?.user?.is_demo && <DemoResetButton />}
 
       {portfolioQuery.isError ? (
         <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
