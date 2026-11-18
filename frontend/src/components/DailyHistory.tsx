@@ -1,6 +1,6 @@
 import { ChartNotices } from "./ChartNotices";
 import { isHistoryRange } from "../utils/historyRange";
-import { Select } from "../design/Select";
+import { Select as DefaultSelect } from "../design/Select";
 import { Input } from "../design/primitives";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -345,9 +345,13 @@ export function DailyHistory({
   value,
   onValueChange,
   embedded = false,
+  SelectControl: Select = DefaultSelect,
+  catalogEnabled = true,
   accountOverlays = true,
 }: {
   embedded?: boolean;
+  SelectControl?: typeof DefaultSelect;
+  catalogEnabled?: boolean;
   accountOverlays?: boolean;
   value?: string;
   onValueChange?: (value: string) => void;
@@ -395,6 +399,7 @@ export function DailyHistory({
   const catalogQuery = useQuery({
     queryKey: ["market", "cachedseries"],
     queryFn: fetchCachedSeries,
+    enabled: catalogEnabled,
     retry: false,
   });
   const historyQuery = useQuery({

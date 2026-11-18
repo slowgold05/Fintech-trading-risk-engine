@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { MagnifyingGlass, ArrowRight, X } from "@phosphor-icons/react";
 import { fetchMarketUniverse } from "../api/market";
 
-export function MarketSearch() {
+export function MarketSearch({ compact = false }: { compact?: boolean } = {}) {
   const [draft, setDraft] = useState("");
   const [submitted, setSubmitted] = useState("");
   const form = useRef<HTMLFormElement>(null);
@@ -31,7 +31,7 @@ export function MarketSearch() {
   return (
     <form
       ref={form}
-      className="symbol-search"
+      className="symbol-search market-search"
       role="search"
       onSubmit={handleSubmit}
       onKeyDown={(e) => {
@@ -48,10 +48,10 @@ export function MarketSearch() {
       <MagnifyingGlass aria-hidden="true" size={17} />
       <input
         ref={input}
-        id="market-symbol-search"
+        id="market-symbol-search" data-testid="market-search"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="Search company or ticker"
+        placeholder={compact ? "Ticker" : "Search company or ticker"}
         autoComplete="off"
       />
       <button type="submit" aria-label="Search">
@@ -79,13 +79,13 @@ export function MarketSearch() {
               {results.data.items.length ? (
                 results.data.items.map((item) => (
                   <li key={item.symbol}>
-                    <Link to={`/market/${encodeURIComponent(item.symbol)}`}>
+                    {("detail_available" in item && item.detail_available === false) ? <span><strong>{item.symbol}</strong> {item.company_name} · Detail unavailable</span> : <Link data-testid={`search-result-${item.symbol}`} to={`/market/${encodeURIComponent(item.symbol)}`}>
                       <strong>{item.symbol}</strong>
                       <span>{item.company_name}</span>
                       {!item.in_featured_universe && (
                         <small>{item.universe_label || "Outside S&P 500"}</small>
                       )}
-                    </Link>
+                    </Link>}
                   </li>
                 ))
               ) : (
