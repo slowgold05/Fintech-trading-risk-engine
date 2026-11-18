@@ -13,8 +13,9 @@ from app.core.database import get_db
 from app.core.read_snapshot import SnapshotClockError
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.night_portfolio_review import PortfolioReview, Window
+from app.schemas.night_portfolio_review import PortfolioInsights, PortfolioReview, Surface, Window
 from app.services.market_providers import ProviderUnavailable
+from app.services.night_portfolio_insights import RULES_VERSION, build_insights
 from app.services.night_portfolio_review import build_review
 
 
@@ -52,6 +53,7 @@ class NightPortfolioRoute(APIRoute):
 
 
 review_router = APIRouter(prefix="/night/portfolio", route_class=NightPortfolioRoute)
+insights_router = APIRouter(prefix="/night/portfolio", route_class=NightPortfolioRoute)
 
 
 @review_router.get("/review", response_model=PortfolioReview)
@@ -61,3 +63,21 @@ def portfolio_review(
     owner: User = Depends(get_current_user),
 ) -> PortfolioReview:
     return build_review(db, owner.id, owner.email, window)
+
+
+@insights_router.get("/insights", response_model=PortfolioInsights)
+def portfolio_insights(
+    surface: Surface,
+    response: Response,
+    window: Window | None = None,
+    db: Session = Depends(get_db),
+    owner: User = Depends(get_current_user),
+) -> PortfolioInsights | JSONResponse:
+    if surface == "today" and window is not None:
+        return night_error(
+            422, "invalid_request", "Invalid portfolio request.",
+            {"window": "Window is available for the Portfolio surface only."},
+        )
+    result = build_insights(db, owner.id, owner.email, surface, window)
+    response.headers["X-Night-Insight-Rules"] = RULES_VERSION
+    return result

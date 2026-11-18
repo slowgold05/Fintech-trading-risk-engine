@@ -81,3 +81,43 @@ class PortfolioReview(BaseModel):
     exposure: ReviewExposure
     contribution: ReviewContribution
     assumptions: list[str]
+
+
+Surface = Literal["today", "portfolio"]
+InsightRule = Literal["close_change", "spy_comparison", "largest_holding", "coverage_gap"]
+
+
+class Provenance(BaseModel):
+    provider: str
+    basis: PriceBasis
+    session_date: date | None
+    observed_at: datetime | None
+    coverage: Coverage
+
+
+class InsightEvidence(BaseModel):
+    label: str
+    value: str | int
+    unit: Literal["usd", "ratio", "count"]
+    from_date: date
+    to_date: date
+    source: Provenance | None = None
+
+
+class Insight(BaseModel):
+    rule: InsightRule
+    text: str
+    evidence: list[InsightEvidence]
+
+
+class OmittedInsight(BaseModel):
+    rule: InsightRule
+    reason: str
+
+
+class PortfolioInsights(BaseModel):
+    surface: Surface
+    read_at: datetime
+    coverage: Coverage
+    items: list[Insight]
+    omitted: list[OmittedInsight]

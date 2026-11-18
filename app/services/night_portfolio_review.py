@@ -282,9 +282,12 @@ class ReviewSnapshot:
     allocation: dict
     spy_source: PriceSeries | None
     spy: dict[date, Close]
+    recent_close_compatible: bool | None
 
 
-def review_in_snapshot(db: Session, user_id: int, email: str, window: Window) -> ReviewSnapshot:
+def review_in_snapshot(
+    db: Session, user_id: int, email: str, window: Window, *, check_recent_close: bool = False,
+) -> ReviewSnapshot:
     sampled_at = snapshot_clock(db)
     clock = sampled_at.replace(tzinfo=timezone.utc)
     start, end = _period(clock, window)
@@ -354,10 +357,18 @@ def review_in_snapshot(db: Session, user_id: int, email: str, window: Window) ->
     if metrics.spy_return_ratio is None:
         assumptions.append("A matched SPY return requires closes from one provider and basis at both account endpoints.")
 
-    contribution = period_contribution(
-        db, user_id, entries, states, symbols, sources, bars, flagged, pinned, seed,
-        values, flows, start_used, end_used, clock, reset.id if reset is not None else None,
-    )
+    def contribution_between(first, last):
+        return period_contribution(
+            db, user_id, entries, states, symbols, sources, bars, flagged, pinned, seed,
+            values, flows, first, last, clock, reset.id if reset is not None else None,
+        )
+
+    contribution = contribution_between(start_used, end_used)
+    recent_close_compatible = None
+    if check_recent_close and end_used == end and len(values) >= 2:
+        previous_close = list(values)[-2]
+        recent = contribution if previous_close == start_used else contribution_between(previous_close, end_used)
+        recent_close_compatible = recent.coverage == "available"
     review = PortfolioReview(
         window=window, read_at=clock, coverage=_review_coverage(values, days, start_used, end_used, metrics, spy),
         requested_start=start, requested_end=end, start_used=start_used, end_used=end_used,
@@ -365,4 +376,4 @@ def review_in_snapshot(db: Session, user_id: int, email: str, window: Window) ->
         observations=observations, metrics=metrics, points=points,
         exposure=_exposure(portfolio, allocation, clock, end), contribution=contribution, assumptions=assumptions,
     )
-    return ReviewSnapshot(review, values, portfolio, allocation, spy_source, spy)
+    return ReviewSnapshot(review, values, portfolio, allocation, spy_source, spy, recent_close_compatible)
