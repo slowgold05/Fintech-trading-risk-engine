@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.research_job import ResearchJobCreate
 from app.services.finnhub_news import fetch_company_news
 from app.services.job_admission import admission_transaction, lock_owner
+from app.services.market_news_service import get_cached_market_news
 from app.services.market_providers import ProviderUnavailable
 from app.services.sec_service import get_sec_company_filings
 
@@ -52,7 +53,7 @@ def research_news(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Headlines for one active symbol. A missing Finnhub key is an empty result, not an error status."""
+    """Headlines for one active symbol, with Yahoo RSS used without a Finnhub key."""
     normalized = symbol.upper().strip()
     known = db.execute(
         select(MarketSymbol.symbol).where(
@@ -61,6 +62,8 @@ def research_news(
     ).first()
     if not known:
         raise HTTPException(status_code=400, detail=_UNKNOWN_SYMBOL)
+    if not settings.finnhub_api_key.strip():
+        return get_cached_market_news(db, normalized, "")
     try:
         articles = fetch_company_news(normalized, settings.finnhub_api_key)
     except ProviderUnavailable as exc:

@@ -1,16 +1,19 @@
 """Cached headlines for the four public index proxies.
 
-Finnhub runs only when ``market_news_cache`` has no fresh row for that symbol.
+Finnhub or Yahoo Finance RSS runs when the selected source has no fresh row.
 A provider failure does not overwrite a row that is already stored.
 """
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.models.market_news_cache import MarketNewsCache
 from app.services.finnhub_news import fetch_company_news
 from app.services.market_providers import ProviderUnavailable
+from app.services.yahoo_news import fetch_yahoo_news
 
 _SYMBOLS = ["SPY", "QQQ", "DIA", "IWM"]
 _TTL = timedelta(hours=2)
@@ -35,24 +38,32 @@ def _iso(value: datetime) -> str:
 def get_cached_market_news(db: Session, symbol: str, api_key: str, *, http_get=None) -> dict:
     symbol = symbol.upper().strip()
     cutoff = _naive_utc() - _TTL
+    source = "finnhub" if api_key.strip() else "yahoo"
     cached = db.get(MarketNewsCache, symbol)
-    if cached is not None and _naive_utc(cached.fetched_at) >= cutoff:
+    if cached is not None and cached.source == source and _naive_utc(cached.fetched_at) >= cutoff:
         return {"symbol": symbol, "articles": list(cached.payload or []), "error": None}
 
     try:
-        articles = fetch_company_news(symbol, api_key, http_get=http_get)
+        if source == "finnhub":
+            articles = fetch_company_news(symbol, api_key, http_get=http_get)
+        else:
+            articles = fetch_yahoo_news(symbol)
     except ProviderUnavailable as exc:
-        if cached is not None:
-            return {"symbol": symbol, "articles": list(cached.payload or []), "error": None}
-        return {"symbol": symbol, "articles": [], "error": str(exc)}
+        return {
+            "symbol": symbol,
+            "articles": list(cached.payload or []) if cached is not None else [],
+            "error": None if cached is not None and source == "finnhub" else str(exc),
+        }
 
-    now = _naive_utc()
-    if cached is None:
-        cached = MarketNewsCache(symbol=symbol, payload=articles, source="finnhub", fetched_at=now)
-        db.add(cached)
-    else:
-        cached.payload = articles
-        cached.fetched_at = now
+    insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else pg_insert
+    command = insert(MarketNewsCache).values(
+        symbol=symbol, payload=articles, source=source, fetched_at=_naive_utc(),
+    )
+    db.execute(command.on_conflict_do_update(
+        index_elements=["symbol"], set_={
+            field: getattr(command.excluded, field) for field in ("payload", "source", "fetched_at")
+        },
+    ))
     db.commit()
     return {"symbol": symbol, "articles": articles, "error": None}
 
