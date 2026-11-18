@@ -7,7 +7,7 @@ import {
   setUnauthorizedHandler,
 } from "../api/client";
 import { logout, refreshSession } from "../api/auth";
-import { clearPersistedOrderAttempt } from "../utils/orderAttemptStorage";
+import { clearPersistedOrderAttempt } from "../utils/orderAttemptSlot";
 import { AuthContext } from "./authState";
 
 type AuthProviderProps = {

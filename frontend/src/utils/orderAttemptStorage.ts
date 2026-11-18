@@ -1,5 +1,7 @@
 import { parseEstimatedExecution, type OrderPreviewPayload, type OrderPreviewResponse } from "../api/orderPreview";
 import type { TradeSide } from "../types/schemas";
+import { ORDER_ATTEMPT_SLOT } from "./orderAttemptSlot";
+export { clearPersistedOrderAttempt } from "./orderAttemptSlot";
 
 export type PersistedAttempt = {
   fingerprint: string;
@@ -11,8 +13,6 @@ export type PersistedOrderAttempt = {
   attempt: PersistedAttempt;
   preview: OrderPreviewResponse;
 };
-
-const STORAGE_SLOT = "orderTicket.pendingAttempt.v1";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -130,7 +130,7 @@ function parsePersistedOrderAttempt(value: unknown): PersistedOrderAttempt | nul
 
 export function readPersistedOrderAttempt(): PersistedOrderAttempt | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_SLOT);
+    const raw = sessionStorage.getItem(ORDER_ATTEMPT_SLOT);
     if (raw === null) return null;
     return parsePersistedOrderAttempt(JSON.parse(raw));
   } catch {
@@ -140,16 +140,8 @@ export function readPersistedOrderAttempt(): PersistedOrderAttempt | null {
 
 export function writePersistedOrderAttempt(value: PersistedOrderAttempt): void {
   try {
-    sessionStorage.setItem(STORAGE_SLOT, JSON.stringify(value));
+    sessionStorage.setItem(ORDER_ATTEMPT_SLOT, JSON.stringify(value));
   } catch {
     // A storage failure only drops reload recovery. The in-memory attempt is still correct.
-  }
-}
-
-export function clearPersistedOrderAttempt(): void {
-  try {
-    sessionStorage.removeItem(STORAGE_SLOT);
-  } catch {
-    // Clearing is best-effort. A later read still rejects garbage.
   }
 }
