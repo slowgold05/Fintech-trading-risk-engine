@@ -22,6 +22,7 @@ from app.models.mfa import LoginChallenge
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.services.ledger_service import ensure_opening
+from app.services.demo_accounts import SEED_MESSAGES, create_demo_account
 from app.services.sanctions import normalize_name, record_screen, screen_name
 from app.schemas.user import UserCreate, UserOut
 from app.services.login_lockout import (
@@ -61,7 +62,7 @@ class MfaLogin(BaseModel):
 def _authenticated_user(db: Session, email: str, password: str) -> User:
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     password_ok = verify_password_or_dummy(password, user.password_hash if user is not None else None)
-    if user is None or not password_ok:
+    if user is None or user.is_demo or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
     return user
 
@@ -166,7 +167,7 @@ def login(
         form.password,
         user.password_hash if user is not None else None,
     )
-    if user is None or not password_ok:
+    if user is None or user.is_demo or not password_ok:
         record_login_failure(form.username, request)
         record_login_event(db, form.username, request, "failure", 0, [], user.id if user else None)
         db.commit()
@@ -208,6 +209,32 @@ def login(
     }
 
 
+@router.post("/demo")
+@limiter.limit("5/minute")
+def demo(request: Request, response: Response, db: Session = Depends(get_db)):
+    # A cross-origin form must not replace a visitor's refresh cookie.
+    origin = request.headers.get("origin")
+    api_origin = f"{request.url.scheme}://{request.url.netloc}"
+    if origin is not None and origin not in (*settings.cors_origins, api_origin):
+        raise HTTPException(status_code=403, detail="Demo signup origin is not allowed")
+    if origin is None and request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(status_code=403, detail="Demo signup origin is not allowed")
+    try:
+        user = create_demo_account(db)
+        _issue_refresh_token(db, user, request, response)
+        record_login_event(db, user.email, request, "success", 0, ["demo_signup"], user.id)
+        result = {
+            "access_token": create_access_token(user_id=user.id), "token_type": "bearer", "is_demo": True,
+            "display_name": user.display_name, "demo_seed_mode": user.demo_seed_mode,
+            "message": SEED_MESSAGES[user.demo_seed_mode],
+        }
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
 @router.post("/refresh")
 def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
@@ -227,11 +254,11 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
     user = db.execute(select(User).where(User.id == row.user_id)).scalar_one_or_none()
-    if user is None:
+    if user is None or user.demo_archived_at is not None:
         row.revoked_at = datetime.utcnow()
         db.commit()
         _clear_refresh_cookie(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User unavailable")
 
     row.revoked_at = datetime.utcnow()
     _issue_refresh_token(db, user, request, response)
