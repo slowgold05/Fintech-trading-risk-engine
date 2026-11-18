@@ -17,7 +17,7 @@ export function InstrumentFold({
   preview?: ReactNode;
   children: ReactNode;
 }) {
-  const [opened, setOpened] = useState(location.hash === "#" + id);
+  const [opened, setOpened] = useState(!compact || location.hash === "#" + id);
   const [visited, setVisited] = useState(!compact || opened);
   const fold = useRef<HTMLDetailsElement>(null);
   useEffect(() => {

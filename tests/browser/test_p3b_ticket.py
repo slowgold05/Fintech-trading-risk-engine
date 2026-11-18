@@ -266,9 +266,9 @@ def test_empty_market_ticket(customer_order_book_api) -> None:
         desktop = _css_viewport(driver, 1280, 800, False)
         h._sign_in(driver, disposable_api.web_url, disposable_api.email, password)
         driver.get(disposable_api.web_url + "/trades")
-        h._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "select[aria-label='Order type']"))
+        h._open_ticket(driver)
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade symbol']").send_keys(SYMBOL)
-        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").send_keys("1")
+        assert driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").get_attribute("value") == "1"
         Select(driver.find_element(By.CSS_SELECTOR, "select[aria-label='Order type']")).select_by_value("market")
         h._wait(driver).until(lambda current: not current.find_elements(By.CSS_SELECTOR, "input[aria-label='Limit price']"))
         h._install_order_hook(driver, disposable_api.api_url)

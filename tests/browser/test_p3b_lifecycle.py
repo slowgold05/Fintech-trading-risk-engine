@@ -130,7 +130,7 @@ def _region_state(driver, order_id: int) -> dict | None:
           if (!name || !dd || dd.tagName !== "DD") { continue; }
           fields[name] = (dd.textContent || "").replace(/\\s+/g, " ").trim();
         }
-        const ids = Array.from(region.querySelectorAll("table tbody tr")).map((row) => (row.cells[0] ? row.cells[0].textContent.trim() : ""));
+        const ids = Array.from(region.querySelectorAll("[data-testid='fill-trade-id']"), cell => cell.textContent.trim());
         const button = (name) => {
           const node = Array.from(region.querySelectorAll("button")).find((item) => item.textContent.trim() === name);
           return node ? {disabled: Boolean(node.disabled)} : null;

@@ -19,7 +19,6 @@ pytest.importorskip("selenium")
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -158,19 +157,23 @@ def _symbols(driver) -> list[str]:
 
 
 def _choose(driver, name: str) -> None:
-    Select(driver.find_element(By.ID, "watchlist-select")).select_by_visible_text(name)
+    h._choose_option(driver, "watchlist-select", name)
     h._wait(driver).until(lambda current: (
         current.find_elements(By.ID, "watchlist-rename")
-        and Select(current.find_element(By.ID, "watchlist-select")).first_selected_option.text.strip() == name
+        and h._select_label(current, "watchlist-select") == name
     ))
 
 
 def _market(driver) -> None:
-    link = next(node for node in driver.find_elements(By.CSS_SELECTOR, "a[href='/market']") if node.is_displayed() and node.text.strip() == "Market")
-    h._click(driver, link)
+    h._click(driver, h._wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "nav a[href='/market']"))))
     h._wait(driver).until(EC.url_contains("/market"))
-    h._wait(driver).until(lambda current: current.find_elements(By.ID, "watchlists-title"))
+    _reveal_watchlists(driver)
     h._wait(driver).until(lambda current: "Loading watchlists." not in _section(current).text and "Loading your account." not in _section(current).text)
+
+
+def _reveal_watchlists(driver) -> None:
+    h._reveal_market_tool(driver, "#watchlists-title")
+    h._wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='market-watchlists']")))
 
 
 def _login_here(driver, email: str, password: str) -> None:
@@ -190,7 +193,8 @@ def _sign_out(driver) -> None:
     if dashboards:
         h._click(driver, dashboards[0])
         h._wait(driver).until(EC.url_contains("/dashboard"))
-    button = next(node for node in driver.find_elements(By.XPATH, "//button[normalize-space()='Sign out']") if node.is_displayed())
+    h._click(driver, h._wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='account-menu']"))))
+    button = h._wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='sign-out']")))
     logout_before = _hits(driver, "/auth/logout")
     h._click(driver, button)
     h._wait(driver).until(EC.url_contains("/login"))
@@ -250,6 +254,7 @@ def test_private_watchlists_ui(disposable_api) -> None:
     try:
         t._css_viewport(driver, 1280, 800, False)
         driver.get(disposable_api.web_url + "/market")
+        _reveal_watchlists(driver)
         h._wait(driver).until(lambda current: "Sign in to keep watchlists" in _section(current).text)
         private_calls = _hits(driver, "/watchlists") + _hits(driver, "/auth/me")
         if private_calls:
@@ -271,8 +276,9 @@ def test_private_watchlists_ui(disposable_api) -> None:
         if rows != [(NAME, TWO, 1), (NAME, ONE, 2)] or orphans:
             pytest.fail("saved order mismatch: " + json.dumps({"symbols": [row[1] for row in rows], "orphans": orphans}))
         driver.refresh()
+        _reveal_watchlists(driver)
         h._wait(driver).until(lambda current: current.find_elements(By.ID, "watchlist-select"))
-        if Select(driver.find_element(By.ID, "watchlist-select")).first_selected_option.get_attribute("value"):
+        if h._select_label(driver, "watchlist-select") != "Choose a watchlist":
             pytest.fail("reloaded watchlist select did not show the placeholder")
         _choose(driver, NAME)
         if _symbols(driver) != [TWO, ONE]:
@@ -291,9 +297,12 @@ def test_private_watchlists_ui(disposable_api) -> None:
         row = driver.find_element(By.XPATH, f"//section[@aria-labelledby='watchlists-title']//li[.//span[normalize-space()='{ONE}']]")
         t._shot(driver, row, ARTIFACTS / "lists-desktop.png")
         t._css_viewport(driver, 390, 844, True)
+        _reveal_watchlists(driver)
         h._wait(driver).until(lambda current: _fits(current) and _symbols(current) == [ONE])
         t._shot(driver, driver.find_element(By.XPATH, f"//section[@aria-labelledby='watchlists-title']//li[.//span[normalize-space()='{ONE}']]"), ARTIFACTS / "lists-mobile.png")
         t._css_viewport(driver, 1280, 800, False)
+        h._reveal_market_tool(driver, "#company-research")
+        h._reveal_market_tool(driver, "[data-testid='market-history-entry']")
         h._wait(driver).until(lambda current: current.find_elements(By.ID, "research-symbol") and current.find_elements(By.ID, "daily-history-symbol"))
         research_before, history_before = _hits(driver, "/market/research"), _hits(driver, "/history")
         _arm_handoff(driver)

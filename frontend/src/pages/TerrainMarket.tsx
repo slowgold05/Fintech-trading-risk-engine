@@ -6,7 +6,8 @@ import { usePowerOn, useArrival } from "../components/market/wallMotion";
 import { DeferredInstrument } from "../components/market/DeferredInstrument";
 import { compactWidth, phoneWidth, useMaxWidth } from "../components/market/compactLayout";
 import { InstrumentFold } from "../components/market/InstrumentFold";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useMarketFieldFocus } from "../components/market/useMarketFieldFocus";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CaretDown } from "@phosphor-icons/react";
 import { CalendarBlank, ChartLine, GlobeHemisphereWest } from "../components/market/terrainIcons";
@@ -56,6 +57,7 @@ export function TerrainMarket() {
   const selection = useMarketSelection();
   const compact = useMaxWidth(compactWidth);
   const phone = useMaxWidth(phoneWidth);
+  const [historyOpen, setHistoryOpen] = useState(!compact || location.hash === "#daily-price-history-title");
   const { isAuthenticated } = useAuth();
   const [symbolInput, setSymbolInput] = selection.symbolInput;
   const [researchSymbol, setResearchSymbol] = selection.researchSymbol;
@@ -101,37 +103,11 @@ export function TerrainMarket() {
   }, []);
 
   const wall = usePowerOn();
+  const focusField = useMarketFieldFocus(wall);
   const tools = useArrival<HTMLDivElement>();
   function inspectMover(symbol: string | null) {
     setSymbol(symbol);
     setSector(heatmap.data?.items.find((s) => s.symbol === symbol)?.sector ?? null);
-  }
-  const focusRequest = useRef<MutationObserver | null>(null);
-  useEffect(() => () => focusRequest.current?.disconnect(), []);
-  function prefill(id: string, setter: (v: string) => void, symbol: string) {
-    setter(symbol);
-    focusRequest.current?.disconnect();
-    function focusField() {
-      const field = document.getElementById(id);
-      if (!field) return false;
-      const disclosure = field.closest("details");
-      if (disclosure) disclosure.open = true;
-      field.focus({ preventScroll: true });
-      field.scrollIntoView({ block: "center" });
-      return true;
-    }
-    if (focusField()) return;
-    const target = document.getElementById(
-      id === "research-symbol" ? "company-research" : "daily-price-history-title",
-    );
-    const disclosure = target?.closest("details");
-    if (disclosure) disclosure.open = true;
-    target?.scrollIntoView({ block: "center" });
-    const observer = new MutationObserver(() => {
-      if (focusField()) observer.disconnect();
-    });
-    if (wall.current) observer.observe(wall.current, { subtree: true, childList: true });
-    focusRequest.current = observer;
   }
   const movers = (
     <DeferredInstrument id="trending-movers" label="Trending movers" load={loadActivity}>
@@ -364,14 +340,21 @@ export function TerrainMarket() {
                 {(Watchlists) => (
                   <Watchlists
                     designed
-                    onUseInChart={(s) => prefill("daily-history-symbol", setHistoryDraft, s)}
-                    onUseInResearch={(s) => prefill("research-symbol", setSymbolInput, s)}
+                    onUseInChart={(symbol) => {
+                      setHistoryDraft(symbol);
+                      focusField("daily-history-symbol", "daily-price-history-title");
+                    }}
+                    onUseInResearch={(symbol) => {
+                      setSymbolInput(symbol);
+                      focusField("research-symbol", "company-research");
+                    }}
                   />
                 )}
               </DeferredInstrument>
             </InstrumentFold>
             <details
-              open={!compact || location.hash === "#daily-price-history-title"}
+              open={!compact || historyOpen}
+              onToggle={event => { if (compact) setHistoryOpen(event.currentTarget.open); }}
               className="desk-card history-tool"
               data-testid="market-history-entry"
             >

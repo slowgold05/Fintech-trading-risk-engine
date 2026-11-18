@@ -13,6 +13,7 @@ import {
   fetchMarketTrending,
 } from "../api/market";
 import { fetchDailyHistory, type HistoryRange } from "../api/history";
+import { useMarketFieldFocus } from "../components/market/useMarketFieldFocus";
 import { HISTORY_ADJUSTMENT, historyProviderName } from "../config/history";
 import { useAuth } from "../context/useAuth";
 
@@ -482,6 +483,7 @@ export function DialMarket() {
     return () => { stop(); detach(); };
   }, [cursor]);
   const wall = useWallOpening();
+  const focusField = useMarketFieldFocus(wall);
   const compact = useCompactWall();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterTrigger = useRef<HTMLButtonElement>(null);
@@ -636,25 +638,14 @@ export function DialMarket() {
     }
   }
 
-  function focusField(id: string) {
-    const field = document.getElementById(id);
-    if (!(field instanceof HTMLElement)) {
-      return;
-    }
-    const fold = field.closest("details");
-    if (fold) fold.open = true;
-    field.focus();
-    field.scrollIntoView({ block: "center" });
-  }
-
   function sendToResearch(symbol: string) {
     setSymbolInput(symbol);
-    focusField("research-symbol");
+    focusField("research-symbol", "company-research");
   }
 
   function sendToChart(symbol: string) {
     setHistoryDraft(symbol);
-    focusField("daily-history-symbol");
+    focusField("daily-history-symbol", "daily-price-history-title");
   }
 
   const heatGroups = stockHeatmapGroups.map((group) => (

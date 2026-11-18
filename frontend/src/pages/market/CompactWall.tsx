@@ -63,7 +63,9 @@ export function QuoteStrip({ trends, selected, choose }: { trends: readonly Mark
 }
 
 export function ToolFold({ compact, title, children }: { compact: boolean; title: string; children: ReactNode }) {
-  return <details className={compact ? "tool-fold" : undefined} open={compact ? undefined : true}
+  const [open, setOpen] = useState(!compact);
+  return <details className={compact ? "tool-fold" : undefined} open={!compact || open}
+    onToggle={event => { if (compact) setOpen(event.currentTarget.open); }}
     style={compact ? undefined : { display: "contents" }}>
     <summary hidden={!compact}>{title}</summary>{children}
   </details>;

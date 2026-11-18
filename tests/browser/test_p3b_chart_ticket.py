@@ -13,6 +13,7 @@ pytest.importorskip("selenium")
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -244,7 +245,7 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
     try:
         t._css_viewport(driver, 1280, 800, False)
         driver.get(web + "/market")
-        h._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "#daily-history-series option[value]:not([value=''])"))
+        p3a._ready_history(driver)
         p3a._submit(driver, SYMBOL)
         h._wait(driver).until(p3a._plot)
         link = h._wait(driver).until(_link)
@@ -261,6 +262,7 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
         h._wait(driver).until(lambda current: "unsent changes" not in p3a._section(current).text and _symbol_only(_query(_link(current))))
 
         t._css_viewport(driver, 390, 844, True)
+        p3a._open_history(driver)
         _capture_chart(driver, ARTIFACTS / "chart-mobile.png", ARTIFACTS / "chart-mobile-link.png")
         t._css_viewport(driver, 1280, 800, False)
 
@@ -272,7 +274,7 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Password']").send_keys(password)
         driver.find_element(By.CSS_SELECTOR, "button[aria-label='Sign in']").click()
         h._wait(driver).until(EC.url_contains(f"/trades?symbol={SYMBOL}"))
-        h._wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Trade symbol']")))
+        h._open_ticket(driver)
         h._install_order_hook(driver, disposable_api.api_url)
         _watch_preview_bodies(driver)
         if h._order_summary(driver) or _preview_bodies(driver):
@@ -282,9 +284,9 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
             pytest.fail("owner activity changed across sign-in: " + json.dumps({"before": before_login, "after": after_login}))
         symbol_box = driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade symbol']")
         quantity = driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']")
-        limit = driver.find_element(By.CSS_SELECTOR, "input[aria-label='Limit price']")
-        if symbol_box.get_attribute("value") != SYMBOL or quantity.get_attribute("value") or limit.get_attribute("value"):
-            pytest.fail("ticket was not limited to the symbol seed")
+        if symbol_box.get_attribute("value") != SYMBOL or quantity.get_attribute("value") != "1":
+            pytest.fail("ticket did not use the symbol and the default editable quantity")
+        assert not driver.find_elements(By.CSS_SELECTOR, "[data-testid='order-limit']")
         if t._shown(driver, "button[aria-label='Confirm paper order']"):
             pytest.fail("blank ticket offered confirm")
         if not _fits(driver):
@@ -297,9 +299,8 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
         if h._order_summary(driver) or _preview_bodies(driver):
             pytest.fail("blank ticket previewed itself")
 
-        quantity = driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']")
+        Select(driver.find_element(By.CSS_SELECTOR, "[data-testid='order-type']")).select_by_value("limit")
         limit = driver.find_element(By.CSS_SELECTOR, "input[aria-label='Limit price']")
-        quantity.send_keys("1")
         limit.send_keys("100")
         t._click_preview(driver)
         h._wait(driver).until(h._order_preview_ready)

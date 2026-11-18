@@ -31,19 +31,19 @@ import uuid
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 pytest.importorskip("selenium")
 
 from selenium import webdriver
-from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
+from selenium.common.exceptions import ElementClickInterceptedException, StaleElementReferenceException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("P0B_BROWSER") != "1",
@@ -57,7 +57,7 @@ DISPOSABLE_DATABASE = "p0b_browser"
 DISPOSABLE_PORT = 54331
 API_PORT = 8000
 WEB_PORT = 4173
-ALEMBIC_HEAD = "d01cfb893a64"
+ALEMBIC_HEAD = "n261118e0001"
 DISPOSABLE_JWT_SECRET = "p0b-browser-jwt-secret-value-32b"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACCESS_EVENT = re.compile(r'"([A-Z]+) ([^"\s]+) HTTP/[0-9.]+" (\d{3})')
@@ -346,7 +346,14 @@ def _driver() -> webdriver.Chrome:
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1280,800")
     options.add_argument("--window-position=0,0")
+    options.add_argument("--mute-audio")
     driver = webdriver.Chrome(options=options)
+    look = os.environ.get("P0B_LOOK", "terrain")
+    if look not in {"terrain", "dial"}:
+        pytest.fail("P0B_LOOK must be terrain or dial")
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": f"""
+        if (window.location.protocol === 'http:') localStorage.setItem('sentinel.look', {json.dumps(look)});
+    """})
     driver.set_window_size(*VIEWPORT)
     driver.set_page_load_timeout(30)
     driver.set_script_timeout(20)
@@ -507,8 +514,47 @@ def _click(driver: webdriver.Chrome, element) -> None:
         driver.execute_script("arguments[0].click();", element)
 
 
+def _reveal_market_tool(driver: webdriver.Chrome, selector: str) -> None:
+    entry = _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+    target = driver.execute_script("return arguments[0].closest('details') || arguments[0];", entry)
+    summary = target.find_elements(By.CSS_SELECTOR, ":scope > summary")
+    if summary and not target.get_property("open"):
+        _click(driver, summary[0])
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});", entry)
+    except StaleElementReferenceException:
+        pass  # The trigger was replaced by the instrument it just loaded.
+
+
+def _open_ticket(driver: webdriver.Chrome) -> None:
+    _click(driver, _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='order-open']"))))
+    _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='order-ticket']")))
+
+
+def _select_label(driver: webdriver.Chrome, field_id: str) -> str:
+    field = driver.find_element(By.ID, field_id)
+    return Select(field).first_selected_option.text.strip() if field.tag_name == "select" else field.text.strip()
+
+
+def _choose_option(driver: webdriver.Chrome, field_id: str, label: str) -> None:
+    field = _wait(driver).until(EC.element_to_be_clickable((By.ID, field_id)))
+    if field.tag_name == "select":
+        Select(field).select_by_visible_text(label)
+        return
+    _click(driver, field)
+    option = _wait(driver).until(lambda current: next((
+        node for node in current.find_elements(By.CSS_SELECTOR, "[role='option']")
+        if node.is_displayed() and node.text.strip() == label
+    ), False), f"'{field_id}' did not offer the option '{label}'")
+    _click(driver, option)
+    _wait(driver).until(lambda current: _select_label(current, field_id) == label)
+
+
 def _sign_in(driver: webdriver.Chrome, web: str, email: str, password: str, destination: str | None = "/dashboard") -> None:
-    driver.get(web + "/login")
+    from urllib.parse import urlencode
+
+    query = "?" + urlencode({"returnTo": destination}) if destination not in {None, "/dashboard"} else ""
+    driver.get(web + "/login" + query)
     _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Email']")))
     driver.find_element(By.CSS_SELECTOR, "input[aria-label='Email']").send_keys(email)
     driver.find_element(By.CSS_SELECTOR, "input[aria-label='Password']").send_keys(password)
@@ -518,7 +564,7 @@ def _sign_in(driver: webdriver.Chrome, web: str, email: str, password: str, dest
         return
     _wait(driver).until(EC.url_contains(destination))
     if destination == "/dashboard":
-        _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Trading & Risk Overview']")))
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-today']")))
 
 
 def _refresh_cookie_present(driver: webdriver.Chrome) -> bool:
@@ -594,7 +640,7 @@ def _arm_expired_access_token(driver: webdriver.Chrome, engine, email: str) -> i
               }
               return previous.call(this, name, value);
             };
-            const link = Array.from(document.querySelectorAll("a")).find((node) => (node.textContent || "").trim() === "Trades");
+            const link = Array.from(document.querySelectorAll("nav a[href='/trades']")).find(node => node.getClientRects().length);
             if (!link) { return "missing-trades-link"; }
             link.click();
             return "clicked";
@@ -605,7 +651,7 @@ def _arm_expired_access_token(driver: webdriver.Chrome, engine, email: str) -> i
         pytest.fail("could not install the expired-access-token probe")
     if clicked != "clicked":
         pytest.fail("trades link was not available for the in-app navigation")
-    replaced = driver.execute_script("return window.__p0bExpiredAuthorization || 0")
+    replaced = _wait(driver).until(lambda current: current.execute_script("return window.__p0bExpiredAuthorization || 0"))
     return int(replaced)
 
 
@@ -908,21 +954,21 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
     driver = _driver()
     try:
         driver.get(web + "/")
-        _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Public dashboard']")))
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-market']")))
+        assert driver.find_element(By.TAG_NAME, "html").get_attribute("data-look") == os.environ.get("P0B_LOOK", "terrain")
+        assert urlsplit(driver.current_url).path == "/market"
         login = _wait(driver).until(EC.element_to_be_clickable((By.LINK_TEXT, "Log in")))
         assert login.get_attribute("href").endswith("/login")
         bundle = _bundle(driver)
         viewport = _viewport(driver)
 
         driver.get(web + "/dashboard")
-        _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Public dashboard']")))
-        assert driver.current_url.rstrip("/").endswith("/dashboard")
-        driver.find_element(By.LINK_TEXT, "Log in").click()
         _wait(driver).until(EC.url_contains("/login"))
-        assert driver.find_element(By.CSS_SELECTOR, "button[aria-label='Sign in']").is_displayed()
+        assert parse_qs(urlsplit(driver.current_url).query)["returnTo"] == ["/dashboard"]
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "button[aria-label='Sign in']")))
 
         driver.get(web + "/market")
-        _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Market dashboard']")))
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-market']")))
         assert "/market" in driver.current_url
         _wait(driver).until(EC.element_to_be_clickable((By.XPATH, "//button[normalize-space()='Try the demo']")))
 
@@ -931,10 +977,10 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         assert _money_after(driver, "Buying power") == "$100,000"
 
         driver.get(web + "/trades")
-        _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Trade symbol']")))
+        _open_ticket(driver)
         ticket_dir = REPO_ROOT / ".local-tools" / "p3b-ticket"
         ticket_dir.mkdir(parents=True, exist_ok=True)
-        _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//*[normalize-space()='Order Management']")))
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-activity']")))
         _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//*[normalize-space()='Order Entry']")))
         driver.save_screenshot(str(ticket_dir / "ticket-initial-desktop.png"))
         driver.set_window_size(390, 844)
@@ -964,7 +1010,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         _wait(driver).until(lambda current: _viewport(current)["width"] >= 1200 and EC.element_to_be_clickable((By.CSS_SELECTOR, "input[aria-label='Trade symbol']"))(current))
         _install_order_hook(driver, disposable_api.api_url)
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade symbol']").send_keys(SYMBOL)
-        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").send_keys("1")
+        assert driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").get_attribute("value") == "1"
+        Select(driver.find_element(By.CSS_SELECTOR, "[data-testid='order-type']")).select_by_value("limit")
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Limit price']").send_keys("100")
         before_preview = _owner_activity_counts(disposable_api.engine, email)
         _click(driver, driver.find_element(By.CSS_SELECTOR, "button[aria-label='Preview order']"))
@@ -1230,7 +1277,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         finally:
             driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": []})
 
-        _wait(driver).until(EC.element_to_be_clickable((By.LINK_TEXT, "Trades")))
+        _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "nav a[href='/trades']")))
         if not _refresh_cookie_present(driver):
             pytest.fail("refresh cookie was not present before the expired-token probe")
         log_offset = disposable_api.log_path.stat().st_size
@@ -1264,11 +1311,21 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
 
         _sign_in(driver, web, email, password, destination="/compliance")
         driver.get(web + "/compliance")
-        _wait(driver).until(EC.presence_of_element_located((
-            By.XPATH,
-            "//*[contains(., 'Compliance access is limited to compliance officers, admins, and auditors.')]",
-        )))
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-forbidden']")))
         assert "/compliance" in driver.current_url
+        statuses = driver.execute_async_script("""
+            const [api, done] = arguments;
+            (async () => {
+              const session = await fetch(api + "/auth/refresh", {method: "POST", credentials: "include"});
+              if (!session.ok) return [session.status, null];
+              const {access_token} = await session.json();
+              const denied = await fetch(api + "/compliance/controls", {
+                headers: {Authorization: "Bearer " + access_token},
+              });
+              return [session.status, denied.status];
+            })().then(done, () => done([]));
+        """, disposable_api.api_url)
+        assert statuses == [200, 403]
         compliance_events = [
             event for event in _status_events(disposable_api.log_path.read_text(encoding="utf-8", errors="replace"))
             if event["status"] == 403 and event["path"].startswith("/compliance")
@@ -1336,7 +1393,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
     try:
         _sign_in(driver, disposable_api.web_url, disposable_api.email, os.environ["P0B_TRADER_PASSWORD"])
         _wait(driver).until(lambda current: "Valuation incomplete" in current.find_element(By.TAG_NAME, "body").text)
-        value_card = driver.find_element(By.XPATH, "//section[.//h2[normalize-space()='Portfolio Value']]")
+        value_card = driver.find_element(By.XPATH, "//h2[normalize-space()='Portfolio Value']/ancestor::section[1]")
         value_text = " ".join(value_card.text.split())
         assert "Unavailable" in value_text
         assert "Valuation read" in value_text
@@ -1346,7 +1403,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         assert not value_card.find_elements(By.CSS_SELECTOR, "svg[aria-label='Intraday portfolio value chart']")
         assert _money_after(driver, "Cash") == "$100,000"
         assert _money_after(driver, "Buying power") == "$100,000"
-        assert "Unavailable" in _money_after(driver, "Total P&L")
+        assert driver.find_element(By.CSS_SELECTOR, "[data-testid='today-total-pnl']").text == "Unavailable"
         for symbol in symbols:
             row = driver.find_element(By.XPATH, f"//tr[.//*[normalize-space()='{symbol}']]")
             row_text = " ".join(row.text.split())
@@ -1362,9 +1419,9 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         driver.get(disposable_api.web_url + "/portfolio")
         _wait(driver).until(lambda current: "Valuation incomplete" in current.find_element(By.TAG_NAME, "body").text)
         assert "Unavailable" in _money_after(driver, "Portfolio value")
-        assert "Unavailable" in _money_after(driver, "Total P&L")
-        exposure = driver.find_element(By.XPATH, "//section[.//h2[normalize-space()='Exposure by asset']]")
-        assert "%" not in exposure.text
+        assert driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text == "Unavailable"
+        exposure = driver.find_element(By.XPATH, "//h2[normalize-space()='Exposure by asset']/ancestor::section[1]")
+        assert "Valuation incomplete" in exposure.text and "%" not in exposure.text
         marked = driver.find_element(By.XPATH, f"//tr[.//*[normalize-space()='{symbols[0]}']]")
         assert "$50.00" in marked.text
         assert "$100.00" in marked.text
@@ -1375,7 +1432,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         driver.refresh()
         _wait(driver).until(lambda current: _money_after(current, "Portfolio value") == "$100,200")
         assert "Valuation incomplete" not in driver.find_element(By.TAG_NAME, "body").text
-        assert "$0.00" in _money_after(driver, "Total P&L")
+        assert "$0.00" in driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text
         driver.get(disposable_api.web_url + "/dashboard")
         _wait(driver).until(lambda current: "$100,200" in current.find_element(By.TAG_NAME, "body").text)
         assert "Performance history unavailable" in driver.find_element(By.TAG_NAME, "body").text
@@ -1446,58 +1503,60 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
         _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)
         driver.get(disposable_api.web_url + "/market")
-        _wait(driver).until(lambda current: "$123.45" in current.find_element(By.TAG_NAME, "body").text)
+        index = (By.CSS_SELECTOR, "[data-testid='market-index-SPY']")
+        _wait(driver).until(lambda current: "$123.45" in current.find_element(*index).text)
         text = driver.find_element(By.TAG_NAME, "body").text
         assert "SPY" in text and "SPX" not in text
         assert "5,487.03" not in text
-        assert "Provider change -1.50%" in text
+        assert "-1.50%" in driver.find_element(*index).text
         assert not driver.find_elements(By.CSS_SELECTOR, "svg[aria-label*='trend']")
         assert not driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='market pulse trend']")
-        stale = _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[self::a or self::div][@title][.//*[normalize-space()='P1PUBLIC']]")))
-        assert "Stale" in stale.text and "+99.00%" not in stale.text
-        from selenium.common.exceptions import StaleElementReferenceException
-
         heatmap_artifacts = REPO_ROOT / ".local-tools" / "public-browser"
         heatmap_artifacts.mkdir(parents=True, exist_ok=True)
-        tile_xpath = "//*[self::a or self::div][@title][.//*[normalize-space()='P1PUBLIC']]"
+        tile_selector = "[data-testid='heatmap-stock-P1PUBLIC']"
+        _reveal_market_tool(driver, "#stock-heatmap")
+        _wait(driver).until(lambda current: "stale" in current.find_element(By.CSS_SELECTOR, tile_selector).text.casefold())
+        assert "+99.00%" not in driver.find_element(By.CSS_SELECTOR, tile_selector).text
 
         def prove_heatmap_scales() -> None:
             for scale in ("compact", "standard", "expanded"):
                 selector = f"button[aria-label='Set heatmap size to {scale}']"
+                filters = [node for node in driver.find_elements(By.XPATH, "//button[normalize-space()='Filters']") if node.is_displayed()]
+                if filters:
+                    _click(driver, filters[0])
                 _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
                 driver.execute_script(
                     "document.querySelector(arguments[0]).scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'});",
                     selector,
                 )
                 _click(driver, driver.find_element(By.CSS_SELECTOR, selector))
+                if filters:
+                    _click(driver, driver.find_element(By.XPATH, "//dialog[@open]//button[normalize-space()='Done']"))
+                    _wait(driver).until(EC.invisibility_of_element_located((By.CSS_SELECTOR, "dialog[open]")))
                 driver.execute_script(
                     """
-                    const tile = document.evaluate(
-                      arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                    ).singleNodeValue;
+                    const tile = document.querySelector(arguments[0]);
                     if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
                     """,
-                    tile_xpath,
+                    tile_selector,
                 )
 
                 def tile_visible(current) -> bool:
                     try:
-                        found = current.find_elements(By.XPATH, tile_xpath)
+                        found = current.find_elements(By.CSS_SELECTOR, tile_selector)
                         if not found:
                             return False
                         visible = found[0].text
                     except StaleElementReferenceException:
                         return False
-                    return "Stale" in visible and "+99" not in visible
+                    return "stale" in visible.casefold() and "+99" not in visible
 
                 _wait(driver).until(tile_visible)
-                visible = driver.find_element(By.XPATH, tile_xpath).text
-                assert "Stale" in visible and "+99" not in visible
+                visible = driver.find_element(By.CSS_SELECTOR, tile_selector).text
+                assert "stale" in visible.casefold() and "+99" not in visible
                 assert driver.execute_script(
                     """
-                    const tile = document.evaluate(
-                      arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                    ).singleNodeValue;
+                    const tile = document.querySelector(arguments[0]);
                     if (!tile) { return false; }
                     const nodes = Array.from(tile.querySelectorAll("*")).filter((node) => (node.innerText || "").trim());
                     const positive = nodes.length > 0 && nodes.every((node) => {
@@ -1505,7 +1564,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                       return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0;
                     });
                     if (!positive) { return false; }
-                    const status = tile.children[1];
+                    const status = tile.querySelector("[data-testid='heatmap-quote-status']");
                     if (!status || !(status.textContent || "").trim()) { return false; }
                     if (status.clientWidth < status.scrollWidth) { return false; }
                     const statusRect = status.getBoundingClientRect();
@@ -1527,7 +1586,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                       && statusRect.right <= window.innerWidth;
                     return withinPadding && withinViewport;
                     """,
-                    tile_xpath,
+                    tile_selector,
                 )
                 assert driver.execute_script(
                     "return document.documentElement.scrollWidth <= document.documentElement.clientWidth"
@@ -1536,18 +1595,14 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         def scroll_heatmap_tile_into_view() -> None:
             driver.execute_script(
                 """
-                const tile = document.evaluate(
-                  arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                ).singleNodeValue;
+                const tile = document.querySelector(arguments[0]);
                 if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
                 """,
-                tile_xpath,
+                tile_selector,
             )
             _wait(driver).until(lambda current: current.execute_script(
                 """
-                const tile = document.evaluate(
-                  arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                ).singleNodeValue;
+                const tile = document.querySelector(arguments[0]);
                 if (!tile) { return false; }
                 const rect = tile.getBoundingClientRect();
                 return rect.width > 0
@@ -1557,7 +1612,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                   && rect.bottom <= window.innerHeight
                   && rect.right <= window.innerWidth;
                 """,
-                tile_xpath,
+                tile_selector,
             ))
 
         prove_heatmap_scales()
@@ -1570,7 +1625,8 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         driver.save_screenshot(str(heatmap_artifacts / "heatmap-mobile.png"))
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
         _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)
-        field = driver.find_element(By.ID, "research-symbol")
+        _reveal_market_tool(driver, "#company-research")
+        field = _wait(driver).until(EC.visibility_of_element_located((By.ID, "research-symbol")))
         field.clear()
         field.send_keys("P1NOFACTS")
         _click(driver, driver.find_element(By.XPATH, "//button[normalize-space()='Research']"))
@@ -1656,19 +1712,21 @@ def test_mobile_shell_keyboard_and_resize(disposable_api: _DisposableApi) -> Non
         opener.click()
         driver.find_element(By.CSS_SELECTOR, "dialog a[href='/portfolio']").click()
         _wait(driver).until(EC.url_contains("/portfolio"))
-        _wait(driver).until(EC.staleness_of(opener))
         _wait(driver).until(lambda _: not modal_open())
+        assert driver.execute_script("return document.activeElement === arguments[0]", opener)
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-portfolio']")))
         assert driver.execute_script("return document.body.style.overflow") != "hidden"
         _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label='Open navigation']"))).click()
         _wait(driver).until(lambda _: modal_open())
         viewport(1280, 800)
-        _wait(driver).until(lambda _: not modal_open() and bool(driver.find_elements(By.CSS_SELECTOR, "aside[aria-label='Sidebar']")))
-        assert driver.find_element(By.CSS_SELECTOR, "aside a[href='/portfolio']").is_displayed()
+        desktop_nav = "aside[aria-label='Sidebar']" if os.environ.get("P0B_LOOK", "terrain") == "terrain" else "header nav[aria-label='Workspace']"
+        _wait(driver).until(lambda _: not modal_open() and bool(driver.find_elements(By.CSS_SELECTOR, desktop_nav)))
+        assert driver.find_element(By.CSS_SELECTOR, f"{desktop_nav} a[href='/portfolio'][aria-current='page']").is_displayed()
         assert not driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Open navigation']")
         assert driver.execute_script("return document.body.style.overflow") != "hidden"
         assert driver.execute_script("return document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
-        assert driver.execute_script("const rect = document.querySelector('aside a').getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= innerHeight")
+        assert driver.execute_script("const rect = document.querySelector(arguments[0] + ' a').getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= innerHeight", desktop_nav)
         driver.save_screenshot(str(artifacts / "desktop.png"))
 
         viewport(390, 844)
