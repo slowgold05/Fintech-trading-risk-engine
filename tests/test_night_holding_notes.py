@@ -140,3 +140,11 @@ def test_note_errors_hide_storage_details(notes):
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "storage_unavailable"
     assert "private parameters" not in response.text and "Never echo" not in response.text
+
+
+def test_note_bounds_json_before_decoding(notes):
+    client, _, _, _, _ = notes
+    response = client.put(PATH, content=iter([b" " * 32768, b"{}"]),
+                          headers={"Content-Type": "application/json"})
+    assert response.status_code == 413
+    assert response.json()["detail"]["code"] == "request_too_large"

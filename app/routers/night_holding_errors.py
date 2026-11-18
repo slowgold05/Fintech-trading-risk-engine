@@ -25,11 +25,29 @@ def holding_symbol(symbol: str) -> str:
         raise invalid_request({"symbol": exc.detail}) from None
 
 
+_MAX_BODY_BYTES = 32_768
+
+
 class NightHoldingRoute(APIRoute):
     def get_route_handler(self):
         handle = super().get_route_handler()
 
         async def route(request: Request) -> Response:
+            if self.body_field is not None:
+                receive = request.receive
+                bytes_read = 0
+
+                async def receive_bounded():
+                    nonlocal bytes_read
+                    message = await receive()
+                    bytes_read += len(message.get("body", b""))
+                    if bytes_read > _MAX_BODY_BYTES:
+                        raise HTTPException(413, detail={
+                            "code": "request_too_large", "message": "The request body is too large.",
+                        })
+                    return message
+
+                request = Request(request.scope, receive_bounded)
             try:
                 return await handle(request)
             except RequestValidationError as exc:
