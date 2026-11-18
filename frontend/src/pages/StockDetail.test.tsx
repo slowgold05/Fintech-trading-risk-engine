@@ -171,8 +171,8 @@ describe("stock detail", () => {
     expect(screen.getByText("Raw last close")).toBeInTheDocument();
     expect(screen.getAllByText("Up +$1.25 (+0.66%)")).toHaveLength(2);
     expect(screen.getByText("As of 2026-11-13")).toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "split_adjusted", "2y");
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "auto", "split_adjusted", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
 
     expect(await screen.findByText("Massive split-adjusted prices.")).toBeInTheDocument();
     const stats = screen.getByRole("region", { name: "Market metrics" });
@@ -219,17 +219,24 @@ describe("stock detail", () => {
     expect(researchApi.fetchResearchNews).toHaveBeenCalledWith("AAPL");
   });
 
-  it("uses raw Massive bars when split-adjusted history is empty", async () => {
-    historyApi.fetchDailyHistory.mockImplementation(
-      (_symbol: string, _provider: string, adjustment: string) => Promise.resolve({
-        ...history(adjustment === "raw" ? [bar("2026-11-12", "190", "192", "188", "3000")] : []),
-        adjustment_type: adjustment,
-      }),
-    );
+  it("uses the Yahoo series selected by the API for history and indicators", async () => {
+    historyApi.fetchDailyHistory.mockResolvedValue({
+      ...history([{ ...bar("2026-11-12", "190", "192", "188", "3000"), provider: "yahoo" }]),
+      provider: "yahoo",
+    });
     renderDetail();
-    expect(await screen.findByText("Massive raw prices. Split-adjusted bars are not cached.")).toBeInTheDocument();
+    expect(await screen.findByText("Yahoo Finance split-adjusted prices.")).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-12" })).toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+    expect(indicatorApi.fetchDailyIndicators).toHaveBeenCalledWith("AAPL", "yahoo", "split_adjusted", "1y", "rsi", 14);
+  });
+
+  it("labels raw bars when the API selects a raw series", async () => {
+    historyApi.fetchDailyHistory.mockResolvedValue({
+      ...history([{ ...bar("2026-11-12", "190", "192", "188", "3000"), adjustment_type: "raw" }]),
+      adjustment_type: "raw",
+    });
+    renderDetail();
+    expect(await screen.findByText("Massive raw prices.")).toBeInTheDocument();
     const stats = screen.getByRole("region", { name: "Market metrics" });
     expect(within(stats).getByText("52-week range").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
   });
@@ -242,7 +249,7 @@ describe("stock detail", () => {
     expect(await screen.findByText("Massive split-adjusted prices.")).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-12" }).closest("tr")).toHaveTextContent("100.25");
     expect(within(screen.getByRole("region", { name: "Market metrics" })).getByText("Last volume").parentElement).toHaveTextContent("1Y avg 100");
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
   });
 
   it("calculates labeled one-year volatility and drawdown without older cached prices", async () => {

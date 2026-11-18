@@ -3,8 +3,8 @@ import { isAxiosError } from "axios";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMarketResearch, fetchSymbolQuote } from "../api/market";
-import { fetchDailyHistory } from "../api/history";
-import { fetchDailyIndicators } from "../api/indicators";
+import { fetchDailyHistory, type AdjustmentType } from "../api/history";
+import { fetchDailyIndicators, type IndicatorName } from "../api/indicators";
 import { fetchResearchNews } from "../api/research";
 import { PriceChart } from "../components/PriceChart";
 import { indicatorOverlay, type IndicatorOverlay } from "../components/historyData";
@@ -209,6 +209,25 @@ function UnavailablePanel({ title, children }: { title: string; children: ReactN
   );
 }
 
+function useStockIndicator(
+  symbol: string | null,
+  provider: string | null,
+  adjustment: AdjustmentType | null,
+  name: IndicatorName,
+  period: number,
+) {
+  return useQuery({
+    queryKey: ["stock-detail", "indicator", symbol, provider, adjustment, name, period],
+    queryFn: async () => {
+      if (!symbol || !provider || !adjustment) throw new Error("Price series unavailable.");
+      const payload = await fetchDailyIndicators(symbol, provider, adjustment, "1y", name, period);
+      return indicatorOverlay(payload, { symbol, provider, adjustment_type: adjustment, name, period });
+    },
+    enabled: symbol !== null && provider !== null && adjustment !== null,
+    retry: false,
+  });
+}
+
 export function StockDetail() {
   const params = useParams();
   const symbol = readSymbol(params.symbol);
@@ -219,20 +238,14 @@ export function StockDetail() {
     enabled: symbol !== null,
     retry: false,
   });
-  const splitHistoryQuery = useQuery({
-    queryKey: ["stock-detail", "history", symbol, "split_adjusted"],
-    queryFn: () => fetchDailyHistory(symbol ?? "", "massive", "split_adjusted", "2y"),
+  const historyQuery = useQuery({
+    queryKey: ["stock-detail", "history", symbol],
+    queryFn: () => fetchDailyHistory(symbol ?? "", "auto", "split_adjusted", "2y"),
     enabled: symbol !== null && quoteQuery.isSuccess,
     retry: false,
   });
-  const splitEmpty = splitHistoryQuery.isSuccess && splitHistoryQuery.data.bars.length === 0;
-  const rawHistoryQuery = useQuery({
-    queryKey: ["stock-detail", "history", symbol, "raw"],
-    queryFn: () => fetchDailyHistory(symbol ?? "", "massive", "raw", "2y"),
-    enabled: symbol !== null && quoteQuery.isSuccess && splitEmpty,
-    retry: false,
-  });
-  const historyQuery = splitEmpty ? rawHistoryQuery : splitHistoryQuery;
+  const priceProvider = historyQuery.data?.provider ?? null;
+  const priceSeries = historyQuery.data?.adjustment_type ?? null;
   const researchQuery = useQuery({
     queryKey: ["stock-detail", "research", symbol],
     queryFn: () => fetchMarketResearch(symbol ?? ""),
@@ -245,33 +258,9 @@ export function StockDetail() {
     enabled: symbol !== null && quoteQuery.isSuccess && isAuthenticated,
     retry: false,
   });
-  const rsiQuery = useQuery({
-    queryKey: ["stock-detail", "indicator", symbol, "rsi", 14],
-    queryFn: async () => indicatorOverlay(
-      await fetchDailyIndicators(symbol ?? "", "massive", "split_adjusted", "1y", "rsi", 14),
-      { symbol: symbol ?? "", provider: "massive", adjustment_type: "split_adjusted", name: "rsi", period: 14 },
-    ),
-    enabled: symbol !== null && quoteQuery.isSuccess,
-    retry: false,
-  });
-  const sma20Query = useQuery({
-    queryKey: ["stock-detail", "indicator", symbol, "sma", 20],
-    queryFn: async () => indicatorOverlay(
-      await fetchDailyIndicators(symbol ?? "", "massive", "split_adjusted", "1y", "sma", 20),
-      { symbol: symbol ?? "", provider: "massive", adjustment_type: "split_adjusted", name: "sma", period: 20 },
-    ),
-    enabled: symbol !== null && quoteQuery.isSuccess,
-    retry: false,
-  });
-  const sma50Query = useQuery({
-    queryKey: ["stock-detail", "indicator", symbol, "sma", 50],
-    queryFn: async () => indicatorOverlay(
-      await fetchDailyIndicators(symbol ?? "", "massive", "split_adjusted", "1y", "sma", 50),
-      { symbol: symbol ?? "", provider: "massive", adjustment_type: "split_adjusted", name: "sma", period: 50 },
-    ),
-    enabled: symbol !== null && quoteQuery.isSuccess,
-    retry: false,
-  });
+  const rsiQuery = useStockIndicator(symbol, priceProvider, priceSeries, "rsi", 14);
+  const sma20Query = useStockIndicator(symbol, priceProvider, priceSeries, "sma", 20);
+  const sma50Query = useStockIndicator(symbol, priceProvider, priceSeries, "sma", 50);
 
   if (symbol === null) {
     return (
@@ -316,8 +305,9 @@ export function StockDetail() {
     <Frame>
       <DetailBody
         historyError={historyQuery.isError ? requestDetail(historyQuery.error, "Daily prices could not be loaded.") : null}
-        historyLoading={splitHistoryQuery.isLoading || (splitEmpty && rawHistoryQuery.isLoading)}
-        priceSeries={splitEmpty ? "raw" : "split_adjusted"}
+        historyLoading={historyQuery.isLoading}
+        priceProvider={priceProvider}
+        priceSeries={priceSeries}
         isAuthenticated={isAuthenticated}
         newsError={newsQuery.isError}
         newsLoading={newsQuery.isLoading}
@@ -352,6 +342,7 @@ function DetailBody({
   endDate,
   historyLoading,
   historyError,
+  priceProvider,
   priceSeries,
   onRetryHistory,
   research,
@@ -374,7 +365,8 @@ function DetailBody({
   endDate: string;
   historyLoading: boolean;
   historyError: string | null;
-  priceSeries: "raw" | "split_adjusted";
+  priceProvider: string | null;
+  priceSeries: AdjustmentType | null;
   onRetryHistory: () => void;
   research: MarketResearchResponse | undefined;
   researchLoading: boolean;
@@ -403,6 +395,10 @@ function DetailBody({
   const hasSecPeriod = research?.profit_margin != null && period != null;
   const calculated = endDate ? historyMetrics(bars, endDate) : { volatility: null, drawdown: null, returns: [] };
   // The 52-week range comes from the plotted series, so say when that series is unadjusted.
+  const providerLabel = priceProvider === "massive" ? "Massive" : priceProvider === "yahoo" ? "Yahoo Finance" : priceProvider;
+  const seriesLabel = providerLabel
+    ? `${providerLabel} ${priceSeries === "raw" ? "raw" : "split-adjusted"} prices.`
+    : "Cached daily prices.";
   const rawRangeNote = priceSeries === "raw" && !historyLoading && !historyError
     ? "Raw prices, not split-adjusted"
     : null;
@@ -470,7 +466,7 @@ function DetailBody({
           {historyLoading ? <p className="text-sm leading-6 text-copy" role="status">Loading daily prices</p> : historyError ? (
             <div className="rounded-xl border border-line bg-surface p-6"><p className="text-sm leading-6 text-copy" role="alert">{historyError}</p><button className="mt-4 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" onClick={onRetryHistory} type="button">Retry daily prices</button></div>
           ) : (
-            <PriceChart bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={priceSeries === "raw" ? "Massive raw prices. Split-adjusted bars are not cached." : "Massive split-adjusted prices."} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
+            <PriceChart bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={seriesLabel} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
           )}
         </div>
         <TechnicalScorecard loading={indicatorsLoading} price={quote.price} rsi={rsi} sma20={sma20} sma50={sma50} />
