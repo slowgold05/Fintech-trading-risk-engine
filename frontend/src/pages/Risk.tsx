@@ -59,7 +59,7 @@ function AccountRisk({ owner }: { owner: number }) {
           score === null ? <State kind="unavailable" title="Latest trade score unavailable." /> :
           <><div role="img" aria-label={`Risk score ${score} of 100, ${getRiskLevel(score)}`} className="assessment-reading">
             <strong>{score}</strong><span>/ 100</span><b>{getRiskLevel(score)}</b>
-          </div><p>{latest.trade?.symbol ?? "Symbol unavailable"} · {latest.trade?.side ?? "Side unavailable"} · trade #{latest.trade_id} · {latest.created_at.slice(0, 10)}</p></>}
+          </div><p>{latest.trade?.symbol ?? "Symbol unavailable"} · {latest.trade?.side ?? "Side unavailable"} · trade #{latest.trade_id} · assessed {latest.created_at.slice(0, 10)}{latest.trade?.demo_seed && " · seeded demo trade"}</p></>}
       </Panel>
       <Panel className="risk-rules" title="Trade scoring rules" subtitle="Points added when a rule fires at execution">
         <dl>{rules.map(rule => <div key={rule.code}><dt>{rule.reason}<small>{rule.code}</small></dt><dd>+{rule.points}</dd></div>)}</dl>
@@ -77,7 +77,7 @@ function AccountRisk({ owner }: { owner: number }) {
     {!risk.isError && <><Panel title="Assessment Feed" subtitle="Up to 50 scored trades, newest first. Each alert gives the recorded rule and reason.">
       {risk.isPending ? <State kind="loading" title="Loading assessments…" /> : rows.length === 0 ? <State kind="empty" title="No assessments yet." /> :
         <div className="risk-feed"><table><thead><tr><th>Trade</th><th>Score</th><th>Notional</th><th>Recorded alerts</th></tr></thead>
-          <tbody>{rows.map((row, i) => <tr key={row.assessment_id}><td><b>{row.trade?.symbol ?? "Symbol unavailable"}</b><small>{row.trade?.side ?? "Side unavailable"} · #{row.trade_id} · {row.created_at.slice(0, 10)}</small></td>
+          <tbody>{rows.map((row, i) => <tr key={row.assessment_id}><td><b>{row.trade?.symbol ?? "Symbol unavailable"}</b><small>{row.trade?.side ?? "Side unavailable"} · #{row.trade_id} · {row.trade?.executed_at.slice(0, 10) ?? "Execution date unavailable"}{row.trade?.demo_seed && " · demo seed"}</small></td>
             <td data-label="Score">{scoreOf(row) ?? "Unavailable"}</td><td data-label="Notional">{notionals[i] === null ? "Unavailable" : formatCurrency(notionals[i])}</td>
             <td data-label="Alerts">{row.alerts.length === 0 ? "None recorded" : row.alerts.map((alert, j) => <div key={j}><b>{alert.rule_code}</b><small>{alert.severity} · {alert.reason}</small></div>)}</td></tr>)}</tbody></table></div>}
     </Panel><Panel title="Assessed Trade Notional" subtitle="Includes buys and sells in the loaded assessments.">

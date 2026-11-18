@@ -1,8 +1,13 @@
 import { apiClient } from "./client";
-import type { RiskResponse, TradeRiskResponse } from "../types/schemas";
+import type { RiskAssessmentResponse, TradeRiskResponse } from "../types/schemas";
 
-export async function fetchRisk(): Promise<RiskResponse> {
-  const response = await apiClient.get<RiskResponse>("/risk/");
+type RecordedAssessment = Omit<RiskAssessmentResponse, "trade"> & {
+  trade: (NonNullable<RiskAssessmentResponse["trade"]> & { demo_seed?: boolean }) | null;
+};
+type RecordedRisk = { assessments: RecordedAssessment[] };
+
+export async function fetchRisk(): Promise<RecordedRisk> {
+  const response = await apiClient.get<RecordedRisk>("/risk/");
   return response.data;
 }
 

@@ -28,3 +28,7 @@
  .risk-feed td:first-child,.risk-feed td:last-child { grid-column:1/-1; }
  .risk-feed td[data-label]::before { content:attr(data-label); color:var(--muted); display:block; font-size:var(--label); }
 }
+.risk-company > header .field-control { width:auto; min-height:36px; padding:5px 10px; }
+.risk-company select:focus { outline:2px solid var(--focus); outline-offset:3px; }
+
+@media(max-width:767px) { .risk-company > header .field-control { min-height:44px; } }
