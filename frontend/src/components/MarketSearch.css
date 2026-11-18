@@ -1,0 +1,20 @@
+.market-search .symbol-results {
+  max-height: min(55dvh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.nk-sheet .market-search {
+  flex-wrap: wrap;
+}
+.nk-sheet .market-search .symbol-results {
+  position: static;
+  flex-basis: 100%;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.nk-sheet .symbol-results li a {
+  justify-content: flex-start;
+  gap: var(--gap);
+}

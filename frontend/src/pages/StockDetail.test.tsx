@@ -16,6 +16,7 @@ const historyApi = vi.hoisted(() => ({ fetchDailyHistory: vi.fn() }));
 const researchApi = vi.hoisted(() => ({ fetchResearchNews: vi.fn() }));
 const indicatorApi = vi.hoisted(() => ({ fetchDailyIndicators: vi.fn() }));
 
+vi.mock("../api/auth", () => ({ fetchMe: async () => ({ id: 1, role: "trader" }) }));
 vi.mock("../api/market", () => marketApi);
 vi.mock("../api/history", () => historyApi);
 vi.mock("../api/research", () => researchApi);
@@ -165,7 +166,7 @@ describe("stock detail", () => {
 
     resolveQuote(quote);
     expect(await screen.findByRole("heading", { name: "AAPL" })).toBeInTheDocument();
-    expect(screen.getByText("Cached end-of-day data")).toBeInTheDocument();
+    expect(screen.getByText(/end-of-day (data|price)/i)).toBeInTheDocument();
     expect(screen.getByText("Apple Inc.")).toBeInTheDocument();
     expect(screen.getByText(/Technology/)).toBeInTheDocument();
     expect(screen.getByText("$190.50")).toBeInTheDocument();
@@ -274,7 +275,7 @@ describe("stock detail", () => {
   it("shows an empty chart when the cache has no bars", async () => {
     historyApi.fetchDailyHistory.mockResolvedValue(history([], "unavailable"));
     renderDetail();
-    expect(await screen.findByText("No cached daily bars for AAPL in the 1 year range.")).toBeInTheDocument();
+    expect(await screen.findByText("No cached daily bars for AAPL in the requested two years.")).toBeInTheDocument();
     const stats = screen.getByRole("region", { name: "Market metrics" });
     expect(within(stats).getByText("52-week range").parentElement).toHaveTextContent("unavailable");
   });

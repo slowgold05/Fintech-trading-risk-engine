@@ -1,6 +1,11 @@
 import { type ReactNode } from "react";
 import { isAxiosError } from "axios";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { Button, Page, Panel, State } from "../night/kit";
+import { allowed, features } from "../night/registry";
+import { saveDraft } from "../night/shell/ticketDraft";
+import { fetchMe } from "../api/auth";
+import "./StockDetail.css";
 import { keys } from "../night/api";
 import { useLook } from "../night/looks/preferences";
 import { useQuery } from "@tanstack/react-query";
@@ -77,8 +82,8 @@ function marginPeriod(period: MarketResearchResponse["profit_margin_period"]): s
 
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <main className="min-h-[100dvh] bg-canvas text-ink">
-      <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
+    <main className="discover-company">
+      <div className="company-frame">
         <Link
           className="inline-flex min-h-11 w-fit items-center rounded-full px-3 text-sm font-semibold text-copy hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           to="/market"
@@ -214,12 +219,12 @@ function useStockIndicator(
   period: number,
 ) {
   return useQuery({
-    queryKey: ["stock-detail", "indicator", symbol, provider, adjustment, name, period],
+    queryKey: keys.indicators(symbol ?? "", provider ?? "", adjustment ?? "", "1y", name, period),
     queryFn: async () => {
       if (!symbol || !provider || !adjustment) throw new Error("Price series unavailable.");
-      const payload = await fetchDailyIndicators(symbol, provider, adjustment, "1y", name, period);
-      return indicatorOverlay(payload, { symbol, provider, adjustment_type: adjustment, name, period });
+      return fetchDailyIndicators(symbol, provider, adjustment, "1y", name, period);
     },
+    select: (payload) => indicatorOverlay(payload, { symbol: symbol!, provider: provider!, adjustment_type: adjustment!, name, period }),
     enabled: symbol !== null && provider !== null && adjustment !== null,
     retry: false,
   });
@@ -230,6 +235,8 @@ export function StockDetail() {
   const params = useParams();
   const symbol = readSymbol(params.symbol);
   const { isAuthenticated } = useAuth();
+  const identity = useQuery({ queryKey: keys.me, queryFn: fetchMe, enabled: isAuthenticated, retry: false });
+  const owner = isAuthenticated ? identity.data : undefined;
   const quoteQuery = useQuery({
     queryKey: keys.quote(symbol ?? ""),
     queryFn: () => fetchSymbolQuote(symbol ?? ""),
@@ -251,9 +258,9 @@ export function StockDetail() {
     retry: false,
   });
   const newsQuery = useQuery({
-    queryKey: ["stock-detail", "news", symbol],
+    queryKey: keys.account(owner?.id ?? 0, "company-news", symbol),
     queryFn: () => fetchResearchNews(symbol ?? ""),
-    enabled: symbol !== null && quoteQuery.isSuccess && isAuthenticated,
+    enabled: symbol !== null && quoteQuery.isSuccess && !!owner,
     retry: false,
   });
   const rsiQuery = useStockIndicator(symbol, priceProvider, priceSeries, "rsi", 14);
@@ -307,13 +314,15 @@ export function StockDetail() {
         priceProvider={priceProvider}
         priceSeries={priceSeries}
         isAuthenticated={isAuthenticated}
-        newsError={newsQuery.isError}
-        newsLoading={newsQuery.isLoading}
+        ownerId={owner?.id}
+        canTrade={owner?.role === "trader"}
+        newsError={newsQuery.isError || identity.isError}
+        newsLoading={newsQuery.isLoading || (isAuthenticated && identity.isPending)}
         onRetryHistory={() => {
           void historyQuery.refetch();
         }}
         onRetryNews={() => {
-          void newsQuery.refetch();
+          void (identity.isError ? identity : newsQuery).refetch();
         }}
         quote={quoteQuery.data}
         research={researchQuery.data}
@@ -347,6 +356,8 @@ function DetailBody({
   researchLoading,
   researchFailed,
   isAuthenticated,
+  ownerId,
+  canTrade,
   newsLoading,
   newsError,
   newsMessage,
@@ -370,6 +381,8 @@ function DetailBody({
   researchLoading: boolean;
   researchFailed: boolean;
   isAuthenticated: boolean;
+  ownerId?: number;
+  canTrade: boolean;
   newsLoading: boolean;
   newsError: boolean;
   newsMessage: string | null;
@@ -402,109 +415,115 @@ function DetailBody({
     : null;
   const statValue = (loading: boolean, value: string) => (loading ? "Loading" : value);
 
+  const lastBar = bars.at(-1);
+  const seriesClose = lastBar ? Number(lastBar.close) : null;
+  const quoteDate = quote.session_date ?? "unavailable";
+  const stale = quoteDate !== "unavailable" &&
+    Date.parse(new Date().toISOString().slice(0, 10)) - Date.parse(quoteDate) > 7 * 86400000;
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const eventFeature = features.find((feature) => feature.slot === "companyEvents" && allowed(feature.access));
+  const Events = eventFeature?.Screen;
+  const eventsOpen = Boolean(Events) && params.get("tab") === "events";
+  function tabLink(events: boolean) {
+    const next = new URLSearchParams(params);
+    if (events) next.set("tab", "events");
+    else next.delete("tab");
+    return { pathname: location.pathname, search: next.toString(), hash: location.hash };
+  }
   return (
-    <>
-      <header className="rounded-2xl border border-line bg-surface p-6 shadow-[0_14px_36px_-26px_rgba(0,0,0,0.95)]">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="font-mono text-2xl leading-9 font-semibold tracking-tight text-ink sm:text-[28px]">
-              {quote.symbol}
-            </h1>
-            <p className="mt-1 break-words text-lg leading-7 font-semibold text-copy">
-              {quote.name.trim() || "Name unavailable"}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-copy">
-              {quote.sector?.trim() || "Sector unavailable"}
-              {quote.exchange ? ` · ${quote.exchange}` : ""}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-muted">Cached end-of-day data</p>
+    <Page title={quote.symbol} description={quote.name.trim() || "Name unavailable"} layout="analysis"
+      actions={(!isAuthenticated || canTrade) && <Link className="nk-button" data-variant="primary"
+        data-testid="order-open" to={`/trades?symbol=${encodeURIComponent(quote.symbol)}${isAuthenticated ? "&ticket=1" : ""}`}
+        onClick={() => { if (ownerId) saveDraft(ownerId, null); }}>Paper trade {quote.symbol}</Link>}>
+      <Page.Full className="company-quote">
+        <div><span>{quote.source === "massive" ? "Raw last close" : "Last close"}</span><strong>{price}</strong></div>
+        <div><span>Day move</span><b data-tone={changeUp ? "up" : changeDown ? "down" : undefined}>{change}</b></div>
+        <div><b>Session date {quoteDate}</b><small>{quote.source ?? "Source unavailable"} · <span>{stale ? "Stale end-of-day price" : "Cached end-of-day data"}</span></small></div>
+      </Page.Full>
+      {Events && <Page.Full><nav className="company-tabs" aria-label="Company views">
+        <Link to={tabLink(false)} aria-current={!eventsOpen ? "page" : undefined}>Overview</Link>
+        <Link to={tabLink(true)} aria-current={eventsOpen ? "page" : undefined}>Events</Link>
+      </nav></Page.Full>}
+      {eventsOpen && Events ? <Page.Full><Events /></Page.Full> : <>
+        <Page.Main className="company-chart" data-testid="company-history">
+          {historyLoading ? <State kind="loading" title="Loading daily prices" /> : historyError ?
+            <State kind="error" role="alert" title={historyError} action={<Button data-testid="history-retry" onClick={onRetryHistory}>Retry daily prices</Button>} /> :
+            !lastBar ? <State kind="empty" title={`No cached daily bars for ${quote.symbol} in the requested two years.`} /> :
+            <>
+              <p className="company-stamp" data-testid="close-provenance" data-session-date={lastBar.session_date}
+                data-source={lastBar.provider} data-basis={lastBar.adjustment_type}>
+                {lastBar.provider} · {lastBar.adjustment_type.replace("_", "-")} · exchange session {lastBar.session_date}
+              </p>
+              <PriceChart bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={seriesLabel} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
+            </>}
+        </Page.Main>
+        <Page.Aside className="company-details">
+          <TechnicalScorecard loading={indicatorsLoading} price={seriesClose} rsi={rsi} sma20={sma20} sma50={sma50} />
+          <Panel title="Company details">
+            <dl><Stat label="Exchange" value={quote.exchange || "Unavailable"} />
+              <Stat label="Sector" value={quote.sector || "Unavailable"} />
+              <Stat label="Security type" value={quote.is_etf ? "Exchange-traded fund" : "Stock"} /></dl>
+          </Panel>
+        </Page.Aside>
+        <Page.Full>
+          <section aria-labelledby="market-metrics-title" className="company-metrics">
+            <h2 className="sr-only" id="market-metrics-title">Market metrics</h2>
+            <dl className="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-4 sm:divide-y-0">
+              <Stat label="Day move" value={change} />
+              <Stat detail={rawRangeNote ?? rangePosition(seriesClose, stats.low, stats.high)} label="52-week range" value={historyError ? "unavailable" : `${stats.low == null || stats.high == null ? "unavailable" : `${formatCurrency(stats.low)} — ${formatCurrency(stats.high)}`}`} />
+              <Stat detail={historyError ? null : `1Y avg ${stats.averageVolume == null ? "unavailable" : formatQuantity(Math.round(stats.averageVolume))}`} label="Last volume" value={quote.volume == null ? "unavailable" : formatQuantity(quote.volume)} />
+              <Stat detail="Annualized from stored daily returns" label="Volatility (1Y)" value={calculated.volatility == null ? "unavailable" : formatPercent(calculated.volatility)} />
+              <Stat detail="Peak-to-trough from stored closes" label="Max drawdown (1Y)" value={calculated.drawdown == null ? "unavailable" : formatPercent(calculated.drawdown)} />
+              <Stat label="Market cap" value={statValue(researchLoading, researchFailed ? "unavailable" : wholeMoney(research?.market_cap))} />
+              <Stat label="P/E" value={statValue(researchLoading, researchFailed ? "unavailable" : multiple(research?.pe_ratio))} />
+              <Stat detail={hasSecPeriod ? period : research?.profit_margin != null && !researchLoading ? "Period unavailable" : null} label={hasSecPeriod ? "SEC margin" : "Profit margin"} value={statValue(researchLoading, researchFailed ? "unavailable" : marginText(research?.profit_margin))} />
+            </dl>
+          </section>
+
+          <div aria-label="Cached price returns" className="flex flex-wrap gap-2">
+            {calculated.returns.map(([range, value]) => (
+              <span className="rounded-md border border-line bg-surface px-2 py-1 text-xs font-semibold tabular-nums text-copy" key={range}>
+                {range} <span className={value == null ? "text-muted" : value >= 0 ? "text-up" : "text-down"}>{value == null ? "unavailable" : formatSignedPercent(value)}</span>
+              </span>
+            ))}
           </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{quote.source === "massive" ? "Raw last close" : "Last close"}</p>
-            <p className="text-3xl leading-9 font-semibold tabular-nums text-ink">{price}</p>
-            <p className={["mt-2 text-sm leading-6 tabular-nums", changeUp ? "text-up" : changeDown ? "text-down" : "text-copy"].join(" ")}>
-              {change}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-muted">Session date {quote.session_date ?? "unavailable"}</p>
-            {quote.source ? <p className="mt-1 text-[12px] leading-4 text-muted">Source {quote.source}</p> : null}
-          </div>
-          <Link
-            className="inline-flex min-h-11 w-fit items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-canvas hover:bg-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            to={`/trades?symbol=${encodeURIComponent(quote.symbol)}`}
-          >
-            Paper trade {quote.symbol}
-          </Link>
-        </div>
-      </header>
 
-      <section aria-labelledby="market-metrics-title" className="overflow-hidden rounded-xl border border-[#385383] bg-[#233250] shadow-[0_12px_30px_-24px_rgba(0,0,0,0.95)]">
-        <h2 className="sr-only" id="market-metrics-title">Market metrics</h2>
-        <dl className="grid grid-cols-2 divide-x divide-y divide-[#385383] sm:grid-cols-4 sm:divide-y-0">
-          <Stat label="Day move" value={change} />
-          <Stat detail={rawRangeNote ?? rangePosition(quote.price, stats.low, stats.high)} label="52-week range" value={historyError ? "unavailable" : `${stats.low == null || stats.high == null ? "unavailable" : `${formatCurrency(stats.low)} — ${formatCurrency(stats.high)}`}`} />
-          <Stat detail={historyError ? null : `1Y avg ${stats.averageVolume == null ? "unavailable" : formatQuantity(Math.round(stats.averageVolume))}`} label="Last volume" value={quote.volume == null ? "unavailable" : formatQuantity(quote.volume)} />
-          <Stat detail="Annualized from stored daily returns" label="Volatility (1Y)" value={calculated.volatility == null ? "unavailable" : formatPercent(calculated.volatility)} />
-          <Stat detail="Peak-to-trough from stored closes" label="Max drawdown (1Y)" value={calculated.drawdown == null ? "unavailable" : formatPercent(calculated.drawdown)} />
-          <Stat label="Market cap" value={statValue(researchLoading, researchFailed ? "unavailable" : wholeMoney(research?.market_cap))} />
-          <Stat label="P/E" value={statValue(researchLoading, researchFailed ? "unavailable" : multiple(research?.pe_ratio))} />
-          <Stat detail={hasSecPeriod ? period : research?.profit_margin != null && !researchLoading ? "Period unavailable" : null} label={hasSecPeriod ? "SEC margin" : "Profit margin"} value={statValue(researchLoading, researchFailed ? "unavailable" : marginText(research?.profit_margin))} />
-        </dl>
-      </section>
-
-      <div aria-label="Cached price returns" className="flex flex-wrap gap-2">
-        {calculated.returns.map(([range, value]) => (
-          <span className="rounded-md border border-[#385383] bg-[#1b2944] px-2 py-1 text-xs font-semibold tabular-nums text-copy" key={range}>
-            {range} <span className={value == null ? "text-muted" : value >= 0 ? "text-up" : "text-down"}>{value == null ? "unavailable" : formatSignedPercent(value)}</span>
-          </span>
-        ))}
-      </div>
-
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-        <div className="min-w-0" data-testid="company-history">
-          {!historyLoading && !historyError && bars.length > 0 && <small className="nk-stamp" data-testid="close-provenance" data-session-date={bars.at(-1)?.session_date}
-            data-source={priceProvider ?? ""} data-basis={priceSeries ?? ""}>{priceProvider ?? "Source unavailable"} · {bars.at(-1)?.session_date} · {priceSeries?.replace("_"," ")} · end of day</small>}
-          {historyLoading ? <p className="text-sm leading-6 text-copy" role="status">Loading daily prices</p> : historyError ? (
-            <div className="rounded-xl border border-line bg-surface p-6"><p data-testid="night-state-error" className="text-sm leading-6 text-copy" role="alert">{historyError}</p><button className="mt-4 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" data-testid="history-retry" onClick={onRetryHistory} type="button">Retry daily prices</button></div>
-          ) : (
-            <PriceChart bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={seriesLabel} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
-          )}
-        </div>
-        <TechnicalScorecard loading={indicatorsLoading} price={quote.price} rsi={rsi} sma20={sma20} sma50={sma50} />
-      </div>
-
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-        <UnavailablePanel title="AI forecast">
-          No forecast is available for this symbol. Sentinel does not generate price targets, confidence bands, or advice from cached market data.
-        </UnavailablePanel>
-        <section aria-labelledby="company-news-title" className="min-w-0 rounded-2xl border border-line bg-surface">
-          <div className="border-b border-line px-6 py-4">
-            <h2 className="text-lg leading-7 font-semibold text-ink" id="company-news-title">News &amp; sentiment</h2>
-            <p className="mt-1 text-sm leading-6 text-muted">Sentiment scoring is unavailable; cached headlines are not scored.</p>
-          </div>
-          <div className="max-h-96 overflow-y-auto p-6">
-            {!isAuthenticated ? (
-              <div>
-                <p className="text-sm leading-6 text-copy">Sign in to read company headlines.</p>
-                <Link className="mt-3 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" to="/login">Sign in</Link>
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+            <UnavailablePanel title="AI forecast">
+              No forecast is available for this symbol. Sentinel does not generate price targets, confidence bands, or advice from cached market data.
+            </UnavailablePanel>
+            <section aria-labelledby="company-news-title" className="min-w-0 rounded-2xl border border-line bg-surface">
+              <div className="border-b border-line px-6 py-4">
+                <h2 className="text-lg leading-7 font-semibold text-ink" id="company-news-title">News &amp; sentiment</h2>
+                <p className="mt-1 text-sm leading-6 text-muted">Sentiment scoring is unavailable; cached headlines are not scored.</p>
               </div>
-            ) : newsLoading ? (
-              <p className="text-sm leading-6 text-copy" role="status">Loading company news</p>
-            ) : newsError ? (
-              <div><p className="text-sm leading-6 text-copy" role="alert">Company news could not be loaded.</p><button className="mt-3 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" onClick={onRetryNews} type="button">Retry news</button></div>
-            ) : articles.length === 0 ? (
-              <p className="text-sm leading-6 text-copy" role="status">{newsMessage ?? "No company headlines"}</p>
-            ) : (
-              <ul aria-label="Company headlines" className="space-y-4">
-                {articles.map((article, index) => <li className="min-w-0" key={`${article.url}-${article.published_at}-${index}`}><a className="inline-flex min-h-11 items-center break-words text-sm font-semibold leading-6 text-ink underline decoration-line underline-offset-4 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" href={article.url} rel="noopener noreferrer" target="_blank">{article.headline}</a>{article.summary ? <p className="mt-1 break-words text-sm leading-6 text-copy">{article.summary}</p> : null}<p className="mt-1 text-[12px] leading-4 text-muted">{article.source} · {article.published_at}</p></li>)}
-              </ul>
-            )}
+              <div className="max-h-96 overflow-y-auto p-6">
+                {!isAuthenticated ? (
+                  <div>
+                    <p className="text-sm leading-6 text-copy">Sign in to read company headlines.</p>
+                    <Link className="mt-3 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search + location.hash)}`}>Sign in</Link>
+                  </div>
+                ) : newsLoading ? (
+                  <p className="text-sm leading-6 text-copy" role="status">Loading company news</p>
+                ) : newsError ? (
+                  <div><p className="text-sm leading-6 text-copy" role="alert">Company news could not be loaded.</p><button className="mt-3 inline-flex min-h-11 items-center rounded-full bg-raised px-5 text-sm font-semibold text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" onClick={onRetryNews} type="button">Retry news</button></div>
+                ) : articles.length === 0 ? (
+                  <p className="text-sm leading-6 text-copy" role="status">{newsMessage ?? "No company headlines"}</p>
+                ) : (
+                  <ul aria-label="Company headlines" className="space-y-4">
+                    {articles.map((article, index) => <li className="min-w-0" key={`${article.url}-${article.published_at}-${index}`}><a className="inline-flex min-h-11 items-center break-words text-sm font-semibold leading-6 text-ink underline decoration-line underline-offset-4 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" href={article.url} rel="noopener noreferrer" target="_blank">{article.headline}</a>{article.summary ? <p className="mt-1 break-words text-sm leading-6 text-copy">{article.summary}</p> : null}<p className="mt-1 text-[12px] leading-4 text-muted">{article.source} · {article.published_at}</p></li>)}
+                  </ul>
+                )}
+              </div>
+            </section>
           </div>
-        </section>
-      </div>
 
-      <UnavailablePanel title="Strategy backtest">
-        No strategy backtest is available. Sentinel does not simulate strategy performance, final value, returns, or trade counts from this page.
-      </UnavailablePanel>
-    </>
+          <UnavailablePanel title="Strategy backtest">
+            No strategy backtest is available. Sentinel does not simulate strategy performance, final value, returns, or trade counts from this page.
+          </UnavailablePanel>
+        </Page.Full>
+      </>}
+    </Page>
   );
 }
