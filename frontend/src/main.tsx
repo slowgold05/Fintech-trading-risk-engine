@@ -17,6 +17,7 @@ class SessionQueryClient extends QueryClient {
     const publicMarket = new Set(["overview","heatmap","trending","news","data-status","research"]);
     this.removeQueries({ predicate: ({queryKey: [scope, resource]}) => {
       if (scope === "market") return !publicMarket.has(String(resource));
+      if (scope === "night" && resource === "data-coverage") return false;
       if (scope === "universe") return resource !== "public";
       return !["quote","history","indicators"].includes(String(scope));
     }});

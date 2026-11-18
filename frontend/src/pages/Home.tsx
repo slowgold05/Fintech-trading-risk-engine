@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { Link } from "react-router-dom";
 import { useLook } from "../night/looks/preferences";
 import { MarketSelection, useMarketState } from "../night/looks/marketSelection";
 import { ChromeTools } from "../night/shell/ChromeTools";
@@ -11,7 +12,13 @@ export function Home() {
   const { prefs } = useLook();
   const selection = useMarketState();
   return <div data-testid="night-market" className="night-market">
-    <div className="night-market-tools"><span>Paper trading</span><ChromeTools market /></div>
+    <div className="night-market-tools">
+      <div className="flex flex-wrap items-center gap-x-3">
+        <span>Paper trading</span>
+        <Link className="underline underline-offset-4" to="/market/data-coverage">Data coverage</Link>
+      </div>
+      <ChromeTools market />
+    </div>
     <MarketSelection.Provider value={selection}>
       <Suspense fallback={<State kind="loading" title="Loading market instruments…" />}>
         {prefs.look === "terrain" ? <Terrain /> : <Dial />}

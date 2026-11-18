@@ -48,6 +48,8 @@ export const features: readonly Feature[] = [
     Screen: lazy(() => import("./features/transfer/CsvTransfer").then(module => ({ default: module.CsvTransfer })))},
   {id:"leaderboard", label:"Demo rankings", path:"/portfolio/leaderboard", access:"demo",
     Screen: lazy(() => import("./features/organize/Leaderboard").then(module => ({ default: module.Leaderboard })))},
+  {id:"data-coverage", label:"Data coverage", path:"/market/data-coverage", access:"public",
+    Screen: lazy(() => import("./features/data-coverage/DataCoverage").then(module => ({ default: module.DataCoverage })))},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;

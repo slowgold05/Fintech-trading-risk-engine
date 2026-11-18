@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.routers import auth, assets, cash, compliance, market, market_history, orders, trades, portfolio, risk, watchlists, research, forecasts
+from app.routers import night_data_coverage
 from app.routers import night_holding_lots
 from app.routers import night_portfolio_review
 from app.routers import night_leaderboard
@@ -117,6 +118,7 @@ app.include_router(cash.router, prefix="/cash", tags=["Cash"])
 app.include_router(watchlists.router, prefix="/watchlists", tags=["Watchlists"])
 app.include_router(research.router, prefix="/research", tags=["Research"])
 app.include_router(forecasts.router, prefix="/forecasts", tags=["Forecasts"])
+app.include_router(night_data_coverage.router)
 app.include_router(night_portfolio_review.insights_router)
 app.include_router(night_holding_lots.router)
 app.include_router(night_portfolio_review.review_router)

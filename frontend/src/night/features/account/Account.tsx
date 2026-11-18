@@ -29,7 +29,8 @@ function DataStatus() {
   const selected = useLook().prefs.historyProvider;
   const data = result.data;
   const series: (CanonicalHistorySeries & { stored_session_end?: string | null })[] = data?.canonical_history.series ?? [];
-  return <Panel title="Stored market data" data-testid="account-data-status">
+  return <Panel title="Stored market data" data-testid="account-data-status"
+    actions={<Link className="nk-button" to="/market/data-coverage">Data coverage</Link>}>
     {result.isError ? <State kind="error" title="Data status could not be loaded" action={<Button onClick={() => void result.refetch()}>Retry data status</Button>} /> :
       result.isPending ? <State kind="loading" title="Reading the cache…" /> :
         <>
