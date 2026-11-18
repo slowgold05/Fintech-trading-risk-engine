@@ -11,7 +11,9 @@ import { markInboxRead, readInbox, type InboxEvent, type InboxPage } from "./inb
 vi.mock("../../../api/auth", () => ({fetchMe:vi.fn()}));
 vi.mock("../../../context/useAuth", () => ({useAuth:vi.fn()}));
 vi.mock("./inbox", () => ({readInbox:vi.fn(),markInboxRead:vi.fn(),pageSize:5}));
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
+const registry = vi.hoisted(() => ({ features: [] as { id: string; path: string }[] }));
+vi.mock("../../registry", () => registry);
+afterEach(() => { cleanup(); vi.resetAllMocks(); registry.features = []; });
 
 const event: InboxEvent = {id:"fill:41",kind:"fill",occurred_at:"2026-11-18T12:00:00Z",read_at:null,
   symbol:"AAPL", order_id:20, alert_id:null,side:"buy",quantity:"1.000000",price:"32.555555",
@@ -71,12 +73,16 @@ it("hides private entries after a permission failure and recovers by explicit re
   await user.click(screen.getByText("Retry inbox"));
   expect(await screen.findByText("Paper fill · AAPL")).toBeVisible();
 });
-it("shows the persisted alert close and evaluation session without an unregistered alert link",async()=>{
-  vi.mocked(readInbox).mockResolvedValue({...page,sources:{...page.sources,alerts:true},items:[{...event,
-    kind:"alert_triggered",id:"alert_triggered:2",price:"12.345678",target:"12.34",order_id:null}]});
-  mount();
-  expect(await screen.findByText("Alert triggered · AAPL")).toBeVisible();
-  expect(screen.getByText(/Trigger close/)).toHaveTextContent("12.345678 USD");
-  expect(screen.getByText(/Evaluation session/)).toHaveTextContent("2026-11-17");
-  expect(screen.queryByRole("link")).toBeNull();
-});
+it.each([null, "/activity/alerts"])(
+  "shows alert provenance and links only to an admitted path (%s)",
+  async path => {
+    registry.features = path ? [{ id: "alerts", path }] : [];
+    vi.mocked(readInbox).mockResolvedValue({...page,sources:{...page.sources,alerts:true},items:[{...event,
+      kind:"alert_triggered",id:"alert_triggered:2",price:"12.345678",target:"12.34",order_id:null}]});
+    mount();
+    expect(await screen.findByText("Alert triggered · AAPL")).toBeVisible();
+    expect(screen.getByText(/Trigger close/)).toHaveTextContent("12.345678 USD");
+    expect(screen.getByText(/Evaluation session/)).toHaveTextContent("2026-11-17");
+    expect(screen.queryByRole("link", { name: "Open alerts" })?.getAttribute("href") ?? null).toBe(path);
+  },
+);

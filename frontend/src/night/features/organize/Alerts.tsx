@@ -53,6 +53,9 @@ function AlertBook({ owner }: { owner: number }) {
         setNotice("Threshold deleted.");
       }
       await client.invalidateQueries({ queryKey: key });
+      if (action.kind !== "create") {
+        await client.invalidateQueries({ queryKey: keys.account(owner, "activity-inbox") });
+      }
     },
   });
   const rows = alerts.data ?? [];

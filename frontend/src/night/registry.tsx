@@ -50,6 +50,8 @@ export const features: readonly Feature[] = [
     Screen: lazy(() => import("./features/organize/Leaderboard").then(module => ({ default: module.Leaderboard })))},
   {id:"data-coverage", label:"Data coverage", path:"/market/data-coverage", access:"public",
     Screen: lazy(() => import("./features/data-coverage/DataCoverage").then(module => ({ default: module.DataCoverage })))},
+  {id:"activity-inbox", label:"Activity inbox", path:"/activity/inbox", access:"trader",
+    Screen: lazy(() => import("./features/activity-inbox/ActivityInbox").then(module => ({ default: module.ActivityInbox })))},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;

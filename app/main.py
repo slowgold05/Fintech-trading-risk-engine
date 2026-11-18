@@ -13,6 +13,9 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.routers import auth, assets, cash, compliance, market, market_history, orders, trades, portfolio, risk, watchlists, research, forecasts
+from app.models.night_alerts import NightAlert
+from app.services.night_inbox_alerts import stored_alert_source
+from app.routers import night_inbox
 from app.routers import night_holding_notes
 from app.routers import night_data_coverage
 from app.routers import night_holding_lots
@@ -119,6 +122,7 @@ app.include_router(cash.router, prefix="/cash", tags=["Cash"])
 app.include_router(watchlists.router, prefix="/watchlists", tags=["Watchlists"])
 app.include_router(research.router, prefix="/research", tags=["Research"])
 app.include_router(forecasts.router, prefix="/forecasts", tags=["Forecasts"])
+app.include_router(night_inbox.build_inbox_router(stored_alert_source(NightAlert.__table__)))
 app.include_router(night_holding_notes.router)
 app.include_router(night_data_coverage.router)
 app.include_router(night_portfolio_review.insights_router)

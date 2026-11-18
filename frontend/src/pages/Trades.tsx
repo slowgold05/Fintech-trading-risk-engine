@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { fetchTrades, TRADE_ACTIVITY_LIMIT, type ActivityTrade } from "../api/trades";
 import { fetchTradeRisk } from "../api/risk";
 import { cancelOrder, fetchOrders, ORDER_ACTIVITY_LIMIT } from "../api/orders";
@@ -262,6 +262,9 @@ export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId,
         </Page.Aside>
       )}
       <Page.Main className="execution-activity">
+        {canTrade && <nav aria-label="Activity tools">
+          <Link className="nk-button" to="/activity/inbox">Activity inbox</Link>
+        </nav>}
         {selectedVisible && selectedOrderId !== null && (
           <OrderDetails key={`${owner ?? ""}:${selectedOrderId}`} owner={owner} orderId={selectedOrderId} onClose={closeDetails}
             onCancel={canTrade ? () => { void handleCancel(selectedOrderId); } : undefined} cancelBusy={cancelBusy}
