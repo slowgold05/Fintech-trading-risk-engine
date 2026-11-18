@@ -344,14 +344,14 @@ def test_partial_fill_lifecycle(customer_order_book_api) -> None:
             pytest.fail("reading details changed owner activity")
         h._wait(driver).until(_page_fits)
         _shot_heading(driver, order_id, "h2", f"Order {order_id}", ARTIFACTS / "details-desktop.png")
-        _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "fills-desktop.png")
+        _shot_heading(driver, order_id, "h3", "Recorded fills", ARTIFACTS / "fills-desktop.png")
         mobile = t._css_viewport(driver, 390, 844, True)
         try:
             h._wait(driver).until(lambda current: _page_fits(current) and (_region_state(current, order_id) or {}).get("fields", {}).get("Filled") == "52.000000")
         except TimeoutException:
             _fail_mobile(driver, order_id)
         _shot_heading(driver, order_id, "h2", f"Order {order_id}", ARTIFACTS / "details-mobile.png")
-        _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "fills-mobile.png")
+        _shot_heading(driver, order_id, "h3", "Recorded fills", ARTIFACTS / "fills-mobile.png")
         t._css_viewport(driver, 1280, 800, False)
         _click_named(driver, order_id, "Next")
         h._wait(driver).until(lambda current: _trade_ids(_region_state(current, order_id) or {}) == own[50:])
@@ -364,7 +364,7 @@ def test_partial_fill_lifecycle(customer_order_book_api) -> None:
         if h._owner_activity_counts(engine, email) != before:
             pytest.fail("paging changed owner activity")
         h._wait(driver).until(_page_fits)
-        _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "page-two.png")
+        _shot_heading(driver, order_id, "h3", "Recorded fills", ARTIFACTS / "page-two.png")
         driver.execute_cdp_cmd("Network.enable", {})
         driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": [f"*orders/{order_id}*"]})
         try:
@@ -374,7 +374,7 @@ def test_partial_fill_lifecycle(customer_order_book_api) -> None:
                 """
                 const region = document.querySelector(arguments[0]);
                 if (!region) { return null; }
-                return Array.from(region.querySelectorAll("p")).find((node) => node.textContent.trim() === "Order details could not be loaded.") || null;
+                return Array.from(region.querySelectorAll("h3, p")).find((node) => node.textContent.trim() === "Order details could not be loaded.") || null;
                 """,
                 f'[aria-label="Order {order_id} details"]',
             ))

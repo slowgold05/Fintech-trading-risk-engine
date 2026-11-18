@@ -324,7 +324,7 @@ def test_private_watchlists_ui(disposable_api) -> None:
         driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": ["*alphavantage*", "*yahoo*", "*polygon*", "*/market/research*", "*/history*"]})
         blocked = True
         driver.execute_script("window.__p3wStay = 1;")
-        h._click(driver, h._visible_navigation_link(driver, "/dashboard"))
+        h._click(driver, next(node for node in driver.find_elements(By.PARTIAL_LINK_TEXT, "Open dashboard") if node.is_displayed()))
         h._wait(driver).until(EC.url_contains("/dashboard"))
         h._wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-today']")))
         _sign_out(driver)
