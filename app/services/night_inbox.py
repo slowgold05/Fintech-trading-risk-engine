@@ -124,6 +124,7 @@ def _fills(owner_id: int, latest_reset):
             literal("fill:") + cast(Trade.id, String), literal("fill"), Trade.executed_at,
             symbol=Asset.symbol, order_id=Trade.order_id, side=Trade.side, quantity=Trade.quantity,
             price=Trade.price_at_execution, quote_at=Trade.simulated_quote_at,
+            session_date=Trade.simulated_quote_date, provider=Trade.simulated_quote_source,
         )
         .select_from(Trade)
         .join(Asset, Asset.id == Trade.asset_id)
@@ -184,9 +185,7 @@ def _item(row) -> InboxItem:
         quantity=format(row.quantity, "f") if row.quantity is not None else None,
         price=format(row.price, "f") if row.price is not None else None,
         target=format(row.target, "f") if row.target is not None else None,
-        # The pinned execution schema stores the quote time and price, but
-        # has no persisted provider to use for a complete Provenance object.
-        session_date=row.quote_at.date() if row.quote_at is not None else row.session_date,
+        session_date=row.session_date or (row.quote_at.date() if row.quote_at is not None else None),
         source=source,
     )
 
