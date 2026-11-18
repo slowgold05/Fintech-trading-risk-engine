@@ -4,14 +4,14 @@ import "./MarketSearch.css";
 
 const MarketSearchResults = lazy(() => import("./MarketSearchResults").then(module => ({ default: module.MarketSearchResults })));
 
-export function MarketSearch({ compact = false }: { compact?: boolean } = {}) {
+export function MarketSearch({ compact = false, id }: { compact?: boolean; id?: string } = {}) {
   const [draft, setDraft] = useState("");
   const [submitted, setSubmitted] = useState("");
   const form = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const nextLookup = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const uniqueId = useId();
-  const inputId = compact ? "market-symbol-search" : uniqueId;
+  const inputId = id ?? (compact ? "market-symbol-search" : uniqueId);
   const term = submitted.trim();
   useEffect(() => () => clearTimeout(nextLookup.current), []);
   function closeResults() {

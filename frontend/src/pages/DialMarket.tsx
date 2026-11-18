@@ -707,7 +707,7 @@ export function DialMarket() {
               <Pill>End-of-day history / {sourceLabel}</Pill>
             </div>}
           </div>
-          {!compact && <MarketSearch />}
+          {!compact && <MarketSearch id="market-symbol-search" />}
         </Reveal>
 
         {compact && <QuoteStrip trends={trends} selected={proxySymbol} choose={setProxySymbol} />}
