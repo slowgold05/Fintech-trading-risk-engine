@@ -1,6 +1,7 @@
 """Public, cache-only endpoints registered by the integration app."""
 
-from typing import Annotated
+from decimal import Decimal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -52,6 +53,20 @@ ArticleLimit = Annotated[int, Query(ge=1, le=50)]
 
 # Screen ranked stocks from a single market-wide pair of observed sessions.
 # The stock scope and detail eligibility are separate response attributes.
+
+
+@router.get("/screener", response_model=schema.Screener)
+def screener(
+    db: Db,
+    sector: SectorFilter = "",
+    min_move: Annotated[Decimal | None, Query(ge=-1, allow_inf_nan=False)] = None,
+    sort: Literal["move_desc", "move_asc", "symbol"] = "move_desc",
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    from app.services.night_market_screener import read_screener
+
+    return read_screener(db, sector=sector, min_move=min_move, sort=sort, limit=limit, offset=offset)
 
 
 
