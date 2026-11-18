@@ -185,6 +185,16 @@ def test_yahoo_demo_fills_and_resets_with_a_separate_system_ledger(
         assert [item["symbol"] for item in movers["most_active"]] == ["AAPL"]
 
     payload = {"symbol": "AAPL", "side": "buy", "order_type": "market", "quantity": 1}
+    if not cached_quote:
+        unavailable = client.post("/orders/preview", json=payload, headers=headers).json()
+        assert unavailable["status"] == "unavailable"
+        price = CLOSES["AAPL"][-1]
+        db_session.add(MarketBarDaily(
+            symbol="AAPL", session_date=date.fromisoformat(SESSIONS[-1]), provider="yahoo",
+            adjustment_type="raw", open=price, high=price, low=price, close=price, volume=37341600,
+            fetched_at=now.replace(tzinfo=timezone.utc), quality_status="valid",
+        ))
+        db_session.commit()
     preview = client.post("/orders/preview", json=payload, headers=headers).json()
     assert preview["estimated_fills"] == [{
         "counterparty": "simulated", "quantity": "1.000000", "execution_price": CLOSES["AAPL"][-1],
