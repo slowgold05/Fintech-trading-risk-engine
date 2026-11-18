@@ -16,8 +16,12 @@ export const destinations: readonly Destination[] = [
 ];
 export type Feature = Destination & { Screen: ComponentType; slot?: "companyEvents" };
 const WatchlistsScreen = lazy(() => import("./features/discover/WatchlistsScreen").then(module => ({ default: module.WatchlistsScreen })));
+const AccountScreen = lazy(() => import("./features/account/Account").then(module => ({ default: module.Account })));
+const LearnScreen = lazy(() => import("./features/account/Learn").then(module => ({ default: module.Learn })));
 export const features: readonly Feature[] = [
   {id:"watchlists", label:"Watchlists", path:"/watchlists", access:"authenticated", Screen:WatchlistsScreen},
+  {id:"account", label:"Account", path:"/account", access:"authenticated", Screen:AccountScreen},
+  {id:"learn", label:"Learn", path:"/learn", access:"public", Screen:LearnScreen},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;
