@@ -165,7 +165,7 @@ def _choose(driver, name: str) -> None:
 
 
 def _market(driver) -> None:
-    h._click(driver, h._wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "nav a[href='/market']"))))
+    h._click(driver, h._visible_navigation_link(driver, "/market"))
     h._wait(driver).until(EC.url_contains("/market"))
     _reveal_watchlists(driver)
     h._wait(driver).until(lambda current: "Loading watchlists." not in _section(current).text and "Loading your account." not in _section(current).text)

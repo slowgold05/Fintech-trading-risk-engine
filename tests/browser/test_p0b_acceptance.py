@@ -531,6 +531,13 @@ def _open_ticket(driver: webdriver.Chrome) -> None:
     _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='order-ticket']")))
 
 
+def _visible_navigation_link(driver: webdriver.Chrome, path: str):
+    return _wait(driver).until(lambda current: next((
+        link for link in current.find_elements(By.CSS_SELECTOR, f"nav a[href='{path}']")
+        if link.is_displayed() and link.is_enabled()
+    ), False))
+
+
 def _select_label(driver: webdriver.Chrome, field_id: str) -> str:
     field = driver.find_element(By.ID, field_id)
     return Select(field).first_selected_option.text.strip() if field.tag_name == "select" else field.text.strip()
@@ -1277,7 +1284,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         finally:
             driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": []})
 
-        _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "nav a[href='/trades']")))
+        _visible_navigation_link(driver, "/trades")
         if not _refresh_cookie_present(driver):
             pytest.fail("refresh cookie was not present before the expired-token probe")
         log_offset = disposable_api.log_path.stat().st_size
