@@ -1,9 +1,11 @@
+import type { HistoryRange } from "../utils/historyRange";
 import { apiClient } from "./client";
 
 /** One stored series. Adjustment stays a string so the UI can filter unsupported values. */
 export type CanonicalHistorySeries = {
   provider: string;
   adjustment_type: string;
+  row_count?: number;
 };
 
 /**
@@ -24,7 +26,7 @@ export type MarketDataStatus = {
 export type AdjustmentType = "raw" | "split_adjusted";
 
 /** Daily history window. The chart defaults to 2y and can request 1m, 3m, 6m, 1y, 2y, or all. */
-export type HistoryRange = "1m" | "3m" | "6m" | "1y" | "2y" | "all";
+export type { HistoryRange } from "../utils/historyRange";
 
 /** One returned canonical bar. Prices stay fixed 6-decimal strings; volume may be fractional. */
 export type HistoryBar = {

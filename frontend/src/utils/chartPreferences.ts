@@ -1,4 +1,4 @@
-import type { HistoryRange } from "../api/history";
+import { isHistoryRange, type HistoryRange } from "./historyRange";
 
 export type ChartPreferences = {
   range: HistoryRange;
@@ -9,7 +9,6 @@ export type ChartPreferences = {
 
 const STORAGE_KEY = "sentinel.dailyHistory.chartPreferences";
 
-const VALID_RANGES = new Set(["1m", "3m", "6m", "1y", "2y", "all"]);
 const VALID_INDICATORS = new Set(["none", "sma", "ema", "rsi", "macd", "bollinger"]);
 const VALID_CHART_TYPES = new Set(["candlestick", "line", "area"]);
 
@@ -25,8 +24,8 @@ export function loadChartPreferences(): Partial<ChartPreferences> {
     }
     const candidate = parsed as Record<string, unknown>;
     const result: Partial<ChartPreferences> = {};
-    if (typeof candidate.range === "string" && VALID_RANGES.has(candidate.range)) {
-      result.range = candidate.range as HistoryRange;
+    if (isHistoryRange(candidate.range)) {
+      result.range = candidate.range;
     }
     if (typeof candidate.indicator === "string" && VALID_INDICATORS.has(candidate.indicator)) {
       result.indicator = candidate.indicator as ChartPreferences["indicator"];

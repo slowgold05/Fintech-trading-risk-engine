@@ -1,3 +1,4 @@
+import { isHistoryRange } from "../utils/historyRange";
 import type { CandlestickData, HistogramData, LineData, Time, WhitespaceData } from "lightweight-charts";
 import type { IndicatorName } from "../api/indicators";
 import type { HistoryCoverageStatus, HistoryResponse } from "../api/history";
@@ -51,7 +52,7 @@ function parseBars(history: unknown): { candles: CandlestickData<Time>[]; volume
   if (body.interval !== "1d") {
     throw new Error("Invalid interval.");
   }
-  if (body.range !== "1y" && body.range !== "2y") {
+  if (!isHistoryRange(body.range)) {
     throw new Error("Invalid range.");
   }
   if (body.bars.length === 0) {

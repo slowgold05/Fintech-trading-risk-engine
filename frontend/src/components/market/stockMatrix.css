@@ -1,0 +1,116 @@
+.heat-region:has(.stock-matrix) {
+  overflow: visible;
+  max-height: none;
+  background: #111215;
+}
+.stock-matrix {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 6px;
+}
+.matrix-sector {
+  min-width: 0;
+  flex: 1 1 45%;
+  border: 1px solid #414347;
+  border-radius: 2px;
+  padding: 3px;
+}
+.matrix-sector:has(.matrix-cell:nth-child(8)) { flex-basis: 100%; }
+.matrix-sector header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 4px 5px;
+  font: 500 10px/1.15 var(--desk-mono);
+  color: #c7c9ca;
+}
+.matrix-sector header span { margin-left: auto; color: #95979c; }
+.matrix-sector[data-active="true"] { border-color: #977a5e; }
+.matrix-quotes { display: flex; flex-wrap: wrap; gap: 3px; }
+.heat-panel [class*="tone-"] {
+  --pitch: 8px;
+  --signal: #9a9ca0;
+  color: #e7e7e3;
+  background-color: #292b2e;
+  background-image: linear-gradient(100deg,#212326 7%,#222428d9 48%,transparent 90%),radial-gradient(circle,#818388 0.8px,transparent 1.1px);
+  background-size: auto,var(--pitch) var(--pitch);
+}
+.heat-panel [class*="tone-loss-"] { --signal: var(--desk-loss); }
+.heat-panel [class*="tone-gain-"] { --signal: var(--desk-gain); }
+.heat-panel :is(.tone-loss-2,.tone-gain-2) { --pitch: 5px; }
+.heat-panel :is(.tone-loss-3,.tone-gain-3) { --pitch: 3px; }
+.heat-panel .tone-flat { background: #27282b; }
+.heat-panel .tone-aged { background: repeating-linear-gradient(135deg,#27282b 0 5px,#343539 5px 6px); }
+.stock-matrix .matrix-cell {
+  flex: var(--weight) 1 calc(37px + var(--weight) * 3px);
+  min-width: max-content;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 2px;
+  padding: 5px 7px;
+  border-left: 2px solid var(--signal);
+  font: 10px/1.1 var(--desk-mono);
+  font-variant-numeric: tabular-nums;
+  transform-origin: top left;
+}
+.stock-matrix .matrix-cell b { font: 500 12px/1 var(--desk-mono); }
+.stock-matrix .matrix-cell span, .heat-panel .proxy-cell > span { color: var(--signal); }
+.stock-matrix.scale-compact .matrix-cell { padding-block: 3px; }
+.stock-matrix.scale-expanded .matrix-cell { padding-block: 9px; }
+.stock-matrix .matrix-cell:is([data-linked=true],[aria-pressed=true],:focus-visible) {
+  outline: 1px solid #e8b98b;
+  outline-offset: -1px;
+  background-color: #414044;
+}
+.heat-panel .heat-inspect {
+  border-left: 2px solid #717479;
+  background: #101114;
+  padding: 7px 10px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-height: 53px;
+  font: 10px/1.45 var(--desk-mono);
+}
+.heat-inspect[data-reading=true] { border-color: var(--desk-accent); }
+.quote-register { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 9px; }
+.quote-register :is(b,strong) { color: var(--desk-accent); font-size: 13px; }
+.quote-origin { color: #abaeb2; overflow-wrap: anywhere; }
+.heat-foot .heat-key { gap: 3px; font: 9px var(--desk-mono); }
+.heat-key b { margin-right: 2px; }
+.heat-key i[class*="tone-"] { width: 12px; height: 12px; background-image: radial-gradient(circle,#a9abb0 0.8px,transparent 1.1px); background-size: var(--pitch) var(--pitch); border-bottom: 2px solid var(--signal); }
+@media(max-width:860px) {
+  .stock-matrix .matrix-cell { min-height: 44px; flex-basis: calc(40px + var(--weight) * 3px); }
+  .stock-matrix .matrix-sector { flex-basis: 40%; }
+  .stock-matrix .matrix-sector:has(.matrix-cell:nth-child(3)) { flex-basis: 100%; }
+}
+.heat-key i.tone-flat { background-image: none; }
+.stock-matrix .matrix-sector header b { font-weight: 500; font-size: 11px; }
+@media(prefers-reduced-motion:no-preference) {
+  [data-power] .matrix-sector:nth-child(n+5) { animation: none; }
+}
+.heat-panel .inline-inspect { flex-basis: 100%; margin-block: 0 4px; }
+
+@media (min-width: 861px) {
+  .stock-matrix:has(.matrix-sector:nth-child(2)) {
+    display: block;
+    columns: 170px 3;
+    column-gap: 6px;
+  }
+  .matrix-sector {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
+    break-inside: avoid;
+    margin-bottom: 6px;
+  }
+  .matrix-quotes { gap: 2px; }
+  .stock-matrix .matrix-cell {
+    flex-basis: calc(30px + var(--weight) * .65px);
+    padding-inline: 3px;
+  }
+  .stock-matrix.scale-standard .matrix-cell { padding-block: 3px; }
+  .stock-matrix.scale-compact .matrix-cell { padding-block: 1px; }
+}

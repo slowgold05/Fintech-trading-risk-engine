@@ -1,3 +1,4 @@
+import { Select } from "../design/Select";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -21,6 +22,7 @@ const SYMBOL_POINTS = 20;
 const FIELD_UNITS = 80;
 
 type WatchlistsProps = {
+  designed?: boolean;
   onUseInResearch: (symbol: string) => void;
   onUseInChart: (symbol: string) => void;
 };
@@ -82,6 +84,7 @@ function WatchlistCard({
 }
 
 function WatchlistEditor({
+  designed = false,
   ownerId,
   onUseInChart,
   onUseInResearch,
@@ -284,18 +287,18 @@ function WatchlistEditor({
           {lists.length > 0 ? (
             <div className="min-w-0">
               <label className="text-xs font-semibold text-slate-300" htmlFor="watchlist-select">Watchlist</label>
-              <select
+              <Select designed={designed}
                 className={control}
                 disabled={pending}
                 id="watchlist-select"
-                onChange={(event) => chooseList(Number(event.target.value))}
+                onValueChange={(value) => chooseList(Number(value))}
                 value={selected?.id ?? ""}
               >
                 <option value="">Choose a watchlist</option>
                 {lists.map((list) => (
                   <option key={list.id} value={list.id}>{list.name}</option>
                 ))}
-              </select>
+              </Select>
             </div>
           ) : null}
 
@@ -414,7 +417,7 @@ function WatchlistEditor({
   );
 }
 
-export function Watchlists({ onUseInChart, onUseInResearch }: WatchlistsProps) {
+function useWatchlistOwner() {
   const { token, isAuthenticated, isInitializing } = useAuth();
   const me = useQuery({
     queryKey: ["me", token],
@@ -423,6 +426,31 @@ export function Watchlists({ onUseInChart, onUseInResearch }: WatchlistsProps) {
     retry: false,
   });
   const ownerId = Boolean(token) && me.isSuccess ? readOwnerId(me.data) : null;
+
+  return { token, isAuthenticated, isInitializing, me, ownerId };
+}
+
+export function WatchlistPreview() {
+  const { ownerId, me } = useWatchlistOwner();
+  const collection = useQuery({
+    queryKey: ["watchlists", ownerId],
+    queryFn: ({ signal }) => fetchWatchlists(signal),
+    enabled: ownerId !== null,
+    retry: false,
+    staleTime: 300000,
+  });
+  const lists = ownerId !== null ? collection.data?.watchlists : undefined;
+  const unavailable = me.isError || collection.isError || (me.isSuccess && ownerId === null);
+  return (
+    <span className="fold-preview">
+      <em>{lists ? lists.length : unavailable ? "Unavailable" : "Loading"}</em>
+      <small>Saved lists</small>
+    </span>
+  );
+}
+
+export function Watchlists({ designed, onUseInChart, onUseInResearch }: WatchlistsProps) {
+  const { token, isAuthenticated, isInitializing, me, ownerId } = useWatchlistOwner();
 
   if (isInitializing) {
     return (
@@ -466,5 +494,5 @@ export function Watchlists({ onUseInChart, onUseInResearch }: WatchlistsProps) {
     );
   }
 
-  return <WatchlistEditor key={`${ownerId}:${token}`} onUseInChart={onUseInChart} onUseInResearch={onUseInResearch} ownerId={ownerId} />;
+  return <WatchlistEditor designed={designed} key={`${ownerId}:${token}`} onUseInChart={onUseInChart} onUseInResearch={onUseInResearch} ownerId={ownerId} />;
 }
