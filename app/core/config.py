@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_exp_minutes: int = 30
     refresh_token_exp_days: int = 30
+    refresh_cookie_name: str = Field(default="refresh_token", pattern=r"^[A-Za-z0-9_-]+$")
     refresh_cookie_secure: bool = False
     enable_hsts: bool = False
     enable_api_docs: bool = True

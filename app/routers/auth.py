@@ -34,7 +34,6 @@ from app.services.login_risk import assess_login, record_login_event
 from app.services.mfa import begin_enrollment, challenge_expiry, confirm_enrollment, confirmed_factor, consume_login_challenge
 
 router = APIRouter()
-REFRESH_COOKIE_NAME = "refresh_token"
 
 
 class MfaCode(BaseModel):
@@ -73,7 +72,7 @@ def _request_ip(request: Request) -> str | None:
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
     response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
+        key=settings.refresh_cookie_name,
         value=token,
         max_age=settings.refresh_token_exp_days * 24 * 60 * 60,
         httponly=True,
@@ -84,7 +83,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/", samesite="lax")
+    response.delete_cookie(key=settings.refresh_cookie_name, path="/", samesite="lax")
 
 
 def _issue_refresh_token(db: Session, user: User, request: Request, response: Response) -> None:
@@ -237,7 +236,7 @@ def demo(request: Request, response: Response, db: Session = Depends(get_db)):
 
 @router.post("/refresh")
 def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
-    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    refresh_token = request.cookies.get(settings.refresh_cookie_name)
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
 
@@ -272,7 +271,7 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
 
 @router.post("/logout")
 def logout(request: Request, response: Response, db: Session = Depends(get_db)):
-    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    refresh_token = request.cookies.get(settings.refresh_cookie_name)
     if refresh_token:
         row = db.execute(
             select(RefreshToken).where(

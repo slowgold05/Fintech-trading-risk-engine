@@ -79,7 +79,7 @@ def historical_market(db_session, monkeypatch):
 def test_historical_demo_uses_stored_closes_and_feeds_analytics(client, db_session, historical_market):
     session, headers = _start(client)
     assert session["is_demo"] and session["demo_seed_mode"] == "historical"
-    assert client.cookies.get("refresh_token")
+    assert client.cookies.get(settings.refresh_cookie_name)
     assert client.post("/auth/refresh").status_code == 200
     me = client.get("/auth/me", headers=headers).json()
     assert me["email"].endswith("@example.com") and me["role"] == "trader"
