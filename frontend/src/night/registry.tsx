@@ -28,6 +28,8 @@ export const features: readonly Feature[] = [
     Screen: lazy(() => import("./features/explore/Compare").then(module => ({ default: module.Compare })))},
   {id:"sectors", label:"Sectors", path:"/market/sectors", access:"public",
     Screen: lazy(() => import("./features/explore/Sectors").then(module => ({ default: module.Sectors })))},
+  {id:"breadth", label:"Market breadth", path:"/market/breadth", access:"public",
+    Screen: lazy(() => import("./features/explore/Breadth").then(module => ({ default: module.Breadth })))},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;
