@@ -1,0 +1,31 @@
+.coverage-page { max-width: 1360px; margin: auto; padding: clamp(16px, 3.2vw, 48px); }
+.coverage-page .nk-layout { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+.coverage-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--pad); border-block: 1px solid var(--line); padding-block: var(--pad); }
+.coverage-toolbar strong, .coverage-toolbar small { display: block; }
+.coverage-toolbar strong { font: 500 var(--metric)/1.25 var(--font-ui); font-variant-numeric: tabular-nums; }
+.coverage-page small, .coverage-note, .coverage-states dt { color: var(--muted); }
+.coverage-lookup { display: flex; align-items: end; gap: 8px; max-width: 100%; }
+.coverage-lookup .nk-field { min-width: 0; }
+.coverage-lookup input { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); width: 100%; min-height: 44px; padding: 0 12px; font: inherit; }
+.coverage-page button { min-height: 44px; flex-shrink: 0; }
+.coverage-headline { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.coverage-headline strong { font: 500 clamp(32px, 3vw, 44px)/1.18 var(--font-ui); color: var(--accent); }
+.coverage-meter { height: 6px; margin-block: 12px; background: var(--line); }
+.coverage-meter span { display: block; height: 100%; background: var(--accent); }
+.coverage-states { display: flex; flex-wrap: wrap; column-gap: clamp(12px, 2vw, 28px); row-gap: 8px; margin-block: 12px; }
+.coverage-states dt { font-size: var(--label); }
+.coverage-states dd { font: 500 18px/1.5 var(--font-ui); font-variant-numeric: tabular-nums; }
+.coverage-note { margin-block-start: var(--gap); }
+.coverage-source, .coverage-feed { padding-block: 10px; border-top: 1px solid var(--line); }
+.coverage-page h3 { font-weight: 600; }
+.coverage-link { display: inline-flex; min-height: 44px; align-items: center; color: var(--accent); text-decoration: underline; }
+.coverage-page .nk-panel { overflow-wrap: anywhere; }
+:root[data-look=dial] .coverage-page .nk-layout { grid-template-columns: repeat(2, minmax(0,1fr)); }
+:root[data-look=dial] .coverage-page .nk-panel { border-inline: 0; background: var(--bg); }
+:root[data-look=dial] .coverage-toolbar { background: var(--surface); padding: var(--pad); }
+@media (max-width: 767px) {
+  .coverage-page .nk-layout, :root[data-look=dial] .coverage-page .nk-layout { grid-template-columns: minmax(0, 1fr); }
+  .coverage-toolbar { align-items: start; }
+  .coverage-lookup { width: 100%; }
+  .coverage-lookup .nk-field { flex: 1; }
+}
