@@ -59,3 +59,21 @@
   .company-chart [role=group] { gap: 3px; }
   .company-chart button[aria-pressed] { padding-inline: 9px; min-width: 44px; }
 }
+.company-session { border-top: 1px solid var(--line); padding: 0 var(--pad); }
+.company-session summary { line-height: 44px; cursor: pointer; }
+.company-session-field { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); }
+.company-session select { min-height: 44px; background: var(--raised); color: var(--ink); border: 1px solid var(--line); padding: 4px 10px; font-size: 16px; }
+.company-session dl { display: flex; flex-wrap: wrap; gap: var(--gap); padding-block: var(--pad); }
+.company-session dt { text-transform: capitalize; color: var(--muted); font-size: var(--label); }
+.company-session dd { font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) {
+  /* Keep the observed prices in view before the longer coverage summary. */
+  .company-chart > section { display: flex; flex-direction: column; gap: 8px; }
+  .company-chart > section > .flex:first-child,
+  .company-chart > section > .flex:first-child > div:first-child { display: contents; }
+  .company-chart [role=group] { order: 1; }
+  .company-chart [role=group] ~ p { order: 2; }
+  .company-chart .relative:has([role=img]) { order: 3; margin-top: 0; height: 210px; }
+  .company-chart #price-chart-title ~ p { order: 4; margin: 0; }
+  .company-chart > section > .overflow-auto, .company-chart > section > p { order: 5; }
+}

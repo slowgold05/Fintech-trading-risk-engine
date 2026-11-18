@@ -5,6 +5,7 @@ import { Button, Page, Panel, State } from "../night/kit";
 import { allowed, features } from "../night/registry";
 import { saveDraft } from "../night/shell/ticketDraft";
 import { fetchMe } from "../api/auth";
+import { StockDetailSession } from "./StockDetailSession";
 import "./StockDetail.css";
 import { keys } from "../night/api";
 import { useLook } from "../night/looks/preferences";
@@ -140,7 +141,8 @@ function rangePosition(price: number | null, low: number | null, high: number | 
   return `${Math.round(((price - low) / (high - low)) * 100)}% from low`;
 }
 
-function latestIndicatorValue(overlay: IndicatorOverlay | undefined): number | null {
+function latestIndicatorValue(overlay: IndicatorOverlay | undefined, session: string | undefined): number | null {
+  if (!session || overlay?.history.bars.at(-1)?.session_date !== session) return null;
   const value = overlay?.values.at(-1);
   if (value == null) return null;
   const parsed = Number(value);
@@ -149,23 +151,26 @@ function latestIndicatorValue(overlay: IndicatorOverlay | undefined): number | n
 
 function TechnicalScorecard({
   price,
+  session,
   rsi,
   sma20,
   sma50,
   loading,
 }: {
   price: number | null;
+  session: string | undefined;
   rsi: IndicatorOverlay | undefined;
   sma20: IndicatorOverlay | undefined;
   sma50: IndicatorOverlay | undefined;
   loading: boolean;
 }) {
-  const rsiValue = latestIndicatorValue(rsi);
-  const sma20Value = latestIndicatorValue(sma20);
-  const sma50Value = latestIndicatorValue(sma50);
+  const rsiValue = latestIndicatorValue(rsi, session);
+  const sma20Value = latestIndicatorValue(sma20, session);
+  const sma50Value = latestIndicatorValue(sma50, session);
   const comparison = (label: string, value: number | null) => {
     if (price == null || value == null) return { label, detail: "Unavailable", tone: "text-muted" };
-    return price >= value
+    if (price === value) return { label, detail: `Close at ${formatCurrency(value)}`, tone: "text-copy" };
+    return price > value
       ? { label, detail: `Close above ${formatCurrency(value)}`, tone: "text-up" }
       : { label, detail: `Close below ${formatCurrency(value)}`, tone: "text-down" };
   };
@@ -177,7 +182,7 @@ function TechnicalScorecard({
     comparison("SMA (50)", sma50Value),
     sma20Value == null || sma50Value == null
       ? { label: "SMA 20 vs 50", detail: "Unavailable", tone: "text-muted" }
-      : { label: "SMA 20 vs 50", detail: sma20Value >= sma50Value ? "Short trend above long trend" : "Short trend below long trend", tone: sma20Value >= sma50Value ? "text-up" : "text-down" },
+      : { label: "SMA 20 vs 50", detail: sma20Value === sma50Value ? "Moving averages equal" : sma20Value > sma50Value ? "Short trend above long trend" : "Short trend below long trend", tone: sma20Value >= sma50Value ? "text-up" : "text-down" },
   ];
   const supported = signals.filter((signal) => signal.detail !== "Unavailable");
 
@@ -268,42 +273,16 @@ export function StockDetail() {
   const sma50Query = useStockIndicator(symbol, priceProvider, priceSeries, "sma", 50);
 
   if (symbol === null) {
-    return (
-      <Frame>
-        <p className="text-sm leading-6 text-copy" role="alert">
-          This symbol is not in the supported format.
-        </p>
-      </Frame>
-    );
+    return <Frame><State kind="unavailable" role="alert" title="This symbol is not in the supported format." /></Frame>;
   }
 
   if (quoteQuery.isError) {
-    return (
-      <Frame>
-        <p className="text-sm leading-6 text-copy" role="alert">
-          {requestDetail(quoteQuery.error, "The quote could not be loaded.")}
-        </p>
-        <button
-          className="inline-flex min-h-11 w-fit items-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-canvas hover:bg-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          onClick={() => {
-            void quoteQuery.refetch();
-          }}
-          type="button"
-        >
-          Retry
-        </button>
-      </Frame>
-    );
+    return <Frame><State kind="error" role="alert" title={requestDetail(quoteQuery.error, "The quote could not be loaded.")}
+      action={<Button onClick={() => void quoteQuery.refetch()}>Retry</Button>} /></Frame>;
   }
 
   if (!quoteQuery.data) {
-    return (
-      <Frame>
-        <p className="text-sm leading-6 text-copy" role="status">
-          Loading {symbol}
-        </p>
-      </Frame>
-    );
+    return <Frame><State kind="loading" title={`Loading ${symbol}`} /></Frame>;
   }
 
   return (
@@ -439,7 +418,7 @@ function DetailBody({
       <Page.Full className="company-quote">
         <div><span>{quote.source === "massive" ? "Raw last close" : "Last close"}</span><strong>{price}</strong></div>
         <div><span>Day move</span><b data-tone={changeUp ? "up" : changeDown ? "down" : undefined}>{change}</b></div>
-        <div><b>Session date {quoteDate}</b><small>{quote.source ?? "Source unavailable"} · <span>{stale ? "Stale end-of-day price" : "Cached end-of-day data"}</span></small></div>
+        <div><b>Session date {quoteDate}</b><small>{quote.source ?? "Source unavailable"} · <span>{price === "unavailable" ? "No cached end-of-day price" : stale ? "Stale end-of-day price" : "Cached end-of-day data"}</span></small></div>
       </Page.Full>
       {Events && <Page.Full><nav className="company-tabs" aria-label="Company views">
         <Link to={tabLink(false)} aria-current={!eventsOpen ? "page" : undefined}>Overview</Link>
@@ -456,10 +435,11 @@ function DetailBody({
                 {lastBar.provider} · {lastBar.adjustment_type.replace("_", "-")} · exchange session {lastBar.session_date}
               </p>
               <PriceChart bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={seriesLabel} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
+              <StockDetailSession bars={bars} />
             </>}
         </Page.Main>
         <Page.Aside className="company-details">
-          <TechnicalScorecard loading={indicatorsLoading} price={seriesClose} rsi={rsi} sma20={sma20} sma50={sma50} />
+          <TechnicalScorecard session={lastBar?.session_date} loading={indicatorsLoading} price={seriesClose} rsi={rsi} sma20={sma20} sma50={sma50} />
           <Panel title="Company details">
             <dl><Stat label="Exchange" value={quote.exchange || "Unavailable"} />
               <Stat label="Sector" value={quote.sector || "Unavailable"} />
@@ -491,7 +471,7 @@ function DetailBody({
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
             <UnavailablePanel title="AI forecast">
-              No forecast is available for this symbol. Sentinel does not generate price targets, confidence bands, or advice from cached market data.
+              Forecasts are separate from cached daily prices. <Link className="underline" to="/forecasts">Open Forecast Lab</Link>
             </UnavailablePanel>
             <section aria-labelledby="company-news-title" className="min-w-0 rounded-2xl border border-line bg-surface">
               <div className="border-b border-line px-6 py-4">
@@ -520,7 +500,7 @@ function DetailBody({
           </div>
 
           <UnavailablePanel title="Strategy backtest">
-            No strategy backtest is available. Sentinel does not simulate strategy performance, final value, returns, or trade counts from this page.
+            This company chart shows observed market prices. Strategy simulation is unavailable here.
           </UnavailablePanel>
         </Page.Full>
       </>}

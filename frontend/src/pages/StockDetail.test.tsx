@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryResponse } from "../api/history";
 import type { SymbolQuoteResponse } from "../types/schemas";
 import { AuthContext } from "../context/authState";
+import type { Feature } from "../night/registry";
 import { StockDetail } from "./StockDetail";
 
 const marketApi = vi.hoisted(() => ({
@@ -16,6 +17,11 @@ const historyApi = vi.hoisted(() => ({ fetchDailyHistory: vi.fn() }));
 const researchApi = vi.hoisted(() => ({ fetchResearchNews: vi.fn() }));
 const indicatorApi = vi.hoisted(() => ({ fetchDailyIndicators: vi.fn() }));
 
+const slots = vi.hoisted(() => ({ features: [] as Feature[] }));
+vi.mock("../night/registry", async (original) => ({
+  ...await original<typeof import("../night/registry")>(),
+  features: slots.features,
+}));
 vi.mock("../api/auth", () => ({ fetchMe: async () => ({ id: 1, role: "trader" }) }));
 vi.mock("../api/market", () => marketApi);
 vi.mock("../api/history", () => historyApi);
@@ -153,6 +159,7 @@ describe("stock detail", () => {
 
   afterEach(() => {
     cleanup();
+    slots.features.length = 0;
     vi.clearAllMocks();
   });
 
@@ -315,6 +322,28 @@ describe("stock detail", () => {
     });
     expect(within(stats).getByText("P/E").parentElement).toHaveTextContent("unavailable");
     expect(within(stats).getByText("Profit margin").parentElement).toHaveTextContent("unavailable");
+  });
+
+  it("opens only the registered public events view and preserves the route state", async () => {
+    slots.features.push({
+      id: "events", path: "/market/:symbol", label: "Events", access: "public", slot: "companyEvents",
+      Screen: () => <h2>Company events fixture</h2>,
+    });
+    renderDetail("/market/AAPL?tab=events&range=1m#company");
+    expect(await screen.findByRole("heading", { name: "Company events fixture" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/market/AAPL?range=1m#company");
+    await userEvent.click(screen.getByRole("link", { name: "Overview" }));
+    expect(await screen.findByTestId("company-history")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Company events fixture" })).not.toBeInTheDocument();
+  });
+
+  it("uses actual dated bars for keyboard inspection", async () => {
+    renderDetail();
+    await userEvent.click(await screen.findByText("Inspect a daily bar"));
+    const field = screen.getByLabelText("Exchange session");
+    expect(field).toHaveValue("2026-11-12");
+    await userEvent.selectOptions(field, "2026-11-09");
+    expect(within(field.closest("details")!).getByText("close").parentElement).toHaveTextContent("$180.00");
   });
 
   it("rejects a malformed symbol before calling the API", () => {
