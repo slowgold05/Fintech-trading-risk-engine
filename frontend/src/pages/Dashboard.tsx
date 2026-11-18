@@ -1,7 +1,12 @@
-import { useRef } from "react";
+import { fetchMe } from "../api/auth";
+import { keys } from "../night/api";
+import { Button, Page, State } from "../night/kit";
+import { ClosingSessions } from "../features/dashboard/ClosingSessions";
+import { ActivityBrief } from "../features/dashboard/ActivityBrief";
+import type { UserResponse } from "../types/schemas";
+import "../features/dashboard/today.css";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
+import { useQuery } from "@tanstack/react-query";
 import {
   ShieldCheck,
   TrendDown,
@@ -11,16 +16,15 @@ import {
 } from "@phosphor-icons/react";
 import { fetchMarketOverview } from "../api/market";
 import { fetchOrders } from "../api/orders";
-import { fetchPortfolio, fetchPortfolioPerformance } from "../api/portfolio";
+import { fetchPortfolio } from "../api/portfolio";
 import { fetchRisk } from "../api/risk";
-import { createTrade, fetchTrades } from "../api/trades";
+import { fetchTrades } from "../api/trades";
 import {
   DashboardCard,
   EmptyState,
   IconBadge,
   PnlValue,
   PositionsTable,
-  QuickTradePanel,
   RecentOrdersTable,
   RecentTradesTable,
   RiskScoreCard,
@@ -38,8 +42,6 @@ import {
   mapPortfolioPositions,
   mapRecentTrades,
 } from "../features/dashboard/adapters";
-import type { QuickTradeFormValues } from "../features/dashboard/types";
-import { useToast } from "../context/useToast";
 import {
   formatCurrency,
   formatSignedPercent,
@@ -70,56 +72,35 @@ function pricedMove(value: number | null): { Icon: Icon; tone: IconBadgeTone } {
   return { Icon: TrendUp, tone: "emerald" };
 }
 
-function DemoPerformance() {
-  const history = useQuery({
-    queryKey: ["portfolio", "performance", "1y"],
-    queryFn: fetchPortfolioPerformance,
-  });
-  if (history.isLoading) return <SkeletonBlock className="h-14" />;
-  if (history.isError) {
-    return <EmptyState message="Performance history could not be loaded" detail="Reload the dashboard to try again." />;
-  }
-
-  const sessions = history.data?.series ?? [];
-  const valued = sessions.filter((point) => point.account_value !== null);
-  const latest = valued.at(-1);
-  if (!latest) {
-    return <EmptyState message="Performance history unavailable" detail="Daily values need closing prices for the portfolio holdings." />;
-  }
-  const returns = history.data?.money_weighted_return_pct;
-  const gaps = sessions.length - valued.length;
-  return (
-    <div className="space-y-2 text-sm text-slate-300">
-      <h3 className="font-semibold text-slate-50">Performance history</h3>
-      <p>Account value on {latest.session_date} <strong>{formatCurrency(Number(latest.account_value), false)}</strong></p>
-      {returns != null && <p>Money-weighted return <strong>{formatSignedPercent(Number(returns))}</strong></p>}
-      <p>{valued.length} of {sessions.length} sessions valued{gaps > 0 ? ". Some closing prices are missing." : "."}</p>
-    </div>
-  );
+export function Dashboard() {
+  const identity = useQuery({queryKey: keys.me, queryFn: fetchMe, retry: false});
+  if (identity.isPending) return <State kind="loading" title="Loading account…" />;
+  if (identity.isError || !identity.data) return <State kind="error" title="Account unavailable" action={<Button onClick={() => void identity.refetch()}>Retry account</Button>} />;
+  return <Today key={identity.data.id} identity={identity.data} />;
 }
 
-export function Dashboard() {
-  const pendingTrade = useRef<{ payload: string; key: string } | null>(null);
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-
+function Today({ identity }: { identity: UserResponse }) {
   const portfolioQuery = useQuery({
-    queryKey: ["portfolio"],
+    queryKey: keys.account(identity.id, "portfolio"),
+    retry: false,
     queryFn: fetchPortfolio,
   });
 
   const tradesQuery = useQuery({
-    queryKey: ["trades"],
+    queryKey: keys.account(identity.id, "trades"),
+    retry: false,
     queryFn: fetchTrades,
   });
 
   const riskQuery = useQuery({
-    queryKey: ["risk"],
+    queryKey: keys.account(identity.id, "risk"),
+    retry: false,
     queryFn: fetchRisk,
   });
 
   const ordersQuery = useQuery({
-    queryKey: ["orders"],
+    queryKey: keys.account(identity.id, "orders"),
+    retry: false,
     queryFn: fetchOrders,
   });
 
@@ -129,29 +110,6 @@ export function Dashboard() {
     queryFn: fetchMarketOverview,
     refetchInterval: 300000,
     retry: false,
-  });
-
-  const tradeMutation = useMutation({
-    mutationFn: createTrade,
-    onSuccess: async (result) => {
-      pendingTrade.current = null;
-      showToast(
-        "success",
-        `Trade submitted. New risk score: ${result.risk_score}.`,
-      );
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["trades"] }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
-        queryClient.invalidateQueries({ queryKey: ["risk"] }),
-      ]);
-    },
-    onError: (error) => {
-      const detail =
-        isAxiosError(error) && typeof error.response?.data?.detail === "string"
-          ? error.response.data.detail
-          : "Trade submission failed.";
-      showToast("error", detail);
-    },
   });
 
   const portfolio = portfolioQuery.data;
@@ -180,62 +138,19 @@ export function Dashboard() {
   const hasDashboardError =
     portfolioQuery.isError || tradesQuery.isError || riskQuery.isError;
 
-  function handleQuickTradeSubmit(values: QuickTradeFormValues) {
-    if (!values.symbol || values.quantity <= 0) {
-      showToast("error", "Enter a symbol and quantity greater than zero.");
-      return;
-    }
-
-    const payload = {
-      symbol: values.symbol,
-      asset_type: values.assetType,
-      side: values.side,
-      quantity: values.quantity,
-    };
-    const fingerprint = JSON.stringify(payload);
-    if (pendingTrade.current?.payload !== fingerprint) {
-      pendingTrade.current = { payload: fingerprint, key: crypto.randomUUID() };
-    }
-    tradeMutation.mutate({ ...payload, idempotencyKey: pendingTrade.current.key });
-  }
-
   return (
-    <div className="space-y-6">
-      {/* Page header */}
-      <div className="border-b border-slate-800/60 pb-6">
-        <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-              Trading &amp; Risk Overview
-            </h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Portfolio value, recent executions, open positions, and order entry in one view.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {hasDashboardError ? (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-rose-400/30 bg-rose-950/40 px-2.5 py-1 text-xs font-medium text-rose-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
-                Degraded
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/20 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-400">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping-slow absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                </span>
-                Cached prices
-              </span>
-            )}
-          </div>
-        </div>
+    <Page className="today" title="Today" description="Closing values, recent activity and current holdings."
+      actions={identity.role === "trader" && portfolio && <Link className="nk-button" data-variant="primary" data-testid="order-open"
+        to="/trades?ticket=1">Open order preview</Link>}>
+      <div className="today-brief">
+        <ClosingSessions owner={identity.id} />
+        <ActivityBrief fills={tradesQuery.isSuccess ? trades?.trades : undefined} orders={ordersQuery.isSuccess ? ordersQuery.data?.orders : undefined} />
       </div>
-
       {portfolio?.user?.is_demo && (
         <p className="rounded-xl border border-emerald-400/25 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
           <strong>Demo account.</strong>{" "}
           {portfolio.user.demo_seed_mode === "cached_quotes"
-            ? "Paper trades dated today use cached quotes. Daily history was unavailable."
+            ? "The demo was seeded from stored quotes because daily history was unavailable."
             : portfolio.user.demo_seed_mode === "cash_only"
               ? "The account starts with paper cash because seed prices were unavailable."
               : "The simulated trading history uses stored daily closing prices."}
@@ -406,16 +321,6 @@ export function Dashboard() {
                   Valuation read{" "}
                   <span className="font-mono text-slate-300">{valuationRead}</span>
                 </p>
-                <div className="mt-6 border-t border-slate-800 pt-5">
-                  {portfolio?.user?.is_demo ? (
-                    <DemoPerformance />
-                  ) : (
-                    <EmptyState
-                      message="Performance history unavailable"
-                      detail="Your current account value is shown above. A performance chart needs recorded account values over time."
-                    />
-                  )}
-                </div>
               </>
             )}
           </DashboardCard>
@@ -491,34 +396,15 @@ export function Dashboard() {
             </DashboardCard>
           )}
           <DashboardCard title="Positions">
-            <PositionsTable
+            <p className="mb-3">Concentration is the share of account value held in one security. Larger weights make that security’s price changes matter more.</p>
+            {portfolioQuery.isError ? <State kind="error" title="Positions could not be loaded" /> : <PositionsTable
               isLoading={isPortfolioLoading}
               positions={positions}
-            />
+            />}
           </DashboardCard>
-          {portfolio?.user?.is_demo ? (
-            <DashboardCard title="Paper orders">
-              <p className="text-sm text-slate-400">Preview an order using the latest cached closing price.</p>
-              <Link
-                className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-slate-600 px-3 text-sm font-medium text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                to="/trades"
-              >
-                Open order ticket
-              </Link>
-            </DashboardCard>
-          ) : portfolio ? (
-            <QuickTradePanel
-              buyingPower={buyingPower}
-              isSubmitting={tradeMutation.isPending}
-              onSubmit={handleQuickTradeSubmit}
-            />
-          ) : (
-            <DashboardCard title="Quick Trade">
-              <EmptyState message="Account data unavailable" detail="Order entry will appear when your account data loads." />
-            </DashboardCard>
-          )}
+          {portfolioQuery.isError && <State kind="error" title="Account data unavailable" action={<Button onClick={() => void portfolioQuery.refetch()}>Retry portfolio</Button>} />}
         </div>
       </div>
-    </div>
+    </Page>
   );
 }

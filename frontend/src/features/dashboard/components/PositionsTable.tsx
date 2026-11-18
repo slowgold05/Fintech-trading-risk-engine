@@ -35,6 +35,7 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
           <tr>
             <th className="text-left">Symbol</th>
             <th className="text-right">Quantity</th>
+            <th className="text-right">Account weight</th>
             <th className="text-right">Unrealized %</th>
           </tr>
         </thead>
@@ -43,16 +44,6 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
             const change = position.changePercent;
             return (
             <tr
-              className={[
-                "border-l-2",
-                position.risk === "High"
-                  ? "border-l-rose-400/70"
-                  : position.risk === "Medium"
-                    ? "border-l-amber-400/70"
-                    : position.risk === "Low"
-                      ? "border-l-emerald-400/70"
-                      : "border-l-slate-400/70",
-              ].join(" ")}
               key={position.symbol}
             >
               <td>
@@ -65,12 +56,6 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
                       {position.name}
                     </div>
                     <div className="font-mono text-[11px] text-slate-500">
-                      {formatQuantity(position.quantity)} units /{" "}
-                      {position.risk == null
-                        ? (position.unavailableReason ?? "Unavailable")
-                        : `${position.risk} risk`}
-                    </div>
-                    <div className="font-mono text-[11px] text-slate-500">
                       Quote observed {formatUtcDateTime(position.quoteAt) ?? "Unavailable"}
                     </div>
                   </div>
@@ -79,6 +64,7 @@ export function PositionsTable({ positions, isLoading }: PositionsTableProps) {
               <td className="text-right font-mono tabular-nums">
                 {formatQuantity(position.quantity)}
               </td>
+              <td className="text-right">{position.weight == null ? "Unavailable" : formatPercent(position.weight)}</td>
               <td className="text-right">
                 {change == null ? (
                   <span className="font-mono text-slate-400">

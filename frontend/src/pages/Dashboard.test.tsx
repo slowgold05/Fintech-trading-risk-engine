@@ -15,8 +15,9 @@ const api = vi.hoisted(() => ({
   createTrade: vi.fn(),
 }));
 
+vi.mock("../api/auth", () => ({ fetchMe: async () => ({ id: 7, role: "trader" }) }));
 vi.mock("../api/market", () => ({ fetchMarketOverview: api.fetchMarketOverview }));
-vi.mock("../api/portfolio", () => ({ fetchPortfolio: api.fetchPortfolio }));
+vi.mock("../api/portfolio", () => ({ fetchPortfolio: api.fetchPortfolio, fetchPortfolioPerformance: async () => ({series: []}) }));
 vi.mock("../api/trades", () => ({
   fetchTrades: api.fetchTrades,
   createTrade: api.createTrade,
@@ -106,7 +107,7 @@ describe("dashboard market pulse", () => {
       expect(client.getQueryCache().findAll({ queryKey: ["market", "overview"] })).toHaveLength(1);
     });
     expect(api.fetchMarketOverview).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("heading", { name: "Trading & Risk Overview" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByText("Total P&L")).toBeInTheDocument();
     expect(screen.getByText("No open positions to display.")).toBeInTheDocument();
   });
@@ -125,7 +126,7 @@ describe("dashboard market pulse", () => {
   it("omits the strip when quotes fail or the cache has no trends", async () => {
     renderDashboard();
 
-    expect(await screen.findByText("Trading & Risk Overview")).toBeInTheDocument();
+    expect(await screen.findByText("Today")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByRole("region", { name: "Market pulse" })).not.toBeInTheDocument();
     });
@@ -142,7 +143,7 @@ describe("dashboard market pulse", () => {
     });
     renderDashboard();
 
-    expect(await screen.findByText("Trading & Risk Overview")).toBeInTheDocument();
+    expect(await screen.findByText("Today")).toBeInTheDocument();
     await waitFor(() => {
       expect(api.fetchMarketOverview).toHaveBeenCalled();
       expect(screen.queryByRole("region", { name: "Market pulse" })).not.toBeInTheDocument();

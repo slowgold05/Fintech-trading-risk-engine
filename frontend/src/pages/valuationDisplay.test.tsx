@@ -293,6 +293,7 @@ function renderPage(node: ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  client.setQueryData(["me"], { id: 1, role: "trader" });
   return {
     client,
     ...render(
@@ -370,6 +371,7 @@ function valueCard() {
 
 describe("valuation display", () => {
   beforeEach(() => {
+    api.fetchMe.mockResolvedValue({ id: 1, role: "trader" });
     api.fetchOrders.mockResolvedValue({ orders: [] });
     api.fetchAllocation.mockResolvedValue(allocation("incomplete"));
     api.fetchAttribution.mockResolvedValue(attribution("incomplete"));
@@ -436,7 +438,7 @@ describe("valuation display", () => {
     expect(await screen.findByText("$50,160", { selector: ".text-4xl" })).toBeInTheDocument();
     const valueCard = screen.getByRole("heading", { name: "Portfolio Value" }).closest("section") as HTMLElement;
     expect(within(valueCard).queryByText("Real 1D")).not.toBeInTheDocument();
-    expect(within(valueCard).getByText("Performance history unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("No priced close in the past year")).toBeInTheDocument();
     expect(within(valueCard).queryByLabelText("Intraday portfolio value chart")).not.toBeInTheDocument();
     expect(valueCard.querySelector(".text-4xl")?.textContent).toBe("$50,160");
     expect(within(valueCard).queryByText("Valuation incomplete")).not.toBeInTheDocument();
@@ -600,7 +602,7 @@ describe("valuation display", () => {
     expect(await within(riskTile()).findByText("73")).toBeInTheDocument();
     api.fetchRisk.mockRejectedValue(new Error("risk refresh failed"));
     await act(async () => {
-      await client.refetchQueries({ queryKey: ["risk"] }).catch(() => undefined);
+      await client.refetchQueries({ queryKey: ["acct", 1, "risk"] }).catch(() => undefined);
     });
 
     expect(await screen.findByText(/not shown as current/)).toBeInTheDocument();
@@ -809,7 +811,7 @@ describe("valuation display", () => {
     expect(await within(ordersCard()).findByText("AMD")).toBeInTheDocument();
     api.fetchOrders.mockRejectedValue(new Error("orders refresh failed"));
     await act(async () => {
-      await client.refetchQueries({ queryKey: ["orders"] }).catch(() => undefined);
+      await client.refetchQueries({ queryKey: ["acct", 1, "orders"] }).catch(() => undefined);
     });
 
     expect(await within(ordersCard()).findByText(/not shown as current/)).toBeInTheDocument();

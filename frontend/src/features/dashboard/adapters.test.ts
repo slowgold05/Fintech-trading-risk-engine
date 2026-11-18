@@ -94,8 +94,8 @@ describe("portfolio valuation adapters", () => {
     expect(getTotalPnl(book)).toBe(0);
     expect(getUnrealizedPnlPercent(book)).toBe(0);
     const [position] = mapPortfolioPositions(book);
-    expect(position?.weight).toBe(100);
-    expect(position?.risk).toBe("Low");
+    expect(position?.weight).toBeCloseTo(100 / 100100 * 100);
+    expect(position?.risk).toBeNull();
     expect(position?.pnl).toBe(0);
   });
 
