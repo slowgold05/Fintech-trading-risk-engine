@@ -53,18 +53,18 @@ def build_inbox_router(alert_source: AlertSource | None = None) -> APIRouter:
     @router.get("")
     def get_inbox(
         query: Annotated[InboxQuery, Query()],
+        _empty: None = Depends(_empty_body),
         current_user: User = Depends(get_current_trader),
         db: Session = Depends(get_db),
-        _empty: None = Depends(_empty_body),
     ) -> InboxPage:
         return list_inbox(db, current_user.id, current_user.is_demo, query.filter, query.cursor, query.limit, alert_source)
 
     @router.put("/{id}/read")
     def put_inbox_read(
         id: Annotated[str, Path(pattern=EVENT_KEY_PATTERN)],
+        _empty: None = Depends(_empty_body),
         current_user: User = Depends(get_current_trader),
         db: Session = Depends(get_db),
-        _empty: None = Depends(_empty_body),
     ) -> InboxRead:
         return mark_read(db, current_user.id, current_user.is_demo, id, alert_source)
 

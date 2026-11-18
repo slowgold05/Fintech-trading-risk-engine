@@ -211,3 +211,15 @@ def test_inbox_auth_validation_empty_and_storage_failure(inbox_client, db_sessio
     failed = inbox_client.get("/night/inbox", headers=auth)
     assert failed.status_code == 503
     assert failed.json() == {"detail": {"code": "storage_unavailable", "message": "Inbox storage is unavailable."}}
+
+
+@pytest.mark.parametrize(("method", "path"), [("GET", "/night/inbox"), ("PUT", "/night/inbox/fill:1/read")])
+def test_inbox_rejects_a_body_before_opening_the_database(inbox_client, monkeypatch, method, path):
+    def unexpected_database():
+        pytest.fail("A bodyless route must check the request body before opening a database session.")
+
+    monkeypatch.setitem(inbox_client.app.dependency_overrides, get_db, unexpected_database)
+    headers = {"Authorization": f"Bearer {create_access_token(1)}"}
+    response = inbox_client.request(method, path, headers=headers, content=b"x")
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_request"
