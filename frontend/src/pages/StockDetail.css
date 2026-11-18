@@ -77,3 +77,17 @@
   .company-chart #price-chart-title ~ p { order: 4; margin: 0; }
   .company-chart > section > .overflow-auto, .company-chart > section > p { order: 5; }
 }
+.company-session-field { position: relative; width: fit-content; }
+.company-session-field select { appearance: none; height: 44px; padding-right: 34px; }
+.company-session-field::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  bottom: 19px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
