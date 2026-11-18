@@ -562,10 +562,10 @@ def _sign_in(driver: webdriver.Chrome, web: str, email: str, password: str, dest
 
     query = "?" + urlencode({"returnTo": destination}) if destination not in {None, "/dashboard"} else ""
     driver.get(web + "/login" + query)
-    _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Email']")))
-    driver.find_element(By.CSS_SELECTOR, "input[aria-label='Email']").send_keys(email)
-    driver.find_element(By.CSS_SELECTOR, "input[aria-label='Password']").send_keys(password)
-    driver.find_element(By.CSS_SELECTOR, "button[aria-label='Sign in']").click()
+    _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='auth-email']")))
+    driver.find_element(By.CSS_SELECTOR, "[data-testid='auth-email']").send_keys(email)
+    driver.find_element(By.CSS_SELECTOR, "[data-testid='auth-password']").send_keys(password)
+    driver.find_element(By.CSS_SELECTOR, "[data-testid='auth-submit']").click()
     if destination is None:
         _wait(driver).until(lambda current: "/login" not in current.current_url)
         return
@@ -720,10 +720,10 @@ def _orders_shell_shows_details(driver: webdriver.Chrome, symbol: str) -> bool:
         """
         const symbol = arguments[0];
         const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-          Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+          Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Your Orders")
         );
         if (!orders) { return {pending: true}; }
-        const shell = orders.querySelector(".table-shell");
+        const shell = orders.querySelector(".nk-scroll");
         const root = document.documentElement;
         const main = document.querySelector("main");
         if (!shell || !main) { return {pending: true}; }
@@ -732,7 +732,7 @@ def _orders_shell_shows_details(driver: webdriver.Chrome, symbol: str) -> bool:
         if (!headerRow) { return {pending: true}; }
         const headings = Array.from(headerRow.cells).map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
         const targets = [
-          {label: "Remaining", expected: "1"},
+          {label: "Unfilled", expected: "1"},
           {label: "Status", expected: "open"},
           {label: "Limit", expected: "$100.00"},
         ];
@@ -744,7 +744,7 @@ def _orders_shell_shows_details(driver: webdriver.Chrome, symbol: str) -> bool:
           : Array.from(orders.querySelectorAll("tr")).filter((candidate) => candidate.querySelector("td"));
         const row = candidates.find((candidate) => {
           const cells = Array.from(candidate.cells);
-          return cells.length === 6 && Array.from(cells[0].querySelectorAll("div")).some((node) =>
+          return cells.length === 6 && Array.from(cells[0].querySelectorAll("strong")).some((node) =>
             node.textContent.replace(/\\s+/g, " ").trim() === symbol
           );
         });
@@ -770,7 +770,7 @@ def _orders_shell_shows_details(driver: webdriver.Chrome, symbol: str) -> bool:
           cell.scrollIntoView({block: "nearest", inline: "nearest", behavior: "instant"});
           const rect = cell.getBoundingClientRect();
           const shellRect = shell.getBoundingClientRect();
-          const text = cell.textContent.replace(/\\s+/g, " ").trim();
+          const text = (cell.querySelector(".execution-number") || cell).textContent.replace(/\\s+/g, " ").trim();
           const textOk = target.label === "Status" ? text.toLowerCase() === target.expected : text === target.expected;
           if (!text) { return {pending: true}; }
           if (!textOk) { return {pending: false, ok: false, reason: "text"}; }
@@ -825,9 +825,9 @@ def _orders_shell_scroll_reset(driver: webdriver.Chrome) -> bool:
         return bool(driver.execute_script(
             """
             const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Your Orders")
             );
-            const shell = orders && orders.querySelector(".table-shell");
+            const shell = orders && orders.querySelector(".nk-scroll");
             if (!shell) { return false; }
             shell.scrollLeft = 0;
             return shell.scrollLeft === 0;
@@ -972,7 +972,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         driver.get(web + "/dashboard")
         _wait(driver).until(EC.url_contains("/login"))
         assert parse_qs(urlsplit(driver.current_url).query)["returnTo"] == ["/dashboard"]
-        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "button[aria-label='Sign in']")))
+        _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='auth-submit']")))
 
         driver.get(web + "/market")
         _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-market']")))
@@ -988,7 +988,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         ticket_dir = REPO_ROOT / ".local-tools" / "p3b-ticket"
         ticket_dir.mkdir(parents=True, exist_ok=True)
         _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-activity']")))
-        _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//*[normalize-space()='Order Entry']")))
+        _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//h2[normalize-space()='Paper order ticket']")))
         driver.save_screenshot(str(ticket_dir / "ticket-initial-desktop.png"))
         driver.set_window_size(390, 844)
         _wait(driver).until(lambda current: _viewport(current)["width"] <= 390 and current.execute_script("""
@@ -1102,48 +1102,18 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
             }))
         driver.refresh()
         _wait(driver).until(EC.presence_of_element_located((By.XPATH, f"//button[@aria-label='Cancel {SYMBOL} order {order_id}']")))
-        rows = driver.find_elements(By.XPATH, f"//td[normalize-space()='{SYMBOL}']")
+        rows = driver.find_elements(By.XPATH, f"//td/strong[normalize-space()='{SYMBOL}']")
         assert len(rows) == 1
 
         driver.get(web + "/dashboard")
         _wait(driver).until(lambda current: _money_after(current, "Buying power") == "$99,900")
         assert _money_after(driver, "Cash") == "$100,000"
-        # Orders load on their own query and must not wait on portfolio totals.
-        _wait(driver).until(lambda current: current.execute_script(
-            """
-            const symbol = arguments[0];
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
-            if (!orders) { return false; }
-            const headerRow = orders.querySelector("thead tr")
-              || Array.from(orders.querySelectorAll("tr")).find((row) => row.querySelector("th"));
-            if (!headerRow) { return false; }
-            const headings = Array.from(headerRow.cells).map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
-            if (headings.join("|") !== "Symbol|Side / type|Qty|Remaining|Status|Limit") { return false; }
-            const link = Array.from(orders.querySelectorAll("a")).find((node) => node.textContent.trim() === "View orders");
-            if (!link) { return false; }
-            const href = link.getAttribute("href") || "";
-            if (href !== "/trades" && !String(link.href || "").endsWith("/trades")) { return false; }
-            const dataRows = Array.from(orders.querySelectorAll("tbody tr"));
-            const candidates = dataRows.length
-              ? dataRows
-              : Array.from(orders.querySelectorAll("tr")).filter((candidate) => candidate.querySelector("td"));
-            const row = candidates.find((candidate) => {
-              const cells = Array.from(candidate.cells);
-              if (cells.length !== 6) { return false; }
-              return Array.from(cells[0].querySelectorAll("div")).some((node) => node.textContent.replace(/\\s+/g, " ").trim() === symbol);
-            });
-            if (!row) { return false; }
-            const cells = Array.from(row.cells);
-            const text = cells.map((cell) => cell.textContent.replace(/\\s+/g, " ").trim());
-            return text[2] === "1"
-              && text[3] === "1"
-              && text[4].toLowerCase() === "open"
-              && text[5] === "$100.00";
-            """,
-            SYMBOL,
-        ))
+        # The summary links to the owned order and Activity carries the full list.
+        link = _wait(driver).until(EC.visibility_of_element_located((
+            By.CSS_SELECTOR, f"[data-testid='today-open-order'] a[href='/trades?order={order_id}']",
+        )))
+        assert link.text == f"Order #{order_id} · {SYMBOL}"
+        assert "buy · 1 shares remaining" in link.find_element(By.XPATH, "..").text
         _wait(driver).until(lambda current: current.execute_script(
             """
             const section = Array.from(document.querySelectorAll("section")).find((node) =>
@@ -1155,6 +1125,13 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
             """
         ))
 
+        driver.get(web + "/trades")
+        table = _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".execution-orders table")))
+        assert [heading.text for heading in table.find_elements(By.CSS_SELECTOR, "th")] == [
+            "Order", "Requested", "Unfilled", "Limit", "Status", "Actions",
+        ]
+        row = table.find_element(By.XPATH, f".//tr[td/strong[normalize-space()='{SYMBOL}']]")
+        assert [cell.text for cell in row.find_elements(By.TAG_NAME, "td")][1:5] == ["1", "1", "$100.00", "open"]
         original_viewport = _viewport(driver)
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
         _wait(driver).until(lambda current: _viewport(current)["width"] == 390 and current.execute_script(
@@ -1179,7 +1156,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         assert driver.execute_script(
             """
             const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Your Orders")
             );
             if (!orders) { return false; }
             orders.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
@@ -1189,10 +1166,10 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         _wait(driver).until(lambda current: current.execute_script(
             """
             const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
+              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Your Orders")
             );
             if (!orders) { return false; }
-            const heading = Array.from(orders.querySelectorAll("h2")).find((node) => node.textContent.trim() === "Recent Orders");
+            const heading = Array.from(orders.querySelectorAll("h2")).find((node) => node.textContent.trim() === "Your Orders");
             const row = orders.querySelector("tbody tr");
             if (!heading || !row) { return false; }
             const headingRect = heading.getBoundingClientRect();
@@ -1225,7 +1202,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
             const symbol = arguments[0];
             return Array.from(document.querySelectorAll("tr")).some((row) => {
               const cells = Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent.trim().toLowerCase());
-              return cells.includes(symbol.toLowerCase()) && cells.includes("canceled");
+              return row.querySelector("td strong")?.textContent.toLowerCase() === symbol.toLowerCase()
+                && cells.includes("canceled");
             });
             """,
             SYMBOL,
@@ -1233,29 +1211,9 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         driver.get(web + "/dashboard")
         _wait(driver).until(lambda current: _money_after(current, "Buying power") == "$100,000")
         assert _money_after(driver, "Cash") == "$100,000"
-        _wait(driver).until(lambda current: current.execute_script(
-            """
-            const symbol = arguments[0];
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
-            if (!orders) { return false; }
-            const dataRows = Array.from(orders.querySelectorAll("tbody tr"));
-            const candidates = dataRows.length
-              ? dataRows
-              : Array.from(orders.querySelectorAll("tr")).filter((candidate) => candidate.querySelector("td"));
-            return candidates.some((candidate) => {
-              const cells = Array.from(candidate.cells);
-              if (cells.length !== 6) { return false; }
-              const symbolDiv = Array.from(cells[0].querySelectorAll("div")).some(
-                (node) => node.textContent.replace(/\\s+/g, " ").trim() === symbol
-              );
-              const status = cells[4].textContent.replace(/\\s+/g, " ").trim().toLowerCase();
-              return symbolDiv && status === "canceled";
-            });
-            """,
-            SYMBOL,
-        ))
+        _wait(driver).until(lambda current: "None in the latest 50 orders." in current.find_element(
+            By.CSS_SELECTOR, "[data-testid='today-open-order']",
+        ).text)
 
         driver.get(web + "/risk")
         try:
@@ -1292,7 +1250,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         if replaced < 1:
             pytest.fail("expired access token was not substituted on a protected request")
         _wait(driver).until(EC.url_contains("/login"))
-        _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Email']")))
+        _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='auth-email']")))
         stayed = driver.execute_script("return window.__p0bStay || 0")
         if stayed != 1:
             pytest.fail("expired-token navigation reloaded the document")
@@ -1314,7 +1272,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         driver.delete_all_cookies()
         driver.get(web + "/compliance")
         _wait(driver).until(EC.url_contains("/login"))
-        _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Email']")))
+        _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='auth-email']")))
 
         _sign_in(driver, web, email, password, destination="/compliance")
         driver.get(web + "/compliance")
@@ -1427,6 +1385,8 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         _wait(driver).until(lambda current: "Valuation incomplete" in current.find_element(By.TAG_NAME, "body").text)
         assert "Unavailable" in _money_after(driver, "Portfolio value")
         assert driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text == "Unavailable"
+        allocation = driver.find_element(By.XPATH, "//summary[normalize-space()='Allocation & P&L detail']")
+        _click(driver, allocation)
         exposure = driver.find_element(By.XPATH, "//h2[normalize-space()='Exposure by asset']/ancestor::section[1]")
         assert "Valuation incomplete" in exposure.text and "%" not in exposure.text
         marked = driver.find_element(By.XPATH, f"//tr[.//*[normalize-space()='{symbols[0]}']]")
@@ -1442,7 +1402,9 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         assert "$0.00" in driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text
         driver.get(disposable_api.web_url + "/dashboard")
         _wait(driver).until(lambda current: "$100,200" in current.find_element(By.TAG_NAME, "body").text)
-        assert "Performance history unavailable" in driver.find_element(By.TAG_NAME, "body").text
+        closing = driver.find_element(By.CSS_SELECTOR, "[data-testid='today-closes']")
+        _wait(driver).until(lambda _: "No priced close in the past year" in closing.text)
+        assert "Interval P&L" not in closing.text
         assert "Real 1D" not in driver.find_element(By.TAG_NAME, "body").text
         assert "Day P&L" not in driver.find_element(By.TAG_NAME, "body").text
         artifacts = REPO_ROOT / ".local-tools" / "p1a-browser"

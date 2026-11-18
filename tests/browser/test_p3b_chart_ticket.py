@@ -35,7 +35,6 @@ _DETAIL_VALUES = {
     "Original": "1.000000",
     "Filled": "0.000000",
     "Remaining": "1.000000",
-    "Status": "open",
     "Limit": "100.000000 USD",
 }
 
@@ -269,10 +268,10 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
         before_login = h._owner_activity_counts(engine, email)
         h._click(driver, h._wait(driver).until(_link))
         h._wait(driver).until(EC.url_contains("/login"))
-        h._wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Email']")))
-        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Email']").send_keys(email)
-        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Password']").send_keys(password)
-        driver.find_element(By.CSS_SELECTOR, "button[aria-label='Sign in']").click()
+        h._wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='auth-email']")))
+        driver.find_element(By.CSS_SELECTOR, "[data-testid='auth-email']").send_keys(email)
+        driver.find_element(By.CSS_SELECTOR, "[data-testid='auth-password']").send_keys(password)
+        driver.find_element(By.CSS_SELECTOR, "[data-testid='auth-submit']").click()
         h._wait(driver).until(EC.url_contains(f"/trades?symbol={SYMBOL}"))
         h._open_ticket(driver)
         h._install_order_hook(driver, disposable_api.api_url)

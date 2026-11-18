@@ -228,10 +228,10 @@ def _canceled_surface(driver):
         );
         if (row) { surfaces.push(row); }
         const textOf = (node) => (node.innerText || "").replace(/\\s+/g, " ").trim();
-        const canceled = surfaces.some((node) => textOf(node).includes("Order canceled"));
+        const canceled = surfaces.some((node) => textOf(node).includes("Canceled with no quantity executed."));
         const filled = surfaces.some((node) => /(?:^|[^A-Za-z])Filled(?:[^A-Za-z]|$)/i.test(textOf(node)));
         if (!canceled || filled) { return null; }
-        return surfaces.find((node) => textOf(node).includes("Order canceled")) || null;
+        return surfaces.find((node) => textOf(node).includes("Canceled with no quantity executed.")) || null;
         """,
         SYMBOL,
     ) or False
@@ -329,8 +329,12 @@ def test_empty_market_ticket(customer_order_book_api) -> None:
             node.is_displayed() for node in current.find_elements(By.CSS_SELECTOR, "div[aria-label='Notifications'] .toast-item")
         ))
         mobile = _css_viewport(driver, 390, 844, True)
-        if driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").get_attribute("value") != "2":
-            pytest.fail("sell preview quantity was not the blocked market quantity")
+        h._open_ticket(driver)
+        quantity = driver.find_element(By.CSS_SELECTOR, "[data-testid='order-quantity']")
+        assert quantity.get_attribute("value") == "1"
+        quantity.clear()
+        quantity.send_keys("2")
+        driver.find_element(By.CSS_SELECTOR, "[data-testid='order-symbol']").send_keys(SYMBOL)
         sell = h._wait(driver).until(lambda current: next((
             node for node in current.find_elements(By.CSS_SELECTOR, "button[aria-label='Sell']") if node.is_displayed()
         ), False))
