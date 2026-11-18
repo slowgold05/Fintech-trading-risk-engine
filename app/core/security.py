@@ -69,6 +69,15 @@ def decode_access_token(token: str) -> Optional[int]:
         return None
 
 
+def require_active_user(user: User) -> None:
+    if user.demo_archived_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This demo account has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -88,6 +97,7 @@ def get_current_user(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    require_active_user(user)
     return user
 
 

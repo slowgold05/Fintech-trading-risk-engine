@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Numeric, false
 
 
 from sqlalchemy.sql import func
@@ -16,6 +16,7 @@ class Trade(Base):
     side = Column(String(10), nullable=False)  # "buy" / "sell"
     quantity = Column(Numeric(18, 6), nullable=False)
     price_at_execution = Column(Numeric(18, 6), nullable=False)
+    demo_seed = Column(Boolean, server_default=false(), nullable=False)
 
     realized_pnl = Column(Numeric(18, 2), nullable=False, default=0)
     realized_pnl_pct = Column(Numeric(12, 4), nullable=False, default=0)

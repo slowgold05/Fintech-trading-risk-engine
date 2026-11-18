@@ -30,7 +30,7 @@ def configure(database_url: str, app_password: str) -> None:
                            "price_history, price_history_daily, market_bars_daily, refresh_tokens, risk_alerts, "
                            "risk_assessments, trades TO fintech_app")
             cursor.execute("GRANT INSERT ON ledger_entries TO fintech_app")
-            cursor.execute("GRANT INSERT (email, password_hash, cash_balance, full_name) ON users TO fintech_app")
+            cursor.execute("GRANT INSERT (email, password_hash, cash_balance, full_name, demo_seed) ON users TO fintech_app")
             cursor.execute("GRANT UPDATE (cash_balance, full_name) ON users TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON order_requests TO fintech_app")
             cursor.execute("GRANT INSERT (target_user_id, old_role, old_change_id, new_role, reason, requested_by_user_id) "

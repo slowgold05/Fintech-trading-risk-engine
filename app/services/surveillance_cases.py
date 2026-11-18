@@ -149,7 +149,7 @@ def _lookback_minutes(rules: list[dict]) -> int:
 def events_from_db(db: Session, since: datetime) -> list[SurveillanceEvent]:
     events = []
     trades = db.execute(select(Trade, Asset.symbol).join(Asset, Trade.asset_id == Asset.id)
-                        .where(Trade.executed_at >= since)).all()
+                        .where(Trade.executed_at >= since, Trade.demo_seed.is_(False))).all()
     for trade, symbol in trades:
         events.append(SurveillanceEvent(
             f"trade-{trade.id}", trade.executed_at, trade.user_id, symbol, "trade", trade.side,
