@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
+from app.core.security import require_active_user
 from app.models.asset import Asset
 from app.models.holding import Holding
 from app.models.market_symbol import MarketSymbol
@@ -70,6 +71,7 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
             select(User).where(User.id == account_id).with_for_update().execution_options(populate_existing=True)
         ).scalar_one()
     user = users[user_id]
+    require_active_user(user)
 
     if payload.side == "buy":
         if payload.order_type == "limit":

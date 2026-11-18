@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   clearAuthToken,
   setAuthToken,
@@ -14,6 +15,7 @@ type AuthProviderProps = {
 };
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const queryClient = useQueryClient();
   const [token, setToken] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -23,6 +25,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       isAuthenticated: Boolean(token),
       isInitializing,
       signIn: (nextToken: string) => {
+        queryClient.clear();
+        clearPersistedOrderAttempt();
         setToken(nextToken);
         setAuthToken(nextToken);
       },
@@ -30,15 +34,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
         void logout().catch(() => undefined);
         setToken(null);
         clearAuthToken();
+        queryClient.clear();
         clearPersistedOrderAttempt();
       },
     }),
-    [isInitializing, token],
+    [isInitializing, queryClient, token],
   );
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setToken(null);
+      queryClient.clear();
       clearPersistedOrderAttempt();
     });
     setTokenRefreshHandler((nextToken) => {
@@ -49,7 +55,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUnauthorizedHandler(null);
       setTokenRefreshHandler(null);
     };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     let cancelled = false;

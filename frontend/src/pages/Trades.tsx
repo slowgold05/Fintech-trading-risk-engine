@@ -56,7 +56,7 @@ function TradeHistoryRow({ trade }: { trade: TradeResponse }) {
             {trade.symbol}
           </div>
           <div className="font-mono text-[11px] uppercase text-slate-500">
-            {trade.asset_type}
+            {trade.demo_seed ? "Demo seed" : trade.asset_type}
           </div>
         </td>
         <td>
@@ -78,7 +78,7 @@ function TradeHistoryRow({ trade }: { trade: TradeResponse }) {
           {formatCurrency(trade.price_at_execution)}
         </td>
         <td className="text-right font-mono tabular-nums text-slate-400">
-          {formatDateTime(trade.executed_at)}
+          {trade.demo_seed ? trade.executed_at.slice(0, 10) : formatDateTime(trade.executed_at)}
         </td>
         <td className="text-right">
           <span className="status-badge border-slate-700 bg-slate-900 text-slate-300">

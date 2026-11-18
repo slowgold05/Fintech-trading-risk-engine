@@ -1009,14 +1009,19 @@ describe("AuthProvider pending-attempt cleanup", () => {
   it("clears a persisted attempt on sign-out", () => {
     writePersistedOrderAttempt(samplePersistedAttempt());
     expect(readPersistedOrderAttempt()).not.toBeNull();
+    const client = new QueryClient();
+    client.setQueryData(["portfolio"], { user: { id: 1 } });
 
     render(
-      <AuthProvider>
-        <SignOutProbe />
-      </AuthProvider>,
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <SignOutProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(readPersistedOrderAttempt()).toBeNull();
+    expect(client.getQueryData(["portfolio"])).toBeUndefined();
   });
 
   it("clears a persisted attempt when the session is unauthorized", async () => {
@@ -1028,9 +1033,11 @@ describe("AuthProvider pending-attempt cleanup", () => {
     expect(readPersistedOrderAttempt()).not.toBeNull();
 
     render(
-      <AuthProvider>
-        <div>child</div>
-      </AuthProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider>
+          <div>child</div>
+        </AuthProvider>
+      </QueryClientProvider>,
     );
     await waitFor(() => expect(onUnauthorized).toEqual(expect.any(Function)));
     act(() => {

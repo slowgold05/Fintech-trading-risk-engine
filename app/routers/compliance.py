@@ -227,6 +227,8 @@ def request_role_change(payload: RoleRequestCreate, db: Session = Depends(get_db
     target = db.execute(select(User).where(User.email == payload.email.strip().lower()).with_for_update()).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if target.is_demo:
+        raise HTTPException(status_code=409, detail="Demo accounts are trader-only")
     if target.role == payload.role:
         raise HTTPException(status_code=409, detail="User already has that role")
     item = RoleChangeRequest(target_user_id=target.id, old_role=target.role, new_role=payload.role,

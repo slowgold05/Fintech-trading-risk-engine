@@ -2,7 +2,7 @@ import { type FormEvent, useState } from "react";
 import { Check, Lock, User } from "@phosphor-icons/react";
 import { isAxiosError } from "axios";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { completeLoginMfa, confirmMfaEnrollment, enrollMfa, login, register } from "../api/auth";
+import { completeLoginMfa, confirmMfaEnrollment, enrollMfa, login, register, startDemo } from "../api/auth";
 import { useAuth } from "../context/useAuth";
 
 const features = [
@@ -81,7 +81,8 @@ export function Login() {
   const [enrollSecret, setEnrollSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { isAuthenticated, signIn } = useAuth();
+  const [isStartingDemo, setIsStartingDemo] = useState(false);
+  const { isAuthenticated, isInitializing, signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = safeAppFrom(location.state);
@@ -92,6 +93,7 @@ export function Login() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isStartingDemo) return;
     setError(null);
     setIsSubmitting(true);
     try {
@@ -141,6 +143,21 @@ export function Login() {
       }
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleDemo() {
+    setError(null);
+    setIsStartingDemo(true);
+    try {
+      const session = await startDemo();
+      signIn(session.access_token);
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      const detail = isAxiosError(err) ? err.response?.data?.detail : undefined;
+      setError(typeof detail === "string" ? detail : "Unable to start the demo. Please try again.");
+    } finally {
+      setIsStartingDemo(false);
     }
   }
 
@@ -364,7 +381,7 @@ export function Login() {
               <button
                 aria-label={stage === "code" ? "Verify code" : stage === "enroll" ? "Save authenticator" : isRegistering ? "Create account" : "Sign in"}
                 className="primary-action mt-2"
-                disabled={isSubmitting || (isRegistering && !strength.passesMinimum)}
+                disabled={isSubmitting || isStartingDemo || (isRegistering && !strength.passesMinimum)}
                 type="submit"
               >
                 {isSubmitting
@@ -376,6 +393,14 @@ export function Login() {
                     : "Continue"}
               </button>
             </form>
+            <button
+              className="mt-3 min-h-11 w-full rounded-xl border border-emerald-400/40 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-2 focus-visible:outline-emerald-300 disabled:opacity-60"
+              disabled={isSubmitting || isStartingDemo || isInitializing}
+              onClick={handleDemo}
+              type="button"
+            >
+              {isStartingDemo ? "Starting demo…" : "Try the demo"}
+            </button>
             <button
               className="mt-4 w-full text-center text-xs font-medium text-slate-400 transition hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
               onClick={() => {

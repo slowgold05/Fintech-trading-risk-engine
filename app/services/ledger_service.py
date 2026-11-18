@@ -1,11 +1,11 @@
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
 import json
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.holding import Holding
@@ -29,6 +29,8 @@ def _hash(entry: LedgerEntry) -> str:
         "created_at": entry.created_at.isoformat(timespec="microseconds"),
         "previous_hash": entry.previous_hash,
     }
+    if entry.effective_on is not None:
+        content["effective_on"] = entry.effective_on.isoformat()
     return sha256(json.dumps(content, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -38,6 +40,8 @@ def append_event(
     kind: str,
     postings: list[tuple[str, int | None, str, Decimal]],
     trade_id: int | None = None,
+    *,
+    effective_on: date | None = None,
 ) -> None:
     sums = defaultdict(Decimal)
     for _, _, unit, amount in postings:
@@ -65,6 +69,7 @@ def append_event(
             unit=unit,
             amount=amount,
             created_at=created_at,
+            effective_on=effective_on,
             previous_hash=previous_hash,
         )
         entry.entry_hash = _hash(entry)
@@ -73,7 +78,7 @@ def append_event(
         previous_hash = entry.entry_hash
 
 
-def ensure_opening(db: Session, user: User) -> None:
+def ensure_opening(db: Session, user: User, *, effective_on: date | None = None) -> None:
     if db.execute(select(LedgerEntry.id).where(LedgerEntry.user_id == user.id).limit(1)).first():
         return
 
@@ -86,10 +91,13 @@ def ensure_opening(db: Session, user: User) -> None:
             ("offset", holding.asset_id, unit, -holding.quantity),
         ])
     # shortcut: existing accounts start from a snapshot; backfill old trades before claiming full-history coverage.
-    append_event(db, user.id, "opening_snapshot", postings)
+    append_event(db, user.id, "opening_snapshot", postings, effective_on=effective_on)
 
 
-def append_trade(db: Session, user_id: int, trade_id: int, asset_id: int, side: str, qty: Decimal, notional: Decimal) -> None:
+def append_trade(
+    db: Session, user_id: int, trade_id: int, asset_id: int, side: str, qty: Decimal, notional: Decimal,
+    *, effective_on: date | None = None,
+) -> None:
     direction = Decimal(1) if side == "buy" else Decimal(-1)
     unit = f"ASSET:{asset_id}"
     append_event(db, user_id, "trade", [
@@ -97,10 +105,10 @@ def append_trade(db: Session, user_id: int, trade_id: int, asset_id: int, side: 
         ("offset", None, "USD", direction * notional),
         ("position", asset_id, unit, direction * qty),
         ("offset", asset_id, unit, -direction * qty),
-    ], trade_id=trade_id)
+    ], trade_id=trade_id, effective_on=effective_on)
 
 
-def append_reset(db: Session, user: User, target_cash: Decimal) -> None:
+def append_reset(db: Session, user: User, target_cash: Decimal, *, effective_on: date | None = None) -> None:
     cash_change = target_cash - user.cash_balance
     postings = [("cash", None, "USD", cash_change), ("offset", None, "USD", -cash_change)]
     for holding in db.execute(select(Holding).where(Holding.user_id == user.id)).scalars():
@@ -109,7 +117,22 @@ def append_reset(db: Session, user: User, target_cash: Decimal) -> None:
             ("position", holding.asset_id, unit, -holding.quantity),
             ("offset", holding.asset_id, unit, holding.quantity),
         ])
-    append_event(db, user.id, "reset", postings)
+    append_event(db, user.id, "reset", postings, effective_on=effective_on)
+
+
+def trade_in_current_book(user_id: int, trade_id):
+    """Keep activity after the latest reset while preserving the underlying rows."""
+    reset_id = (
+        select(func.max(LedgerEntry.id))
+        .where(LedgerEntry.user_id == user_id, LedgerEntry.event_kind == "reset")
+        .scalar_subquery()
+    )
+    trades = select(LedgerEntry.trade_id).where(
+        LedgerEntry.user_id == user_id,
+        LedgerEntry.event_kind == "trade",
+        LedgerEntry.id > reset_id,
+    )
+    return or_(reset_id.is_(None), trade_id.in_(trades))
 
 
 def reconcile_account(db: Session, user: User) -> dict:

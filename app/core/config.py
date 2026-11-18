@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     enable_hsts: bool = False
     enable_api_docs: bool = True
     rate_limit_enabled: bool = True
+    demo_daily_limit: int = Field(default=200, ge=0, le=1000)
     mfa_required: bool = False
     impossible_travel_minutes: int = Field(default=60, ge=1, le=1440)
     login_geo_prefixes: str = ""

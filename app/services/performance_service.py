@@ -113,7 +113,7 @@ inception are outside the window, so those trades do not appear in the series.
 """
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 import bisect
 
@@ -126,6 +126,7 @@ from app.models.asset import Asset
 from app.models.ledger_entry import LedgerEntry
 from app.models.user import User
 from app.services import exchange_calendar
+from app.services.demo_market_history import demo_daily_closes, seed_price_series
 from app.services.history_series import read_analytics_closes
 from app.services.market_history import (
     one_calendar_year_before,
@@ -178,9 +179,10 @@ def _performance(
             raise HTTPException(status_code=500, detail="Portfolio snapshot time is missing.") from exc
 
     # Same 404 as today's valuation. Auth already rejected an unknown token.
-    known = db.execute(select(User.id).where(User.id == user_id)).first()
+    known = db.execute(select(User.demo_seed).where(User.id == user_id)).one_or_none()
     if known is None:
         raise HTTPException(status_code=404, detail="User not found")
+    demo_seed = known.demo_seed
 
     requested_end = clock.date()
     requested_start = (
@@ -195,18 +197,42 @@ def _performance(
             .order_by(LedgerEntry.id.asc())
         ).scalars()
     )
-    inception = _inception_at(entries)
+    opening = next((row for row in entries if row.event_kind == "opening_snapshot"), None)
+    reset = next((row for row in reversed(entries) if row.event_kind == "reset"), None)
+    inception_row = reset or opening
+    inception = _effective_at(inception_row) if inception_row is not None else None
+    demo_reset_id = reset.id if demo_seed is not None and reset is not None else None
     series_days = [] if inception is None else _series_days(requested_start, requested_end, inception.date())
-    states = _states_by_date(entries)
+    states = _states_by_date(entries, demo_reset_id)
     symbols = _asset_symbols(db, entries)
-    closes, adjusted_sources = _history_closes(db, symbols, series_days)
-    # Own chain, own query. Not folded into `closes`: SPY is reported even
-    # when the account does not hold it, and a missing account value does not
-    # skip a SPY close.
-    benchmark_closes, benchmark_sources = _history_closes(db, {-1: BENCHMARK_SYMBOL}, series_days)
+    identity = {"id": user_id, "email": email}
+    prices = {}
+    if demo_seed is None:
+        closes, adjusted_sources = _history_closes(db, symbols, series_days)
+        # SPY is reported whether the account holds it or has a value on a given day.
+        benchmark_closes, benchmark_sources = _history_closes(db, {-1: BENCHMARK_SYMBOL}, series_days)
+        adjusted_sources.update(benchmark_sources)
+    else:
+        identity.update(is_demo=True, demo_seed_mode=demo_seed["mode"])
+        histories = demo_daily_closes(
+            db, {BENCHMARK_SYMBOL, *symbols.values()}, requested_start, requested_end,
+            pinned=seed_price_series(demo_seed),
+        )
+        closes = {
+            (symbol, day): [price]
+            for symbol, (_, marks) in histories.items() for day, price in marks.items()
+        }
+        benchmark_closes = closes
+        prices = {
+            symbol: {"provider": source.provider, "adjustment": source.adjustment}
+            for symbol, (source, _) in histories.items()
+        }
+        adjusted_sources = {
+            symbol: source.provider for symbol, (source, _) in histories.items()
+            if source.adjustment == "split_adjusted"
+        }
     benchmark_by_date = _benchmark_index_by_date(benchmark_closes, series_days)
-    adjusted_sources.update(benchmark_sources)
-    flows = _cash_flows(entries)
+    flows = _cash_flows(entries, demo_reset_id)
 
     series = []
     last_value: Decimal | None = None
@@ -287,7 +313,8 @@ def _performance(
 
     status = "complete" if all(point["status"] == "available" for point in series) else "incomplete"
     return {
-        "user": {"id": user_id, "email": email},
+        "user": identity,
+        **({"demo_price_series": prices} if demo_seed is not None else {}),
         "range": range_token,
         "requested_start": requested_start.isoformat(),
         "requested_end": requested_end.isoformat(),
@@ -351,22 +378,10 @@ def _drawdown(account: Decimal, peak: Decimal | None) -> tuple[Decimal | None, D
     return drawdown, peak
 
 
-def _inception_at(entries: list[LedgerEntry]) -> datetime | None:
-    """Latest reset ``created_at``, else the opening snapshot. Mirrors max(reset id)."""
-    reset_id = None
-    reset_at = None
-    opening_at = None
-    for entry in entries:
-        if entry.event_kind == "reset":
-            if reset_id is None or entry.id > reset_id:
-                reset_id = entry.id
-                reset_at = entry.created_at
-        elif entry.event_kind == "opening_snapshot" and opening_at is None:
-            opening_at = entry.created_at
-    chosen = reset_at if reset_at is not None else opening_at
-    if chosen is None:
-        return None
-    parsed = _naive_utc(chosen)
+def _effective_at(entry: LedgerEntry) -> datetime:
+    if entry.effective_on is not None:
+        return datetime.combine(entry.effective_on, time.min)
+    parsed = _naive_utc(entry.created_at)
     if parsed is None:
         raise HTTPException(status_code=500, detail="Ledger entry time is missing.")
     return parsed
@@ -382,21 +397,23 @@ def _series_days(requested_start: date, requested_end: date, inception_date: dat
     return exchange_calendar.expected_session_dates(window_start, requested_end)
 
 
-def _states_by_date(entries: list[LedgerEntry]) -> dict[date, tuple[Decimal, dict[int, Decimal]]]:
+def _states_by_date(
+    entries: list[LedgerEntry], demo_reset_id: int | None = None,
+) -> dict[date, tuple[Decimal, dict[int, Decimal]]]:
     """End-of-day cash and position quantity after every posting dated that UTC day."""
     cash = Decimal(0)
     quantities: dict[int, Decimal] = defaultdict(Decimal)
     states: dict[date, tuple[Decimal, dict[int, Decimal]]] = {}
     for entry in entries:
-        stamp = _naive_utc(entry.created_at)
-        if stamp is None:
-            raise HTTPException(status_code=500, detail="Ledger entry time is missing.")
         amount = _decimal(entry.amount)
         if entry.account == "cash":
             cash += amount
         elif entry.account == "position" and entry.asset_id is not None:
             quantities[entry.asset_id] += amount
-        states[stamp.date()] = (cash, dict(quantities))
+        # The reset postings zero the previous book. Only publish dates from
+        # this new replay, even when earlier postings had later effective dates.
+        if demo_reset_id is None or entry.id >= demo_reset_id:
+            states[_effective_at(entry).date()] = (cash, dict(quantities))
     return states
 
 
@@ -413,7 +430,7 @@ def _state_as_of(
     return states[dates[index]]
 
 
-def _cash_flows(entries: list[LedgerEntry]) -> list[tuple[date, Decimal]]:
+def _cash_flows(entries: list[LedgerEntry], demo_reset_id: int | None = None) -> list[tuple[date, Decimal]]:
     """Signed deposit/withdrawal amounts by date, cash-account leg only.
 
     Each cash_deposit/cash_withdrawal event posts two balanced rows
@@ -422,6 +439,8 @@ def _cash_flows(entries: list[LedgerEntry]) -> list[tuple[date, Decimal]]:
     """
     flows: list[tuple[date, Decimal]] = []
     for entry in entries:
+        if demo_reset_id is not None and entry.id <= demo_reset_id:
+            continue
         if entry.account != "cash" or entry.event_kind not in ("cash_deposit", "cash_withdrawal"):
             continue
         stamp = _naive_utc(entry.created_at)

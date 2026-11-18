@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Cross-sector core",
+    "display_name": "Tessa Valegrove",
+    "buys": [
+      {"symbol": "MSFT", "days_ago": 174, "weight_pct": 15},
+      {"symbol": "JPM", "days_ago": 160, "weight_pct": 13},
+      {"symbol": "UNH", "days_ago": 139, "weight_pct": 12},
+      {"symbol": "XOM", "days_ago": 119, "weight_pct": 13},
+      {"symbol": "COST", "days_ago": 93, "weight_pct": 12},
+      {"symbol": "CAT", "days_ago": 69, "weight_pct": 11}
+    ],
+    "sells": [
+      {"symbol": "MSFT", "days_ago": 63, "fraction_pct": 25},
+      {"symbol": "XOM", "days_ago": 32, "fraction_pct": 30}
+    ]
+  },
+  {
+    "name": "Growth and defensives",
+    "display_name": "Milo Fenridge",
+    "buys": [
+      {"symbol": "AAPL", "days_ago": 182, "weight_pct": 15},
+      {"symbol": "JNJ", "days_ago": 166, "weight_pct": 13},
+      {"symbol": "V", "days_ago": 146, "weight_pct": 12},
+      {"symbol": "NEE", "days_ago": 128, "weight_pct": 12},
+      {"symbol": "PG", "days_ago": 101, "weight_pct": 13},
+      {"symbol": "AMZN", "days_ago": 77, "weight_pct": 11}
+    ],
+    "sells": [
+      {"symbol": "AAPL", "days_ago": 57, "fraction_pct": 25},
+      {"symbol": "JNJ", "days_ago": 28, "fraction_pct": 30}
+    ]
+  }
+]

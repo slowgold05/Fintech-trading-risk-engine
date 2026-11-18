@@ -44,6 +44,9 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     role: str
+    is_demo: bool
+    display_name: str | None
+    demo_seed_mode: str | None
 
     class Config:
         from_attributes = True

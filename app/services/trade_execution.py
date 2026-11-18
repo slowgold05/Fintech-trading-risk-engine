@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import require_active_user
 from app.models.asset import Asset
 from app.models.holding import Holding
 from app.models.lot import Lot
@@ -37,9 +38,15 @@ def reserved_shares(db: Session, user_id: int, asset_id: int) -> Decimal:
     return sum((order.remaining_quantity for order in orders), Decimal(0))
 
 
-def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal, price: Decimal, order_id: int | None = None, executed_at: datetime | None = None) -> tuple[Trade, int]:
+def execute_fill(
+    db: Session, user: User, asset: Asset, side: str, qty: Decimal, price: Decimal,
+    order_id: int | None = None, executed_at: datetime | None = None, *, demo_seed: bool = False,
+) -> tuple[Trade, int]:
+    require_active_user(user)
     if side not in ("buy", "sell") or qty <= 0 or price <= 0:
         raise ValueError("Invalid trade fill")
+    if demo_seed and (not user.is_demo or order_id is not None or executed_at is None):
+        raise ValueError("Demo seed fills require a dated demo account fill without an order")
     notional = notional_amount(qty, price)
     if notional <= 0:
         raise HTTPException(status_code=400, detail="Trade value must be at least $0.01")
@@ -54,6 +61,8 @@ def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal,
 
     ensure_opening(db, user)
     trade = Trade(user_id=user.id, asset_id=asset.id, order_id=order_id, side=side, quantity=qty, price_at_execution=price)
+    if demo_seed:
+        trade.demo_seed = True
     if executed_at is not None:
         trade.executed_at = executed_at
     db.add(trade)
@@ -109,7 +118,10 @@ def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal,
         )
         user.cash_balance += notional
 
-    append_trade(db, user.id, trade.id, asset.id, side, qty, notional)
+    append_trade(
+        db, user.id, trade.id, asset.id, side, qty, notional,
+        effective_on=executed_at.date() if demo_seed else None,
+    )
     score, alerts = assess_trade_risk(db, user.id, notional)
     assessment = RiskAssessment(trade_id=trade.id, user_id=user.id, risk_score=score)
     db.add(assessment)
