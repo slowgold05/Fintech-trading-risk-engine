@@ -183,11 +183,13 @@ export function IndexComparisonChart({
   });
   const rows: PlotRow[] = symbols.map((proxy, index) => {
     const result = results[index];
+    const response = result?.data;
+    const mismatched = response != null && response.symbol !== proxy.symbol;
     return {
       symbol: proxy.symbol,
       name: proxy.name,
       color: COLORS[index % COLORS.length],
-      ...plotFromResponse(result?.data, result?.isError ?? false),
+      ...plotFromResponse(mismatched ? undefined : response, (result?.isError ?? false) || mismatched),
       ...(result?.isPending ? { state: "loading" as const, series: null } : {}),
     };
   });

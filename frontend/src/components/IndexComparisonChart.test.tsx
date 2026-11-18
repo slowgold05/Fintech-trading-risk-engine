@@ -152,4 +152,28 @@ describe("IndexComparisonChart", () => {
     expect(await screen.findByText(/Sessions are missing for SPY\. The line spans those sessions/)).toBeInTheDocument();
     expect(screen.queryByText(/does not connect/)).not.toBeInTheDocument();
   });
+
+  it("does not plot a history response for a different symbol", async () => {
+    const setData = vi.fn();
+    chartApi.createChart.mockImplementation(() => ({
+      addSeries: () => ({ setData }),
+      subscribeCrosshairMove: vi.fn(),
+      timeScale: () => ({ fitContent: vi.fn() }),
+      remove: vi.fn(),
+    }));
+    historyApi.fetchDailyHistory.mockImplementation(async (symbol: string) => {
+      if (symbol === "SPY") {
+        return history("QQQ", ["100.000000", "110.000000"], ["2026-11-03", "2026-11-04"]);
+      }
+      return history(symbol, [], [], "unavailable");
+    });
+
+    renderChart();
+
+    const list = await screen.findByRole("list", { name: "End-of-day percent change for the index proxies" });
+    await waitFor(() => expect(within(list).getByRole("listitem", { name: /SPY/ })).toHaveTextContent("Unavailable"));
+    expect(within(list).getByRole("listitem", { name: /SPY/ })).not.toHaveTextContent("+10.00%");
+    expect(screen.getByText(/End-of-day history unavailable for .*SPY/)).toBeInTheDocument();
+    expect(setData).not.toHaveBeenCalled();
+  });
 });
