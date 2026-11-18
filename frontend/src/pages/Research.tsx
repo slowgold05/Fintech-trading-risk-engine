@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { isAxiosError } from "axios";
@@ -12,7 +12,6 @@ import {
   listResearchJobs,
   listResearchReports,
 } from "../api/research";
-import { DailyHistory } from "../components/DailyHistory";
 import { apiClient } from "../api/client";
 import { keys } from "../night/api";
 import { Button, Field, Page, Panel, State } from "../night/kit";
@@ -21,6 +20,8 @@ import { StoredContext } from "../night/features/desks/StoredContext";
 import "../night/features/desks/research.css";
 import type { ResearchJob, ResearchReport } from "../types/schemas";
 import { formatDateTime } from "../utils/format";
+
+const DailyHistory = lazy(() => import("../components/DailyHistory").then(module => ({ default: module.DailyHistory })));
 
 function requestErrorMessage(error: unknown, fallback: string) {
   return isAxiosError(error)
@@ -315,7 +316,11 @@ function ReportPriceHeader({ symbol }: { symbol: string }) {
 }
 
 function ReportChart({ symbol }: { symbol: string }) {
-  return <DailyHistory value={symbol} />;
+  const [open, setOpen] = useState(false);
+  return <details onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>Inspect daily price history</summary>
+    {open && <Suspense fallback={<LoadingRows />}><DailyHistory value={symbol} /></Suspense>}
+  </details>;
 }
 
 function ReportFilings({ symbol }: { symbol: string }) {
@@ -476,7 +481,7 @@ function ResearchReportCard({ owner, jobId, reportId, onClose }: { owner: number
         <p className="desk-meta">Job #{report.job_id} · Stored {formatDateTime(report.created_at)}</p>
         {report.synthesis == null && <State kind="unavailable" title="Generated synthesis unavailable" detail="The stored report contains source records without a synthesis." />}
         <ReportPriceHeader symbol={report.symbol} />
-        <details><summary>Inspect daily price history</summary><ReportChart symbol={report.symbol} /></details>
+        <ReportChart symbol={report.symbol} />
         <ReportBody report={report} />
         <ReportFilings symbol={report.symbol} />
         <ReportNews symbol={report.symbol} />
