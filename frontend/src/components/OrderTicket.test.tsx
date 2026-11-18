@@ -284,6 +284,33 @@ describe("OrderTicket", () => {
     expect(screen.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
   });
 
+  it("shows the simulated price, session date and reason for the remainder, then pins the quoted session", async () => {
+    open();
+    draft();
+    const remainder = "This order reached the simulated share cap for the latest close.";
+    previewOrder.mockResolvedValueOnce(validPreview({
+      estimated_fill_quantity: "0.500000",
+      estimated_fill_notional: "50.00",
+      unfilled_quantity: "0.500000",
+      estimated_fills: [{
+        counterparty: "simulated", quantity: "0.500000", execution_price: "100.000000",
+        simulated_quote_date: "2026-11-06",
+      }],
+      remainder_reason: remainder,
+    }));
+    clickButton("Preview order");
+    expect(await screen.findByText(/0.500000 shares at \$100.000000/)).toHaveTextContent(
+      "Simulated liquidity at the latest end-of-day close, 2026-11-06",
+    );
+    expect(screen.getByText(remainder)).toBeInTheDocument();
+
+    createOrder.mockResolvedValueOnce(placedOrder());
+    clickButton("Confirm paper order");
+    await waitFor(() => expect(createOrder.mock.calls[0]?.[0]).toMatchObject({
+      expected_quote_observed_at: "2026-11-06T15:00:00Z",
+    }));
+  });
+
   it("confirms captured strings with a UUID key and refreshes orders, trades, portfolio, and risk", async () => {
     const invalidate = open();
     draft();

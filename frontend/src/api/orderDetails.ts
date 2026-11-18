@@ -15,6 +15,7 @@ export interface OrderFill {
   notional: string;
   realized_pnl: string;
   executed_at: string;
+  simulated_quote_date?: string;
 }
 
 export interface OrderDetailResponse {
@@ -36,6 +37,8 @@ export interface OrderDetailResponse {
   has_more: boolean;
   next_after_id: number | null;
   fills: OrderFill[];
+  simulated_quote_date?: string;
+  remainder_reason?: string;
 }
 
 export interface OrderDetailOptions {
@@ -96,6 +99,12 @@ function requireUtc(value: unknown): string {
   return value;
 }
 
+function parseSimulatedDate(value: unknown): { simulated_quote_date?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== "string" || !isUtcTimestamp(`${value}T00:00:00Z`)) fail();
+  return { simulated_quote_date: value };
+}
+
 function parseFill(value: unknown, afterId: number): OrderFill {
   if (!isRecord(value)) fail();
   const tradeId = value.trade_id;
@@ -107,6 +116,7 @@ function parseFill(value: unknown, afterId: number): OrderFill {
     notional: requireMoney(value.notional, false),
     realized_pnl: requireMoney(value.realized_pnl, true),
     executed_at: requireUtc(value.executed_at),
+    ...parseSimulatedDate(value.simulated_quote_date),
   };
 }
 
@@ -152,6 +162,8 @@ function parseOrderDetail(data: unknown, orderId: number, limit: number, afterId
 
   const count = data.total_fill_count;
   if (count < fills.length) fail();
+  const reason = data.remainder_reason;
+  if (reason !== undefined && (typeof reason !== "string" || !reason.trim() || scaled6(remaining) === 0n)) fail();
   let nextAfterId: number | null;
   if (data.has_more) {
     const last = fills[fills.length - 1];
@@ -184,6 +196,8 @@ function parseOrderDetail(data: unknown, orderId: number, limit: number, afterId
     has_more: data.has_more,
     next_after_id: nextAfterId,
     fills,
+    ...parseSimulatedDate(data.simulated_quote_date),
+    ...(reason === undefined ? {} : { remainder_reason: reason }),
   };
 }
 

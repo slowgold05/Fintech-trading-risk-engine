@@ -19,6 +19,7 @@ from app.services.idempotency import execute_once
 from app.services.demo_accounts import demo_trade_price_basis
 from app.services.ledger_service import trade_in_current_book
 from app.services.order_step_up import require_notional_step_up
+from app.services.simulated_liquidity import simulated_provenance
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -57,6 +58,7 @@ def list_trades(
                 "demo_seed": trade.demo_seed,
                 **({"seed_price": provenance[(asset.symbol, trade.side, trade.executed_at.date().isoformat())]}
                    if trade.demo_seed else {}),
+                **simulated_provenance(trade.simulated_quote_at),
             }
             for trade, asset in rows
         ]

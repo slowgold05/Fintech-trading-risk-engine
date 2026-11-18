@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.read_snapshot import consistent_read as real_consistent_read
 from app.core.read_snapshot import snapshot_clock as real_snapshot_clock
 from app.core.read_snapshot import SnapshotClockError
@@ -18,6 +19,12 @@ from app.models.market_symbol import MarketSymbol
 from app.models.order import Order
 from app.models.trade import Trade
 from app.models.user import User
+
+
+@pytest.fixture(autouse=True)
+def book_only_matching(monkeypatch):
+    """Check the original order detail contract under opt-out."""
+    monkeypatch.setattr(settings, "simulated_liquidity_enabled", False)
 
 DETAIL = "/orders/{order_id}"
 ORDER_KEYS = {

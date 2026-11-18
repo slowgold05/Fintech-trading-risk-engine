@@ -1,9 +1,9 @@
-import type { OrderPreviewPayload, OrderPreviewResponse } from "../api/orderPreview";
+import { parseEstimatedExecution, type OrderPreviewPayload, type OrderPreviewResponse } from "../api/orderPreview";
 import type { TradeSide } from "../types/schemas";
 
 export type PersistedAttempt = {
   fingerprint: string;
-  payload: OrderPreviewPayload;
+  payload: OrderPreviewPayload & { expected_quote_observed_at?: string };
   key: string;
 };
 
@@ -38,14 +38,14 @@ function isStringOrNull(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
-function parsePayload(value: unknown): OrderPreviewPayload | null {
+function parsePayload(value: unknown): PersistedAttempt["payload"] | null {
   if (!isRecord(value)) return null;
   if (typeof value.symbol !== "string") return null;
   if (!isSide(value.side)) return null;
   if (!isOrderType(value.order_type)) return null;
   if (typeof value.quantity !== "string") return null;
 
-  const payload: OrderPreviewPayload = {
+  const payload: PersistedAttempt["payload"] = {
     symbol: value.symbol,
     side: value.side,
     order_type: value.order_type,
@@ -54,6 +54,10 @@ function parsePayload(value: unknown): OrderPreviewPayload | null {
   if (Object.prototype.hasOwnProperty.call(value, "limit_price")) {
     if (typeof value.limit_price !== "string") return null;
     payload.limit_price = value.limit_price;
+  }
+  if (value.expected_quote_observed_at !== undefined) {
+    if (!isNonEmptyString(value.expected_quote_observed_at)) return null;
+    payload.expected_quote_observed_at = value.expected_quote_observed_at;
   }
   return payload;
 }
@@ -90,7 +94,7 @@ function parsePreview(value: unknown): OrderPreviewResponse | null {
   if (!isStringOrNull(value.estimated_fill_notional)) return null;
   if (!isStringOrNull(value.unfilled_quantity)) return null;
 
-  return {
+  const preview: OrderPreviewResponse = {
     symbol: value.symbol,
     side: value.side,
     order_type: value.order_type,
@@ -108,6 +112,12 @@ function parsePreview(value: unknown): OrderPreviewResponse | null {
     estimated_fill_notional: value.estimated_fill_notional,
     unfilled_quantity: value.unfilled_quantity,
   };
+  try {
+    return { ...preview, ...parseEstimatedExecution(value, preview) };
+  } catch {
+    // Optional display metadata must not drop the pending idempotency key.
+    return preview;
+  }
 }
 
 function parsePersistedOrderAttempt(value: unknown): PersistedOrderAttempt | null {

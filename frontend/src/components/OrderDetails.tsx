@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchOrderDetail, type OrderDetailResponse } from "../api/orderDetails";
 import { SkeletonBlock } from "../features/dashboard/components";
-import { formatUtcDateTime } from "../utils/format";
+import { formatUtcDateTime, simulatedLiquidityLabel } from "../utils/format";
 
 const PAGE_SIZE = 50;
 
@@ -116,6 +116,10 @@ function DetailBody({
   return (
     <div className="min-w-0 space-y-4">
       <p className="text-sm text-slate-300">{executionSummary(detail)}</p>
+      {detail.simulated_quote_date && !detail.fills.some((fill) => fill.simulated_quote_date) ? (
+        <p className="text-sm text-slate-300">{simulatedLiquidityLabel(detail.simulated_quote_date)}</p>
+      ) : null}
+      {detail.remainder_reason ? <p className="text-sm text-slate-300">{detail.remainder_reason}</p> : null}
       <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-slate-400">Symbol</dt>
@@ -192,7 +196,14 @@ function DetailBody({
               <tbody>
                 {detail.fills.map((fill) => (
                   <tr key={fill.trade_id}>
-                    <td className="font-mono text-slate-100">{fill.trade_id}</td>
+                    <td className="text-slate-100">
+                      <span className="font-mono">{fill.trade_id}</span>
+                      {fill.simulated_quote_date ? (
+                        <span className="block text-xs text-slate-300">
+                          {simulatedLiquidityLabel(fill.simulated_quote_date)}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="text-right font-mono tabular-nums">{fill.quantity}</td>
                     <td className="text-right font-mono tabular-nums">{moneyLabel(fill.execution_price, currency)}</td>
                     <td className="text-right font-mono tabular-nums">{moneyLabel(fill.notional, currency)}</td>

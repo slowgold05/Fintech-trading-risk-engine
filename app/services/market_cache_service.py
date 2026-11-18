@@ -3,7 +3,7 @@ from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -72,6 +72,25 @@ def _write_quote_cache(
     source: str,
     cache_row: MarketQuoteCache | None,
 ) -> MarketQuoteCache:
+    quote_date = quote.get("quote_date")
+    observed_at = datetime.combine(date.fromisoformat(quote_date), datetime_time.min) if quote_date else None
+    sweep = False
+    if settings.simulated_liquidity_enabled:
+        # Order submission takes these locks in the same order. Reload after
+        # the provider call so concurrent refreshes compare committed dates.
+        from app.services.order_book import sweep_resting_orders
+        from app.services.pretrade_controls import lock_trading_halt_state, trading_halt_reason
+        from app.services.simulated_liquidity import is_confirmed_close
+
+        halt_reason = trading_halt_reason(lock_trading_halt_state(db))
+        symbol_row = db.execute(select(MarketSymbol).where(MarketSymbol.symbol == symbol)
+                                .with_for_update().execution_options(populate_existing=True)).scalar_one()
+        cache_row = db.get(MarketQuoteCache, symbol, populate_existing=True)
+        previous = cache_row.quote_at if cache_row is not None and is_confirmed_close(cache_row) else None
+        if previous is not None and (observed_at is None or observed_at < previous):
+            return cache_row
+        sweep = symbol_row.is_active and observed_at is not None and (previous is None or observed_at > previous)
+
     if cache_row is None:
         cache_row = MarketQuoteCache(symbol=symbol)
         db.add(cache_row)
@@ -80,9 +99,12 @@ def _write_quote_cache(
     cache_row.change_percent = quote.get("change_percent", 0)
     cache_row.volume = quote.get("volume", 0)
     cache_row.source = source
-    quote_date = quote.get("quote_date")
-    cache_row.quote_at = datetime.combine(date.fromisoformat(quote_date), datetime_time.min) if quote_date else None
+    cache_row.quote_at = observed_at
     cache_row.fetched_at = _utcnow()
+    if sweep:
+        db.flush()
+        db.refresh(cache_row)
+        sweep_resting_orders(db, cache_row, halt_reason)
     return cache_row
 
 

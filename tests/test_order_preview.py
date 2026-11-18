@@ -28,6 +28,12 @@ RESPONSE_KEYS = {
 ESTIMATE_KEYS = ("initial_reservation", "estimated_fill_quantity", "estimated_fill_notional", "unfilled_quantity")
 
 
+@pytest.fixture(autouse=True)
+def book_only_matching(monkeypatch):
+    """Keep the original book-only estimates and exact response contract under opt-out."""
+    monkeypatch.setattr(settings, "simulated_liquidity_enabled", False)
+
+
 def _qty(value) -> str:
     return f"{Decimal(value).quantize(Decimal('0.000001')):.6f}"
 

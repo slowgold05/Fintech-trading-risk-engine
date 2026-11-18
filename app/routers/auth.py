@@ -60,7 +60,7 @@ class MfaLogin(BaseModel):
 
 
 def _authenticated_user(db: Session, email: str, password: str) -> User:
-    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    user = db.execute(select(User).where(User.email == email, ~User.is_system)).scalar_one_or_none()
     password_ok = verify_password_or_dummy(password, user.password_hash if user is not None else None)
     if user is None or user.is_demo or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
@@ -160,7 +160,7 @@ def login(
 
     # OAuth2PasswordRequestForm uses fields: username, password
     user = db.execute(
-        select(User).where(User.email == form.username)
+        select(User).where(User.email == form.username, ~User.is_system)
     ).scalar_one_or_none()
 
     password_ok = verify_password_or_dummy(
@@ -253,7 +253,7 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
-    user = db.execute(select(User).where(User.id == row.user_id)).scalar_one_or_none()
+    user = db.execute(select(User).where(User.id == row.user_id, ~User.is_system)).scalar_one_or_none()
     if user is None or user.demo_archived_at is not None:
         row.revoked_at = datetime.utcnow()
         db.commit()

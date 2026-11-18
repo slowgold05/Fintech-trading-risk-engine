@@ -22,10 +22,13 @@ def trading_halt_reason(state: TradingHaltState | None) -> str | None:
     return None
 
 
+def lock_trading_halt_state(db: Session) -> TradingHaltState | None:
+    return db.execute(select(TradingHaltState).where(TradingHaltState.id == 1)
+                      .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+
+
 def require_trading_open(db: Session) -> None:
-    state = db.execute(select(TradingHaltState).where(TradingHaltState.id == 1)
-                       .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
-    reason = trading_halt_reason(state)
+    reason = trading_halt_reason(lock_trading_halt_state(db))
     if reason is not None:
         raise HTTPException(status_code=503, detail=reason)
 

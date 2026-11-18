@@ -24,6 +24,7 @@ from app.schemas.order import OrderCreate
 from app.services.mfa import confirmed_factor
 from app.services.order_book import allocate_slices, resting_makers_select
 from app.services.pretrade_controls import _price_band_problem, require_stock_concentration, trading_halt_reason
+from app.services.simulated_liquidity import plan_simulated_fill, simulated_provenance
 from app.services.trade_execution import notional_amount, reserved_cash, reserved_shares
 
 
@@ -89,6 +90,8 @@ def _preview_snapshot(db: Session, owner: User, payload: OrderCreate, read_at: d
         fill_quantity: Decimal = Decimal(0),
         fill_notional: Decimal = Decimal(0),
         reservation: Decimal | None = None,
+        estimated_fills: list[dict] | None = None,
+        remainder_reason: str | None = None,
     ) -> dict:
         if status == "eligible":
             initial = None if payload.side == "sell" else _money(Decimal(0) if reservation is None else reservation)
@@ -100,6 +103,8 @@ def _preview_snapshot(db: Session, owner: User, payload: OrderCreate, read_at: d
             }
         else:
             estimates = {field: None for field in ESTIMATE_FIELDS}
+        if settings.simulated_liquidity_enabled:
+            estimates.update(estimated_fills=estimated_fills, remainder_reason=remainder_reason)
         return {
             "symbol": payload.symbol,
             "side": payload.side,
@@ -132,6 +137,9 @@ def _preview_snapshot(db: Session, owner: User, payload: OrderCreate, read_at: d
     if asset is not None:
         makers = db.execute(resting_makers_select(asset.id, owner_id, payload)).scalars().all()
     slices = _slice_copies(allocate_slices(payload.quantity, makers))
+    remaining_quantity = payload.quantity - sum((item["quantity"] for item in slices), Decimal(0))
+    simulated, remainder_reason = plan_simulated_fill(payload.side, payload.limit_price, remaining_quantity, quote)
+    simulated_notional = Decimal(0) if simulated is None else notional_amount(simulated.quantity, simulated.price)
 
     reservation: Decimal | None = None
     if payload.side == "buy":
@@ -141,6 +149,7 @@ def _preview_snapshot(db: Session, owner: User, payload: OrderCreate, read_at: d
             reservation = _market_reservation(slices)
             if reservation is None:
                 return finish("unavailable", LIQUIDITY)
+            reservation += simulated_notional
         if reservation > owner_cash - owner_reserved:
             return finish("blocked", "Insufficient buying power")
         reference_price = _required_decimal(quote.price)
@@ -164,12 +173,42 @@ def _preview_snapshot(db: Session, owner: User, payload: OrderCreate, read_at: d
     )
     if settled[0] != "eligible":
         return finish(settled[0], settled[1])
+
+    fill_quantity, fill_notional = settled[2:]
+    estimated_fills = [
+        {"counterparty": "user", "quantity": _quantity(item["quantity"]), "execution_price": _quantity(item["price"])}
+        for item in slices
+    ] if settings.simulated_liquidity_enabled else None
+    if simulated is not None:
+        # Real settlement already adjusted the owner's balance and reservations.
+        # The system funds its own leg before settlement, so only the owner can be blocked here.
+        if payload.side == "buy":
+            if simulated_notional > cash[owner_id]:
+                return finish("blocked", "Insufficient buying power")
+            cash[owner_id] -= simulated_notional
+            if payload.limit_price is not None:
+                _replace_open_buy(reserved, owner_id, remaining_quantity,
+                                  remaining_quantity - simulated.quantity, payload.limit_price)
+            if reserved[owner_id] > cash[owner_id]:
+                return finish("blocked", "Insufficient buying power after matching")
+        elif simulated.quantity > shares[owner_id]:
+            return finish("blocked", "Not enough holdings to sell")
+        estimated_fills.append({
+            "counterparty": "simulated", "quantity": _quantity(simulated.quantity),
+            "execution_price": _quantity(simulated.price), **simulated_provenance(simulated.quote_at),
+        })
+        fill_quantity += simulated.quantity
+        fill_notional += simulated_notional
+    if remainder_reason is not None and payload.order_type == "market":
+        remainder_reason += " The unfilled shares will be canceled."
     return finish(
         "eligible",
         None,
-        fill_quantity=settled[2],
-        fill_notional=settled[3],
+        fill_quantity=fill_quantity,
+        fill_notional=fill_notional,
         reservation=reservation,
+        estimated_fills=estimated_fills,
+        remainder_reason=remainder_reason,
     )
 
 
