@@ -62,7 +62,8 @@ def _seed(engine) -> None:
         if quote is None:
             quote = MarketQuoteCache(symbol=SYMBOL)
             db.add(quote)
-        quote.price, quote.change_amount, quote.change_percent = Decimal(100), 0, Decimal(0)
+        # The chart close is $105 and the execution reference keeps the $100 buy limit open.
+        quote.price, quote.change_amount, quote.change_percent = Decimal(101), 0, Decimal(0)
         quote.volume, quote.source, quote.quote_at, quote.fetched_at = 100, "fixture", quoted_at, quoted_at
         for adjustment, values in (
             ("raw", ("100", "110", "90", "105")),
