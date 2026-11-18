@@ -895,7 +895,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         if quote is None:
             quote = MarketQuoteCache(symbol=SYMBOL)
             db.add(quote)
-        quote.price = Decimal(100)
+        # The buy limit at $100 rests while the cached close is $101.
+        quote.price = Decimal(101)
         quote.change_amount = 0
         quote.change_percent = Decimal(0)
         quote.volume = 100
@@ -923,6 +924,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         driver.get(web + "/market")
         _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Market dashboard']")))
         assert "/market" in driver.current_url
+        _wait(driver).until(EC.element_to_be_clickable((By.XPATH, "//button[normalize-space()='Try the demo']")))
 
         _sign_in(driver, web, email, password)
         _wait(driver).until(lambda current: _money_after(current, "Cash") == "$100,000")
