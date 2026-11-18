@@ -35,3 +35,21 @@ a.watch-symbol { display: inline-flex; min-height: 44px; align-items: center; co
   .watch-editor .watch-rows li { display: grid; gap: 6px; }
   .watch-editor .watch-actions button { padding-inline: 9px; min-height: 44px; }
 }
+.watch-editor .nk-field:has(> select) { position: relative; }
+.watch-editor .nk-field > select {
+  appearance: none;
+  height: 44px;
+  padding-right: 36px;
+}
+.watch-editor .nk-field:has(> select)::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 19px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
