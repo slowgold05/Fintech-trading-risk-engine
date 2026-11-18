@@ -57,7 +57,7 @@ describe("MarketSearch", () => {
     });
     open();
     await search("MMM");
-    expect(await screen.findByRole("link", { name: "MMM" })).toHaveAttribute("href", "/market/MMM");
+    expect(await screen.findByRole("link", { name: /MMM.*3M/ })).toHaveAttribute("href", "/market/MMM");
     expect(screen.queryByText("Outside S&P 500")).not.toBeInTheDocument();
   });
 
@@ -75,8 +75,8 @@ describe("MarketSearch", () => {
     });
     open();
     await search("ZZZFAKE");
-    const badge = await screen.findByText("Outside S&P 500");
-    expect(badge).toHaveClass("status-badge");
+    expect(await screen.findByText(/Outside S&P 500 · Detail unavailable/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", {name:/ZZZFAKE/})).not.toBeInTheDocument();
     expect(screen.getByText("ZZZFAKE")).toBeInTheDocument();
   });
 });

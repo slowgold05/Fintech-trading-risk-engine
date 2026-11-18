@@ -1,3 +1,4 @@
+import { reducedMotion } from "../../night/looks/preferences";
 import { flushSync } from "react-dom";
 
 type Tile = { node: HTMLElement; key: string; sector: string; rect: DOMRect };
@@ -24,7 +25,7 @@ function transform(from: DOMRect, to: DOMRect) {
 // Geometry is read only on commit. WAAPI owns all intermediate positions,
 // including the presentation rectangles captured by a second, rapid switch.
 export function moveTiles(region: HTMLElement | null, update: () => void) {
-  if (!region?.animate || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (!region?.animate || reducedMotion()) {
     update();
     return;
   }

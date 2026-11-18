@@ -2,6 +2,9 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { MagnifyingGlass, ArrowRight, X } from "@phosphor-icons/react";
+import { useAuth } from "../context/useAuth";
+import { fetchMe } from "../api/auth";
+import { keys } from "../night/api";
 import { fetchMarketUniverse } from "../api/market";
 
 export function MarketSearch({ compact = false }: { compact?: boolean } = {}) {
@@ -10,10 +13,12 @@ export function MarketSearch({ compact = false }: { compact?: boolean } = {}) {
   const form = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const term = submitted.trim();
+  const { isAuthenticated } = useAuth();
+  const identity = useQuery({queryKey:keys.me,queryFn:() => fetchMe(),enabled:isAuthenticated && !!term,retry:false});
   const results = useQuery({
-    queryKey: ["market", "universe", term],
+    queryKey: keys.universe(identity.data?.id ?? "public",term,20),
     queryFn: () => fetchMarketUniverse(term),
-    enabled: term.length > 0,
+    enabled: term.length > 0 && (!isAuthenticated || identity.isSuccess),
     retry: false,
   });
   useEffect(() => {
@@ -51,7 +56,7 @@ export function MarketSearch({ compact = false }: { compact?: boolean } = {}) {
         id="market-symbol-search" data-testid="market-search"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder={compact ? "Ticker" : "Search company or ticker"}
+        placeholder={compact ? "Symbol / company" : "Search company or ticker"}
         autoComplete="off"
       />
       <button type="submit" aria-label="Search">
@@ -79,7 +84,7 @@ export function MarketSearch({ compact = false }: { compact?: boolean } = {}) {
               {results.data.items.length ? (
                 results.data.items.map((item) => (
                   <li key={item.symbol}>
-                    {("detail_available" in item && item.detail_available === false) ? <span><strong>{item.symbol}</strong> {item.company_name} · Detail unavailable</span> : <Link data-testid={`search-result-${item.symbol}`} to={`/market/${encodeURIComponent(item.symbol)}`}>
+                    {("detail_available" in item ? item.detail_available === false : !item.in_featured_universe && !["SPY","QQQ","DIA","IWM"].includes(item.symbol)) ? <span><strong>{item.symbol}</strong> {item.company_name} · {item.universe_label || "Outside S&P 500"} · Detail unavailable</span> : <Link data-testid={`search-result-${item.symbol}`} to={`/market/${encodeURIComponent(item.symbol)}`}>
                       <strong>{item.symbol}</strong>
                       <span>{item.company_name}</span>
                       {!item.in_featured_universe && (

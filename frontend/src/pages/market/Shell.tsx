@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { ArrowRight, List, X } from "@phosphor-icons/react";
 import { MarketSearch } from "../../components/MarketSearch";
 import { useCompactWall } from "../../ui/lib";
+import archivoLicense from "../../night/looks/dial/fonts/archivo-LICENSE.txt?url";
+import martianLicense from "../../night/looks/dial/fonts/martian-mono-LICENSE.txt?url";
 import { historySourceLabel } from "../../config/history";
 import { useAdjustedProvider } from "../../components/market/useAdjustedProvider";
 import { ButtonLink } from "../../ui/primitives";
@@ -273,6 +275,7 @@ export function MarketFooter() {
           <p>The market dashboard is public. Sign in for trading, portfolio and risk workflows.</p>
           <p>Quotes on this page are delayed, cached or end-of-day, and are not for order execution.</p>
           <p>Index and sector figures are ETF proxies, not index prints. Daily history: {provider ? historySourceLabel(provider) : "stored series unavailable"}.</p>
+          <p>Typefaces · <a href={archivoLicense}>Archivo license</a> · <a href={martianLicense}>Martian Mono license</a></p>
           <p>Charts are drawn with <a className="underline underline-offset-2" href="https://www.tradingview.com/lightweight-charts/">TradingView Lightweight Charts</a>.</p>
         </div>
         <a className="btn btn-ghost btn-sm self-start" href="#main">Back to top</a>

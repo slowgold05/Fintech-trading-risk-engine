@@ -71,7 +71,7 @@ describe("mobile shell", () => {
     renderShell();
     const open = screen.getByRole("button", { name: "Open navigation" });
     expect(open).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", {name:"Workspace"})).toBeInTheDocument();
     fireEvent.click(open);
     const dialog = screen.getByRole("dialog", { name: "Mobile navigation" });
     expect(dialog.className).toContain("left-0");

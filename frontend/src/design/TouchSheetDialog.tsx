@@ -1,3 +1,4 @@
+import { reducedMotion } from "../night/looks/preferences";
 import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { X } from "@phosphor-icons/react";
 import { dragSpring } from "./dragSpring";
@@ -44,7 +45,7 @@ export default function TouchSheet({
       shade.current!.style.opacity = String(Math.min(1, Math.max(0, 1 - y / height)));
     });
     motor.current = spring;
-    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) spring.place(height);
+    if (!reducedMotion()) spring.place(height);
     spring.settle(0);
     return () => {
       spring.stop();

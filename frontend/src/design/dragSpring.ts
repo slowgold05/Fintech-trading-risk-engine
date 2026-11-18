@@ -1,3 +1,4 @@
+import { reducedMotion } from "../night/looks/preferences";
 // Analytic critically damped spring. Catching it keeps the last displayed position.
 export function dragSpring(paint: (position: number) => void) {
   let frame = 0,
@@ -17,7 +18,7 @@ export function dragSpring(paint: (position: number) => void) {
       stop();
       const start = performance.now(),
         distance = position - target;
-      if (matchMedia("(prefers-reduced-motion: reduce)").matches || (!distance && !velocity)) {
+      if (reducedMotion() || (!distance && !velocity)) {
         place(target);
         done?.();
         return;

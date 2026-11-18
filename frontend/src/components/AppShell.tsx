@@ -19,6 +19,9 @@ import {
 } from "@phosphor-icons/react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { useLook } from "../night/looks/preferences";
+import { ChromeTools } from "../night/shell/ChromeTools";
+import { allowed, destinations } from "../night/registry";
 import { fetchMe } from "../api/auth";
 import type { UserResponse } from "../types/schemas";
 
@@ -53,7 +56,8 @@ function emailInitial(email: string | null | undefined): string {
 }
 
 function AccountTools({ identity }: { identity: UserResponse | undefined }) {
-  const initial = identity ? emailInitial(identity.email) : "";
+  const accountName = identity?.is_demo ? identity.display_name || "Demo trader" : identity?.email;
+  const initial = emailInitial(accountName);
   return (
     <>
       <p className="text-sm text-copy">{shellDateFormatter.format(new Date())}</p>
@@ -74,8 +78,8 @@ function AccountTools({ identity }: { identity: UserResponse | undefined }) {
               {initial}
             </span>
           ) : null}
-          {identity.email ? (
-            <span className="min-w-0 truncate text-xs font-medium text-ink">{identity.email}</span>
+          {accountName ? (
+            <span className="min-w-0 truncate text-xs font-medium text-ink">{accountName}</span>
           ) : null}
           <span className={["status-badge shrink-0", roleTone[identity.role]].join(" ")}>{identity.role}</span>
         </div>
@@ -94,7 +98,7 @@ function Sidebar({
   onToggle?: () => void;
 }) {
   const { signOut, token } = useAuth();
-  const me = useQuery({ queryKey: ["me", token], queryFn: fetchMe, enabled: Boolean(token) });
+  const me = useQuery({ queryKey: ["me"], queryFn: fetchMe, enabled: Boolean(token) });
   const role = me.data?.role;
   const navigate = useNavigate();
   const compact = collapsed && !onClose;
@@ -189,8 +193,9 @@ function Sidebar({
 }
 
 export function AppShell() {
+  const { prefs } = useLook();
   const { token } = useAuth();
-  const me = useQuery({ queryKey: ["me", token], queryFn: fetchMe, enabled: Boolean(token) });
+  const me = useQuery({ queryKey: ["me"], queryFn: fetchMe, enabled: Boolean(token) });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
@@ -219,7 +224,7 @@ export function AppShell() {
   }, [sidebarOpen, desktop]);
 
   return (
-    <div className="flex min-h-[100dvh]">
+    <div className="night-workspace flex min-h-[100dvh]">
       <a
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-brand-300 focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-canvas"
         href="#main-content"
@@ -227,7 +232,7 @@ export function AppShell() {
         Skip to main content
       </a>
 
-      {desktop && (
+      {desktop && prefs.look === "terrain" && (
         <aside
           className={["sticky top-0 flex h-[100dvh] shrink-0 flex-col border-r border-line bg-sidebar", collapsed ? "w-[72px]" : "w-60"].join(" ")}
           aria-label="Sidebar"
@@ -290,10 +295,13 @@ export function AppShell() {
               </div>
             </div>
           )}
+          <ChromeTools />
+          {desktop && prefs.look === "dial" && <nav className="night-top-nav" aria-label="Workspace">{destinations.filter(d => allowed(d.access,me.data)).map(d => <NavLink key={d.id} to={d.path}>{d.label}</NavLink>)}</nav>}
         </header>
 
+        {!desktop && !sidebarOpen && <nav className="night-work-dock" aria-label="Workspace">{destinations.slice(0,4).map(d => <NavLink key={d.id} to={d.path}>{d.label}</NavLink>)}<button onClick={() => setSidebarOpen(true)}>More</button></nav>}
         <main className="flex-1 overflow-auto" id="main-content">
-          {!desktop && (
+          {!desktop && !me.data?.is_demo && (
             <div className="border-b border-line px-4 py-4">
               <div className="mx-auto flex max-w-7xl flex-col items-start gap-3">
                 <AccountTools identity={me.data} />

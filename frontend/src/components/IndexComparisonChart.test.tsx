@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Load the chart module during test collection, outside the render timeout.
+import "./TerrainComparisonPlot";
 import { IndexComparisonChart } from "./IndexComparisonChart";
 
 const historyApi = vi.hoisted(() => ({ fetchDailyHistory: vi.fn() }));
@@ -93,16 +95,20 @@ describe("IndexComparisonChart", () => {
     expect(list).toHaveTextContent("IWM");
     expect(list).toHaveTextContent("-20.00%");
     expect(list).toHaveTextContent("DIA");
-    expect(within(list).getByRole("listitem", { name: /DIA/ })).toHaveTextContent("Unavailable");
-    expect(within(list).getByRole("listitem", { name: /DIA/ })).toHaveTextContent("Provider change -1.50%");
-    expect(within(list).getByRole("listitem", { name: /DIA/ })).toHaveTextContent("$123.45");
-    expect(within(list).getByRole("listitem", { name: /SPY/ })).toHaveTextContent("$110.00");
-    expect(within(list).getByRole("listitem", { name: /SPY/ })).not.toHaveTextContent("Provider change");
+    fireEvent.click(screen.getByText("Series & coverage"));
+    const details = screen.getByRole("list", { name: "Proxy quote details" });
+    const dia = within(details).getByText("DIA · Dow Jones").closest("li");
+    const spy = within(details).getByText("SPY · S&P 500").closest("li");
+    expect(dia).toHaveTextContent("Range unavailable");
+    expect(dia).toHaveTextContent("Provider change -1.50%");
+    expect(dia).toHaveTextContent("$123.45");
+    expect(spy).toHaveTextContent("$110.00");
+    expect(spy).not.toHaveTextContent("Provider change");
     const swatches: Record<string, string> = {
-      SPY: "rgb(52, 211, 153)",
-      QQQ: "rgb(56, 189, 248)",
-      DIA: "rgb(251, 191, 36)",
-      IWM: "rgb(192, 132, 252)",
+      SPY: "rgb(235, 235, 230)",
+      QQQ: "rgb(173, 172, 185)",
+      DIA: "rgb(133, 137, 138)",
+      IWM: "rgb(195, 180, 165)",
     };
     for (const [symbol, color] of Object.entries(swatches)) {
       const item = within(list).getByRole("listitem", { name: new RegExp(symbol) });
@@ -112,8 +118,8 @@ describe("IndexComparisonChart", () => {
     expect(screen.getByText(/Missing sessions stay open for IWM/)).toBeInTheDocument();
     expect(screen.getByText(/End-of-day history unavailable for DIA/)).toBeInTheDocument();
     expect(screen.getByText(/Horizontal axis: session date/)).toBeInTheDocument();
-    expect(screen.getByText("Nov 4, 2026: SPY +10.00%, QQQ +10.00%")).toBeInTheDocument();
-    expect(within(list).getByText("S&P 500")).toBeInTheDocument();
+    expect(await screen.findByText("Nov 4, 2026: SPY +10.00%, QQQ +10.00%")).toBeInTheDocument();
+    expect(within(list).getByRole("listitem", { name: "SPY S&P 500" })).toBeInTheDocument();
     await waitFor(() => expect(setData).toHaveBeenCalled());
     const options = chartApi.createChart.mock.calls.at(-1)?.[1] as {
       localization: { priceFormatter: (price: number) => string };
@@ -171,7 +177,8 @@ describe("IndexComparisonChart", () => {
     renderChart();
 
     const list = await screen.findByRole("list", { name: "End-of-day percent change for the index proxies" });
-    await waitFor(() => expect(within(list).getByRole("listitem", { name: /SPY/ })).toHaveTextContent("Unavailable"));
+    await screen.findByText("No stored closes in this range");
+    expect(within(list).getByRole("listitem", { name: /SPY/ })).toHaveTextContent("Unavailable");
     expect(within(list).getByRole("listitem", { name: /SPY/ })).not.toHaveTextContent("+10.00%");
     expect(screen.getByText(/End-of-day history unavailable for .*SPY/)).toBeInTheDocument();
     expect(setData).not.toHaveBeenCalled();

@@ -1,3 +1,4 @@
+import { reducedMotion } from "../../night/looks/preferences";
 import { compactWidth, useMaxWidth } from "./compactLayout";
 import { inspectEvents } from "./inspectEvents";
 import { sectorName } from "./sectorName";
@@ -229,7 +230,7 @@ export function StockHeatmap({
   const reading = data?.items.find((q) => q.symbol === (inspect ?? linked));
   const inlineReading = compact && showAll && mode === "Stocks" ? reading : undefined;
   function changeTiles(update: () => void) {
-    if (!region.current?.animate || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (!region.current?.animate || reducedMotion()) {
       update();
       return;
     }

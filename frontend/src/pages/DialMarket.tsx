@@ -1,7 +1,8 @@
+import { keys } from "../night/api";
 import "../night/looks/dial/fonts/fonts.css";
 import "../foundation.css";
 import "./market/compact.css";
-import { memo, type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, memo, type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -14,15 +15,16 @@ import {
 import { fetchDailyHistory, type HistoryRange } from "../api/history";
 import { HISTORY_ADJUSTMENT, historyProviderName } from "../config/history";
 import { useAuth } from "../context/useAuth";
-import { DailyHistory } from "../components/DailyHistory";
-import { DialPulseChart } from "../components/DialPulseChart";
+
+import { useMarketSelection } from "../night/looks/marketSelection";
+import { IndexComparisonChart } from "../components/IndexComparisonChart";
 import { useAdjustedProvider } from "../components/market/useAdjustedProvider";
 import { DialField } from "./market/DialField";
-import { SectorPerformanceGrid } from "../components/SectorPerformanceGrid";
+import { SectorPerformanceGrid } from "./market/DialSectors";
 import { MarketSearch } from "../components/MarketSearch";
 import { PULSE_RANGES, type PulseChartRange } from "../components/indexComparisonData";
 import { Sparkline } from "./market/DialSparkline";
-import { Watchlists } from "../components/Watchlists";
+
 import type {
   MarketHeatmapItemResponse,
   MarketMoverResponse,
@@ -74,6 +76,9 @@ import { useWallOpening } from "./market/useWallOpening";
 import { SessionDial } from "./market/SessionDial";
 import { MarketFooter, MarketHeader } from "./market/Shell";
 import { sectorRank } from "./market/sectors";
+
+const DailyHistory = lazy(() => import("../components/DailyHistory").then(m => ({default:m.DailyHistory})));
+const Watchlists = lazy(() => import("../components/Watchlists").then(m => ({default:m.Watchlists})));
 
 type HeatmapScale = "compact" | "standard" | "expanded";
 type HeatmapView = "stocks" | "sectors";
@@ -265,10 +270,10 @@ function SymbolSparkline({
   useEffect(() => detailed ? onSession(({ date }) => setReadDate(date)) : undefined, [detailed]);
   const [sparkRef, sparkSeen] = useInView<HTMLDivElement>();
   const historyQuery = useQuery({
-    queryKey: ["market", "history", symbol, provider, HISTORY_ADJUSTMENT, range],
+    queryKey: keys.history(symbol, provider ?? "auto", HISTORY_ADJUSTMENT, range),
     queryFn: () => fetchDailyHistory(symbol, provider, HISTORY_ADJUSTMENT, range),
     enabled: Boolean(provider) && sparkSeen && symbol.trim().length > 0,
-    placeholderData: (previous) => previous?.symbol === symbol ? previous : undefined,
+    placeholderData: (previous) => previous?.symbol === symbol && previous.provider === provider && previous.adjustment_type === HISTORY_ADJUSTMENT ? previous : undefined,
     retry: false,
     staleTime: 300000,
   });
@@ -468,19 +473,29 @@ export function DialMarket() {
   const { isAuthenticated } = useAuth();
   const { provider, pending } = useAdjustedProvider();
   const sourceLabel = provider ? historyProviderName(provider) : pending ? "Loading" : "Unavailable";
+  const selection = useMarketSelection();
+  const {cursor} = selection;
+  useEffect(() => {
+    const stop = cursor.subscribe(date => pointAtSession(date, "pulse"));
+    const detach = onSession(({date}) => cursor.set(date));
+    return () => { stop(); detach(); };
+  }, [cursor]);
   const wall = useWallOpening();
   const compact = useCompactWall();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [allMovers, setAllMovers] = useState(false);
   const [allNews, setAllNews] = useState(false);
+  const [historyArea, historySeen] = useInView<HTMLDivElement>("250px");
+  const [watchArea, watchSeen] = useInView<HTMLDivElement>("250px");
   const [lowerWall, lowerSeen] = useInView<HTMLDivElement>("180px 0px");
-  const [symbolInput, setSymbolInput] = useState("NVDA");
-  const [researchSymbol, setResearchSymbol] = useState("NVDA");
-  const [historyDraft, setHistoryDraft] = useState("");
+  const [symbolInput, setSymbolInput] = selection.symbolInput;
+  const [researchSymbol, setResearchSymbol] = selection.researchSymbol;
+  const [historyDraft, setHistoryDraft] = selection.historyDraft;
   const [heatmapScale, setHeatmapScale] = useState<HeatmapScale>("standard");
   const [heatmapView, setHeatmapView] = useState<HeatmapView>("stocks");
-  const [proxySymbol, setProxySymbol] = useState("SPY");
-  const [pulseRange, setPulseRange] = useState<PulseChartRange>("1m");
+  const [proxySymbol, setProxySymbol] = selection.proxy;
+  const [sharedRange, setPulseRange] = selection.range;
+  const pulseRange = sharedRange && sharedRange !== "session" ? sharedRange : "1m";
   const [researchRange, setResearchRange] = useState<SparkRange>("1m");
   const heatRegion = useRef<HTMLDivElement | null>(null);
   const [visitedSectors, setVisitedSectors] = useState(false);
@@ -735,7 +750,7 @@ export function DialMarket() {
                 </Pill>
               </PanelHead>
               <PanelBody className="grid gap-2">
-                {provider ? <DialPulseChart provider={provider}
+                {provider ? <IndexComparisonChart variant="dial" provider={provider}
                   compact={compact} selectedSymbol={proxySymbol} onSelect={setProxySymbol}
                   quotes={trends.map((trend) => ({
                     symbol: trend.source_symbol,
@@ -1051,13 +1066,13 @@ export function DialMarket() {
             </Reveal>
 
             <Reveal className="watch-fold"><ToolFold compact={compact} title="Watchlists">
-              <Watchlists onUseInChart={sendToChart} onUseInResearch={sendToResearch} />
+              <div ref={watchArea} style={{minHeight:44}}>{watchSeen && <Suspense fallback={<p>Loading watchlists…</p>}><Watchlists onUseInChart={sendToChart} onUseInResearch={sendToResearch} /></Suspense>}</div>
             </ToolFold></Reveal>
           </div>
         </div>
 
         <Reveal className="history-fold mt-3"><ToolFold compact={compact} title="Daily history">
-          <DailyHistory SelectControl={compact ? DialField : undefined} catalogEnabled={lowerSeen || Boolean(historyDraft)} onValueChange={setHistoryDraft} value={historyDraft} />
+          <div ref={historyArea} id={historySeen || historyDraft ? undefined : "daily-price-history-title"} style={{minHeight:44}}>{(historySeen || historyDraft) && <Suspense fallback={<p>Loading daily history…</p>}><DailyHistory SelectControl={compact ? DialField : undefined} catalogEnabled={lowerSeen || Boolean(historyDraft)} onValueChange={setHistoryDraft} value={historyDraft} /></Suspense>}</div>
         </ToolFold></Reveal>
       </div>
 

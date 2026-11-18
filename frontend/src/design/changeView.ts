@@ -1,10 +1,11 @@
+import { reducedMotion } from "../night/looks/preferences";
 import { flushSync } from "react-dom";
 
 // Capture just the named plot or mosaic. Native snapshots keep an outgoing
 // canvas intact while the new query resolves and a different view mounts.
 let current: ViewTransition | undefined;
 export function changeView(update: () => void, scope: "pulse" | "heatmap" | "research" = "heatmap") {
-  if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (!document.startViewTransition || reducedMotion()) {
     update();
     return;
   }

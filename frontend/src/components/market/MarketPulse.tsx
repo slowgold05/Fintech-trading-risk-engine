@@ -1,6 +1,7 @@
 import "./pulse.css";
 import { inspectEvents } from "./inspectEvents";
 import { useArrival } from "./wallMotion";
+import { useMarketSelection } from "../../night/looks/marketSelection";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Pulse, ArrowDownRight, ArrowUpRight, CaretDown, Clock, Minus } from "@phosphor-icons/react";
@@ -115,7 +116,7 @@ export function MarketPulse({
 }) {
   const arrival = useArrival<HTMLElement>();
   const { provider } = useAdjustedProvider();
-  const [requestedRange, setRange] = useState<PulseChartRange | "session" | null>(null);
+  const [requestedRange, setRange] = useMarketSelection().range;
   const range = requestedRange ?? (provider ? "3m" : "session");
   const client = useQueryClient();
   const sequence = useRef(0);

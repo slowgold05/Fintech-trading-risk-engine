@@ -1,3 +1,4 @@
+import { reducedMotion } from "../night/looks/preferences";
 import { useArrival } from "../components/market/wallMotion";
 import {
   useLayoutEffect,
@@ -182,7 +183,7 @@ function Digit({ digit, initial, delay }: { digit: string; initial?: string; del
       !numeric ||
       !strip?.animate ||
       !outgoing ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      reducedMotion()
     )
       return;
     outgoing.textContent = /^\d$/.test(last) ? last : digit;

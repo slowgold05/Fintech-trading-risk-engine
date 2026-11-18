@@ -1,3 +1,4 @@
+import { keys } from "../../night/api";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDailyHistory, type HistoryRange } from "../../api/history";
 import { Sparkline } from "../Sparkline";
@@ -18,7 +19,7 @@ export function SymbolSparkline({
   const { provider, pending } = useAdjustedProvider();
   const historyProvider = provider ?? "massive";
   const historyQuery = useQuery({
-    queryKey: ["market", "history", symbol, historyProvider, HISTORY_ADJUSTMENT, range],
+    queryKey: keys.history(symbol, historyProvider ?? "auto", HISTORY_ADJUSTMENT, range),
     queryFn: () => fetchDailyHistory(symbol, historyProvider, HISTORY_ADJUSTMENT, range),
     placeholderData: (previous) =>
       previous?.symbol === symbol &&

@@ -285,7 +285,7 @@ export function MarketHeader({ isAuthenticated }: { isAuthenticated: boolean }) 
               }
             }}
           >
-            <MarketSearch />
+            <MarketSearch compact={compact} />
           </div>
           <button
             className="mobile-search"

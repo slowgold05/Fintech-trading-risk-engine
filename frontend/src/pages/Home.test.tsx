@@ -3,20 +3,20 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { TerrainMarket } from "./TerrainMarket";
+import { MarketSelection, useMarketState } from "../night/looks/marketSelection";
 import { Home } from "./Home";
 
 const api = vi.hoisted(() => ({
   fetchMarketOverview: vi.fn(), fetchMarketHeatmap: vi.fn(),
   fetchMarketTrending: vi.fn(), fetchMarketResearch: vi.fn(),
-  fetchMarketNews: vi.fn(),
+  fetchMarketNews: vi.fn(), fetchSymbolQuote: vi.fn(),
 }));
-const demoAuth = vi.hoisted(() => ({ startDemo: vi.fn(), signIn: vi.fn() }));
 const historyApi = vi.hoisted(() => ({
   fetchCachedSeries: vi.fn(),
   fetchDailyHistory: vi.fn(),
 }));
 vi.mock("../api/market", () => api);
-vi.mock("../api/auth", () => ({ startDemo: demoAuth.startDemo }));
 vi.mock("../api/history", () => historyApi);
 vi.mock("lightweight-charts", () => ({
   ColorType: { Solid: "solid" },
@@ -40,6 +40,8 @@ vi.mock("lightweight-charts", () => ({
     applyOptions: () => undefined,
   }),
 }));
+const demoAuth = vi.hoisted(() => ({ startDemo: vi.fn(), signIn: vi.fn() }));
+vi.mock("../api/auth", () => ({ startDemo: demoAuth.startDemo, fetchMe:vi.fn() }));
 vi.mock("../context/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false, signIn: demoAuth.signIn }) }));
 vi.mock("../components/Watchlists", () => ({
   Watchlists: ({
@@ -49,16 +51,21 @@ vi.mock("../components/Watchlists", () => ({
     onUseInResearch: (symbol: string) => void;
     onUseInChart: (symbol: string) => void;
   }) => (
-    <div>
+    <div><h2 id="watchlists-title">Watchlists</h2>
       <button type="button" onClick={() => onUseInResearch("MSFT")}>Use MSFT in research</button>
       <button type="button" onClick={() => onUseInChart("MSFT")}>Use MSFT in chart</button>
     </div>
   ),
 }));
 
-function open() {
+function TerrainRoute() {
+  const selection = useMarketState();
+  return <MarketSelection.Provider value={selection}><TerrainMarket /></MarketSelection.Provider>;
+}
+
+function open(demo = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter><Home /></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter>{demo ? <Home /> : <TerrainRoute />}</MemoryRouter></QueryClientProvider>);
   return client;
 }
 
@@ -115,7 +122,7 @@ describe("public market data truth", () => {
 
   it("starts a demo directly from the public market", async () => {
     demoAuth.startDemo.mockResolvedValue({ access_token: "demo-token" });
-    open();
+    open(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Try the demo" }));
 
@@ -129,7 +136,7 @@ describe("public market data truth", () => {
     expect(await screen.findByText("Stock heatmap unavailable")).toBeInTheDocument();
     expect(await screen.findByText("Sector quotes unavailable")).toBeInTheDocument();
     expect(await screen.findByText("Most-active data unavailable")).toBeInTheDocument();
-    expect(screen.getByText("Research assessment unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Research assessment unavailable")).toBeInTheDocument();
     expect(screen.queryByText("5,487.03")).not.toBeInTheDocument();
     expect(screen.queryByText("NVIDIA Corporation")).not.toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /trend/i })).not.toBeInTheDocument();
@@ -150,13 +157,13 @@ describe("public market data truth", () => {
     });
     api.fetchMarketTrending.mockResolvedValue({ most_active: [{ symbol: "MOVE", price: 12.3, change_amount: -1, change_percent: -0.5, volume: 1000 }] });
     open();
-    expect(await screen.findByText("$123.45")).toBeInTheDocument();
+    expect(await within(screen.getByRole("region", { name: "End-of-day index fund proxies" })).findByText("$123.45")).toBeInTheDocument();
     expect(screen.getAllByText("SPY").length).toBeGreaterThan(0);
-    expect(screen.getByText("Provider change -1.50%")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Inspect SPY, S&P 500, -1.50%/ })).toBeInTheDocument();
     expect(screen.queryByText("SPX")).not.toBeInTheDocument();
     expect(screen.queryByText("VIX")).not.toBeInTheDocument();
     expect(screen.queryByText("XLF")).not.toBeInTheDocument();
-    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     expect(within(heatmap).getByText("ONLY")).toBeInTheDocument();
     expect(within(heatmap).queryByRole("link", { name: /ONLY/ })).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("AAPL")).not.toBeInTheDocument();
@@ -189,12 +196,12 @@ describe("public market data truth", () => {
     }));
     open();
 
-    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     expect(await within(heatmap).findByRole("link", { name: /AAPL/ })).toHaveAttribute("href", "/market/AAPL");
     for (const symbol of ["OUTX", "OLDAPI"]) {
-      const plain = within(heatmap).getByText(symbol).closest("[title]") as HTMLElement;
+      const plain = within(heatmap).getByText(symbol).closest("[aria-description]") as HTMLElement;
       expect(plain.tagName).toBe("DIV");
-      expect(plain).toHaveAttribute("title", expect.stringContaining("Fixture"));
+      expect(plain).toHaveAttribute("aria-description", expect.stringContaining("Fixture"));
     }
     expect(within(heatmap).getAllByRole("link")).toHaveLength(1);
 
@@ -202,13 +209,13 @@ describe("public market data truth", () => {
     expect(screen.getByText("PENNY")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "PENNY" })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "PENNY" } });
+    fireEvent.change(await screen.findByLabelText("Research symbol"), { target: { value: "PENNY" } });
     fireEvent.click(screen.getByRole("button", { name: "Research" }));
     await waitFor(() => expect(api.fetchMarketResearch).toHaveBeenCalledWith("PENNY"));
     await waitFor(() => expect(screen.getAllByText("PENNY").length).toBeGreaterThan(1));
     expect(screen.queryByRole("link", { name: "View PENNY" })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "MSFT" } });
+    fireEvent.change(await screen.findByLabelText("Research symbol"), { target: { value: "MSFT" } });
     fireEvent.click(screen.getByRole("button", { name: "Research" }));
     expect(await screen.findByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
   });
@@ -225,12 +232,12 @@ describe("public market data truth", () => {
   it("does not replace a failed requested company with NVIDIA reference data", async () => {
     api.fetchMarketResearch.mockImplementation(async (symbol: string) => ({ symbol, detail_available: true, market_cap: 1000000, errors: [], research_risk_label: "Medium", research_risk_score: 50 }));
     open();
-    fireEvent.change(screen.getByLabelText("Research symbol"), { target: { value: "MSFT" } });
+    fireEvent.change(await screen.findByLabelText("Research symbol"), { target: { value: "MSFT" } });
     fireEvent.click(screen.getByRole("button", { name: "Research" }));
     expect(await screen.findByText("MSFT")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "View MSFT" })).toHaveAttribute("href", "/market/MSFT");
     expect(screen.queryByText("NVDA")).not.toBeInTheDocument();
-    expect(screen.getByText("Research assessment unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Research assessment unavailable")).toBeInTheDocument();
     expect(screen.queryByText("Medium / 50")).not.toBeInTheDocument();
   });
 
@@ -246,7 +253,7 @@ describe("public market data truth", () => {
     const zero = screen.getByText("ZERO").closest("tr") as HTMLElement;
     expect(within(zero).getByText("$10.00")).toBeInTheDocument();
     expect(within(zero).getByText("+0.00%")).toBeInTheDocument();
-    expect(within(zero).getByText("0")).toBeInTheDocument();
+    expect(within(zero).getByRole("cell", { name: "0" })).toBeInTheDocument();
   });
 
   it("prefills research and history from a watchlist without submitting either request", async () => {
@@ -275,11 +282,11 @@ describe("public market data truth", () => {
       expect(history).toHaveFocus();
       expect(scrollIntoView).toHaveBeenCalledTimes(2);
       expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y");
-      const series = JSON.stringify(["fixture", "raw"]);
-      fireEvent.change(screen.getByRole("combobox", { name: "Cached series" }), { target: { value: series } });
+      fireEvent.click(screen.getByRole("combobox", { name: "Cached series" }));
+      fireEvent.click(screen.getByRole("option", {name: "fixture · raw"}));
       fireEvent.click(screen.getByRole("button", { name: "Use MSFT in chart" }));
       expect(document.getElementById("daily-history-symbol")).toHaveValue("MSFT");
-      expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveValue(series);
+      expect(screen.getByRole("combobox", { name: "Cached series" })).toHaveTextContent("fixture · raw");
       expect(scrollIntoView).toHaveBeenCalledTimes(3);
       expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("MSFT", "fixture", "raw", "2y");
       const form = screen.getByRole("button", { name: "View history" }).closest("form");
@@ -297,19 +304,21 @@ describe("public market data truth", () => {
     open();
     const menuButton = screen.getByRole("button", { name: "Open menu" });
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
-    expect(menuButton).toHaveClass("min-h-11", "min-w-11");
+    expect(menuButton).toHaveAttribute("aria-controls", "public-market-menu");
     expect(screen.queryByRole("navigation", { name: "Page sections" })).not.toBeInTheDocument();
 
     fireEvent.click(menuButton);
     expect(menuButton).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("navigation", { name: "Page sections" });
     const links: Array<[string, string, string]> = [
-      ["Trending movers", "#trending-movers", "Trending movers"],
-      ["Market pulse", "#market-pulse", "Market pulse"],
+      ["Volatility terrain", "#volatility-terrain", "Volatility terrain"],
       ["Sector ETF performance", "#sector-etf-heatmap", "Sector ETF performance"],
-      ["Company research", "#company-research", "Company research"],
       ["Stock heatmap", "#stock-heatmap", "Stock heatmap"],
+      ["Trending movers", "#trending-movers", "Trending movers"],
       ["Market news", "#market-news", "Market news"],
+      ["Market pulse", "#market-pulse", "Market pulse"],
+      ["Company research", "#company-research", "Company research"],
+      ["Watchlists", "#watchlists-title", "Watchlists"],
       ["Daily history chart", "#daily-price-history-title", "Daily price history"],
     ];
     for (const [name, href, heading] of links) {
@@ -321,19 +330,16 @@ describe("public market data truth", () => {
     );
     expect(menuButton).not.toHaveClass("sm:hidden");
     expect(menu).not.toHaveClass("sm:hidden");
-    expect(menuButton.compareDocumentPosition(screen.getByText("getrichyesterday")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sentinel Markets overview" })).toHaveAttribute("href", "#overview");
     expect(menuButton.compareDocumentPosition(document.getElementById("trending-movers") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(menu).getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
     const closeMenu = within(menu).getByRole("button", { name: "Close menu" });
-    expect(closeMenu).toHaveClass("min-h-11");
+    expect(closeMenu).toHaveAccessibleName("Close menu");
     expect(closeMenu).toHaveFocus();
     const overlay = menu.parentElement as HTMLElement;
-    expect(overlay.className).toContain("fixed");
-    expect(overlay.className).toContain("inset-0");
-    expect(menu.className).toContain("inset-y-0");
-    expect(menu.className).toContain("left-0");
-    expect(menu.className).toContain("w-[min(18rem,calc(100%-3rem))]");
-    expect(menu.className).toContain("motion-safe:animate-[drawer-in_200ms_ease-out_both]");
+    expect(overlay).toHaveAttribute("aria-modal", "true");
+    expect(overlay).toHaveAttribute("role", "dialog");
+    expect(menu).toHaveClass("desk-drawer");
     expect(document.body.style.overflow).toBe("hidden");
 
     const loginLink = within(menu).getByRole("link", { name: "Log in" });
@@ -376,35 +382,37 @@ describe("public market data truth", () => {
         symbol,
         range,
         symbol === "QQQ" ? ["12.000000", "9.000000"] : ["10.000000", "12.000000"],
-        provider === "auto" ? "yahoo" : provider,
+        provider,
         adjustment,
       )
     ));
     open();
-    const oneMonth = screen.getByRole("button", { name: "Market pulse range 1M" });
+    const oneMonth = await screen.findByRole("button", { name: "Market pulse range 1M" });
     const threeMonth = screen.getByRole("button", { name: "Market pulse range 3M" });
+    expect(screen.getByRole("button", { name: "Market pulse range 1D" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(oneMonth);
     expect(oneMonth).toHaveAttribute("aria-pressed", "true");
     expect(threeMonth).toHaveAttribute("aria-pressed", "false");
-    const pulse = screen.getByRole("heading", { name: "Market pulse" }).closest(".dashboard-card") as HTMLElement;
-    expect(await within(pulse).findByText("Provider change +1.20%")).toBeInTheDocument();
+    const pulse = (await screen.findByRole("button", { name: "Market pulse range 1D" })).closest(".pulse-panel") as HTMLElement;
+    expect(await within(pulse).findByText(/Provider change \+1.20%/)).toBeInTheDocument();
     expect(within(pulse).getByText("$123.45")).toBeInTheDocument();
     expect(within(pulse).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
     const comparison = await within(pulse).findByRole("list", { name: "End-of-day percent change for the index proxies" });
     await waitFor(() => expect(comparison).toHaveTextContent("+20.00%"));
     expect(within(comparison).getByText("DIA")).toBeInTheDocument();
     expect(within(comparison).getByText("IWM")).toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "1m");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "auto", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "1m");
 
     fireEvent.click(threeMonth);
     expect(threeMonth).toHaveAttribute("aria-pressed", "true");
     expect(oneMonth).toHaveAttribute("aria-pressed", "false");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "3m");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "auto", "split_adjusted", "3m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "3m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("QQQ", "massive", "split_adjusted", "3m");
     fireEvent.click(screen.getByRole("button", { name: "Market pulse range 2Y" }));
-    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "2y"));
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "auto", "split_adjusted", "2y");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("IWM", "auto", "split_adjusted", "2y");
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "2y"));
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("DIA", "massive", "split_adjusted", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("IWM", "massive", "split_adjusted", "2y");
   });
 
   it("keeps market-pulse tiles text-only when history is unavailable", async () => {
@@ -417,9 +425,10 @@ describe("public market data truth", () => {
       historyResponse("SPY", "1m", [], "massive", "split_adjusted", "unavailable"),
     );
     open();
-    const pulse = screen.getByRole("heading", { name: "Market pulse" }).closest(".dashboard-card") as HTMLElement;
-    expect(await within(pulse).findByText("Provider change -1.50%")).toBeInTheDocument();
-    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "auto", "split_adjusted", "1m"));
+    const pulse = (await screen.findByRole("button", { name: "Market pulse range 1D" })).closest(".pulse-panel") as HTMLElement;
+    fireEvent.click(within(pulse).getByRole("button", { name: "Market pulse range 1M" }));
+    expect(await within(pulse).findByText(/Provider change -1.50%/)).toBeInTheDocument();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "massive", "split_adjusted", "1m"));
     expect(within(pulse).getByText("$123.45")).toBeInTheDocument();
     expect(within(pulse).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
   });
@@ -439,9 +448,9 @@ describe("public market data truth", () => {
     expect(await within(up).findByRole("img", { name: "UP closing prices over 1M, up" })).toBeInTheDocument();
     expect(within(up.closest("table") as HTMLElement).getByRole("columnheader", { name: "Trend" })).toBeInTheDocument();
     const nope = screen.getByText("NOPE").closest("tr") as HTMLElement;
-    expect(await within(nope).findByText("—")).toBeInTheDocument();
+    expect(await within(nope).findByLabelText("No closing prices for NOPE")).toBeInTheDocument();
     expect(within(nope).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NOPE", "auto", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NOPE", "massive", "split_adjusted", "1m");
   });
 
   it("shows the company research chart only after research inputs load", async () => {
@@ -453,24 +462,25 @@ describe("public market data truth", () => {
       historyResponse(symbol, range, ["10.000000", "14.000000"], provider, adjustment)
     ));
     open();
-    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const researchCard = (await screen.findByLabelText("Research symbol")).closest(".desk-card") as HTMLElement;
     expect(within(researchCard).queryByRole("img", { name: /closing prices/i })).not.toBeInTheDocument();
     expect(within(researchCard).queryByRole("button", { name: /Company research range/i })).not.toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("NVDA", "auto", "split_adjusted", "1m");
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("NVDA", "massive", "split_adjusted", "1m");
 
+    fireEvent.click(within(researchCard).getByText("Company profile & price history"));
     resolveResearch({ symbol: "NVDA", name: "NVIDIA Corporation", pe_ratio: 28, price: 100, errors: [] });
     expect(await within(researchCard).findByRole("img", { name: "NVDA closing prices over 1M, up" })).toBeInTheDocument();
     const oneMonth = within(researchCard).getByRole("button", { name: "Company research range 1M" });
     const sixMonth = within(researchCard).getByRole("button", { name: "Company research range 6M" });
     expect(oneMonth).toHaveAttribute("aria-pressed", "true");
     expect(sixMonth).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Market pulse range 1M" })).toHaveAttribute("aria-pressed", "true");
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NVDA", "auto", "split_adjusted", "1m");
+    expect(screen.getByRole("button", { name: "Market pulse range 1D" })).toHaveAttribute("aria-pressed", "true");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("NVDA", "massive", "split_adjusted", "1m");
 
     fireEvent.click(sixMonth);
     expect(sixMonth).toHaveAttribute("aria-pressed", "true");
     expect(oneMonth).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Market pulse range 1M" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Market pulse range 1D" })).toHaveAttribute("aria-pressed", "true");
     expect(await within(researchCard).findByRole("img", { name: "NVDA closing prices over 6M, up" })).toBeInTheDocument();
   });
 
@@ -492,7 +502,7 @@ describe("public market data truth", () => {
       historyResponse(symbol, range, ["10.000000", "14.000000"], provider, adjustment)
     ));
     open();
-    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const researchCard = (await screen.findByLabelText("Research symbol")).closest(".desk-card") as HTMLElement;
     const margin = (await within(researchCard).findByText("Margin")).parentElement as HTMLElement;
     expect(await within(margin).findByText("25.00%")).toBeInTheDocument();
     expect(within(margin).getByText("10-K · 2024-01-01 to 2024-12-31")).toBeInTheDocument();
@@ -508,10 +518,21 @@ describe("public market data truth", () => {
       errors: [],
     });
     open();
-    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
-    const margin = (await within(researchCard).findByText("Margin")).parentElement as HTMLElement;
-    expect(within(margin).getByText("--")).toBeInTheDocument();
-    expect(within(margin).queryByText(/10-K/)).not.toBeInTheDocument();
+    const researchCard = (await screen.findByLabelText("Research symbol")).closest(".desk-card") as HTMLElement;
+    await within(researchCard).findByText("Research assessment unavailable");
+    expect(within(researchCard).queryByText("Margin")).not.toBeInTheDocument();
+    expect(within(researchCard).queryByText(/10-K/)).not.toBeInTheDocument();
+  });
+
+  it("fills a missing research price from the matching quote and keeps its provenance", async () => {
+    api.fetchMarketResearch.mockResolvedValue({ symbol: "NVDA", name: "Example", errors: [] });
+    api.fetchSymbolQuote.mockResolvedValue({ symbol: "NVDA", price: 123.45, source: "fixture", as_of: "2026-11-13T00:00:00Z" });
+    open();
+    const panel = (await screen.findByLabelText("Research symbol")).closest(".desk-card") as HTMLElement;
+    expect(await within(panel).findByText("$123.45")).toBeInTheDocument();
+    expect(within(panel).getByText("Cached quote · fixture · 2026-11-13")).toBeInTheDocument();
+    expect(within(panel).queryByText("Market cap")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("P/E")).not.toBeInTheDocument();
   });
 
   it("labels end-of-day research price, market cap, and P/E with the quote date", async () => {
@@ -531,7 +552,7 @@ describe("public market data truth", () => {
       historyResponse(symbol, range, ["10.000000", "14.000000"], provider, adjustment)
     ));
     open();
-    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const researchCard = (await screen.findByLabelText("Research symbol")).closest(".desk-card") as HTMLElement;
     expect(await within(researchCard).findAllByText("End of day 2026-11-13")).toHaveLength(3);
     const pe = within(researchCard).getByText("P/E").parentElement as HTMLElement;
     expect(within(pe).getByText("25.00")).toBeInTheDocument();
@@ -547,9 +568,9 @@ describe("public market data truth", () => {
       errors: [],
     });
     open();
-    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const researchCard = (await screen.findByLabelText("Research symbol")).closest(".desk-card") as HTMLElement;
     const value = await within(researchCard).findByText("31.48");
-    expect(value.closest(".metric-tile")).toHaveTextContent("P/E");
+    expect(value.closest(".desk-stat")).toHaveTextContent("P/E");
   });
 
   it("does not label an Alpha Vantage research quote as end of day", async () => {
@@ -565,7 +586,7 @@ describe("public market data truth", () => {
       errors: [],
     });
     open();
-    const researchCard = screen.getByRole("heading", { name: "Company research" }).closest(".dashboard-card") as HTMLElement;
+    const researchCard = (await screen.findByLabelText("Research symbol")).closest(".desk-card") as HTMLElement;
     expect(await within(researchCard).findByText("$100.00")).toBeInTheDocument();
     expect(within(researchCard).queryByText(/End of day/)).not.toBeInTheDocument();
   });
@@ -582,7 +603,7 @@ describe("public market data truth", () => {
       }],
     });
     open();
-    const newsCard = screen.getByRole("heading", { name: "Market news" }).closest(".dashboard-card") as HTMLElement;
+    const newsCard = (await screen.findByRole("heading", { name: "Market news" })).closest(".desk-card") as HTMLElement;
     const headline = await within(newsCard).findByRole("link", { name: "Chip rally lifts the Nasdaq" });
     expect(headline).toHaveAttribute("href", "https://example.com/chip");
     expect(headline).toHaveAttribute("target", "_blank");
@@ -599,66 +620,32 @@ describe("public market data truth", () => {
   it("shows an empty market news state when no headlines are returned", async () => {
     api.fetchMarketNews.mockResolvedValue({ articles: [], as_of: null });
     open();
-    const newsCard = screen.getByRole("heading", { name: "Market news" }).closest(".dashboard-card") as HTMLElement;
+    const newsCard = (await screen.findByRole("heading", { name: "Market news" })).closest(".desk-card") as HTMLElement;
     expect(await within(newsCard).findByText("No market headlines")).toBeInTheDocument();
     expect(within(newsCard).queryByRole("link")).not.toBeInTheDocument();
   });
 
-  it("stacks desktop columns independently and keeps one mobile copy of each panel", () => {
+  it("places sector instruments above the quote and news panels and keeps the sections keyboard reachable", async () => {
     open();
-    const columns = [
-      ["trending-movers", "company-research"],
-      ["market-pulse", "stock-heatmap"],
-      ["sector-etf-heatmap", "market-news"],
-    ];
-    const mobileOrder = [
-      "trending-movers",
-      "market-pulse",
-      "sector-etf-heatmap",
-      "company-research",
-      "stock-heatmap",
-      "market-news",
-    ];
-    const cards = mobileOrder.map((id, index) => {
+    await screen.findByRole("region", { name: "Stock heatmap" });
+    await screen.findByRole("region", { name: "Market news" });
+    const order = ["sector-etf-heatmap", "stock-heatmap", "trending-movers", "market-news", "market-pulse", "company-research"];
+    order.forEach((id, index) => {
       const matches = document.querySelectorAll(`#${id}`);
       expect(matches).toHaveLength(1);
-      const card = matches[0].closest(".dashboard-card") as HTMLElement;
-      expect(card.className).toContain(`max-[1199px]:order-${index + 1}`);
-      return card;
+      if (index) expect(document.getElementById(order[index - 1])!.compareDocumentPosition(matches[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
-    const grid = cards[0].parentElement?.parentElement;
-    expect(grid?.className).toContain("gap-6");
-    expect(grid?.className).toContain("items-start");
-    expect(grid?.className).toContain("min-[1200px]:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)_minmax(260px,1fr)]");
-    expect(grid?.className).not.toContain("xl:grid-cols");
-    const stacks = Array.from(grid?.children ?? []);
-    expect(stacks).toHaveLength(3);
-    stacks.forEach((stack, index) => {
-      expect(stack.className).toContain("contents");
-      expect(stack.className).toContain("min-[1200px]:flex-col");
-      expect(stack.className).toContain("min-[1200px]:gap-6");
-      expect(columns[index].map((id) => stack.querySelector(`#${id}`)?.id)).toEqual(columns[index]);
-    });
-    const heatmap = document.getElementById("stock-heatmap")?.closest(".dashboard-card") as HTMLElement;
+    const heatmap = document.getElementById("stock-heatmap")?.closest(".desk-card") as HTMLElement;
     const heatmapBody = within(heatmap).getByRole("region", { name: "Stock heatmap" });
-    expect(heatmapBody.className).toContain("max-h-[max(24rem,calc(100vh-16rem))]");
-    expect(heatmapBody.className).toContain("overflow-y-auto");
-    expect(heatmapBody.className).toContain("focus:ring-2");
     expect(heatmapBody).toHaveAttribute("tabindex", "0");
     expect(heatmapBody).toHaveAttribute("aria-labelledby", "stock-heatmap");
-    expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveClass("min-h-11");
-    const section = grid?.closest("section");
-    expect(section?.className).toContain("px-4");
-    expect(section?.className).toContain("sm:px-6");
-    expect(section?.className).toContain("lg:px-10");
-    const watchlist = screen.getByRole("button", { name: "Use MSFT in research" });
+    expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveAttribute("aria-pressed", "true");
+    expect(heatmap.parentElement).toContainElement(document.getElementById("trending-movers"));
+    const watchlist = await screen.findByRole("button", { name: "Use MSFT in research" });
     const historyTitle = document.getElementById("daily-price-history-title");
     expect(historyTitle).not.toBeNull();
-    const newsCard = document.getElementById("market-news")?.closest(".dashboard-card") as HTMLElement;
+    const newsCard = document.getElementById("market-news")?.closest(".desk-card") as HTMLElement;
     const newsBody = within(newsCard).getByRole("region", { name: "Market news" });
-    expect(newsBody.className).toContain("max-h-[max(24rem,calc(100vh-16rem))]");
-    expect(newsBody.className).toContain("overflow-y-auto");
-    expect(newsBody.className).toContain("focus:ring-2");
     expect(newsBody).toHaveAttribute("tabindex", "0");
     expect(newsBody).toHaveAttribute("aria-labelledby", "market-news");
     expect(newsCard.compareDocumentPosition(watchlist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -681,7 +668,7 @@ describe("public market data truth", () => {
       }],
     });
     open();
-    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     const stocks = within(heatmap).getByRole("button", { name: "Stocks" });
     const sectors = within(heatmap).getByRole("button", { name: "Sectors" });
     expect(stocks).toHaveAttribute("aria-pressed", "true");
@@ -690,8 +677,7 @@ describe("public market data truth", () => {
     expect(within(heatmap).getByText("1 returned quote")).toBeInTheDocument();
     expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
     expect(within(heatmap).getByRole("button", { name: "Set heatmap size to standard" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(heatmap).getByRole("group", { name: "Heatmap size" }).className).toContain("max-w-full");
-    expect(within(heatmap).getByRole("group", { name: "Heatmap size" }).className).toContain("flex-wrap");
+    expect(within(within(heatmap).getByRole("group", { name: "Heatmap size" })).getAllByRole("button")).toHaveLength(3);
 
     fireEvent.click(within(heatmap).getByRole("button", { name: "Set heatmap size to compact" }));
     expect(stocks).toHaveAttribute("aria-pressed", "true");
@@ -708,7 +694,7 @@ describe("public market data truth", () => {
     expect(within(heatmap).queryByText("Loading cache")).not.toBeInTheDocument();
     expect(within(heatmap).getByText("1 returned sector proxy")).toBeInTheDocument();
     expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
-    expect(within(screen.getByRole("heading", { name: "Sector ETF performance" }).closest(".dashboard-card") as HTMLElement).getByRole("listitem", { name: /XLK/ })).toBeInTheDocument();
+    expect(within(screen.getByRole("heading", { name: "Sector ETF performance" }).closest(".desk-card") as HTMLElement).getByRole("listitem", { name: /XLK/ })).toBeInTheDocument();
   });
 
   it("shows the sector proxy count when stock items are empty", async () => {
@@ -720,7 +706,7 @@ describe("public market data truth", () => {
       sectors: [{ symbol: "XLK", sector: "Technology", change_percent: 1.25, weight: "large", leaders: ["AAPL"] }],
     });
     open();
-    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     expect(await within(heatmap).findByText("No cached quotes")).toBeInTheDocument();
     fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
     await waitFor(() => {
@@ -736,7 +722,7 @@ describe("public market data truth", () => {
     api.fetchMarketOverview.mockRejectedValue(new Error("overview down"));
     api.fetchMarketHeatmap.mockResolvedValue({ items: [] });
     open();
-    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     expect(await within(heatmap).findByText("No cached quotes")).toBeInTheDocument();
     fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
     await waitFor(() => {
@@ -755,7 +741,7 @@ describe("public market data truth", () => {
     });
     api.fetchMarketHeatmap.mockResolvedValue({ items: [] });
     const client = open();
-    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     expect(await within(heatmap).findByText("No cached quotes")).toBeInTheDocument();
     fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
     expect(await within(heatmap).findByText("1 returned sector proxy")).toBeInTheDocument();
@@ -783,7 +769,7 @@ describe("public market data truth", () => {
       sectors: [{ symbol: "XLK", sector: "Technology", change_percent: 1.25, weight: "large", leaders: ["AAPL"] }],
     });
     open();
-    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     expect(within(heatmap).getByText("Loading cache")).toBeInTheDocument();
     fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
     expect(within(heatmap).queryByText("Loading cache")).not.toBeInTheDocument();
@@ -808,7 +794,7 @@ describe("public market data truth", () => {
       }],
     });
     open();
-    const heatmap = screen.getByRole("heading", { name: "Stock heatmap" }).closest(".dashboard-card") as HTMLElement;
+    const heatmap = (await screen.findByRole("heading", { name: "Stock heatmap" })).closest(".desk-card") as HTMLElement;
     expect(await within(heatmap).findByText("ONLY")).toBeInTheDocument();
     fireEvent.click(within(heatmap).getByRole("button", { name: "Sectors" }));
     expect(within(heatmap).getByRole("button", { name: "Sectors" })).toHaveAttribute("aria-pressed", "true");
@@ -821,8 +807,27 @@ describe("public market data truth", () => {
     expect(within(heatmap).queryByText("XLK")).not.toBeInTheDocument();
     expect(within(heatmap).queryByText("XLF")).not.toBeInTheDocument();
     expect(within(heatmap).queryByRole("img")).not.toBeInTheDocument();
-    const sectorCard = screen.getByRole("heading", { name: "Sector ETF performance" }).closest(".dashboard-card") as HTMLElement;
+    const sectorCard = screen.getByRole("heading", { name: "Sector ETF performance" }).closest(".desk-card") as HTMLElement;
     expect(within(sectorCard).getByText("No sector ETF proxies.")).toBeInTheDocument();
     expect(within(sectorCard).queryByText("XLK")).not.toBeInTheDocument();
   });
+  it("opens catalogued adjusted history and switches the featured close independently of the range", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue({
+      canonical_history: { series: [{ provider: "massive", adjustment_type: "raw" }, { provider: "yahoo", adjustment_type: "split_adjusted" }] },
+    });
+    api.fetchMarketOverview.mockResolvedValue({ as_of: null, sectors: [], errors: [], trends: [
+      { symbol: "SPX", source_symbol: "SPY", name: "S&P 500", value: 100, change: 1, change_percent: 1 },
+      { symbol: "NDX", source_symbol: "QQQ", name: "Nasdaq 100", value: 80, change: -1, change_percent: -1.25 },
+    ] });
+    historyApi.fetchDailyHistory.mockImplementation(async (symbol: string, provider: string, adjustment: string, range: string) =>
+      historyResponse(symbol, range, ["95", "100"], provider, adjustment));
+    open();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("SPY", "yahoo", "split_adjusted", "3m"));
+    expect(screen.getByRole("button", { name: "Market pulse range 3M" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Inspect QQQ, Nasdaq 100" }));
+    expect(screen.getByRole("heading", { name: "Nasdaq 100" })).toBeInTheDocument();
+    expect(within(document.querySelector(".focus-quote") as HTMLElement).getByText("$80.00")).toBeInTheDocument();
+    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith(expect.anything(), "massive", "raw", expect.anything());
+  });
+
 });

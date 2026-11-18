@@ -1,3 +1,4 @@
+import { keys } from "../night/api";
 import { fetchDailyHistory } from "../api/history";
 import type { LineData, Time, WhitespaceData } from "lightweight-charts";
 
@@ -14,7 +15,7 @@ export type PulseChartRange = (typeof PULSE_RANGES)[number];
 
 export function proxyHistoryQuery(symbol: string, provider: string, adjustment: string, range: PulseChartRange) {
   return {
-    queryKey: ["market", "history", symbol, provider, adjustment, range],
+    queryKey: keys.history(symbol, provider ?? "auto", adjustment, range),
     queryFn: () => fetchDailyHistory(symbol, provider, adjustment, range),
     retry: false as const,
     staleTime: 300000,

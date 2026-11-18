@@ -397,7 +397,7 @@ export function DailyHistory({
     };
   }, [rangeDraft, indicatorDraft, periodDraft, chartType]);
   const catalogQuery = useQuery({
-    queryKey: ["market", "cachedseries"],
+    queryKey: ["market", "data-status"],
     queryFn: fetchCachedSeries,
     enabled: catalogEnabled,
     retry: false,

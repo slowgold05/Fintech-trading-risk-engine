@@ -1,3 +1,4 @@
+import { reducedMotion } from "../../night/looks/preferences";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 const duration = 2380;
@@ -36,7 +37,7 @@ export function usePowerOn() {
     const node = wall.current;
     if (!node || finished) return;
     const motion = matchMedia("(prefers-reduced-motion: reduce)");
-    if (motion.matches) {
+    if ((motion.matches || document.documentElement.dataset.motion === "reduced")) {
       finished = true;
       return;
     }
@@ -86,7 +87,7 @@ export function useArrival<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   useEffect(() => {
     const node = ref.current;
-    if (!node || !window.IntersectionObserver || matchMedia("(prefers-reduced-motion: reduce)").matches)
+    if (!node || !window.IntersectionObserver || reducedMotion())
       return;
     let timer = 0;
     const observer = new IntersectionObserver(([entry]) => {
@@ -119,7 +120,7 @@ export function useRowMotion(order: string) {
       const rows = Array.from(body!.rows, (row) => ({ row, id: row.dataset.symbol!, y: row.offsetTop }));
       const last = previous.current;
       previous.current = new Map(rows.map((r) => [r.id, r.y]));
-      if (!last.size || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (!last.size || reducedMotion()) return;
       for (const { row, id, y } of rows) {
         const old = last.get(id);
         row.getAnimations?.().forEach((a) => a.cancel());

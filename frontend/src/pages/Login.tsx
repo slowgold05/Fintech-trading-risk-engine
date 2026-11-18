@@ -3,13 +3,14 @@ import { Check, Lock, User } from "@phosphor-icons/react";
 import { isAxiosError } from "axios";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { completeLoginMfa, confirmMfaEnrollment, enrollMfa, login, register, startDemo } from "../api/auth";
+import { safeReturnTo } from "../night/registry";
 import { useAuth } from "../context/useAuth";
 
 const features = [
-  "Real-time portfolio valuation and P&L",
+  "Portfolio valuation and P&L",
   "Risk-aware trade execution engine",
   "FIFO cost-basis and exposure analytics",
-  "Live market pulse and sector heatmap",
+  "Cached market pulse and sector heatmap",
 ];
 
 type AuthMode = "login" | "register";
@@ -72,7 +73,8 @@ function passwordStrength(password: string, username: string) {
 }
 
 export function Login() {
-  const [mode, setMode] = useState<AuthMode>("login");
+  const location = useLocation();
+  const [mode, setMode] = useState<AuthMode>(() => new URLSearchParams(location.search).get("mode") === "register" ? "register" : "login");
   const [stage, setStage] = useState<Stage>("password");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -84,8 +86,7 @@ export function Login() {
   const [isStartingDemo, setIsStartingDemo] = useState(false);
   const { isAuthenticated, isInitializing, signIn } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const from = safeAppFrom(location.state);
+  const from = safeReturnTo(new URLSearchParams(location.search).get("returnTo") ?? safeAppFrom(location.state));
 
   if (isAuthenticated) {
     return <Navigate to={from} replace />;
@@ -268,7 +269,7 @@ export function Login() {
                     autoComplete="username"
                     className="min-h-11 w-full rounded-xl border border-slate-700/90 bg-slate-900/80 py-2 pl-9 pr-3 text-sm text-slate-100 outline-none transition duration-200 placeholder:text-slate-500 hover:border-slate-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={isSubmitting}
-                    name="username"
+                    data-testid="auth-email" name="username"
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="you@example.com"
                     required
@@ -292,7 +293,7 @@ export function Login() {
                     autoComplete="current-password"
                     className="min-h-11 w-full rounded-xl border border-slate-700/90 bg-slate-900/80 py-2 pl-9 pr-3 text-sm text-slate-100 outline-none transition duration-200 placeholder:text-slate-500 hover:border-slate-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={isSubmitting}
-                    name="password"
+                    data-testid="auth-password" name="password"
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
@@ -382,7 +383,7 @@ export function Login() {
                 aria-label={stage === "code" ? "Verify code" : stage === "enroll" ? "Save authenticator" : isRegistering ? "Create account" : "Sign in"}
                 className="primary-action mt-2"
                 disabled={isSubmitting || isStartingDemo || (isRegistering && !strength.passesMinimum)}
-                type="submit"
+                data-testid="auth-submit" type="submit"
               >
                 {isSubmitting
                   ? isRegistering
@@ -396,7 +397,7 @@ export function Login() {
             <button
               className="mt-3 min-h-11 w-full rounded-xl border border-emerald-400/40 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-2 focus-visible:outline-emerald-300 disabled:opacity-60"
               disabled={isSubmitting || isStartingDemo || isInitializing}
-              onClick={handleDemo}
+              data-testid="demo-start" hidden={import.meta.env.VITE_DEMO_ENABLED === "false"} onClick={handleDemo}
               type="button"
             >
               {isStartingDemo ? "Starting demo…" : "Try the demo"}

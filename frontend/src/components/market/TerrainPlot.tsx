@@ -233,12 +233,12 @@ export function TerrainPlot({ surface, symbol, inspect, release }: Props) {
       }
       const elapsed = powerTime(now);
       const { active, col } = live.current;
-      const opening = motion.matches ? 1 : Math.max(0, Math.min(1, (elapsed - 530) / 1460));
-      const transition = motion.matches || !changed.current ? 1 : Math.min(1, (now - changed.current) / 640);
+      const opening = (motion.matches || document.documentElement.dataset.motion === "reduced") ? 1 : Math.max(0, Math.min(1, (elapsed - 530) / 1460));
+      const transition = (motion.matches || document.documentElement.dataset.motion === "reduced") || !changed.current ? 1 : Math.min(1, (now - changed.current) / 640);
       const sweep =
         col >= 0
           ? mesh.time[col]
-          : motion.matches
+          : (motion.matches || document.documentElement.dataset.motion === "reduced")
             ? (mesh.peaks[active]?.t ?? 0)
             : elapsed < 2200
               ? (elapsed - 650) / 1300
@@ -249,11 +249,11 @@ export function TerrainPlot({ surface, symbol, inspect, release }: Props) {
         col >= 0,
         transition * transition * (3 - 2 * transition),
         opening,
-        motion.matches ? 1 : Math.max(0, Math.min(1, (elapsed - 1780) / 420)),
-        motion.matches ? 0 : Math.sin(now / 1850),
+        (motion.matches || document.documentElement.dataset.motion === "reduced") ? 1 : Math.max(0, Math.min(1, (elapsed - 1780) / 420)),
+        (motion.matches || document.documentElement.dataset.motion === "reduced") ? 0 : Math.sin(now / 1850),
       );
       if (probe.current) {
-        const visibility = elapsed < 1780 && !motion.matches ? "hidden" : "";
+        const visibility = elapsed < 1780 && !(motion.matches || document.documentElement.dataset.motion === "reduced") ? "hidden" : "";
         if (probe.current.style.visibility !== visibility) probe.current.style.visibility = visibility;
         const marker = col < 0 ? mesh.peaks[active] : mesh.rows[active]?.[col];
         if (marker && gpu && changed.current) {
@@ -281,7 +281,7 @@ export function TerrainPlot({ surface, symbol, inspect, release }: Props) {
         painted = active;
       }
       if ((gpu || painted >= 0) && !el!.hasAttribute("data-painted")) el!.setAttribute("data-painted", "");
-      if (gpu && !motion.matches) {
+      if (gpu && !(motion.matches || document.documentElement.dataset.motion === "reduced")) {
         if (elapsed < 530 && col < 0) idle = window.setTimeout(resume, 530 - elapsed);
         else if (elapsed < 2380 || transition < 1) frame = requestAnimationFrame(paint);
         else if (col < 0) idle = window.setTimeout(resume, 36);

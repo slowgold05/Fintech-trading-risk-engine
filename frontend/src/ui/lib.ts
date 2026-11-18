@@ -21,7 +21,7 @@ export function directionOf(value: number | null | undefined): Direction {
 const REDUCED = "(prefers-reduced-motion: reduce)";
 
 export function prefersReducedMotion() {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(REDUCED).matches;
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && (document.documentElement.dataset.motion === "reduced" || window.matchMedia(REDUCED).matches);
 }
 
 function subscribeReduced(notify: () => void) {

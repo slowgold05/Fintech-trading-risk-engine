@@ -1,6 +1,7 @@
 import { useAdjustedProvider } from "../components/market/useAdjustedProvider";
 import { formatCurrency } from "../utils/format";
-import { createSessionCursor, CursorContext } from "../components/market/sessionCursor";
+import { useMarketSelection } from "../night/looks/marketSelection";
+import { CursorContext } from "../components/market/sessionCursor";
 import { usePowerOn, useArrival } from "../components/market/wallMotion";
 import { DeferredInstrument } from "../components/market/DeferredInstrument";
 import { compactWidth, phoneWidth, useMaxWidth } from "../components/market/compactLayout";
@@ -51,19 +52,20 @@ function HistoryPreview() {
 }
 
 export function TerrainMarket() {
+  const selection = useMarketSelection();
   const compact = useMaxWidth(compactWidth);
   const phone = useMaxWidth(phoneWidth);
   const { isAuthenticated } = useAuth();
-  const [symbolInput, setSymbolInput] = useState("NVDA");
-  const [researchSymbol, setResearchSymbol] = useState("NVDA");
-  const [selectedProxy, setProxy] = useState("SPY");
+  const [symbolInput, setSymbolInput] = selection.symbolInput;
+  const [researchSymbol, setResearchSymbol] = selection.researchSymbol;
+  const [selectedProxy, setProxy] = selection.proxy;
   const [previewProxy, setPreviewProxy] = useState<string | null>(null);
   const [pinnedSector, pinSector] = useState<string | null>(null);
   const [previewSector, setSector] = useState<string | null>(null);
   const linkedSector = previewSector ?? pinnedSector;
   const [linkedSymbol, setSymbol] = useState<string | null>(null);
-  const [cursor] = useState(createSessionCursor);
-  const [historyDraft, setHistoryDraft] = useState("");
+  const { cursor } = selection;
+  const [historyDraft, setHistoryDraft] = selection.historyDraft;
   const overview = useQuery({
     queryKey: ["market", "overview"],
     queryFn: fetchMarketOverview,
