@@ -464,7 +464,17 @@ export function Dashboard() {
               positions={positions}
             />
           </DashboardCard>
-          {portfolio ? (
+          {portfolio?.user?.is_demo ? (
+            <DashboardCard title="Paper orders">
+              <p className="text-sm text-slate-400">Preview an order using the latest cached closing price.</p>
+              <Link
+                className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-slate-600 px-3 text-sm font-medium text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                to="/trades"
+              >
+                Open order ticket
+              </Link>
+            </DashboardCard>
+          ) : portfolio ? (
             <QuickTradePanel
               buyingPower={buyingPower}
               isSubmitting={tradeMutation.isPending}
