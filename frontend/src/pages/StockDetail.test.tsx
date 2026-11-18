@@ -14,10 +14,12 @@ const marketApi = vi.hoisted(() => ({
 }));
 const historyApi = vi.hoisted(() => ({ fetchDailyHistory: vi.fn() }));
 const researchApi = vi.hoisted(() => ({ fetchResearchNews: vi.fn() }));
+const indicatorApi = vi.hoisted(() => ({ fetchDailyIndicators: vi.fn() }));
 
 vi.mock("../api/market", () => marketApi);
 vi.mock("../api/history", () => historyApi);
 vi.mock("../api/research", () => researchApi);
+vi.mock("../api/indicators", () => indicatorApi);
 vi.mock("lightweight-charts", () => ({
   createChart: vi.fn(() => ({
     addSeries: () => ({
@@ -144,6 +146,7 @@ describe("stock detail", () => {
       }],
       error: null,
     });
+    indicatorApi.fetchDailyIndicators.mockRejectedValue(new Error("Indicator cache unavailable"));
   });
 
   afterEach(() => {
@@ -161,28 +164,31 @@ describe("stock detail", () => {
 
     resolveQuote(quote);
     expect(await screen.findByRole("heading", { name: "AAPL" })).toBeInTheDocument();
-    expect(screen.getByText("End-of-day data")).toBeInTheDocument();
+    expect(screen.getByText("Cached end-of-day data")).toBeInTheDocument();
     expect(screen.getByText("Apple Inc.")).toBeInTheDocument();
     expect(screen.getByText(/Technology/)).toBeInTheDocument();
     expect(screen.getByText("$190.50")).toBeInTheDocument();
     expect(screen.getByText("Raw last close")).toBeInTheDocument();
-    expect(screen.getByText("Up +$1.25 (+0.66%)")).toBeInTheDocument();
+    expect(screen.getAllByText("Up +$1.25 (+0.66%)")).toHaveLength(2);
     expect(screen.getByText("As of 2026-11-13")).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "split_adjusted", "2y");
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
 
     expect(await screen.findByText("Massive split-adjusted prices.")).toBeInTheDocument();
-    const stats = screen.getByRole("region", { name: "Key stats" });
-    expect(within(stats).getByText("52-week high").parentElement).toHaveTextContent("$192.00");
-    expect(within(stats).getByText("52-week low").parentElement).toHaveTextContent("$179.00");
+    const stats = screen.getByRole("region", { name: "Market metrics" });
+    expect(within(stats).getByText("52-week range").parentElement).toHaveTextContent("$179.00 — $192.00");
     expect(within(stats).queryByText("Raw prices, not split-adjusted")).not.toBeInTheDocument();
-    expect(within(stats).getByText("Avg volume (52-week)").parentElement).toHaveTextContent("2,000");
+    expect(within(stats).getByText("Last volume").parentElement).toHaveTextContent("1Y avg 2,000");
     expect(within(stats).getByText("Market cap").parentElement).toHaveTextContent("$2,500,000,000,000");
     expect(within(stats).getByText("P/E").parentElement).toHaveTextContent("28.5");
     expect(within(stats).getByText("SEC margin").parentElement).toHaveTextContent("25.00%");
     expect(within(stats).getByText("SEC margin").parentElement).toHaveTextContent("10-K · 2025-01-01 to 2025-12-31");
     expect(screen.getByRole("link", { name: "Paper trade AAPL" })).toHaveAttribute("href", "/trades?symbol=AAPL");
     expect(screen.getByText("Sign in to read company headlines.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Technical scorecard" })).toBeInTheDocument();
+    expect(screen.getByText("AI forecast")).toBeInTheDocument();
+    expect(screen.getByText(/Sentiment scoring is unavailable/)).toBeInTheDocument();
+    expect(screen.getByText("Strategy backtest")).toBeInTheDocument();
     expect(await screen.findByText(/2 weekdays without a bar are shown as gaps and not filled in/)).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-09" })).toBeInTheDocument();
     expect(screen.queryByRole("rowheader", { name: "2026-11-10" })).not.toBeInTheDocument();
@@ -224,9 +230,8 @@ describe("stock detail", () => {
     expect(await screen.findByText("Massive raw prices. Split-adjusted bars are not cached.")).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-12" })).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
-    const stats = screen.getByRole("region", { name: "Key stats" });
-    expect(within(stats).getByText("52-week high").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
-    expect(within(stats).getByText("52-week low").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
+    const stats = screen.getByRole("region", { name: "Market metrics" });
+    expect(within(stats).getByText("52-week range").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
   });
 
   it("shows fractional adjusted volume without switching to raw history", async () => {
@@ -236,16 +241,34 @@ describe("stock detail", () => {
     renderDetail();
     expect(await screen.findByText("Massive split-adjusted prices.")).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-12" }).closest("tr")).toHaveTextContent("100.25");
-    expect(within(screen.getByRole("region", { name: "Key stats" })).getByText("Avg volume (52-week)").parentElement).toHaveTextContent("100.25");
+    expect(within(screen.getByRole("region", { name: "Market metrics" })).getByText("Last volume").parentElement).toHaveTextContent("1Y avg 100");
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+  });
+
+  it("calculates labeled one-year volatility and drawdown without older cached prices", async () => {
+    const oneYearFlatBars = Array.from({ length: 31 }, (_, index) => {
+      const session = new Date(Date.UTC(2025, 10, 16 + index)).toISOString().slice(0, 10);
+      return bar(session, "100", "100", "100", "1000");
+    });
+    historyApi.fetchDailyHistory.mockResolvedValue(history([
+      bar("2024-10-01", "1000", "1000", "1000", "1000"),
+      ...oneYearFlatBars,
+    ]));
+    renderDetail();
+
+    const stats = await screen.findByRole("region", { name: "Market metrics" });
+    await waitFor(() => {
+      expect(within(stats).getByText("Volatility (1Y)").parentElement).toHaveTextContent("0.00%");
+      expect(within(stats).getByText("Max drawdown (1Y)").parentElement).toHaveTextContent("0.00%");
+    });
   });
 
   it("shows an empty chart when the cache has no bars", async () => {
     historyApi.fetchDailyHistory.mockResolvedValue(history([], "unavailable"));
     renderDetail();
     expect(await screen.findByText("No cached daily bars for AAPL in the 1 year range.")).toBeInTheDocument();
-    const stats = screen.getByRole("region", { name: "Key stats" });
-    expect(within(stats).getByText("52-week high").parentElement).toHaveTextContent("unavailable");
+    const stats = screen.getByRole("region", { name: "Market metrics" });
+    expect(within(stats).getByText("52-week range").parentElement).toHaveTextContent("unavailable");
   });
 
   it("shows a quote error and does not request history for an unsupported symbol", async () => {
@@ -277,7 +300,7 @@ describe("stock detail", () => {
       errors: [],
     });
     renderDetail();
-    const stats = await screen.findByRole("region", { name: "Key stats" });
+    const stats = await screen.findByRole("region", { name: "Market metrics" });
     await waitFor(() => {
       expect(within(stats).getByText("Market cap").parentElement).toHaveTextContent("unavailable");
     });

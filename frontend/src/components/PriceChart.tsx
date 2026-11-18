@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { IChartApi, MouseEventParams, Time } from "lightweight-charts";
 import type { HistoryBar, HistoryCoverageStatus } from "../api/history";
+import type { IndicatorOverlay } from "./historyData";
 import { formatCurrency, formatQuantity } from "../utils/format";
 import {
   type ChartRange,
@@ -42,6 +43,8 @@ export function PriceChart({
   endDate,
   coverageStatus,
   seriesLabel,
+  sma20,
+  sma50,
 }: {
   symbol: string;
   bars: readonly HistoryBar[];
@@ -49,6 +52,8 @@ export function PriceChart({
   /** Coverage of the full history window the bars came from, as reported by the API. */
   coverageStatus?: HistoryCoverageStatus;
   seriesLabel?: string;
+  sma20?: IndicatorOverlay;
+  sma50?: IndicatorOverlay;
 }) {
   const summaryId = useId();
   const [range, setRange] = useState<ChartRange>("1Y");
@@ -132,6 +137,22 @@ export function PriceChart({
           });
           volume.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
           created.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.28 } });
+          const rangeTimes = new Set(series.plotted.map((bar) => bar.time));
+          const overlayPoints = (overlay: IndicatorOverlay) => overlay.line.filter(
+            (point) => typeof point.time === "string" && rangeTimes.has(point.time),
+          );
+          if (sma20?.status === "partial") {
+            const sma20Series = created.addSeries(charts.LineSeries, {
+              color: "#fbbf24", lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+            });
+            sma20Series.setData(overlayPoints(sma20));
+          }
+          if (sma50?.status === "partial") {
+            const sma50Series = created.addSeries(charts.LineSeries, {
+              color: "#c4b5fd", lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+            });
+            sma50Series.setData(overlayPoints(sma50));
+          }
           candles.setData(series.candles);
           line.setData(series.line);
           volume.setData(series.volume);
@@ -162,7 +183,7 @@ export function PriceChart({
       chart?.unsubscribeCrosshairMove(onCrosshair);
       chart?.remove();
     };
-  }, [chartType, plottedByTime, series]);
+  }, [chartType, plottedByTime, series, sma20, sma50]);
 
   const hovered = hover ? plottedByTime.get(hover.time) : undefined;
 
@@ -217,6 +238,14 @@ export function PriceChart({
             Candlestick
           </button>
         </div>
+        {(sma20?.status === "partial" || sma50?.status === "partial") ? (
+          <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-muted">
+            <span className="text-brand-300">{symbol} close</span>
+            {sma20?.status === "partial" ? <span className="text-amber-300">SMA 20</span> : null}
+            {sma50?.status === "partial" ? <span className="text-violet-300">SMA 50</span> : null}
+            <span>Volume</span>
+          </p>
+        ) : null}
       </div>
       {series.plotted.length === 0 ? null : (
         <>
