@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, List, TrendDown, TrendUp, X } from "@phosphor-icons/react";
+import { ArrowRight, List, X } from "@phosphor-icons/react";
 import {
   fetchMarketHeatmap,
   fetchMarketNews,
@@ -12,9 +12,9 @@ import {
 import { fetchDailyHistory, type HistoryRange } from "../api/history";
 import { useAuth } from "../context/useAuth";
 import { EmptyState } from "../features/dashboard/components/EmptyState";
-import { IconBadge } from "../features/dashboard/components";
 import { DailyHistory } from "../components/DailyHistory";
 import { IndexComparisonChart } from "../components/IndexComparisonChart";
+import { SectorPerformanceGrid } from "../components/SectorPerformanceGrid";
 import { MarketSearch } from "../components/MarketSearch";
 import { PULSE_RANGES, type PulseChartRange } from "../components/indexComparisonData";
 import { Sparkline } from "../components/Sparkline";
@@ -50,7 +50,7 @@ const sparkRangeLabels: Record<SparkRange, string> = {
 const pageSections = [
   { id: "trending-movers", label: "Trending movers" },
   { id: "market-pulse", label: "Market pulse" },
-  { id: "sector-etf-heatmap", label: "Sector ETF heatmap" },
+  { id: "sector-etf-heatmap", label: "Sector ETF performance" },
   { id: "company-research", label: "Company research" },
   { id: "stock-heatmap", label: "Stock heatmap" },
   { id: "market-news", label: "Market news" },
@@ -1038,43 +1038,34 @@ export function Home() {
                 <p className="mt-1 text-xs text-slate-400">{marketQuery.data.data_notice}</p>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <TimeframeToggle label="Market pulse range" onChange={setPulseRange} ranges={PULSE_RANGES} value={pulseRange} />
-              <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
-                {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
-              </span>
-            </div>
+            <span className="risk-chip border-slate-700 bg-slate-900 text-slate-300">
+              {marketQuery.isLoading ? "Loading" : trends.length ? "Cached snapshot" : "Unavailable"}
+            </span>
           </div>
           <div className="dashboard-card-body min-w-0 space-y-4">
-            <IndexComparisonChart range={pulseRange} />
+            <IndexComparisonChart
+              quotes={trends.map((trend) => ({
+                symbol: trend.source_symbol,
+                value: trend.value,
+                changePercent: trend.change_percent,
+              }))}
+              range={pulseRange}
+              rangeControl={(
+                <TimeframeToggle
+                  label="Market pulse range"
+                  onChange={setPulseRange}
+                  ranges={PULSE_RANGES}
+                  value={pulseRange}
+                />
+              )}
+            />
             {trends.length === 0 ? (
               <EmptyState message={marketQuery.isLoading ? "Loading quote cache" : "Market quotes unavailable"}
                 detail="Index quotes will appear when the market cache has data." />
             ) : (
-              <>
-                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                  {trends.map((trend) => (
-                    <div className="metric-tile min-w-0" key={trend.source_symbol}>
-                      <div className="flex items-center gap-2">
-                        <IconBadge
-                          Icon={trend.change_percent >= 0 ? TrendUp : TrendDown}
-                          tone={trend.change_percent >= 0 ? "emerald" : "rose"}
-                        />
-                        <div className="font-mono text-sm font-semibold text-slate-100">{trend.source_symbol}</div>
-                      </div>
-                      <div className="mt-1 text-xs text-slate-400">{trend.name} proxy</div>
-                      <div className="mt-3 font-mono text-lg font-semibold text-slate-100">{formatCurrency(trend.value)}</div>
-                      <div className={["mt-2 font-mono text-xs", trend.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"].join(" ")}>
-                        Provider change {formatSignedPercent(trend.change_percent)}
-                      </div>
-                      <SymbolSparkline className="mt-3 h-8 w-full" range={pulseRange} symbol={trend.source_symbol} />
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-4 text-xs text-slate-400">
-                  Latest cached quote: {latestQuoteAt && Number.isFinite(Date.parse(latestQuoteAt)) ? new Date(latestQuoteAt).toUTCString() : "unavailable"}. Individual quotes may be older.
-                </p>
-              </>
+              <p className="text-xs text-slate-400">
+                Latest cached quote: {latestQuoteAt && Number.isFinite(Date.parse(latestQuoteAt)) ? new Date(latestQuoteAt).toUTCString() : "unavailable"}. Individual quotes may be older.
+              </p>
             )}
           </div>
         </div>
@@ -1252,24 +1243,21 @@ export function Home() {
           </div>
           </div>
           <div className="contents min-w-0 min-[1200px]:flex min-[1200px]:flex-col min-[1200px]:gap-6">
-          <div className="dashboard-card min-w-0 max-[1199px]:order-3">
-            <div className="dashboard-card-header">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-100" id="sector-etf-heatmap">
-                  Sector ETF heatmap
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Cached sector ETF proxies returned by the market service.
-                </p>
+          <div className="dashboard-card min-w-0 max-[1199px]:order-3" id="sector-etf-heatmap">
+            {returnedSectorProxies.length === 0 && (marketQuery.isLoading || marketQuery.isError) ? (
+              <>
+                <div className="dashboard-card-header">
+                  <h2 className="text-sm font-semibold text-slate-100">Sector ETF performance</h2>
+                </div>
+                <div className="dashboard-card-body">
+                  <EmptyState message={marketQuery.isLoading ? "Loading sector cache" : "Sector quotes unavailable"} />
+                </div>
+              </>
+            ) : (
+              <div className="dashboard-card-body">
+                <SectorPerformanceGrid sectors={returnedSectorProxies} />
               </div>
-            </div>
-            <div className="dashboard-card-body">
-              {returnedSectorProxies.length === 0 ? (
-                <EmptyState message={sectorStatusLabel} />
-              ) : (
-                <SectorProxyTiles scale="compact" sectors={returnedSectorProxies} />
-              )}
-            </div>
+            )}
           </div>
         <div className="dashboard-card min-w-0 max-[1199px]:order-6">
           <div className="dashboard-card-header">
