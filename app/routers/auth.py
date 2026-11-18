@@ -329,8 +329,9 @@ def confirm_mfa_enrollment(request: Request, response: Response, payload: MfaEnr
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
+def me(response: Response, current_user: User = Depends(get_current_user)):
     """
     Returns the currently authenticated user.
     """
+    response.headers["Cache-Control"] = "no-store"
     return current_user

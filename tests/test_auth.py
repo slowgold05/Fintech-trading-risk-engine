@@ -21,6 +21,7 @@ def test_register_login_and_me(client):
 
     me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
+    assert me.headers["Cache-Control"] == "no-store"
     assert me.json()["email"] == "alice@example.com"
 
 
