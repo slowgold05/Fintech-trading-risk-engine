@@ -179,10 +179,10 @@ def _performance(
             raise HTTPException(status_code=500, detail="Portfolio snapshot time is missing.") from exc
 
     # Same 404 as today's valuation. Auth already rejected an unknown token.
-    known = db.execute(select(User.demo_seed).where(User.id == user_id)).one_or_none()
+    known = db.execute(select(User.demo_seed, User.is_demo.label("is_demo")).where(User.id == user_id)).one_or_none()
     if known is None:
         raise HTTPException(status_code=404, detail="User not found")
-    demo_seed = known.demo_seed
+    demo_seed = known.demo_seed if known.is_demo else None
 
     requested_end = clock.date()
     requested_start = (
@@ -216,7 +216,7 @@ def _performance(
         identity.update(is_demo=True, demo_seed_mode=demo_seed["mode"])
         histories = demo_daily_closes(
             db, {BENCHMARK_SYMBOL, *symbols.values()}, requested_start, requested_end,
-            pinned=seed_price_series(demo_seed),
+            pinned=seed_price_series(demo_seed), clock=clock,
         )
         closes = {
             (symbol, day): [price]

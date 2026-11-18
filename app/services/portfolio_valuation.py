@@ -211,6 +211,7 @@ def _value_portfolio(
         select(
             User.cash_balance,
             User.demo_seed,
+            User.is_demo.label("is_demo"),
             Holding.asset_id,
             Holding.quantity,
             Holding.avg_cost,
@@ -324,8 +325,8 @@ def _value_portfolio(
         })
 
     identity = {"id": user_id, "email": email}
-    if (seed := rows[0].demo_seed) is not None:
-        identity.update(is_demo=True, demo_seed_mode=seed["mode"])
+    if rows[0].is_demo:
+        identity.update(is_demo=True, demo_seed_mode=rows[0].demo_seed["mode"])
     return {
         "user": identity,
         "valuation_status": "complete" if complete else "incomplete",

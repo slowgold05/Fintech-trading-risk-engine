@@ -56,7 +56,7 @@ def _daily_admission(db: Session, today: date) -> int:
         if not db.scalar(select(func.pg_try_advisory_xact_lock(ADMISSION_LOCK))):
             raise HTTPException(status_code=429, detail="Demo signup is busy. Try again shortly.", headers={"Retry-After": "1"})
     count = db.scalar(select(func.count()).select_from(User).where(
-        User.demo_seed.is_not(None), User.created_at >= datetime.combine(today, time.min),
+        User.is_demo, User.created_at >= datetime.combine(today, time.min),
     ))
     if count >= settings.demo_daily_limit:
         raise HTTPException(status_code=429, detail="Today's demo signup limit has been reached")
@@ -70,10 +70,13 @@ def _fill(symbol: str, day: date, side: str, quantity: int, price: Decimal, prov
     }
 
 
-def _historical_fills(db: Session, plan: dict, today: date) -> list[dict]:
+def _historical_fills(db: Session, plan: dict, now: datetime) -> list[dict]:
+    today = now.date()
     symbols = set(db.scalars(select(MarketSymbol.symbol).outerjoin(Asset, Asset.symbol == MarketSymbol.symbol)
                             .where(MarketSymbol.symbol.in_([item["symbol"] for item in plan["buys"]]), *MEMBERSHIP)))
-    histories = demo_daily_closes(db, symbols, today - timedelta(days=225), today - timedelta(days=1))
+    histories = demo_daily_closes(
+        db, symbols, today - timedelta(days=225), today - timedelta(days=1), clock=now,
+    )
     days_by_symbol = {symbol: sorted(closes) for symbol, (_, closes) in histories.items()}
     fills = []
     buys = {}
@@ -131,12 +134,12 @@ def _quote_fills(db: Session, plan: dict, now: datetime) -> list[dict]:
 def _build_seed(db: Session, now: datetime, plan_index: int) -> dict:
     today = now.date()
     plan = PLANS[plan_index]
-    fills = _historical_fills(db, plan, today)
+    fills = _historical_fills(db, plan, now)
     if not fills:
         for alternate in PLANS:
             if alternate is plan:
                 continue
-            fills = _historical_fills(db, alternate, today)
+            fills = _historical_fills(db, alternate, now)
             if fills:
                 plan = alternate
                 break

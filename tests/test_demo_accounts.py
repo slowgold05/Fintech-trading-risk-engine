@@ -17,7 +17,8 @@ from app.models.refresh_token import RefreshToken
 from app.models.trade import Trade
 from app.models.user import User
 from app.scripts.archive_demo_accounts import archive_expired
-from app.services import demo_accounts
+from app.scripts.reconcile_ledger import run as reconcile
+from app.services import demo_accounts, surveillance_cases
 from app.services.ledger_service import reconcile_account
 
 
@@ -138,6 +139,114 @@ def test_demo_reset_replays_original_seed_after_a_trade(client, db_session, hist
                        .values(effective_on=date(2025, 1, 1)))
     db_session.commit()
     assert "Hash chain mismatch at entry 1" in reconcile_account(db_session, user)["errors"]
+
+
+@pytest.mark.parametrize("cached_quote", [True, False], ids=["quote-cache", "history-only"])
+def test_yahoo_demo_fills_and_resets_with_a_separate_system_ledger(
+    client, db_session, historical_market, monkeypatch, cached_quote,
+):
+    now = historical_market
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz is None else now.replace(tzinfo=timezone.utc).astimezone(tz)
+
+    monkeypatch.setattr(settings, "simulated_liquidity_enabled", True)
+    monkeypatch.setattr(settings, "alpha_vantage_api_key", "")
+    monkeypatch.setattr("app.services.pretrade_controls.datetime", FrozenDatetime)
+    monkeypatch.setattr("app.routers.market.datetime", FrozenDatetime)
+    monkeypatch.setattr("app.services.market_cache_service._utcnow", lambda: now)
+    for row in db_session.scalars(select(PriceHistoryDaily)):
+        db_session.add(MarketBarDaily(
+            symbol=row.symbol, session_date=row.date, provider=row.source, adjustment_type="split_adjusted",
+            open=row.open, high=row.high, low=row.low, close=row.close, volume=0,
+            fetched_at=now.replace(tzinfo=timezone.utc), quality_status="valid",
+        ))
+    db_session.query(PriceHistoryDaily).delete()
+    for quote in db_session.scalars(select(MarketQuoteCache)):
+        quote.quote_at = datetime.fromisoformat(SESSIONS[-1])
+    quote = db_session.get(MarketQuoteCache, "AAPL")
+    if cached_quote:
+        quote.volume = 37341600
+    else:
+        db_session.delete(quote)
+    db_session.commit()
+
+    session, headers = _start(client)
+    assert session["demo_seed_mode"] == "historical"
+    before = client.get("/portfolio/", headers=headers).json()
+    performance = client.get("/portfolio/performance?range=1y", headers=headers).json()
+    seeded = client.get("/trades/", headers=headers).json()["trades"]
+    assert len(seeded) == 4 and all(trade["seed_price"]["provider"] == "yahoo" for trade in seeded)
+    assert set(performance["split_adjusted_history_sources"].values()) == {"yahoo"}
+    movers = client.get("/market/trending").json()
+    if cached_quote:
+        assert [item["symbol"] for item in movers["most_active"]] == ["AAPL"]
+
+    payload = {"symbol": "AAPL", "side": "buy", "order_type": "market", "quantity": 1}
+    preview = client.post("/orders/preview", json=payload, headers=headers).json()
+    assert preview["estimated_fills"] == [{
+        "counterparty": "simulated", "quantity": "1.000000", "execution_price": CLOSES["AAPL"][-1],
+        "simulated_quote_date": SESSIONS[-1],
+    }]
+    payload["expected_quote_observed_at"] = preview["quote_observed_at"]
+    order_headers = {**headers, "Idempotency-Key": "yahoo-demo-order"}
+    if not cached_quote:
+        with monkeypatch.context() as step_up:
+            step_up.setattr(settings, "mfa_required", True)
+            step_up.setattr(settings, "large_order_step_up_notional", Decimal("350"))
+            assert client.post("/orders/", json=payload, headers=order_headers).status_code == 403
+    placed = client.post("/orders/", json=payload, headers=order_headers)
+    assert placed.status_code == 200, placed.text
+    assert placed.json()["status"] == "filled"
+    order_id = placed.json()["id"]
+    detail = client.get(f"/orders/{order_id}", headers=headers).json()
+    assert detail["filled_quantity"] == "1.000000"
+    trades = client.get("/trades/", headers=headers).json()["trades"]
+    assert len(trades) == len(seeded) + 1
+    fill, = [trade for trade in trades if not trade["demo_seed"]]
+    assert fill["simulated_quote_date"] == SESSIONS[-1]
+
+    user = db_session.get(User, before["user"]["id"])
+    system = db_session.scalar(select(User).where(User.is_system))
+    assert not system.is_demo and system.demo_seed is None
+    assert reconcile(db_session) == {"checked": 2, "initialized": 0, "failures": []}
+    events = surveillance_cases.events_from_db(db_session, datetime.fromisoformat(SESSIONS[0]))
+    assert [(event.kind, event.user_id) for event in events] == [("order", user.id)]
+    assert client.get("/market/trending").json() == movers
+
+    reset = client.post("/portfolio/reset", headers={**headers, "Idempotency-Key": "yahoo-demo-reset"})
+    assert reset.status_code == 200, reset.text
+    restored = client.get("/portfolio/", headers=headers).json()
+    assert restored["positions"] == before["positions"] and restored["summary"] == before["summary"]
+    assert client.get("/portfolio/performance?range=1y", headers=headers).json()["series"] == performance["series"]
+    assert all(trade["demo_seed"] for trade in client.get("/trades/", headers=headers).json()["trades"])
+    assert client.get(f"/orders/{order_id}", headers=headers).json()["status"] == "filled"
+    assert reconcile(db_session) == {"checked": 2, "initialized": 0, "failures": []}
+
+    for account in (user, system):
+        account.created_at = now - timedelta(days=9)
+    # Even a system row carrying stale demo metadata is ineligible for cleanup.
+    system.demo_seed = user.demo_seed
+    db_session.commit()
+    assert not system.is_demo
+    assert archive_expired(db_session, cutoff=now - timedelta(days=7), now=now) == 1
+    db_session.commit()
+    assert user.demo_archived_at == now and system.demo_archived_at is None
+
+
+def test_demo_prefers_canonical_yahoo_over_longer_legacy_history(client, db_session, historical_market):
+    db_session.add_all([
+        PriceHistoryDaily(symbol="AAPL", date=date.fromisoformat(stamp), source="yahoo",
+                          open=price, high=price, low=price, close=price)
+        for stamp, price in zip(SESSIONS, CLOSES["AAPL"], strict=True)
+    ])
+    db_session.query(MarketBarDaily).filter_by(symbol="AAPL", session_date=date.fromisoformat(SESSIONS[-1])).delete()
+    db_session.commit()
+    _, headers = _start(client)
+    trades = client.get("/trades/", headers=headers).json()["trades"]
+    assert {trade["seed_price"]["adjustment"] for trade in trades if trade["symbol"] == "AAPL"} == {"split_adjusted"}
 
 
 def test_no_bars_uses_only_stored_quotes_and_rotates_plans(client, db_session):

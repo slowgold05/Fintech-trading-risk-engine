@@ -14,9 +14,10 @@ from app.models.market_symbol import MarketSymbol
 from app.models.order import Order
 from app.models.user import User
 from app.schemas.order import OrderCreate
+from app.services.order_step_up import order_notional, require_notional_step_up
 from app.services.trade_execution import execute_fill, notional_amount, reserved_cash, reserved_shares
 from app.services.pretrade_controls import (
-    _price_band_problem, require_price_in_band, require_stock_concentration, require_trading_open,
+    _price_band_problem, order_reference_quote, require_price_in_band, require_stock_concentration, require_trading_open,
 )
 from app.services.simulated_liquidity import SimulatedFill, plan_simulated_fill, provision_counterparty
 
@@ -94,12 +95,14 @@ def _execute_simulated_match(
     return trade_ids
 
 
-def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order, list[int]]:
+def place_order(
+    db: Session, user_id: int, payload: OrderCreate, *, step_up_code: str | None = None,
+) -> tuple[Order, list[int]]:
     require_trading_open(db)
     symbol = db.execute(select(MarketSymbol).where(MarketSymbol.symbol == payload.symbol, MarketSymbol.is_active.is_(True)).with_for_update()).scalar_one_or_none()
     if symbol is None:
         raise HTTPException(status_code=400, detail="Unknown or inactive stock symbol")
-    quote = db.get(MarketQuoteCache, payload.symbol, populate_existing=True)
+    quote = order_reference_quote(db, payload.symbol)
     if payload.expected_quote_observed_at is not None:
         if quote is None:
             raise HTTPException(status_code=400, detail="No current quote available to confirm against")
@@ -107,7 +110,7 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
         expected_quote_at = payload.expected_quote_observed_at.replace(tzinfo=None)
         if quote.quote_at != expected_quote_at:
             raise HTTPException(status_code=400, detail="Quote has changed since preview; request a new preview")
-    require_price_in_band(db, payload.symbol, payload.limit_price)
+    require_price_in_band(quote, payload.limit_price)
 
     asset = db.execute(select(Asset).where(Asset.symbol == payload.symbol)).scalar_one_or_none()
     if asset is not None and asset.asset_type != "stock":
@@ -126,6 +129,7 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
              for account_id in sorted({user_id, *(maker.user_id for maker in makers)})}
     user = users[user_id]
     require_active_user(user)
+    require_notional_step_up(db, user, order_notional(payload, quote), step_up_code)
 
     if payload.side == "buy":
         if payload.order_type == "limit":
@@ -148,7 +152,7 @@ def place_order(db: Session, user_id: int, payload: OrderCreate) -> tuple[Order,
     db.flush()
     trade_ids = []
     for maker, qty in slices:
-        require_price_in_band(db, payload.symbol, maker.limit_price)
+        require_price_in_band(quote, maker.limit_price)
         # Resting order sets the execution price for both sides.
         trade_ids.extend(_execute_match(db, asset, order, user, users[maker.user_id], qty, maker.limit_price,
                                         maker=maker))

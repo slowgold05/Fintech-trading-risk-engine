@@ -49,6 +49,35 @@ def select_history_series(db, symbol, start, end, adjustment, clock):
     ).first()
 
 
+def _ranked_series(symbols, start, end, adjustment, clock):
+    return (
+        select(
+            DailyBar.symbol,
+            DailyBar.provider,
+            DailyBar.adjustment_type,
+            func.max(DailyBar.session_date).label("latest"),
+            func.row_number().over(
+                partition_by=DailyBar.symbol,
+                order_by=(_rank(adjustment), func.max(DailyBar.session_date).desc(), DailyBar.provider),
+            ).label("preference"),
+        )
+        .where(DailyBar.symbol.in_(symbols), DailyBar.session_date.between(start, end), *_usable(clock))
+        .group_by(DailyBar.symbol, DailyBar.provider, DailyBar.adjustment_type)
+        .subquery()
+    )
+
+
+def select_history_series_by_symbol(db, symbols, start, end, adjustment, clock):
+    series = _ranked_series(symbols, start, end, adjustment, clock)
+    return {
+        symbol: (provider, kind)
+        for symbol, provider, kind in db.execute(
+            select(series.c.symbol, series.c.provider, series.c.adjustment_type)
+            .where(series.c.preference == 1)
+        )
+    }
+
+
 def read_analytics_closes(db, symbols, start, end):
     """Prioritize Massive raw, then legacy raw, then a supported adjusted series."""
     by_series = defaultdict(lambda: defaultdict(list))
@@ -79,28 +108,14 @@ def read_analytics_closes(db, symbols, start, end):
     return selected, adjusted_sources
 
 
-def read_history_quotes(db, symbols):
-    """Read latest usable daily bars for missing display quotes."""
+def read_history_quotes(db, symbols, *, clock=None, start=None, end=None):
+    """Read the latest usable bars from automatically selected daily series."""
     if not symbols:
         return {}
-    clock = datetime.now(timezone.utc)
-    end = clock.date()
-    start = end - timedelta(days=14)
-    series = (
-        select(
-            DailyBar.symbol,
-            DailyBar.provider,
-            DailyBar.adjustment_type,
-            func.max(DailyBar.session_date).label("latest"),
-            func.row_number().over(
-                partition_by=DailyBar.symbol,
-                order_by=(_rank(RAW), func.max(DailyBar.session_date).desc(), DailyBar.provider),
-            ).label("preference"),
-        )
-        .where(DailyBar.symbol.in_(symbols), DailyBar.session_date.between(start, end), *_usable(clock))
-        .group_by(DailyBar.symbol, DailyBar.provider, DailyBar.adjustment_type)
-        .subquery()
-    )
+    clock = datetime.now(timezone.utc) if clock is None else clock
+    end = clock.date() if end is None else end
+    start = end - timedelta(days=14) if start is None else start
+    series = _ranked_series(symbols, start, end, RAW, clock)
     rows = db.scalars(
         select(DailyBar).join(
             series,
@@ -118,6 +133,7 @@ def read_history_quotes(db, symbols):
             volume=row.volume,
             source=row.provider,
             quote_at=datetime.combine(row.session_date, time.min),
+            fetched_at=row.fetched_at,
             adjustment_type=row.adjustment_type,
         )
         for row in rows

@@ -44,7 +44,7 @@ to 100.0000. This is contribution to variance, not volatility.
 """
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Context, Decimal, localcontext
 from itertools import combinations
 
@@ -574,7 +574,7 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
             db, user_id, email, range_token, clock=clock, portfolio=portfolio,
         )
         allocation = allocation_from_portfolio(db, portfolio)
-        return _metrics_from_snapshot(db, performance, portfolio, allocation)
+        return _metrics_from_snapshot(db, performance, portfolio, allocation, clock)
 
 
 def _metrics_from_snapshot(
@@ -582,6 +582,7 @@ def _metrics_from_snapshot(
     performance: dict,
     portfolio: dict,
     allocation: dict,
+    clock: datetime,
 ) -> dict:
     available = [point for point in performance["series"] if point["status"] == "available"]
     paired_twr, paired_benchmark = _beta_indexes(performance["series"])
@@ -605,7 +606,7 @@ def _metrics_from_snapshot(
         symbols = {position["symbol"] for position in portfolio["positions"]}
         seed = db.scalar(select(User.demo_seed).where(User.id == performance["user"]["id"]))
         histories = demo_daily_closes(
-            db, symbols, requested_start, requested_end, pinned=seed_price_series(seed),
+            db, symbols, requested_start, requested_end, pinned=seed_price_series(seed), clock=clock,
         )
         demo_closes = {symbol: histories[symbol][1] if symbol in histories else {} for symbol in symbols}
     correlations = _held_correlations(db, portfolio, requested_start, requested_end, demo_closes)

@@ -60,7 +60,7 @@ def execute_fill(
     require_active_user(user)
     if side not in ("buy", "sell") or qty <= 0 or price <= 0:
         raise ValueError("Invalid trade fill")
-    if demo_seed and (not user.is_demo or order_id is not None or executed_at is None):
+    if demo_seed and (not user.is_demo or order_id is not None or executed_at is None or simulated_quote_at is not None):
         raise ValueError("Demo seed fills require a dated demo account fill without an order")
     notional = notional_amount(qty, price)
     if notional <= 0:

@@ -926,7 +926,7 @@ def test_detail_read_is_sql_readonly_and_clock_errors_propagate(client, auth_hea
     for target in (
         "app.routers.orders.place_order",
         "app.routers.orders.cancel_order",
-        "app.routers.orders.require_notional_step_up",
+        "app.services.order_book.require_notional_step_up",
         "app.services.order_book.place_order",
         "app.services.order_book.cancel_order",
         "app.services.trade_execution.execute_fill",

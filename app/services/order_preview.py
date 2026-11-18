@@ -23,7 +23,9 @@ from app.models.user import User
 from app.schemas.order import OrderCreate
 from app.services.mfa import confirmed_factor
 from app.services.order_book import allocate_slices, resting_makers_select
-from app.services.pretrade_controls import _price_band_problem, require_stock_concentration, trading_halt_reason
+from app.services.pretrade_controls import (
+    _price_band_problem, order_reference_quote, require_stock_concentration, trading_halt_reason,
+)
 from app.services.simulated_liquidity import plan_simulated_fill, simulated_provenance
 from app.services.trade_execution import notional_amount, reserved_cash, reserved_shares
 
@@ -64,7 +66,7 @@ def _preview_snapshot(db: Session, owner: User, payload: OrderCreate, read_at: d
     symbol = db.execute(
         select(MarketSymbol).where(MarketSymbol.symbol == payload.symbol, MarketSymbol.is_active.is_(True))
     ).scalar_one_or_none()
-    quote = db.execute(select(MarketQuoteCache).where(MarketQuoteCache.symbol == payload.symbol)).scalar_one_or_none()
+    quote = order_reference_quote(db, payload.symbol, now=read_at)
     asset = db.execute(select(Asset).where(Asset.symbol == payload.symbol)).scalar_one_or_none()
     observed_at = None if quote is None else quote.quote_at
 

@@ -19,7 +19,6 @@ from app.schemas.order import OrderCreate
 from app.services.order_book import cancel_order, place_order
 from app.services.idempotency import execute_once
 from app.services.order_preview import preview_order
-from app.services.order_step_up import order_notional, require_notional_step_up
 from app.services.simulated_liquidity import simulated_provenance
 from app.services.trade_execution import notional_amount
 
@@ -76,8 +75,7 @@ def create_order(request: Request, response: Response, payload: OrderCreate,
                  step_up_code: str | None = Header(default=None, alias="X-Step-Up-Code"),
                  db: Session = Depends(get_db), current_user: User = Depends(get_current_trader)):
     def execute() -> dict:
-        require_notional_step_up(db, current_user, order_notional(db, payload), step_up_code)
-        order, trade_ids = place_order(db, current_user.id, payload)
+        order, trade_ids = place_order(db, current_user.id, payload, step_up_code=step_up_code)
         asset = db.get(Asset, order.asset_id)
         return {**_order_out(order, asset.symbol), "trade_ids": trade_ids}
 

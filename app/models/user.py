@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, Integer, JSON, Numeric, String, func, null, text
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, Integer, JSON, Numeric, String, and_, func, null, text
 from sqlalchemy.ext.hybrid import hybrid_property
 from app.core.database import Base
 
@@ -28,9 +28,13 @@ class User(Base):
     demo_seed = Column(JSON(none_as_null=True), nullable=True)
     demo_archived_at = Column(DateTime, nullable=True, server_default=null())
 
-    @property
+    @hybrid_property
     def is_demo(self) -> bool:
-        return self.demo_seed is not None
+        return not self.is_system and self.demo_seed is not None
+
+    @is_demo.expression
+    def is_demo(cls):
+        return and_(~cls.is_system, cls.demo_seed.is_not(None))
 
     @property
     def display_name(self) -> str | None:

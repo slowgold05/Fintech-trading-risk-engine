@@ -16,7 +16,7 @@ from app.models.user import User
 def archive_expired(db: Session, *, cutoff: datetime, now: datetime) -> int:
     """Archive at most 100 accounts in the caller's transaction."""
     eligible = (
-        User.demo_seed.is_not(None), User.demo_archived_at.is_(None), User.created_at < cutoff,
+        User.is_demo, User.demo_archived_at.is_(None), User.created_at < cutoff,
     )
     if db.scalar(select(User.id).where(*eligible).limit(1)) is None:
         return 0
