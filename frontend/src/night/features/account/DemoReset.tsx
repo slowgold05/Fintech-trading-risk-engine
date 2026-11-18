@@ -45,7 +45,12 @@ export function DemoReset({ owner }: { owner: number }) {
     reset.mutate(attempt.current);
   }
   return <>
-    <Button ref={opener} data-testid="demo-reset" busy={reset.isPending} onClick={() => {setError(""); setMessage(""); setOpen(true);}}>Reset demo portfolio…</Button>
+    <Button data-testid="demo-reset" busy={reset.isPending} onClick={event => {
+      opener.current = event.currentTarget;
+      setError("");
+      setMessage("");
+      setOpen(true);
+    }}>Reset demo portfolio…</Button>
     {message && <p role="status">{message}</p>}
     <Sheet open={open} returnFocusRef={opener} onOpenChange={value => {if (!reset.isPending) setOpen(value);}} title="Restore starting portfolio">
       <p>This restores the demo’s seed cash, holdings and trading history and restarts the guide. Cancel open orders in Activity before resetting.</p>
