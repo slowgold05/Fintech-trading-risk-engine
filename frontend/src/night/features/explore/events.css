@@ -1,0 +1,17 @@
+.explore.company-events { max-width: none; padding: var(--pad); }
+.explore.company-events > header { flex-wrap: wrap; align-items: end; }
+.explore .event-coverage { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--gap); }
+.explore .event-coverage > div { padding: var(--pad); background: var(--raised); border-top: 2px solid var(--line); }
+.explore .event-coverage dt { font-weight: 600; }
+.explore .event-coverage dd, .explore .event-records span { color: var(--muted); }
+.explore .event-records { list-style: none; margin-top: var(--gap); }
+.explore .event-records li { display: grid; grid-template-columns: 9em minmax(6rem,1fr) minmax(8rem,1fr); gap: var(--gap); align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+.explore .event-records time { color: var(--muted); font: var(--label)/1.5 var(--font-mono); }
+.explore .event-records a { width: fit-content; display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); }
+[data-look=dial] .explore .event-coverage > div { background: var(--bg); border-block: 1px solid var(--line); }
+@media (max-width:767px) {
+  .explore .event-coverage { gap: 4px; }
+  .explore .event-coverage > div { padding: 8px; }
+  .explore .event-records li { grid-template-columns: minmax(6rem,.65fr) minmax(0,1fr); gap: 0 8px; }
+  .explore .event-records span { grid-column: 2; padding-bottom: 8px; }
+}
