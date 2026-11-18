@@ -15,6 +15,7 @@ pytest.importorskip("selenium")
 
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -370,14 +371,10 @@ def test_partial_fill_lifecycle(customer_order_book_api) -> None:
         try:
             _click_named(driver, order_id, "First page")
             h._wait(driver).until(lambda current: (state := _region_state(current, order_id)) and state["error"] and not state["financial"])
-            error = h._wait(driver).until(lambda current: current.execute_script(
-                """
-                const region = document.querySelector(arguments[0]);
-                if (!region) { return null; }
-                return Array.from(region.querySelectorAll("h3, p")).find((node) => node.textContent.trim() === "Order details could not be loaded.") || null;
-                """,
-                f'[aria-label="Order {order_id} details"]',
-            ))
+            error = h._wait(driver).until(EC.visibility_of_element_located((
+                By.CSS_SELECTOR, f"[aria-label='Order {order_id} details'] [data-testid='night-state-error']",
+            )))
+            assert "Order details could not be loaded." in error.text
             t._shot(driver, error, ARTIFACTS / "detail-error.png")
         finally:
             driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": []})

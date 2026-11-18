@@ -719,9 +719,8 @@ def _orders_shell_shows_details(driver: webdriver.Chrome, symbol: str) -> bool:
     result = driver.execute_script(
         """
         const symbol = arguments[0];
-        const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-          Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-        );
+        const orders = Array.from(document.querySelectorAll("h2"))
+          .find((heading) => heading.textContent.trim() === "Recent Orders")?.closest("section");
         if (!orders) { return {pending: true}; }
         const shell = orders.querySelector(".table-shell");
         const root = document.documentElement;
@@ -824,9 +823,8 @@ def _orders_shell_scroll_reset(driver: webdriver.Chrome) -> bool:
     try:
         return bool(driver.execute_script(
             """
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
+            const orders = Array.from(document.querySelectorAll("h2"))
+          .find((heading) => heading.textContent.trim() === "Recent Orders")?.closest("section");
             const shell = orders && orders.querySelector(".table-shell");
             if (!shell) { return false; }
             shell.scrollLeft = 0;
@@ -1118,9 +1116,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         _wait(driver).until(lambda current: current.execute_script(
             """
             const symbol = arguments[0];
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
+            const orders = Array.from(document.querySelectorAll("h2"))
+          .find((heading) => heading.textContent.trim() === "Recent Orders")?.closest("section");
             if (!orders) { return false; }
             const headerRow = orders.querySelector("thead tr")
               || Array.from(orders.querySelectorAll("tr")).find((row) => row.querySelector("th"));
@@ -1184,9 +1181,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         )
         assert driver.execute_script(
             """
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
+            const orders = Array.from(document.querySelectorAll("h2"))
+          .find((heading) => heading.textContent.trim() === "Recent Orders")?.closest("section");
             if (!orders) { return false; }
             orders.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
             return true;
@@ -1194,9 +1190,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         )
         _wait(driver).until(lambda current: current.execute_script(
             """
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
+            const orders = Array.from(document.querySelectorAll("h2"))
+          .find((heading) => heading.textContent.trim() === "Recent Orders")?.closest("section");
             if (!orders) { return false; }
             const heading = Array.from(orders.querySelectorAll("h2")).find((node) => node.textContent.trim() === "Recent Orders");
             const row = orders.querySelector("tbody tr");
@@ -1243,9 +1238,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         _wait(driver).until(lambda current: current.execute_script(
             """
             const symbol = arguments[0];
-            const orders = Array.from(document.querySelectorAll("section")).find((section) =>
-              Array.from(section.querySelectorAll("h2")).some((heading) => heading.textContent.trim() === "Recent Orders")
-            );
+            const orders = Array.from(document.querySelectorAll("h2"))
+          .find((heading) => heading.textContent.trim() === "Recent Orders")?.closest("section");
             if (!orders) { return false; }
             const dataRows = Array.from(orders.querySelectorAll("tbody tr"));
             const candidates = dataRows.length
@@ -1432,7 +1426,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
 
         driver.get(disposable_api.web_url + "/portfolio")
         _wait(driver).until(lambda current: "Valuation incomplete" in current.find_element(By.TAG_NAME, "body").text)
-        assert "Unavailable" in _money_after(driver, "Portfolio value")
+        assert "Unavailable" in _money_after(driver, "Account value")
         assert driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text == "Unavailable"
         allocation = driver.find_element(By.XPATH, "//summary[normalize-space()='Allocation & P&L detail']")
         _click(driver, allocation)
@@ -1446,7 +1440,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
             db.add(MarketQuoteCache(symbol=symbols[1], price=50, source="yahoo", quote_at=observed, fetched_at=observed))
             db.commit()
         driver.refresh()
-        _wait(driver).until(lambda current: _money_after(current, "Portfolio value") == "$100,200")
+        _wait(driver).until(lambda current: _money_after(current, "Account value") == "$100,200.00")
         assert "Valuation incomplete" not in driver.find_element(By.TAG_NAME, "body").text
         assert "$0.00" in driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text
         driver.get(disposable_api.web_url + "/dashboard")
