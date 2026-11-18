@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { fetchMarketUniverse } from "../api/market";
 import type { MarketUniverseItem } from "../types/schemas";
 
@@ -54,7 +55,12 @@ export function MarketSearch() {
             const label = outsideLabel(item);
             return (
               <li className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-slate-200" key={item.symbol}>
-                <span className="font-mono font-semibold text-slate-50">{item.symbol}</span>
+                <Link
+                  className="font-mono font-semibold text-slate-50 underline decoration-slate-600 underline-offset-4 hover:text-emerald-200 hover:decoration-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+                  to={`/market/${encodeURIComponent(item.symbol)}`}
+                >
+                  {item.symbol}
+                </Link>
                 <span className="min-w-0 truncate text-slate-400">{item.company_name}</span>
                 {label ? (
                   <span className="status-badge border-amber-400/40 bg-amber-400/10 text-amber-200">

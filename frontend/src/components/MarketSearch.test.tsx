@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MarketSearch } from "./MarketSearch";
@@ -28,7 +29,7 @@ function open() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MarketSearch />
+      <MemoryRouter><MarketSearch /></MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -56,7 +57,7 @@ describe("MarketSearch", () => {
     });
     open();
     await search("MMM");
-    expect(await screen.findByText("MMM")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "MMM" })).toHaveAttribute("href", "/market/MMM");
     expect(screen.queryByText("Outside S&P 500")).not.toBeInTheDocument();
   });
 
