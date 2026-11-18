@@ -1,0 +1,38 @@
+.holding-details { min-width:0; overflow-wrap:anywhere; }
+.holding-details .nk-layout, .holding-details .nk-slot { min-width:0; }
+.holding-details .nk-layout { grid-template-columns:minmax(0,1fr); }
+.holding-details .holding-totals { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr)); gap:var(--gap); }
+.holding-details .holding-pnl { display:flex; flex-wrap:wrap; gap:var(--gap); margin-block:.9rem; }
+.holding-details .holding-pnl div { padding-inline-end:var(--pad); border-inline-end:1px solid var(--line); }
+.holding-details .holding-pnl dd { font:600 1.1rem var(--font-mono); }
+.holding-details .nk-scroll { max-width:100%; }
+.holding-details table { font-variant-numeric:tabular-nums; }
+.holding-details td:first-child { min-width:8.5rem; }
+.holding-details p { color:var(--muted); margin-block:.45rem; }
+.holding-details .holding-reason { border-inline-start:3px solid var(--accent); padding-inline-start:.65rem; }
+.holding-details td a { display:inline-flex; align-items:center; min-height:44px; color:var(--accent); text-decoration:underline; }
+.holding-details .holding-pager { display:flex; gap:var(--gap); flex-wrap:wrap; margin-block-start:var(--gap); }
+.holding-details :is(a,button):focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+@media(min-width:1200px) {
+  [data-look="terrain"] .holding-details .nk-layout { grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); }
+  .holding-details .nk-full { grid-column:1 / -1; }
+}
+@media(max-width:767px) {
+  .holding-details table, .holding-details caption, .holding-details tbody, .holding-details tr { display:block; width:100%; }
+  .holding-details thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .holding-details td { display:flex; justify-content:space-between; gap:.6rem; align-items:baseline; white-space:normal; }
+  .holding-details td::before { color:var(--muted); text-align:left; }
+  .holding-details td[colspan]::before { display:none; }
+  .holding-details tr { padding-block:.55rem; border-block-end:1px solid var(--line); }
+  .holding-details td:first-child::before { content:"Recorded (UTC)"; }
+  .holding-details td:nth-child(2)::before { content:"Shares left"; }
+  .holding-details td:nth-child(3)::before { content:"Cost / share"; }
+  .holding-details td:nth-child(4)::before { content:"Open basis"; }
+  .holding-details td:nth-child(5)::before { content:"Unrealized P&L"; }
+  .holding-details [data-testid="holding-sales-table"] td:first-child::before { content:"Executed (UTC)"; }
+  .holding-details [data-testid="holding-sales-table"] td:nth-child(2)::before { content:"Shares sold"; }
+  .holding-details [data-testid="holding-sales-table"] td:nth-child(3)::before { content:"Fill / share"; }
+  .holding-details [data-testid="holding-sales-table"] td:nth-child(4)::before { content:"Proceeds"; }
+  .holding-details [data-testid="holding-sales-table"] td:nth-child(5)::before { content:"Realized P&L"; }
+  .holding-details [data-testid="holding-sales-table"] td:nth-child(6)::before { content:"Receipt"; }
+}
