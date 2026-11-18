@@ -16,6 +16,7 @@ from app.services.research_worker import process_pending_research_jobs
 from app.services.forecast_worker import process_pending_forecast_jobs
 from app.services.scheduler_lock import acquire_scheduler, release_scheduler
 from app.services.surveillance_cases import run_live_surveillance
+from app.services.yahoo_history import refresh_yahoo_history
 
 
 def _log(message: str) -> None:
@@ -24,6 +25,13 @@ def _log(message: str) -> None:
 
 def refresh_market_caches(db) -> dict:
     summary = {}
+    if not massive_key_is_set() and settings.scheduled_market_daily_limit:
+        yahoo_quotes = settings.market_quote_source in {"massive", "eod"}
+        history = refresh_yahoo_history(db, refresh_quotes=yahoo_quotes)
+        # Keep scheduler logs bounded when a provider fails across the universe.
+        summary["history"] = {**history, "errors": history["errors"][:5], "error_count": len(history["errors"])}
+        if yahoo_quotes and history["rate_limited"]:
+            return summary
     for tier, limit in (("hot", settings.scheduled_market_hot_limit), ("daily", settings.scheduled_market_daily_limit)):
         remaining = limit
         requested = 0
