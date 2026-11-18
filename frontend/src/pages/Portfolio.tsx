@@ -203,6 +203,7 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
     <div className="night-portfolio space-y-6">
       <header className="nk-page-head"><div><small>Paper account</small><h1>Portfolio</h1></div>
         <div className="portfolio-actions">{canTrade && <a data-testid="order-open" href="/trades?ticket=1" className="nk-button">Open order ticket</a>}
+          <Link className="nk-button" to={"/portfolio/review?returnTo=" + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}>Portfolio review</Link>
           {portfolio?.user?.is_demo && <Link className="nk-button" to="/account">Reset demo from Account</Link>}</div>
       </header>
       {valuationIncomplete && portfolio ? (

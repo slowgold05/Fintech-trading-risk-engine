@@ -19,6 +19,7 @@ const WatchlistsScreen = lazy(() => import("./features/discover/WatchlistsScreen
 const AccountScreen = lazy(() => import("./features/account/Account").then(module => ({ default: module.Account })));
 const LearnScreen = lazy(() => import("./features/account/Learn").then(module => ({ default: module.Learn })));
 export const features: readonly Feature[] = [
+  {id:"portfolio-review", label:"Portfolio review", path:"/portfolio/review", access:"authenticated", Screen:lazy(() => import("./features/portfolio-review/PortfolioReview").then(m => ({default:m.PortfolioReview})))},
   {id:"watchlists", label:"Watchlists", path:"/watchlists", access:"authenticated", Screen:WatchlistsScreen},
   {id:"account", label:"Account", path:"/account", access:"authenticated", Screen:AccountScreen},
   {id:"learn", label:"Learn", path:"/learn", access:"public", Screen:LearnScreen},
