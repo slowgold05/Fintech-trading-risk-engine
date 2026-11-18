@@ -151,7 +151,8 @@ def place_order(
 
     order = Order(user_id=user_id, asset_id=asset.id, side=payload.side, order_type=payload.order_type,
                   quantity=payload.quantity, remaining_quantity=payload.quantity, limit_price=payload.limit_price,
-                  status="open" if payload.order_type == "limit" else "canceled")
+                  status="open" if payload.order_type == "limit" else "canceled",
+                  created_at=datetime.now(timezone.utc).replace(tzinfo=None))
     db.add(order)
     db.flush()
     trade_ids = []
