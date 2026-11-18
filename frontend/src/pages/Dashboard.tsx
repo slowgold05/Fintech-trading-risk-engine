@@ -128,7 +128,7 @@ function Today({ identity }: { identity: UserResponse }) {
   const totalPnl = getTotalPnl(portfolio);
   const unrealizedPnlPercent = getUnrealizedPnlPercent(portfolio);
   const recentTrades = mapRecentTrades(trades);
-  const recentOrders = ordersQuery.data?.orders;
+  const recentOrders = ordersQuery.data?.orders.slice(0, 5) ?? null;
   const positions = mapPortfolioPositions(portfolio);
   const marketTrends = marketQuery.data?.trends ?? [];
   const valuationRead =
