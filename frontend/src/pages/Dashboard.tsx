@@ -11,7 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { fetchMarketOverview } from "../api/market";
 import { fetchOrders } from "../api/orders";
-import { fetchPortfolio } from "../api/portfolio";
+import { fetchPortfolio, fetchPortfolioPerformance } from "../api/portfolio";
 import { fetchRisk } from "../api/risk";
 import { createTrade, fetchTrades } from "../api/trades";
 import {
@@ -68,6 +68,34 @@ function pricedMove(value: number | null): { Icon: Icon; tone: IconBadgeTone } {
     return { Icon: TrendDown, tone: "rose" };
   }
   return { Icon: TrendUp, tone: "emerald" };
+}
+
+function DemoPerformance() {
+  const history = useQuery({
+    queryKey: ["portfolio", "performance", "1y"],
+    queryFn: fetchPortfolioPerformance,
+  });
+  if (history.isLoading) return <SkeletonBlock className="h-14" />;
+  if (history.isError) {
+    return <EmptyState message="Performance history could not be loaded" detail="Reload the dashboard to try again." />;
+  }
+
+  const sessions = history.data?.series ?? [];
+  const valued = sessions.filter((point) => point.account_value !== null);
+  const latest = valued.at(-1);
+  if (!latest) {
+    return <EmptyState message="Performance history unavailable" detail="Daily values need closing prices for the portfolio holdings." />;
+  }
+  const returns = history.data?.money_weighted_return_pct;
+  const gaps = sessions.length - valued.length;
+  return (
+    <div className="space-y-2 text-sm text-slate-300">
+      <h3 className="font-semibold text-slate-50">Performance history</h3>
+      <p>Account value on {latest.session_date} <strong>{formatCurrency(Number(latest.account_value), false)}</strong></p>
+      {returns != null && <p>Money-weighted return <strong>{formatSignedPercent(Number(returns))}</strong></p>}
+      <p>{valued.length} of {sessions.length} sessions valued{gaps > 0 ? ". Some closing prices are missing." : "."}</p>
+    </div>
+  );
 }
 
 export function Dashboard() {
@@ -379,10 +407,14 @@ export function Dashboard() {
                   <span className="font-mono text-slate-300">{valuationRead}</span>
                 </p>
                 <div className="mt-6 border-t border-slate-800 pt-5">
-                  <EmptyState
-                    message="Performance history unavailable"
-                    detail="Your current account value is shown above. A performance chart needs recorded account values over time."
-                  />
+                  {portfolio?.user?.is_demo ? (
+                    <DemoPerformance />
+                  ) : (
+                    <EmptyState
+                      message="Performance history unavailable"
+                      detail="Your current account value is shown above. A performance chart needs recorded account values over time."
+                    />
+                  )}
                 </div>
               </>
             )}
