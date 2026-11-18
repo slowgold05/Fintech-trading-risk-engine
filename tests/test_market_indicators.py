@@ -239,7 +239,7 @@ def test_route_text_bounds_missing_keys_and_history_detail(client, db_session, m
         assert response.status_code == 422, (period, name)
         detail = _PERIOD_DETAIL if name == "sma" else _NAME_DETAIL
         assert response.json()["detail"] == detail
-    required = ("interval", "range", "provider", "adjustment_type", "name", "period")
+    required = ("interval", "range", "adjustment_type", "name", "period")
     for key in required:
         params = _params()
         params.pop(key)

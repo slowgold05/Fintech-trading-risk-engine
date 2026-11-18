@@ -18,6 +18,7 @@ def test_research_news_returns_normalized_articles(
     client: TestClient, auth_headers, db_session: Session, monkeypatch
 ) -> None:
     _seed(db_session, "AAPL")
+    monkeypatch.setattr(settings, "finnhub_api_key", "test-key")
     headers = auth_headers("news-ok@example.com")
     articles = [
         {
@@ -49,19 +50,26 @@ def test_research_news_returns_normalized_articles(
     }
 
 
-def test_empty_finnhub_key_returns_no_articles(
+def test_empty_finnhub_key_uses_yahoo_rss(
     client: TestClient, auth_headers, db_session: Session, monkeypatch
 ) -> None:
     _seed(db_session, "AAPL")
     monkeypatch.setattr(settings, "finnhub_api_key", "")
+    articles = [{"headline": "Company news", "source": "Yahoo Finance RSS", "summary": "",
+                 "url": "https://finance.yahoo.com/news/example", "published_at": "2026-11-10T15:00:00+00:00"}]
+    calls = []
+
+    def fetch(symbol):
+        calls.append(symbol)
+        return articles
+
+    monkeypatch.setattr("app.services.market_news_service.fetch_yahoo_news", fetch)
     headers = auth_headers("news-empty@example.com")
-    response = client.get("/research/news/AAPL", headers=headers)
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "symbol": "AAPL",
-        "articles": [],
-        "error": "FINNHUB_API_KEY is empty",
-    }
+    for _ in range(2):
+        response = client.get("/research/news/AAPL", headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json() == {"symbol": "AAPL", "articles": articles, "error": None}
+    assert calls == ["AAPL"]
 
 
 def test_research_news_rejects_unknown_or_inactive_symbol(

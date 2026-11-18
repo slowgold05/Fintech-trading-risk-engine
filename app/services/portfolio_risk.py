@@ -49,11 +49,10 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP, Context, Decimal, localcontext
 from itertools import combinations
 
 from fastapi import HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.read_snapshot import SnapshotClockError, consistent_read, snapshot_clock
-from app.models.market_bar_daily import MarketBarDaily
+from app.services.history_series import read_analytics_closes
 from app.services.performance_service import _performance, require_performance_range
 from app.services.portfolio_allocation import allocation_from_portfolio
 from app.services.portfolio_valuation import _value_portfolio
@@ -252,29 +251,16 @@ def _historical_var_and_es(returns: list[Decimal]) -> dict[str, str | None]:
 def _single_provider_closes(
     db: Session, symbols: list[str], start: date, end: date
 ) -> dict[str, dict[date, Decimal]]:
-    """One close per (symbol, date) where exactly one raw provider row exists.
-
-    Same ambiguity rule performance_service.py's _account_value already
-    enforces elsewhere in this codebase, reproduced here rather than
-    imported, since that function is private to its own module.
-    """
+    """Use the chosen series and skip ambiguous legacy raw dates."""
     result: dict[str, dict[date, Decimal]] = {symbol: {} for symbol in symbols}
     if not symbols:
         return result
-    rows = db.execute(
-        select(MarketBarDaily.symbol, MarketBarDaily.session_date, MarketBarDaily.close).where(
-            MarketBarDaily.symbol.in_(symbols),
-            MarketBarDaily.adjustment_type == "raw",
-            MarketBarDaily.session_date >= start,
-            MarketBarDaily.session_date <= end,
-        )
-    ).all()
-    grouped: dict[tuple[str, date], list[Decimal]] = defaultdict(list)
-    for row in rows:
-        grouped[(row.symbol, row.session_date)].append(Decimal(str(row.close)))
-    for (symbol, day), values in grouped.items():
-        if len(values) == 1:
-            result[symbol][day] = values[0]
+    selected, _adjusted_sources = read_analytics_closes(db, symbols, start, end)
+    for symbol, rows in selected.items():
+        grouped = defaultdict(list)
+        for day, close in rows:
+            grouped[day].append(close)
+        result[symbol] = {day: values[0] for day, values in grouped.items() if len(values) == 1}
     return result
 
 
@@ -626,6 +612,8 @@ def _metrics_from_snapshot(
         "requested_end": performance["requested_end"],
         "read_at": performance["read_at"],
         "status": performance["status"],
+        **({"split_adjusted_history_sources": performance["split_adjusted_history_sources"]}
+           if "split_adjusted_history_sources" in performance else {}),
         "observed_periods": observed_periods,
         "return_count": return_count,
         "historical_volatility_pct": historical_volatility_pct,

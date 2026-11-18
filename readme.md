@@ -15,13 +15,13 @@ These capabilities are implemented in the merged source. Data coverage, provider
 | **Market discovery and daily charts** | Search the S&P 500 and four index ETFs, browse a heatmap, sector context and news, and compare normalized index performance in Market pulse. Open a stock detail page for daily candles or a line chart, volume, and key stats. The signed-in chart adds SMA, EMA, Bollinger Bands, RSI, MACD, saved preferences, and your trade/order overlays to support a move from discovery to a paper-order draft. |
 | **Paper trading with controls and a ledger** | Preview an order before confirming it; submit market or limit orders, inspect partial fills, and cancel open orders. Buying-power, available-share, price-band, concentration, position-size, and trading-halt checks constrain the order path. Balanced, hash-chained [ledger postings](docs/ledger.md) make cash and position changes reconcilable. |
 | **Portfolio and risk analytics** | Review valuation, cash-flow-adjusted returns, daily/cumulative P&L, drawdown, an SPY price benchmark, allocation, and attribution. Volatility, beta, historical VaR/expected shortfall, correlations, risk contributions, and stress scenarios help explain exposure. Trade-impact and custom risk scenarios are read-only what-ifs. |
-| **Research Desk** | Keep user-owned research jobs, reports, and daily watchlist briefs together. Inspect price, a daily chart, SEC filings, and configured Finnhub headlines alongside optional bull/bear/synthesis/risk notes, so you can compare the generated text with source context ([Desk walkthrough](docs/P5_RESEARCH_DESK_FRONTEND_VERIFICATION.md)). |
+| **Research Desk** | Keep user-owned research jobs, reports, and daily watchlist briefs together. Inspect price, a daily chart, SEC filings, and Finnhub or Yahoo Finance RSS headlines alongside optional bull/bear/synthesis/risk notes, so you can compare the generated text with source context ([Desk walkthrough](docs/P5_RESEARCH_DESK_FRONTEND_VERIFICATION.md)). |
 | **Forecast Lab — experimental** | Inspect owned jobs, observed versus predicted OHLC charts, model metadata, and evaluation records. The Kronos integration is implemented but disabled by default; a recorded real inference run demonstrates execution, **not validated accuracy or approval for trading use**. |
 
 ## Try the workflow
 
 1. **Discover:** open `/market` without an account. Search a company or compare the index ETF proxies SPY, QQQ, DIA, and IWM; open `/market/:symbol` for stock detail.
-2. **Organize and investigate:** sign in or register at `/login`. Save private watchlists and open `/research` for jobs, reports, and briefs. Company news requires a session and a Finnhub key.
+2. **Organize and investigate:** sign in or register at `/login`. Save private watchlists and open `/research` for jobs, reports, and briefs. Company news requires a session and uses Yahoo Finance RSS when a Finnhub key is absent.
 3. **Preview and practice:** open the paper-order ticket from a chart or `/trades`. Entry links prefill a draft; preview and confirmation are separate actions. A preview is non-binding and submission revalidates current state.
 4. **Review the outcome:** inspect fills and open orders, then use `/portfolio` and `/risk` to understand performance and exposure. Missing marks or insufficient history stay unavailable rather than becoming invented numbers.
 5. **Explore models separately:** `/forecasts` is an authenticated experimental workspace. Model output never authorizes a trade.
@@ -70,19 +70,20 @@ See [container setup](docs/container_setup.md) and [non-Compose setup/migration]
 
 ### What needs configuration?
 
-A fresh stack starts the application, not a fully populated market terminal. Cached views need ingestion, history needs a backfill, and external providers need working access and quotas. Compose enables scheduled jobs.
+Compose enables scheduled jobs. With no provider keys, the first market refresh starts filling the featured universe with Yahoo daily history and quotes. On a fresh install, coverage grows as each symbol commits. See [free data sources](docs/FREE_DATA_SOURCES.md) for source terms and limits.
 
 | Integration | Configuration and expected behavior |
 | --- | --- |
-| **Massive daily data** | Set `MASSIVE_API_KEY` in `.env.compose` for the default scheduled grouped-daily quote source and historical ingestion. Prices are the latest finished NYSE session close, not a real-time feed. With no key, quote refresh uses Yahoo end-of-day data; failed or missing Massive symbols can fall back to Alpha Vantage. Historical coverage is separate from quote refresh. |
-| **Alpha Vantage** | Set `ALPHA_VANTAGE_API_KEY` in `.env.compose` for company overview data, quote fallback, and the separate direct-trade API's price read. Cached market prices do not guarantee executable liquidity or a provider entitlement. |
-| **Finnhub news** | Add `FINNHUB_API_KEY` to `.env.compose`; Compose already forwards it. Without a usable key, company news returns an empty list with an explanatory error field. Public market news is cached separately. |
+| **Daily quotes and charts** | With no `MASSIVE_API_KEY`, scheduled jobs collect Yahoo Finance end-of-day quotes and split-adjusted history. Set `MASSIVE_API_KEY` for Massive grouped-daily quotes and use the Massive backfill below to load its history. |
+| **Alpha Vantage** | Set `ALPHA_VANTAGE_API_KEY` in `.env.compose` for provider movers, company overview, quote fallback, and the direct-trade API’s price read. Without the key, movers rank the featured universe’s cached quotes for their latest stored session. Cached market prices do not guarantee executable liquidity or a provider entitlement. |
+| **News** | Public market news and signed-in company news use Yahoo Finance RSS without a key. Set `FINNHUB_API_KEY` to use Finnhub. |
 | **Local AI research** | Application settings default `research_synthesis_enabled` to false, **but the supplied Compose file sets it to true**, targets host Ollama at `http://host.docker.internal:11434`, and allows 600 seconds. It expects the default `qwen3:14b` model on that server. Docker does not install or start Ollama; an unavailable model leaves the report's AI sections unavailable. |
 | **Kronos forecasts** | `forecast_kronos_enabled` defaults to false and Compose does not enable it. Real inference needs the optional [forecast dependencies](requirements-forecast.txt), separately downloaded Hugging Face weights, sufficient compute, and an explicit activation decision. The default API image installs only `requirements.txt`. |
 
-For a coordinated historical load, the implemented commands below run in the API container using its configured key and database. They make provider calls and persist bars; they are **not required just to start the app**. Coordinate with scheduled Massive calls to avoid competing for quota.
+To load history on demand, run the Yahoo command or, with a configured Massive key, either Massive command in the API container. Coordinate manual loads with scheduled provider calls.
 
 ```powershell
+docker compose --env-file .env.compose exec api python -m app.scripts.backfill_yahoo_history --refresh-quotes
 docker compose --env-file .env.compose exec api python -m app.scripts.backfill_massive_history
 docker compose --env-file .env.compose exec api python -m app.scripts.backfill_massive_history --adjustment split_adjusted
 ```
@@ -94,7 +95,7 @@ Raw and adjusted bars are separate series. After a later split, the adjusted bac
 ### Market data and analytics
 
 - **Daily data, not intraday:** discovery defaults to S&P 500 constituents plus SPY, QQQ, DIA, and IWM. Exact ticker searches and owned holdings can expose symbols outside that featured set; public stock detail is limited to the featured set. `all` means stored available history, not guaranteed full listing coverage. A real LSE adapter is not implemented.
-- **Adjustment is explicit:** stock detail prefers Massive split-adjusted history and labels its raw fallback. Market pulse requires the adjusted series and leaves an unavailable proxy blank. Quotes, portfolio performance/risk, and execution references remain raw. Split-adjusted bars are not dividend-adjusted total returns. See the [history contract](docs/DAILY_HISTORY_CONTRACT.md).
+- **History identifies the stored series:** the automatic API uses one provider and adjustment per symbol and window. Portfolio analytics prefer existing raw history and identify split-adjusted fallbacks. Execution references retain their separate quote path. Split-adjusted bars exclude dividends. See [free data sources](docs/FREE_DATA_SOURCES.md).
 - **Metrics have defined scope:** portfolio performance supports `1y` and `2y`; chart ranges are a different contract. Volatility is sample per period, not annualized. Sparse history and undefined zero-capital percentages can return null. The SPY comparison is a price benchmark. See the [performance](docs/P4A_PERFORMANCE_CONTRACT.md) and [risk metrics](docs/P4D_PORTFOLIO_RISK_METRICS_CONTRACT.md) contracts.
 - **What-ifs are estimates:** trade impact ignores fees, slippage, margin, and open-order reservations. Neither trade-impact nor risk-scenario previews execute or approve orders. Same-tab unknown-order recovery uses `sessionStorage`; a failed storage write loses that recovery record ([retry boundaries](docs/P3B_ORDER_RETRY_DURABILITY_VERIFICATION.md)).
 
@@ -150,7 +151,7 @@ The stack is React/TypeScript/Vite, FastAPI/SQLAlchemy, and PostgreSQL/Alembic, 
 | [Historical project review](docs/REVIEW_2026-11-09.md) · [Change workflow](docs/GROK_CODEX_WORKFLOW.md) | Review evidence and development process. The review's old range, zero-capital, risk-snapshot, and job-admission findings have subsequent fixes in this source. |
 | [Hosted release runbook](docs/aws_deployment.md) · [Historical layout diagram](docs/diagrams/sentinel-markets-stack.html) · [Diagram notices](docs/diagrams/NOTICE.md) | Deployment history and operational detail, not proof of the current host's state. |
 
-**Source versus hosted status:** this README describes merged `main` functionality; it does not include unmerged PRs [143](https://github.com/slowgold05/fintech-trading-risk-engine/pull/143) or [144](https://github.com/slowgold05/fintech-trading-risk-engine/pull/144). The last recorded hosted release is deployment 7. The [historical preview](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/) and [API health URL](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/api/health) are useful references, but current availability and parity with this source have not been rechecked.
+**Source versus hosted status:** this README describes functionality in this checkout; it does not include unmerged PRs [143](https://github.com/slowgold05/fintech-trading-risk-engine/pull/143) or [144](https://github.com/slowgold05/fintech-trading-risk-engine/pull/144). The last recorded hosted release is deployment 7. The [historical preview](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/) and [API health URL](https://fintechapp-preview.gps5zt7wg4yqg.us-east-2.cs.amazonlightsail.com/api/health) are useful references, but current availability and parity with this source have not been rechecked.
 
 ```text
 app/                  API routes, models, services, and operator scripts

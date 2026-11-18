@@ -5,6 +5,7 @@ from datetime import datetime
 import pytest
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.services.symbol_quote import read_symbol_quote
@@ -196,6 +197,7 @@ def test_heatmap_movers_and_research_flag_only_symbols_the_quote_endpoint_serves
         "OUTX": False,
     }
 
+    monkeypatch.setattr(settings, "alpha_vantage_api_key", "test-key")
     monkeypatch.setattr("app.routers.market.get_top_gainers_losers", lambda: {
         "top_gainers": [{"ticker": "AAPL", "price": "10"}, {"ticker": "OUTX", "price": "10"}],
         "top_losers": [{"ticker": "MSFT", "price": "10"}],
@@ -221,6 +223,7 @@ def test_movers_stay_unlinked_when_the_provider_fails(client, monkeypatch):
     def unavailable():
         raise ValueError("Fixture has no movers")
 
+    monkeypatch.setattr(settings, "alpha_vantage_api_key", "test-key")
     monkeypatch.setattr("app.routers.market.get_top_gainers_losers", unavailable)
 
     body = client.get("/market/trending").json()

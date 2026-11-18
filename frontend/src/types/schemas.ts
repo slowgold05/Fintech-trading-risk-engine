@@ -332,6 +332,7 @@ export interface RiskContribution {
 }
 
 export interface RiskMetricsResponse {
+  split_adjusted_history_sources?: Record<string, string>;
   user: { id: number; email: string };
   range: "1y" | "2y";
   requested_start: string;
@@ -404,7 +405,9 @@ export interface MarketTrendResponse {
   value: number;
   change: number;
   change_percent: number;
-  price_basis?: "end_of_day_previous_close" | null;
+  source?: string;
+  price_basis?: "end_of_day_previous_close" | "end_of_day_open_to_close" | null;
+  adjustment_type?: "raw" | "split_adjusted";
 }
 
 export interface MarketSectorResponse {
@@ -413,7 +416,9 @@ export interface MarketSectorResponse {
   change_percent: number;
   weight: "large" | "medium" | "small";
   leaders: string[];
-  price_basis?: "end_of_day_previous_close" | null;
+  source?: string;
+  price_basis?: "end_of_day_previous_close" | "end_of_day_open_to_close" | null;
+  adjustment_type?: "raw" | "split_adjusted";
 }
 
 export interface MarketOverviewResponse {
@@ -463,7 +468,8 @@ export interface MarketHeatmapItemResponse {
   age_seconds: number | null;
   source: string;
   as_of: string | null;
-  price_basis?: "end_of_day_previous_close" | null;
+  price_basis?: "end_of_day_previous_close" | "end_of_day_open_to_close" | null;
+  adjustment_type?: "raw" | "split_adjusted";
 }
 
 export interface MarketHeatmapResponse {
@@ -484,7 +490,9 @@ export interface MarketMoverResponse {
 }
 
 export interface MarketTrendingResponse {
-  as_of: string;
+  as_of: string | null;
+  source?: "featured_universe_cached_quotes";
+  session_date?: string | null;
   top_gainers: MarketMoverResponse[];
   top_losers: MarketMoverResponse[];
   most_active: MarketMoverResponse[];
@@ -521,6 +529,8 @@ export interface MarketResearchResponse {
   pe_basis?: string | null;
   price_basis?: string | null;
   price_as_of?: string | null;
+  price_source?: string;
+  adjustment_type?: "raw" | "split_adjusted";
   valuation_notice?: string | null;
   profit_margin?: number | null;
   profit_margin_period?: {

@@ -169,17 +169,25 @@ def test_provider_unavailable_with_cached_row_returns_stale_payload(db_session: 
     assert db_session.query(MarketNewsCache).count() == 1
 
 
-def test_empty_api_key_returns_honest_empty_without_calling_http_get(db_session: Session) -> None:
-    def http_get(*_args, **_kwargs):
-        raise AssertionError("http_get should not be called")
+def test_without_finnhub_key_caches_and_labels_yahoo_rss(db_session: Session, monkeypatch) -> None:
+    calls = []
 
-    cached = get_cached_market_news(db_session, "spy", "", http_get=http_get)
-    assert cached == {"symbol": "SPY", "articles": [], "error": "FINNHUB_API_KEY is empty"}
-    assert db_session.get(MarketNewsCache, "SPY") is None
+    def fetch(symbol):
+        calls.append(symbol)
+        return [{**_article(symbol), "source": "Yahoo Finance RSS"}]
 
-    merged = get_market_news(db_session, "", http_get=http_get)
-    assert merged == {"articles": [], "as_of": None}
-    assert db_session.query(MarketNewsCache).count() == 0
+    monkeypatch.setattr("app.services.market_news_service.fetch_yahoo_news", fetch)
+    first = get_cached_market_news(db_session, "spy", "")
+    assert first["articles"][0]["source"] == "Yahoo Finance RSS"
+    assert first["error"] is None
+    assert db_session.get(MarketNewsCache, "SPY").source == "yahoo"
+    merged = get_market_news(db_session, "")
+    assert len(merged["articles"]) == 4
+    assert merged["as_of"] is not None
+    assert calls == ["SPY", "QQQ", "DIA", "IWM"]
+
+    get_cached_market_news(db_session, "SPY", "test-key", http_get=_http_get([]))
+    assert db_session.get(MarketNewsCache, "SPY").source == "finnhub"
 
 
 def test_market_news_route_is_public(client: TestClient, monkeypatch) -> None:
