@@ -75,3 +75,10 @@ def compare(
     from app.services.night_market_compare import read_compare
 
     return read_compare(db, symbols=symbols, range_token=range_token, provider=provider)
+
+
+@router.get("/breadth", response_model=schema.Breadth)
+def breadth(db: Db, sector: SectorFilter = ""):
+    from app.services.night_market_breadth import read_breadth
+
+    return read_breadth(db, sector=sector)
