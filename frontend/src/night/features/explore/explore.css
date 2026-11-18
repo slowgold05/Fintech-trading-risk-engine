@@ -35,3 +35,12 @@
   .explore .result-summary { gap: 12px 20px; }
   .explore td, .explore th { padding-inline: 6px; }
 }
+
+/* Native WebKit select styling compresses the hit area even with min-height. */
+.explore .nk-field select {
+  appearance: none; height: 44px; padding-right: 30px;
+  background: var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23b3b4b8' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 11px center;
+}
+@media (max-width:767px) {
+  .explore a.ticker { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; }
+}

@@ -11,9 +11,9 @@ export type SessionCoverage = {
   coverage: Coverage;
 };
 
-export function useMarketRead<T>(feature: string, path: string, params: Record<string, string | number | undefined>) {
+export function useMarketRead<T>(feature: string, path: string, params: Record<string, string | number | undefined>, keyParams = params) {
   return useQuery({
-    queryKey: keys.feature(feature, params),
+    queryKey: keys.feature(feature, keyParams),
     queryFn: async ({ signal }) => (await apiClient.get<T>(path, { params, signal })).data,
     retry: false,
   });
