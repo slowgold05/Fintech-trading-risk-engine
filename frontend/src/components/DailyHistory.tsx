@@ -25,6 +25,7 @@ import {
 import { fetchDailyIndicators, type IndicatorName } from "../api/indicators";
 import { fetchOrders } from "../api/orders";
 import { fetchTrades } from "../api/trades";
+import { useAuth } from "../context/useAuth";
 import type { OrderResponse, TradeResponse } from "../types/schemas";
 import {
   discardChartPreferencesInTests,
@@ -338,6 +339,7 @@ export function DailyHistory({
   value?: string;
   onValueChange?: (value: string) => void;
 } = {}) {
+  const { isAuthenticated } = useAuth();
   const [symbolDraft, setSymbolDraft] = useState("");
   const draftValue = value ?? symbolDraft;
 
@@ -428,30 +430,33 @@ export function DailyHistory({
     enabled: submitted !== null,
     retry: false,
   });
+  const showAccountActivity = isAuthenticated && submitted !== null;
   const tradesQuery = useQuery({
     queryKey: ["trades"],
     queryFn: fetchTrades,
-    enabled: submitted !== null,
+    enabled: showAccountActivity,
   });
   const ordersQuery = useQuery({
     queryKey: ["orders"],
     queryFn: fetchOrders,
-    enabled: submitted !== null,
+    enabled: showAccountActivity,
   });
+  const trades = showAccountActivity ? tradesQuery.data?.trades : undefined;
+  const orders = showAccountActivity ? ordersQuery.data?.orders : undefined;
   const symbolTrades = useMemo(
-    () => (tradesQuery.data?.trades ?? []).filter((trade) => trade.symbol === submitted?.symbol),
-    [submitted?.symbol, tradesQuery.data?.trades],
+    () => (trades ?? []).filter((trade) => trade.symbol === submitted?.symbol),
+    [submitted?.symbol, trades],
   );
   const openLimitOrders = useMemo(
     () =>
-      (ordersQuery.data?.orders ?? []).filter(
+      (orders ?? []).filter(
         (order): order is OpenLimitOrder =>
           order.symbol === submitted?.symbol &&
           order.status === "open" &&
           order.order_type === "limit" &&
           order.limit_price !== null,
       ),
-    [ordersQuery.data?.orders, submitted?.symbol],
+    [orders, submitted?.symbol],
   );
   const catalog = useMemo(
     () => (catalogQuery.isSuccess ? readCatalog(catalogQuery.data) : null),
@@ -496,7 +501,7 @@ export function DailyHistory({
       indicator: indicatorDraft,
       period,
     };
-    if (submitted !== null) {
+    if (showAccountActivity) {
       // Trades and orders keep a stable query key, so a later view has to
       // refetch them. The first view enables those queries instead.
       void tradesQuery.refetch();
