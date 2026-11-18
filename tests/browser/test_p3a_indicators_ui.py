@@ -276,16 +276,19 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "rsi-desktop.png")
 
         h._choose_option(driver, "daily-history-indicator", "MACD")
-        assert _section(driver).find_element(
+        label = _section(driver).find_element(
             By.XPATH, ".//label[@for='daily-history-period']",
-        ).text == "Signal period"
+        )
+        assert label.get_attribute("textContent").strip() == "Signal period"
         macd_draft = _starts(driver)
         _view(driver)
         # Only 6 bars are seeded, far short of MACD's fixed 26-close slow period, so this
         # exercises the insufficient path: confirms the UI accepts "macd" end to end, with no
         # crash, rather than a fully-warmed-up value (that needs a much longer series).
         h._wait(driver).until(lambda current: _starts(current)["indicators"] > macd_draft["indicators"])
-        assert "Some of the earliest sessions have no MACD value yet" in _section(driver).text
+        h._wait(driver).until(
+            lambda current: "Some of the earliest sessions have no MACD value yet" in _section(current).text,
+        )
         _open_prices(driver)
         h._wait(driver).until(lambda current: _headers(current)[-1] == "MACD (3)")
         assert _indicator_cells(driver) == ["Warm-up"] * 6
