@@ -11,6 +11,7 @@
 .health-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
 .health-four { grid-template-columns: repeat(4,minmax(0,1fr)); }
 .compliance-desk :is(button,input,select) { min-height: 44px; }
+.compliance-desk button { min-width: 44px; }
 .compliance-desk :is(input,select) { padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); background: var(--raised); }
 .compliance-desk form { align-items: end; }
 .compliance-desk .review-reason { display: grid; text-align: left; gap: 4px; }
