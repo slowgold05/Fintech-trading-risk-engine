@@ -1,5 +1,6 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router-dom";
 import { isAxiosError } from "axios";
 import { fetchMarketResearch } from "../api/market";
 import {
@@ -12,70 +13,19 @@ import {
   listResearchReports,
 } from "../api/research";
 import { DailyHistory } from "../components/DailyHistory";
-import { PageHeader } from "../components/PageHeader";
-import {
-  DashboardCard,
-  EmptyState,
-  SkeletonBlock,
-} from "../features/dashboard/components";
+import { apiClient } from "../api/client";
+import { keys } from "../night/api";
+import { Button, Field, Page, Panel, State } from "../night/kit";
+import { DeskAccount, EmptyState, LoadingRows, QueryError, RefreshButton } from "../night/features/desks/DeskStates";
+import { StoredContext } from "../night/features/desks/StoredContext";
+import "../night/features/desks/research.css";
 import type { ResearchJob, ResearchReport } from "../types/schemas";
 import { formatDateTime } from "../utils/format";
-
-const pageDescription =
-  "Preview AI-assisted research notes for a symbol. This does not place trades.";
-
-const statusTone: Record<ResearchJob["status"], string> = {
-  queued: "border-amber-400/40 bg-amber-400/10 text-amber-300",
-  running: "border-sky-400/30 bg-sky-400/10 text-sky-300",
-  completed: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
-  failed: "border-rose-400/40 bg-rose-400/10 text-rose-300",
-  cancelled: "border-rose-400/40 bg-rose-400/10 text-rose-300",
-};
 
 function requestErrorMessage(error: unknown, fallback: string) {
   return isAxiosError(error)
     ? String(error.response?.data?.detail ?? fallback)
     : fallback;
-}
-
-function RefreshButton({ onClick, label = "Refresh" }: { onClick: () => void; label?: string }) {
-  return (
-    <button
-      className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100"
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
-  );
-}
-
-function QueryError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div
-      className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200"
-      role="alert"
-    >
-      <p>{message}</p>
-      <button
-        className="mt-3 rounded-md border border-rose-400/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
-        onClick={onRetry}
-        type="button"
-      >
-        Retry
-      </button>
-    </div>
-  );
-}
-
-function LoadingRows() {
-  return (
-    <div className="space-y-3">
-      <SkeletonBlock className="h-14" />
-      <SkeletonBlock className="h-14" />
-      <SkeletonBlock className="h-14" />
-    </div>
-  );
 }
 
 function unavailableField() {
@@ -92,7 +42,7 @@ function formatDetailValue(value: unknown) {
   return JSON.stringify(value);
 }
 
-function CreateResearchJobCard() {
+function CreateResearchJobCard({ owner }: { owner: number }) {
   const queryClient = useQueryClient();
   const [symbol, setSymbol] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -103,7 +53,7 @@ function CreateResearchJobCard() {
       setErrorMessage(null);
       setQueuedSymbol(job.symbol);
       setSymbol("");
-      await queryClient.invalidateQueries({ queryKey: ["research-jobs"] });
+      await queryClient.invalidateQueries({ queryKey: keys.account(owner, "research", "jobs") });
     },
     onError: (error) => {
       setQueuedSymbol(null);
@@ -123,29 +73,15 @@ function CreateResearchJobCard() {
   }
 
   return (
-    <DashboardCard title="Queue a research job">
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Symbol
-          </span>
-          <input
-            aria-label="Symbol"
-            className="field-control font-mono"
-            onChange={(event) => setSymbol(event.target.value)}
-            required
-            type="text"
-            value={symbol}
-          />
-        </label>
-        <p className="text-xs text-slate-500">This queues a research note. It does not place a trade.</p>
-        <button className="primary-action" disabled={createMutation.isPending} type="submit">
-          {createMutation.isPending ? "Queuing..." : "Queue job"}
-        </button>
+    <Panel title="Queue a research job">
+      <form className="desk-inline-form" onSubmit={handleSubmit}>
+        <Field id="research-job-symbol" label="Symbol"><input maxLength={20} required value={symbol} onChange={event => setSymbol(event.target.value)} /></Field>
+        <Button variant="primary" busy={createMutation.isPending} type="submit">{createMutation.isPending ? "Queuing…" : "Queue job"}</Button>
       </form>
+      <p className="mt-3 desk-meta">Jobs gather source records. Generated analysis requires an enabled synthesis model.</p>
       {errorMessage ? (
         <div
-          className="mt-4 rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200"
+          className="desk-alert"
           role="alert"
         >
           {errorMessage}
@@ -156,15 +92,17 @@ function CreateResearchJobCard() {
           Research job queued for {queuedSymbol}.
         </p>
       ) : null}
-    </DashboardCard>
+    </Panel>
   );
 }
 
 function ResearchJobRow({
   job,
+  owner,
   onViewReport,
 }: {
   job: ResearchJob;
+  owner: number;
   onViewReport: (jobId: number) => void;
 }) {
   const queryClient = useQueryClient();
@@ -173,7 +111,7 @@ function ResearchJobRow({
     mutationFn: () => cancelResearchJob(job.id),
     onSuccess: async () => {
       setErrorMessage(null);
-      await queryClient.invalidateQueries({ queryKey: ["research-jobs"] });
+      await queryClient.invalidateQueries({ queryKey: keys.account(owner, "research", "jobs") });
     },
     onError: (error) => {
       setErrorMessage(requestErrorMessage(error, "Research job could not be cancelled."));
@@ -183,38 +121,36 @@ function ResearchJobRow({
   let action: ReactNode = null;
   if (job.status === "queued") {
     action = (
-      <button
-        className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100 disabled:opacity-50"
+      <Button
         disabled={cancelMutation.isPending}
         onClick={() => cancelMutation.mutate()}
         type="button"
       >
         Cancel
-      </button>
+      </Button>
     );
   } else if (job.status === "completed") {
     action = (
-      <button
-        className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100"
+      <Button
         onClick={() => onViewReport(job.id)}
         type="button"
       >
         View report
-      </button>
+      </Button>
     );
   }
 
   return (
-    <li className="rounded border border-slate-800 bg-slate-900/60 p-3">
+    <li className="desk-record">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-sm font-semibold text-slate-100">{job.symbol}</span>
-            <span className={["risk-chip", statusTone[job.status]].join(" ")}>
+            <span className="desk-status" data-status={job.status}>
               {job.status}
             </span>
           </div>
-          <div className="mt-1 text-xs text-slate-500">{formatDateTime(job.created_at)}</div>
+          <div className="mt-1 desk-meta">Job #{job.id} · Updated {formatDateTime(job.updated_at)}</div>
         </div>
         {action}
       </div>
@@ -226,10 +162,12 @@ function ResearchJobRow({
   );
 }
 
-function ResearchJobsCard({ onViewReport }: { onViewReport: (jobId: number) => void }) {
+function ResearchJobsCard({ owner, onViewReport }: { owner: number; onViewReport: (jobId: number) => void }) {
   const jobsQuery = useQuery({
-    queryKey: ["research-jobs"],
+    queryKey: keys.account(owner, "research", "jobs"),
     queryFn: listResearchJobs,
+    retry: false,
+    refetchInterval: query => query.state.data?.jobs.some(job => job.status === "queued" || job.status === "running") ? 5000 : false,
   });
 
   let body: ReactNode;
@@ -250,15 +188,15 @@ function ResearchJobsCard({ onViewReport }: { onViewReport: (jobId: number) => v
     body = (
       <ul className="space-y-3">
         {jobsQuery.data.jobs.map((job) => (
-          <ResearchJobRow job={job} key={job.id} onViewReport={onViewReport} />
+          <ResearchJobRow owner={owner} job={job} key={job.id} onViewReport={onViewReport} />
         ))}
       </ul>
     );
   }
 
   return (
-    <DashboardCard
-      action={
+    <Panel
+      actions={
         jobsQuery.isError ? undefined : (
           <RefreshButton
             onClick={() => {
@@ -270,21 +208,15 @@ function ResearchJobsCard({ onViewReport }: { onViewReport: (jobId: number) => v
       title="Research jobs"
     >
       {body}
-    </DashboardCard>
+    </Panel>
   );
 }
 
 function ReportField({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-200">
-        {value == null ? unavailableField() : value}
-      </div>
-    </div>
-  );
+  return <div className="report-field">
+    <dt>{label}</dt>
+    <dd>{value == null ? unavailableField() : value}</dd>
+  </div>;
 }
 
 function BackendDetail({ detail }: { detail: Record<string, unknown> }) {
@@ -295,7 +227,7 @@ function BackendDetail({ detail }: { detail: Record<string, unknown> }) {
     <div className="space-y-3">
       {signal != null ? (
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <div className="desk-meta">
             Signal
           </div>
           <div className="mt-1">
@@ -321,25 +253,27 @@ function ReportBody({ report }: { report: ResearchReport }) {
   return (
     <div className="space-y-4">
       <div>
-        <div className="font-mono text-sm font-semibold text-slate-100">{report.symbol}</div>
-        <div className="mt-1 text-xs text-slate-500">{formatDateTime(report.created_at)}</div>
+        <h3 className="font-semibold">Stored analysis</h3>
       </div>
       <div>
-        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        <div className="desk-meta">
           Sources
         </div>
+        {!report.sources.length && <p>No source records stored.</p>}
         <ul className="mt-2 space-y-1 text-sm text-slate-300">
           {report.sources.map((source, index) => (
             <li key={`${source.type}-${source.status}-${index}`}>
-              {source.type} — {source.status} ({source.detail})
+              {source.type.replace(/^sec_/, "SEC ").replaceAll("_", " ")} · {source.status === "ok" ? "Available" : source.status.replaceAll("_", " ")} · {source.detail}
             </li>
           ))}
         </ul>
       </div>
-      <ReportField label="Bull case" value={report.bull_case} />
-      <ReportField label="Bear case" value={report.bear_case} />
-      <ReportField label="Synthesis" value={report.synthesis} />
-      <ReportField label="Risks" value={report.risks} />
+      <dl className="report-fields">
+        <ReportField label="Bull case" value={report.bull_case} />
+        <ReportField label="Bear case" value={report.bear_case} />
+        <ReportField label="Synthesis" value={report.synthesis} />
+        <ReportField label="Risks" value={report.risks} />
+      </dl>
       {report.model_version || report.prompt_version ? (
         <p className="text-xs text-slate-500">
           {report.model_version ? `Model ${report.model_version}` : null}
@@ -355,18 +289,21 @@ function ReportBody({ report }: { report: ResearchReport }) {
 function ReportPriceHeader({ symbol }: { symbol: string }) {
   const query = useQuery({
     queryKey: ["research-price", symbol],
-    queryFn: () => fetchMarketResearch(symbol),
+    queryFn: () => fetchMarketResearch(symbol), retry: false,
   });
 
-  if (query.isPending) return <SkeletonBlock className="h-10" />;
-  if (query.isError || query.data.price == null) return null;
+  if (query.isPending) return <LoadingRows />;
+  if (query.isError) return <QueryError message="Market context could not be loaded." onRetry={query.refetch} />;
+  if (query.data.price == null) return <State kind="unavailable" title="Price unavailable" />;
 
   const isUp = (query.data.change_percent ?? 0) >= 0;
   return (
-    <div className="flex items-baseline gap-3">
+    <div className="flex flex-wrap items-baseline gap-3">
       <span className="font-mono text-2xl font-semibold text-slate-100">
         ${query.data.price.toFixed(2)}
       </span>
+      <small>{query.data.price_source ?? "Source unavailable"} · {query.data.price_as_of ?? "Date unavailable"} · {(query.data.price_basis ?? query.data.adjustment_type ?? "Basis unavailable").replaceAll("_", " ")}</small>
+      {query.data.detail_available && <Link className="desk-link" to={`/market/${encodeURIComponent(symbol)}`}>Company record</Link>}
       {query.data.change_percent != null ? (
         <span className={isUp ? "text-sm text-emerald-400" : "text-sm text-rose-400"}>
           {isUp ? "+" : ""}
@@ -384,7 +321,7 @@ function ReportChart({ symbol }: { symbol: string }) {
 function ReportFilings({ symbol }: { symbol: string }) {
   const query = useQuery({
     queryKey: ["research-filings", symbol],
-    queryFn: () => fetchResearchFilings(symbol),
+    queryFn: () => fetchResearchFilings(symbol), retry: false,
   });
 
   let body: ReactNode;
@@ -410,7 +347,7 @@ function ReportFilings({ symbol }: { symbol: string }) {
               {filing.form ?? "Filing"} — {filing.filing_date ?? "Unknown date"}
             </span>
             <a
-              className="text-xs font-semibold text-sky-300 hover:underline"
+              className="desk-link"
               href={filing.document_url}
               rel="noreferrer"
               target="_blank"
@@ -425,9 +362,10 @@ function ReportFilings({ symbol }: { symbol: string }) {
 
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+      <div className="desk-meta">
         SEC filings
       </div>
+      {query.data && <small>{query.data.source} · Retrieved {formatDateTime(query.data.fetched_at)}</small>}
       <div className="mt-2">{body}</div>
     </div>
   );
@@ -436,7 +374,7 @@ function ReportFilings({ symbol }: { symbol: string }) {
 function ReportNews({ symbol }: { symbol: string }) {
   const query = useQuery({
     queryKey: ["research-news", symbol],
-    queryFn: () => fetchResearchNews(symbol),
+    queryFn: () => fetchResearchNews(symbol), retry: false,
   });
 
   let body: ReactNode;
@@ -454,16 +392,16 @@ function ReportNews({ symbol }: { symbol: string }) {
   } else if (query.data.articles.length === 0) {
     body = (
       <EmptyState
-        message={query.data.error ?? "No recent news for this symbol."}
+        message="No recent news for this symbol."
       />
     );
   } else {
     body = (
       <ul className="space-y-3">
         {query.data.articles.map((article) => (
-          <li className="rounded border border-slate-800 bg-slate-900/60 p-3" key={article.url}>
+          <li className="desk-record" key={article.url}>
             <a
-              className="text-sm font-semibold text-slate-100 hover:underline"
+              className="desk-link"
               href={article.url}
               rel="noreferrer"
               target="_blank"
@@ -484,20 +422,26 @@ function ReportNews({ symbol }: { symbol: string }) {
 
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+      <div className="desk-meta">
         News
       </div>
+      {query.data?.error && <State kind="unavailable" title="News source unavailable" detail={query.data.error} />}
       <div className="mt-2">{body}</div>
     </div>
   );
 }
 
-function ResearchReportCard({ jobId, onClose }: { jobId: number; onClose: () => void }) {
+function ResearchReportCard({ owner, jobId, reportId, onClose }: { owner: number; jobId: number | null; reportId: number | null; onClose: () => void }) {
+  const heading = useRef<HTMLDivElement>(null);
+  useEffect(() => { heading.current?.focus(); }, [jobId, reportId]);
   const reportsQuery = useQuery({
-    queryKey: ["research-reports"],
-    queryFn: listResearchReports,
+    queryKey: keys.account(owner, "research", "reports", reportId),
+    retry: false,
+    queryFn: async () => reportId === null ? listResearchReports() : {
+      reports: [(await apiClient.get<ResearchReport>(`/research/reports/${reportId}`)).data],
+    },
   });
-  const report = reportsQuery.data?.reports.find((item) => item.job_id === jobId) ?? null;
+  const report = reportsQuery.data?.reports.find((item) => reportId === null ? item.job_id === jobId : item.id === reportId) ?? null;
 
   let body: ReactNode;
   if (reportsQuery.isPending) {
@@ -528,8 +472,11 @@ function ResearchReportCard({ jobId, onClose }: { jobId: number; onClose: () => 
   } else {
     body = (
       <div className="space-y-5">
+        <h3 className="text-xl font-semibold">{report.symbol} · Report #{report.id}</h3>
+        <p className="desk-meta">Job #{report.job_id} · Stored {formatDateTime(report.created_at)}</p>
+        {report.synthesis == null && <State kind="unavailable" title="Generated synthesis unavailable" detail="The stored report contains source records without a synthesis." />}
         <ReportPriceHeader symbol={report.symbol} />
-        <ReportChart symbol={report.symbol} />
+        <details><summary>Inspect daily price history</summary><ReportChart symbol={report.symbol} /></details>
         <ReportBody report={report} />
         <ReportFilings symbol={report.symbol} />
         <ReportNews symbol={report.symbol} />
@@ -537,28 +484,23 @@ function ResearchReportCard({ jobId, onClose }: { jobId: number; onClose: () => 
     );
   }
 
-  return (
-    <DashboardCard
-      action={
-        <button
-          className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100"
-          onClick={onClose}
-          type="button"
-        >
-          Close
-        </button>
-      }
-      title="Research report"
-    >
-      {body}
-    </DashboardCard>
-  );
+  return <div className="desk-section" ref={heading} tabIndex={-1} aria-label="Selected research report">
+    <Panel title="Research report" actions={<Button onClick={onClose}>Close</Button>}>{body}</Panel>
+  </div>;
 }
 
-function ResearchBriefsCard() {
+function BriefReportLink({ id, symbol }: { id: number; symbol: string }) {
+  const [params] = useSearchParams();
+  const next = new URLSearchParams(params);
+  next.delete("job");
+  next.set("report", String(id));
+  return <Link className="desk-link" to={{ search: next.toString() }}>{symbol}: report #{id}</Link>;
+}
+
+function ResearchBriefsCard({ owner }: { owner: number }) {
   const briefsQuery = useQuery({
-    queryKey: ["research-briefs"],
-    queryFn: listResearchBriefs,
+    queryKey: keys.account(owner, "research", "briefs"),
+    queryFn: listResearchBriefs, retry: false,
   });
 
   let body: ReactNode;
@@ -579,14 +521,14 @@ function ResearchBriefsCard() {
     body = (
       <ul className="space-y-3">
         {briefsQuery.data.briefs.map((brief) => (
-          <li className="rounded border border-slate-800 bg-slate-900/60 p-3" key={brief.id}>
+          <li className="desk-record" key={brief.id}>
             <div className="font-mono text-sm font-semibold text-slate-100">{brief.brief_date}</div>
             <ul className="mt-2 space-y-1">
               {brief.entries.map((entry, index) => (
                 <li className="text-sm text-slate-300" key={`${brief.id}-${entry.symbol}-${index}`}>
                   {entry.report_id == null
                     ? `${entry.symbol}: no report yet`
-                    : `${entry.symbol}: report #${entry.report_id}`}
+                    : <BriefReportLink id={entry.report_id} symbol={entry.symbol} />}
                 </li>
               ))}
             </ul>
@@ -597,8 +539,8 @@ function ResearchBriefsCard() {
   }
 
   return (
-    <DashboardCard
-      action={
+    <Panel
+      actions={
         briefsQuery.isError ? undefined : (
           <RefreshButton
             onClick={() => {
@@ -610,24 +552,52 @@ function ResearchBriefsCard() {
       title="Daily briefs"
     >
       {body}
-    </DashboardCard>
+    </Panel>
   );
 }
 
-export function Research() {
-  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+function selectedId(value: string | null) {
+  return value && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
+}
 
-  return (
-    <div className="min-w-0 space-y-6">
-      <PageHeader description={pageDescription} title="Research Desk" />
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <CreateResearchJobCard />
-        <ResearchJobsCard onViewReport={setSelectedJobId} />
-        {selectedJobId != null ? (
-          <ResearchReportCard jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
-        ) : null}
-        <ResearchBriefsCard />
-      </div>
-    </div>
-  );
+function ResearchDesk({ owner }: { owner: number }) {
+  const [params, setParams] = useSearchParams();
+  const [symbol, setSymbol] = useState("AAPL");
+  const [showSources, setShowSources] = useState(false);
+  const jobId = selectedId(params.get("job"));
+  const reportId = selectedId(params.get("report"));
+  const opener = useRef<HTMLElement | null>(null);
+  function selectJob(id: number | null) {
+    const next = new URLSearchParams(params);
+    next.delete("report");
+    if (id !== null) next.set("job", String(id));
+    else next.delete("job");
+    setParams(next);
+    if (id === null) opener.current?.focus();
+  }
+
+  return <Page className="desk-page research-desk" title="Research Desk" description="Inspect stored prices, source records and research jobs for your account.">
+    {(jobId !== null || reportId !== null) && <Page.Full><ResearchReportCard owner={owner} jobId={jobId} reportId={reportId} onClose={() => selectJob(null)} /></Page.Full>}
+    <Page.Main className="desk-stack">
+      <StoredContext symbol={symbol} onSymbol={setSymbol} />
+      <Panel title={`${symbol} source records`}>
+        <details onToggle={event => setShowSources(event.currentTarget.open)}>
+          <summary>Browse news and SEC filings</summary>
+          {showSources && <div className="research-sources"><ReportNews symbol={symbol} /><ReportFilings symbol={symbol} /></div>}
+        </details>
+      </Panel>
+    </Page.Main>
+    <Page.Aside className="desk-stack" onClickCapture={event => {
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>("button,a") : null;
+      if (target) opener.current = target;
+    }}>
+      <CreateResearchJobCard owner={owner} />
+      <ResearchJobsCard owner={owner} onViewReport={selectJob} />
+      <ResearchBriefsCard owner={owner} />
+    </Page.Aside>
+  </Page>;
+}
+
+export function Research() {
+  return <DeskAccount>{owner => <ResearchDesk key={owner} owner={owner} />}</DeskAccount>;
 }

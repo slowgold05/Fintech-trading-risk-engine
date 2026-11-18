@@ -1,0 +1,24 @@
+.research-desk .nk-layout { grid-template-columns: minmax(0, 1.75fr) minmax(230px, 1fr); align-items: start; }
+.research-context .desk-inline-form { max-width: 360px; }
+.research-series { display: grid; gap: 10px; margin-top: var(--pad); }
+.research-series strong { display: block; font-size: clamp(32px, 3.5vw, 54px); font-weight: 540; letter-spacing: -.05em; line-height: 1.15; }
+.research-trace svg { width: 100%; height: 104px; }
+.research-axis { display: flex; justify-content: space-between; }
+.research-desk .research-sources { display: grid; gap: var(--pad); margin-top: var(--gap); }
+.research-desk .research-sources h3,.research-desk .report-field dt { color: var(--muted); font: var(--label)/1.5 var(--font-mono); }
+.research-desk .report-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(225px,100%),1fr)); gap: var(--gap); }
+.research-desk .report-field { padding-block: 8px; border-top: 1px solid var(--line); }
+.research-desk .report-field dd { white-space: pre-wrap; }
+.research-desk summary { min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--accent); }
+[data-look="dial"] .research-desk .nk-layout { grid-template-columns: minmax(0, 1fr); }
+[data-look="dial"] .research-desk .desk-stack { grid-template-columns: repeat(2,minmax(0,1fr)); }
+[data-look="dial"] .research-desk .research-context { grid-column: 1/-1; }
+[data-look="dial"] .research-desk .nk-main { grid-template-columns: minmax(0,1fr); }
+[data-look="dial"] .research-desk .nk-aside { grid-template-columns: repeat(3,minmax(0,1fr)); }
+[data-look="dial"] .research-desk .research-series { grid-template-columns: minmax(220px,1fr) minmax(0,3fr); }
+[data-look="dial"] .research-desk .research-series > p { grid-column: 1/-1; }
+[data-look="dial"] .research-desk .research-trace svg { height: 76px; }
+@media (max-width:767px) {
+  .research-desk .nk-layout,[data-look="dial"] .research-desk :is(.nk-main,.nk-aside,.research-series) { grid-template-columns: minmax(0,1fr); }
+  .research-trace svg { height: 86px; }
+}
