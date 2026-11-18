@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { Link } from "react-router-dom";
 import { resetDemoPortfolio, fetchPortfolio } from "../../../api/portfolio";
-import { clearPersistedOrderAttempt } from "../../../utils/orderAttemptStorage";
+import { clearPersistedOrderAttempt } from "../../../utils/orderAttemptSlot";
 import { formatCurrency } from "../../../utils/format";
 import { keys, refreshExecution } from "../../api";
 import { Button, Sheet } from "../../kit";
@@ -16,12 +16,13 @@ export function DemoReset({ owner }: { owner: number }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const attempt = useRef<string | null>(null);
+  const opener = useRef<HTMLButtonElement>(null);
   const reset = useMutation({
     mutationFn: resetDemoPortfolio, retry: false,
     onSuccess: async () => {
       attempt.current = null;
       saveDraft(owner, null);
-      clearPersistedOrderAttempt();
+      clearPersistedOrderAttempt(owner);
       setGuide(owner, "new");
       setOpen(false);
       setMessage("Demo restored. Refreshing balances…");
@@ -44,9 +45,9 @@ export function DemoReset({ owner }: { owner: number }) {
     reset.mutate(attempt.current);
   }
   return <>
-    <Button data-testid="demo-reset" busy={reset.isPending} onClick={() => {setError(""); setMessage(""); setOpen(true);}}>Reset demo portfolio…</Button>
+    <Button ref={opener} data-testid="demo-reset" busy={reset.isPending} onClick={() => {setError(""); setMessage(""); setOpen(true);}}>Reset demo portfolio…</Button>
     {message && <p role="status">{message}</p>}
-    <Sheet open={open} onOpenChange={value => {if (!reset.isPending) setOpen(value);}} title="Restore starting portfolio">
+    <Sheet open={open} returnFocusRef={opener} onOpenChange={value => {if (!reset.isPending) setOpen(value);}} title="Restore starting portfolio">
       <p>This restores the demo’s seed cash, holdings and trading history and restarts the guide. Cancel open orders in Activity before resetting.</p>
       {error && <p className="account-error" role="alert">{error}</p>}
       <div className="account-actions"><Button variant="danger" data-testid="demo-reset-confirm" busy={reset.isPending} onClick={confirm}>Confirm reset</Button>

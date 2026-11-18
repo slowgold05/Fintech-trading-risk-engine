@@ -1,15 +1,16 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { fetchMe, setLegalName } from "../api/auth";
 import { createCashMovement } from "../api/cash";
 import { fetchAllocation } from "../api/allocation";
 import { fetchAttribution } from "../api/attribution";
-import { fetchPortfolio, resetDemoPortfolio } from "../api/portfolio";
+import { fetchPortfolio } from "../api/portfolio";
 import { fetchRiskMetrics } from "../api/riskMetrics";
 import { useToast } from "../context/useToast";
 import { AllocationRing } from "../components/AllocationRing";
-import { Button, Sheet, State } from "../night/kit";
+import { Button, State } from "../night/kit";
 import { Performance } from "../night/features/portfolio/Performance";
 import { Allocation } from "../night/features/portfolio/Allocation";
 import { accountWeight, hasMark, numeric } from "../night/features/portfolio/valuation";
@@ -154,42 +155,6 @@ function CashPanel() {
   );
 }
 
-function DemoResetButton({ owner }: { owner: number }) {
-  const [open,setOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-  const resetKey = useRef<string | null>(null);
-  const opener = useRef<HTMLButtonElement>(null);
-  const reset = useMutation({
-    mutationFn: resetDemoPortfolio,
-    onSuccess: async () => {
-      resetKey.current = null;
-      saveDraft(owner,null);
-      setOpen(false);
-      await refreshExecution(queryClient,owner,true);
-      showToast("success", "Demo portfolio restored.");
-    },
-    onError: (error) => {
-      const detail = isAxiosError(error) ? error.response?.data?.detail : null;
-      showToast("error", typeof detail === "string" ? detail : "Demo reset could not be confirmed. Try again.");
-    },
-  });
-
-  function confirmReset() {
-    if (reset.isPending) return;
-    resetKey.current ??= crypto.randomUUID();
-    reset.mutate(resetKey.current);
-  }
-
-  return (
-    <><Button data-testid="demo-reset" onClick={event => { opener.current = event.currentTarget; setOpen(true); }}>Reset demo portfolio…</Button>
-      <Sheet open={open} onOpenChange={setOpen} returnFocusRef={opener} title="Restore starting portfolio">
-        <p>Restore demo cash, holdings and trade history. Cancel any open orders in Activity first.</p>
-        <Button variant="danger" data-testid="demo-reset-confirm" busy={reset.isPending} onClick={confirmReset}>Confirm reset</Button>
-      </Sheet></>
-  );
-}
-
 export function Portfolio() {
   const identity = useQuery({ queryKey: keys.me, queryFn: fetchMe, retry: false });
   if (identity.isError || (!identity.isPending && !identity.data?.id)) {
@@ -238,7 +203,7 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
     <div className="night-portfolio space-y-6">
       <header className="nk-page-head"><div><small>Paper account</small><h1>Portfolio</h1></div>
         <div className="portfolio-actions">{canTrade && <a data-testid="order-open" href="/trades?ticket=1" className="nk-button">Open order ticket</a>}
-          {portfolio?.user?.is_demo && <DemoResetButton owner={portfolio.user.id} />}</div>
+          {portfolio?.user?.is_demo && <Link className="nk-button" to="/account">Reset demo from Account</Link>}</div>
       </header>
       {valuationIncomplete && portfolio ? (
         <p className="rounded-md border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-slate-200">
