@@ -1446,7 +1446,9 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         driver.get(disposable_api.web_url + "/dashboard")
         _wait(driver).until(lambda current: "$100,200" in current.find_element(By.TAG_NAME, "body").text)
         closing = driver.find_element(By.CSS_SELECTOR, "[data-testid='today-closes']")
-        _wait(driver).until(lambda _: "No priced close in the past year" in closing.text)
+        # The fixture's opening cash supplies one dated observation.
+        _wait(driver).until(lambda _: "First priced close" in closing.text)
+        assert "A second priced session is needed" in closing.text
         assert "Interval P&L" not in closing.text
         assert "Real 1D" not in driver.find_element(By.TAG_NAME, "body").text
         assert "Day P&L" not in driver.find_element(By.TAG_NAME, "body").text
