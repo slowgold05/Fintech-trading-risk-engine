@@ -26,7 +26,10 @@ vi.mock("./api/history", () => ({
   }),
   fetchDailyHistory: vi.fn().mockRejectedValue(new Error("No series selected")),
 }));
-vi.mock("./api/auth", () => ({ fetchMe: vi.fn().mockResolvedValue({ role: "trader" }) }));
+vi.mock("./api/auth", () => ({
+  fetchMe: vi.fn().mockResolvedValue({ role: "trader" }),
+  startDemo: vi.fn(),
+}));
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -58,6 +61,7 @@ it.each(["/", "/dashboard"])("opens %s for visitors without mounting the private
 it("shows the public dashboard while session restoration is pending", () => {
   open("/", false, true);
   expect(screen.getByRole("heading", { name: "Market dashboard" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Try the demo" })).toBeDisabled();
   expect(accountDashboard).not.toHaveBeenCalled();
 });
 
