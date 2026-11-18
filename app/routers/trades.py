@@ -17,6 +17,7 @@ from app.models.holding import Holding
 from app.services.pretrade_controls import require_stock_concentration, require_trading_open
 from app.services.idempotency import execute_once
 from app.services.order_step_up import require_notional_step_up
+from app.services.simulated_liquidity import simulated_provenance
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -48,6 +49,7 @@ def list_trades(
                 "realized_pnl": round(float(trade.realized_pnl or 0.0), 2),
                 "realized_pnl_pct": round(float(trade.realized_pnl_pct or 0.0), 2),
                 "executed_at": trade.executed_at,
+                **simulated_provenance(trade.simulated_quote_at),
             }
             for trade, asset in rows
         ]

@@ -24,3 +24,5 @@ class Order(Base):
     status = Column(String(10), nullable=False, default="open")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     canceled_at = Column(DateTime, nullable=True)
+    simulated_quote_at = Column(DateTime, nullable=True)
+    remainder_reason = Column(String(255), nullable=True)

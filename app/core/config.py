@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     twelve_data_api_key: str = ""
     kronos_checkpoint: str = ""
     trading_halted: bool = False
+    simulated_liquidity_enabled: bool = True
+    simulated_liquidity_max_shares: int = Field(default=100, ge=1, le=1_000_000)
     scheduled_jobs_enabled: bool = False
     scheduled_job_interval_hours: int = Field(default=24, ge=1, le=168)
     scheduled_market_hot_limit: int = Field(default=200, ge=1, le=1000)

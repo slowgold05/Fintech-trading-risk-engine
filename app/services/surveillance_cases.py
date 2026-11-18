@@ -148,14 +148,18 @@ def _lookback_minutes(rules: list[dict]) -> int:
 
 def events_from_db(db: Session, since: datetime) -> list[SurveillanceEvent]:
     events = []
+    # Synthetic prints are driven by the reference close and cannot establish a
+    # customer-to-customer pattern. Keep genuine customer orders and cancels.
     trades = db.execute(select(Trade, Asset.symbol).join(Asset, Trade.asset_id == Asset.id)
-                        .where(Trade.executed_at >= since)).all()
+                        .join(User, Trade.user_id == User.id)
+                        .where(Trade.executed_at >= since, Trade.simulated_quote_at.is_(None), ~User.is_system)).all()
     for trade, symbol in trades:
         events.append(SurveillanceEvent(
             f"trade-{trade.id}", trade.executed_at, trade.user_id, symbol, "trade", trade.side,
             trade.quantity, trade.price_at_execution, str(trade.order_id) if trade.order_id else None,
         ))
-    orders = db.execute(select(Order, Asset.symbol).join(Asset, Order.asset_id == Asset.id).where(
+    orders = db.execute(select(Order, Asset.symbol).join(Asset, Order.asset_id == Asset.id)
+                        .join(User, Order.user_id == User.id).where(~User.is_system,
         or_(Order.created_at >= since, and_(Order.canceled_at.is_not(None), Order.canceled_at >= since)))).all()
     for order, symbol in orders:
         if order.created_at >= since:

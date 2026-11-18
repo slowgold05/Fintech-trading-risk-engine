@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Requ
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.core.read_snapshot import consistent_read, snapshot_clock
@@ -19,16 +20,28 @@ from app.services.order_book import cancel_order, place_order
 from app.services.idempotency import execute_once
 from app.services.order_preview import preview_order
 from app.services.order_step_up import order_notional, require_notional_step_up
+from app.services.simulated_liquidity import simulated_provenance
 from app.services.trade_execution import notional_amount
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+def _execution_summary(order: Order) -> dict:
+    summary = simulated_provenance(order.simulated_quote_at)
+    if settings.simulated_liquidity_enabled:
+        reason = order.remainder_reason
+        if reason is None and order.status == "open":
+            reason = "Waiting for a newer cached close or an opposing paper order."
+        if reason is not None:
+            summary["remainder_reason"] = reason
+    return summary
+
+
 def _order_out(order: Order, symbol: str) -> dict:
     return {"id": order.id, "symbol": symbol, "side": order.side, "order_type": order.order_type, "quantity": order.quantity,
             "remaining_quantity": order.remaining_quantity, "limit_price": order.limit_price,
-            "status": order.status, "created_at": order.created_at}
+            "status": order.status, "created_at": order.created_at, **_execution_summary(order)}
 
 
 @router.get("/book/{symbol}")
@@ -137,6 +150,7 @@ def get_order_detail(
                 "notional": f"{notional_amount(Decimal(trade.quantity), Decimal(trade.price_at_execution)):.2f}",
                 "realized_pnl": f"{Decimal(trade.realized_pnl):.2f}",
                 "executed_at": _utc_z(trade.executed_at),
+                **simulated_provenance(trade.simulated_quote_at),
             }
             for trade in returned
         ]
@@ -159,5 +173,6 @@ def get_order_detail(
             "has_more": has_more,
             "next_after_id": int(returned[-1].id) if has_more else None,
             "fills": fills,
+            **_execution_summary(order),
         }
         return body

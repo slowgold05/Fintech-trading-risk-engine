@@ -37,7 +37,25 @@ def reserved_shares(db: Session, user_id: int, asset_id: int) -> Decimal:
     return sum((order.remaining_quantity for order in orders), Decimal(0))
 
 
-def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal, price: Decimal, order_id: int | None = None, executed_at: datetime | None = None) -> tuple[Trade, int]:
+def add_position(
+    db: Session, user: User, asset: Asset, holding: Holding | None, qty: Decimal, price: Decimal
+) -> None:
+    if holding is None:
+        db.add(Holding(user_id=user.id, asset_id=asset.id, quantity=qty, avg_cost=price))
+    else:
+        old_qty = holding.quantity
+        holding.quantity += qty
+        holding.avg_cost = ((old_qty * holding.avg_cost + qty * price) / holding.quantity).quantize(
+            SIX_PLACES, rounding=ROUND_HALF_UP
+        )
+    db.add(Lot(user_id=user.id, asset_id=asset.id, qty_remaining=qty, cost_per_unit=price))
+
+
+def execute_fill(
+    db: Session, user: User, asset: Asset, side: str, qty: Decimal, price: Decimal,
+    order_id: int | None = None, executed_at: datetime | None = None, *,
+    simulated_quote_at: datetime | None = None,
+) -> tuple[Trade, int]:
     if side not in ("buy", "sell") or qty <= 0 or price <= 0:
         raise ValueError("Invalid trade fill")
     notional = notional_amount(qty, price)
@@ -53,23 +71,15 @@ def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal,
         raise HTTPException(status_code=400, detail="Not enough holdings to sell")
 
     ensure_opening(db, user)
-    trade = Trade(user_id=user.id, asset_id=asset.id, order_id=order_id, side=side, quantity=qty, price_at_execution=price)
+    trade = Trade(user_id=user.id, asset_id=asset.id, order_id=order_id, side=side, quantity=qty,
+                  price_at_execution=price, simulated_quote_at=simulated_quote_at)
     if executed_at is not None:
         trade.executed_at = executed_at
     db.add(trade)
     db.flush()
 
     if side == "buy":
-        if holding is None:
-            holding = Holding(user_id=user.id, asset_id=asset.id, quantity=qty, avg_cost=price)
-            db.add(holding)
-        else:
-            old_qty = holding.quantity
-            holding.quantity += qty
-            holding.avg_cost = ((old_qty * holding.avg_cost + qty * price) / holding.quantity).quantize(
-                SIX_PLACES, rounding=ROUND_HALF_UP
-            )
-        db.add(Lot(user_id=user.id, asset_id=asset.id, qty_remaining=qty, cost_per_unit=price))
+        add_position(db, user, asset, holding, qty, price)
         trade.realized_pnl = Decimal(0)
         trade.realized_pnl_pct = Decimal(0)
         user.cash_balance -= notional
@@ -110,7 +120,7 @@ def execute_fill(db: Session, user: User, asset: Asset, side: str, qty: Decimal,
         user.cash_balance += notional
 
     append_trade(db, user.id, trade.id, asset.id, side, qty, notional)
-    score, alerts = assess_trade_risk(db, user.id, notional)
+    score, alerts = (0, []) if user.is_system else assess_trade_risk(db, user.id, notional)
     assessment = RiskAssessment(trade_id=trade.id, user_id=user.id, risk_score=score)
     db.add(assessment)
     db.flush()

@@ -25,6 +25,8 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM fintech_app")
             cursor.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO fintech_app")
             cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fintech_app")
+            # Table grants include simulated execution provenance on orders and trades.
+            # Issuance uses the existing holdings, lots, cash balance and ledger grants.
             cursor.execute("GRANT INSERT, UPDATE, DELETE ON assets, holdings, lots, "
                            "market_fundamentals_cache, market_quote_cache, market_reference_cache, market_symbols, orders, "
                            "price_history, price_history_daily, market_bars_daily, refresh_tokens, risk_alerts, "

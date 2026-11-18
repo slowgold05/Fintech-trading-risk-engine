@@ -360,7 +360,7 @@ def test_massive_refresh_of_named_symbols_ignores_a_fresh_cache_row(db_session, 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     db_session.add(MarketQuoteCache(
         symbol="AAPL", price=1, change_amount=0, change_percent=0, volume=1,
-        source="yahoo", fetched_at=now, quote_at=now,
+        source="yahoo", fetched_at=now, quote_at=datetime(2026, 11, 12),
     ))
     db_session.commit()
     monkeypatch.setattr(

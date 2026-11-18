@@ -3,8 +3,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 import requests
+
+from app.core.config import settings
 
 
 class EodDataError(ValueError):
@@ -59,7 +62,7 @@ def _yahoo_symbol(symbol: str) -> str:
     return symbol.upper().replace(".", "-")
 
 
-def _latest_complete_daily_bar(payload: dict, symbol: str) -> EodQuote:
+def _latest_complete_daily_bar(payload: dict, symbol: str, *, before_day: date | None = None) -> EodQuote:
     result = (payload.get("chart", {}).get("result") or [None])[0]
     if not result:
         raise EodDataError(f"Quote not found for {symbol}.")
@@ -77,6 +80,9 @@ def _latest_complete_daily_bar(payload: dict, symbol: str) -> EodQuote:
     volumes = bars.get("volume") or []
 
     for index in range(len(timestamps) - 1, -1, -1):
+        session_day = datetime.fromtimestamp(timestamps[index], tz=timezone.utc).date()
+        if before_day is not None and session_day >= before_day:
+            continue
         values = (
             opens[index] if index < len(opens) else None,
             highs[index] if index < len(highs) else None,
@@ -95,7 +101,7 @@ def _latest_complete_daily_bar(payload: dict, symbol: str) -> EodQuote:
 
         return EodQuote(
             symbol=symbol,
-            date=datetime.fromtimestamp(timestamps[index], tz=timezone.utc).date(),
+            date=session_day,
             open=prices[0],
             high=prices[1],
             low=prices[2],
@@ -122,7 +128,10 @@ def fetch_yahoo_quote(symbol: str) -> EodQuote:
     except requests.RequestException as exc:
         raise EodDataError(f"EOD quote fetch failed for {normalized}.") from exc
 
-    return _latest_complete_daily_bar(response.json(), normalized)
+    # A current-session Yahoo bar can have all four OHLC values while trading.
+    # Use completed prior sessions, as the default Massive feed does.
+    before_day = datetime.now(ZoneInfo("America/New_York")).date() if settings.simulated_liquidity_enabled else None
+    return _latest_complete_daily_bar(response.json(), normalized, before_day=before_day)
 
 
 def fetch_eod_batch(symbols: list[str]) -> dict[str, EodQuote]:

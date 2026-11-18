@@ -1,8 +1,11 @@
 from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Numeric, func, text
+from sqlalchemy.ext.hybrid import hybrid_property
 from app.core.database import Base
 
 
 ROLES = ("trader", "analyst", "compliance_officer", "admin", "auditor")
+# The registration schema accepts only email addresses. Reserve a non-email identity.
+LIQUIDITY_PROVIDER_IDENTITY = "sentinel:simulated-liquidity"
 
 
 class User(Base):
@@ -19,3 +22,7 @@ class User(Base):
     role = Column(String(24), nullable=False, server_default=text("'trader'"))
     cash_balance = Column(Numeric(18, 2), nullable=False, default=100000)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    @hybrid_property
+    def is_system(self):
+        return self.email == LIQUIDITY_PROVIDER_IDENTITY

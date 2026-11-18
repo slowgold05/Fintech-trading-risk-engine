@@ -22,3 +22,4 @@ class Trade(Base):
 
 
     executed_at = Column(DateTime, server_default=func.now(), nullable=False, index=True)
+    simulated_quote_at = Column(DateTime, nullable=True)
