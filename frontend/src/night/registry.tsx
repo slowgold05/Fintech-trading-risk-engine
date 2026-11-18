@@ -34,6 +34,8 @@ export const features: readonly Feature[] = [
     Screen: lazy(() => import("./features/explore/News").then(module => ({ default: module.News })))},
   {id:"events", label:"Company events", path:"/market/AAPL?tab=events", access:"public", slot: "companyEvents",
     Screen: lazy(() => import("./features/explore/Events").then(module => ({ default: module.Events })))},
+  {id:"backtest", label:"Buy and hold simulator", path:"/research/simulate", access:"authenticated",
+    Screen: lazy(() => import("./features/simulate/BacktestScreen").then(module => ({ default: module.BacktestScreen })))},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;
