@@ -36,7 +36,17 @@ export interface OrderPreviewResponse {
   estimated_fill_quantity: string | null;
   estimated_fill_notional: string | null;
   unfilled_quantity: string | null;
+  estimated_fills?: EstimatedFill[] | null;
+  remainder_reason?: string | null;
 }
+
+type EstimatedFill = {
+  quantity: string;
+  execution_price: string;
+} & (
+  | { counterparty: "user" }
+  | { counterparty: "simulated"; simulated_quote_date: string }
+);
 
 type PreviewStatus = OrderPreviewResponse["status"];
 type OrderType = OrderPreviewPayload["order_type"];
@@ -252,6 +262,44 @@ function parseEstimates(
   };
 }
 
+export function parseEstimatedExecution(
+  data: Record<string, unknown>,
+  preview: Pick<OrderPreviewResponse, "estimated_fill_quantity" | "estimated_fill_notional" | "unfilled_quantity" | "quote_observed_at">,
+): Pick<OrderPreviewResponse, "estimated_fills" | "remainder_reason"> {
+  const { estimated_fills: fills, remainder_reason: reason } = data;
+  if (fills === undefined && reason === undefined) return {};
+  if (preview.estimated_fill_quantity === null) {
+    if (fills !== null || reason !== null) failResponse();
+    return { estimated_fills: null, remainder_reason: null };
+  }
+  if (!Array.isArray(fills) || preview.unfilled_quantity === null || preview.estimated_fill_notional === null) failResponse();
+  if (scaled6(preview.unfilled_quantity) === 0n ? reason !== null : typeof reason !== "string" || !reason.trim()) failResponse();
+
+  let totalQuantity = 0n;
+  let totalCents = 0n;
+  const estimated_fills = fills.map((fill: unknown, index): EstimatedFill => {
+    if (!isRecord(fill)) failResponse();
+    const quantity = expectFixed(fill.quantity, 6, false);
+    const execution_price = expectFixed(fill.execution_price, 6, false);
+    const quantityUnits = scaled6(quantity);
+    const priceUnits = scaled6(execution_price);
+    const cents = (quantityUnits * priceUnits + 5_000_000_000n) / 10_000_000_000n;
+    if (quantityUnits === 0n || cents === 0n) failResponse();
+    totalQuantity += quantityUnits;
+    totalCents += cents;
+    if (fill.counterparty === "user" && fill.simulated_quote_date === undefined) {
+      return { counterparty: "user", quantity, execution_price };
+    }
+    const date = fill.simulated_quote_date;
+    if (fill.counterparty !== "simulated" || index !== fills.length - 1
+        || typeof date !== "string" || date !== preview.quote_observed_at?.slice(0, 10)) failResponse();
+    return { counterparty: "simulated", quantity, execution_price, simulated_quote_date: date };
+  });
+  if (totalQuantity !== scaled6(preview.estimated_fill_quantity)
+      || totalCents !== scaled2(preview.estimated_fill_notional)) failResponse();
+  return { estimated_fills, remainder_reason: typeof reason === "string" ? reason : null };
+}
+
 function parseOrderPreview(data: unknown, request: NormalizedPreviewRequest): OrderPreviewResponse {
   if (!isRecord(data)) failResponse();
 
@@ -322,6 +370,7 @@ function parseOrderPreview(data: unknown, request: NormalizedPreviewRequest): Or
     buying_power,
     sell_available,
     ...estimates,
+    ...parseEstimatedExecution(data, { ...estimates, quote_observed_at }),
   };
 }
 

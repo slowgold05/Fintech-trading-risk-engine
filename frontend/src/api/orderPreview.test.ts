@@ -95,6 +95,25 @@ describe("normalizeOrderDecimal", () => {
 });
 
 describe("previewOrder", () => {
+  it("validates the quantities, prices and reference date for simulated previews", async () => {
+    const fill = {
+      counterparty: "simulated",
+      quantity: "1.000000",
+      execution_price: "10.250000",
+      simulated_quote_date: "2026-11-06",
+    };
+    const remainder = "This order reached the simulated share cap for the latest close.";
+    const snapshot = contract({ estimated_fills: [fill], remainder_reason: remainder });
+    respond(snapshot);
+    await expect(previewOrder(LIMIT)).resolves.toMatchObject({
+      estimated_fills: [fill],
+      remainder_reason: remainder,
+    });
+    await expectRejected({ ...snapshot, estimated_fills: [{ ...fill, simulated_quote_date: "2026-11-05" }] });
+    await expectRejected({ ...snapshot, estimated_fills: [{ ...fill, execution_price: "10.260000" }] });
+    await expectRejected({ ...snapshot, remainder_reason: null });
+  });
+
   beforeEach(() => {
     vi.mocked(apiClient.post).mockReset();
   });

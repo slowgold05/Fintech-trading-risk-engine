@@ -66,6 +66,23 @@ describe("orderAttemptStorage", () => {
     expect(readPersistedOrderAttempt()).toEqual(value);
   });
 
+  it("keeps the quote pin and simulated fill when resuming a pending attempt", () => {
+    const value = validPersisted();
+    value.attempt.payload.expected_quote_observed_at = "2026-11-06T15:00:00Z";
+    value.preview = validPreview({
+      estimated_fill_quantity: "1.000000",
+      estimated_fill_notional: "100.00",
+      unfilled_quantity: "0.000000",
+      estimated_fills: [{
+        counterparty: "simulated", quantity: "1.000000", execution_price: "100.000000",
+        simulated_quote_date: "2026-11-06",
+      }],
+      remainder_reason: null,
+    });
+    writePersistedOrderAttempt(value);
+    expect(readPersistedOrderAttempt()).toEqual(value);
+  });
+
   it("returns null after clearPersistedOrderAttempt", () => {
     writePersistedOrderAttempt(validPersisted());
     clearPersistedOrderAttempt();

@@ -11,7 +11,7 @@ import {
 } from "../api/orderPreview";
 import { createOrder } from "../api/orders";
 import { useToast } from "../context/useToast";
-import { formatDateTime } from "../utils/format";
+import { formatDateTime, simulatedLiquidityLabel } from "../utils/format";
 import type { OrderResponse, TradeSide } from "../types/schemas";
 import {
   clearPersistedOrderAttempt,
@@ -93,18 +93,19 @@ function orderStatusMessage(result: OrderResponse): string {
   return `Order ${result.status}.`;
 }
 
-function attemptFingerprint(payload: OrderPreviewPayload): string {
+function attemptFingerprint(payload: PersistedAttempt["payload"]): string {
   return JSON.stringify({
     symbol: payload.symbol,
     side: payload.side,
     order_type: payload.order_type,
     quantity: payload.quantity,
     limit_price: payload.limit_price ?? null,
+    expected_quote_observed_at: payload.expected_quote_observed_at,
   });
 }
 
-function capturedFromPreview(preview: OrderPreviewResponse): OrderPreviewPayload {
-  const payload: OrderPreviewPayload = {
+function capturedFromPreview(preview: OrderPreviewResponse): PersistedAttempt["payload"] {
+  const payload: PersistedAttempt["payload"] = {
     symbol: preview.symbol,
     side: preview.side,
     order_type: preview.order_type,
@@ -112,6 +113,9 @@ function capturedFromPreview(preview: OrderPreviewResponse): OrderPreviewPayload
   };
   if (preview.order_type === "limit" && preview.limit_price !== null) {
     payload.limit_price = preview.limit_price;
+  }
+  if (preview.estimated_fills != null && preview.quote_observed_at !== null) {
+    payload.expected_quote_observed_at = preview.quote_observed_at;
   }
   return payload;
 }
@@ -386,7 +390,7 @@ export function OrderTicket() {
     }
   }
 
-  function ensureAttempt(payload: OrderPreviewPayload): PersistedAttempt {
+  function ensureAttempt(payload: PersistedAttempt["payload"]): PersistedAttempt {
     const fingerprint = attemptFingerprint(payload);
     const current = attemptRef.current;
     if (current && current.fingerprint === fingerprint) return current;
@@ -439,13 +443,7 @@ export function OrderTicket() {
       let result: OrderResponse;
       try {
         result = await confirmMutation.mutateAsync({
-          symbol: attempt.payload.symbol,
-          side: attempt.payload.side,
-          order_type: attempt.payload.order_type,
-          quantity: attempt.payload.quantity,
-          ...(attempt.payload.limit_price !== undefined
-            ? { limit_price: attempt.payload.limit_price }
-            : {}),
+          ...attempt.payload,
           idempotencyKey: attempt.key,
           ...(code !== undefined ? { stepUpCode: code } : {}),
         });
@@ -782,6 +780,21 @@ export function OrderTicket() {
             <PreviewFact label="Account snapshot" value={formatDateTime(preview.read_at)} />
             <PreviewFact label="Quote observed" value={quoteObserved} />
           </dl>
+          {preview.estimated_fills && preview.estimated_fills.length > 0 ? (
+            <ul aria-label="Estimated executions" className="mt-3 space-y-1 text-sm leading-6 text-slate-200">
+              {preview.estimated_fills.map((fill, index) => (
+                <li key={index}>
+                  {formatExactDecimal(fill.quantity)} shares at {formatExactMoney(fill.execution_price)}{" "}
+                  ({fill.counterparty === "simulated"
+                    ? simulatedLiquidityLabel(fill.simulated_quote_date)
+                    : "Opposing paper order"})
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {preview.remainder_reason ? (
+            <p className="mt-3 text-sm leading-6 text-slate-300">{preview.remainder_reason}</p>
+          ) : null}
           <p className="mt-3 text-sm leading-6 text-slate-300">
             These estimates are not binding. The server rechecks the order when you confirm. Quote
             observed is not a live execution price.

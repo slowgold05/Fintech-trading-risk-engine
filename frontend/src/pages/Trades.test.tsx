@@ -214,9 +214,11 @@ describe("Trades order details", () => {
               remaining_quantity: "123456788.613456",
               canceled_at: "2026-11-06T17:08:09Z",
               total_fill_count: 2,
+              simulated_quote_date: "2026-03-14",
+              remainder_reason: "This order reached the simulated share cap for the latest close. The unfilled shares were canceled.",
               fills: [
                 fill({ trade_id: 21, quantity: "0.010000", notional: "1.90", realized_pnl: "-0.01" }),
-                fill({ trade_id: 22, quantity: "0.500000", notional: "95.13", realized_pnl: "0.00", executed_at: "2026-03-15T13:04:06Z" }),
+                fill({ trade_id: 22, quantity: "0.500000", notional: "95.13", realized_pnl: "0.00", executed_at: "2026-03-15T13:04:06Z", simulated_quote_date: "2026-03-14" }),
               ],
             })
           : detail(),
@@ -242,6 +244,8 @@ describe("Trades order details", () => {
     expect(within(region).getByText("0.500000")).toBeInTheDocument();
     expect(within(region).getByText("21")).toBeInTheDocument();
     expect(within(region).getByText("22")).toBeInTheDocument();
+    expect(within(region).getByText("Simulated liquidity at the latest end-of-day close, 2026-03-14")).toBeInTheDocument();
+    expect(within(region).getByText(/reached the simulated share cap/)).toBeInTheDocument();
     expect(region.textContent).toMatch(/UTC/);
     expect(region.textContent).toMatch(/13:04:05/);
     expect(within(region).getByText(/2 recorded fills/)).toBeInTheDocument();

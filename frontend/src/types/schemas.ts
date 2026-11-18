@@ -171,6 +171,7 @@ export interface TradeResponse {
   realized_pnl: number;
   realized_pnl_pct: number;
   executed_at: string;
+  simulated_quote_date?: string;
 }
 
 export interface TradesResponse {
@@ -201,6 +202,8 @@ export interface OrderResponse {
   status: "open" | "filled" | "canceled";
   created_at: string;
   trade_ids?: number[];
+  simulated_quote_date?: string;
+  remainder_reason?: string;
 }
 
 export interface CreateOrderPayload {
@@ -209,6 +212,7 @@ export interface CreateOrderPayload {
   quantity: number | string;
   order_type: "limit" | "market";
   limit_price?: number | string;
+  expected_quote_observed_at?: string;
 }
 
 export type ValuationStatus = "complete" | "incomplete";
