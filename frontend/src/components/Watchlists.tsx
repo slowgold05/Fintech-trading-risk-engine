@@ -1,3 +1,8 @@
+import { Button, Field, Panel, State } from "../night/kit";
+import { keys } from "../night/api";
+import { fetchMarketUniverse } from "../api/market";
+import { hasCompanyDetail } from "../night/features/discover/companyLookup";
+import "./Watchlists.css";
 import { Select } from "../design/Select";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,9 +27,11 @@ const SYMBOL_POINTS = 20;
 const FIELD_UNITS = 80;
 
 type WatchlistsProps = {
+  standalone?: boolean;
+  initialSymbol?: string;
   designed?: boolean;
-  onUseInResearch: (symbol: string) => void;
-  onUseInChart: (symbol: string) => void;
+  onUseInResearch?: (symbol: string) => void;
+  onUseInChart?: (symbol: string) => void;
 };
 
 function codePoints(value: string) {
@@ -69,22 +76,16 @@ function WatchlistCard({
   children: ReactNode;
 }) {
   return (
-    <section data-testid="market-watchlists" aria-labelledby="watchlists-title" className="dashboard-card min-w-0">
-      <div className="dashboard-card-header">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-100" id="watchlists-title">
-            {title}
-          </h2>
-          <p className="mt-1 text-xs text-slate-400">{detail}</p>
-        </div>
-      </div>
-      <div className="dashboard-card-body space-y-4">{children}</div>
-    </section>
+    <Panel id="watchlists-title" data-testid="market-watchlists" className="watch-editor" title={title} subtitle={detail}>
+      {children}
+    </Panel>
   );
 }
 
 function WatchlistEditor({
   designed = false,
+  standalone = false,
+  initialSymbol = "",
   ownerId,
   onUseInChart,
   onUseInResearch,
@@ -97,7 +98,7 @@ function WatchlistEditor({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [createName, setCreateName] = useState("");
   const [rename, setRename] = useState("");
-  const [symbolDraft, setSymbolDraft] = useState("");
+  const [symbolDraft, setSymbolDraft] = useState(initialSymbol);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -105,7 +106,7 @@ function WatchlistEditor({
   const [refreshFailed, setRefreshFailed] = useState(false);
 
   const watchlistsQuery = useQuery({
-    queryKey: ["watchlists", ownerId],
+    queryKey: keys.account(ownerId, "watchlists"),
     queryFn: ({ signal }) => fetchWatchlists(signal),
     retry: false,
   });
@@ -117,8 +118,8 @@ function WatchlistEditor({
       busy.current = false;
       abortRef.current?.abort();
       abortRef.current = null;
-      void queryClient.cancelQueries({ queryKey: ["watchlists", ownerId] });
-      queryClient.removeQueries({ queryKey: ["watchlists", ownerId] });
+      void queryClient.cancelQueries({ queryKey: keys.account(ownerId, "watchlists") });
+      queryClient.removeQueries({ queryKey: keys.account(ownerId, "watchlists") });
     };
   }, [ownerId, queryClient]);
 
@@ -127,15 +128,28 @@ function WatchlistEditor({
   }
 
   const lists = watchlistsQuery.isSuccess ? watchlistsQuery.data.watchlists : [];
-  const selected = lists.find((list) => list.id === selectedId) ?? null;
+  const selected = (selectedId === null && standalone
+    ? lists[0]
+    : lists.find((list) => list.id === selectedId)) ?? null;
   const members = selected ? orderedSymbols(selected.symbols) : [];
+  const catalog = useQuery({
+    queryKey: keys.universe(ownerId, "", 1000),
+    queryFn: () => fetchMarketUniverse("", 1000),
+    enabled: members.length > 0,
+    select: (data) => new Map(data.items.filter(hasCompanyDetail).map((item) => [item.symbol, item.company_name])),
+    retry: false,
+    staleTime: 300000,
+  });
   const listsFull = lists.length >= LIST_CAP;
   const membersFull = members.length >= MEMBER_CAP;
 
   async function refresh(stamp: number) {
     try {
+      await queryClient.cancelQueries({ queryKey: keys.account(ownerId, "watchlists") });
+      if (!alive(stamp)) return;
+      await queryClient.invalidateQueries({ queryKey: ["watchlists", ownerId], refetchType: "active" });
       await queryClient.fetchQuery({
-        queryKey: ["watchlists", ownerId],
+        queryKey: keys.account(ownerId, "watchlists"),
         queryFn: ({ signal }) => fetchWatchlists(signal),
         staleTime: 0,
       });
@@ -183,7 +197,7 @@ function WatchlistEditor({
     setSelectedId(id);
     setConfirmDelete(false);
     setRename("");
-    setSymbolDraft("");
+    setSymbolDraft(initialSymbol);
     setFieldError(null);
   }
 
@@ -199,6 +213,9 @@ function WatchlistEditor({
       const created = await createWatchlist(name, signal);
       if (!signal.aborted) {
         setCreateName("");
+        setConfirmDelete(false);
+        setRename("");
+        setSymbolDraft(initialSymbol);
         setSelectedId(created.id);
       }
     }, "Watchlist created.");
@@ -219,10 +236,9 @@ function WatchlistEditor({
     }, "Watchlist renamed.");
   }
 
-  function submitSymbol(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function saveSymbol(value: string) {
     if (pending || selected === null || membersFull) return;
-    const symbol = symbolDraft.trim().toUpperCase();
+    const symbol = value.trim().toUpperCase();
     if (symbol.length === 0 || codePoints(symbol) > SYMBOL_POINTS) {
       setFieldError(symbol.length === 0 ? "Enter a symbol." : "Use a symbol of 20 characters or fewer.");
       return;
@@ -268,172 +284,122 @@ function WatchlistEditor({
     }, "Watchlist deleted.");
   }
 
-  const control = "field-control disabled:cursor-not-allowed disabled:opacity-50";
-  const quietButton =
-    "rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-100 hover:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 disabled:cursor-not-allowed disabled:opacity-50";
-  const primaryButton =
-    "rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-50";
+  const manage = selected && <>
+    <form className="watch-form" onSubmit={submitRename}>
+      <Field id="watchlist-rename" label="Rename">
+        <input autoComplete="off" disabled={pending} maxLength={FIELD_UNITS}
+          onChange={(event) => setRename(event.target.value)} value={rename} />
+      </Field>
+      <Button disabled={pending} type="submit">Save name</Button>
+    </form>
+    {confirmDelete ? <div className="watch-actions" role="group" aria-label="Confirm watchlist delete">
+      <p>Delete this watchlist?</p>
+      <Button variant="danger" disabled={pending} onClick={removeList}>Delete watchlist</Button>
+      <Button disabled={pending} onClick={() => setConfirmDelete(false)}>Cancel</Button>
+    </div> : <Button disabled={pending} onClick={() => setConfirmDelete(true)}>Delete</Button>}
+  </>;
 
   return (
-    <WatchlistCard detail="Saved to your account." title="Watchlists">
-      {watchlistsQuery.isPending ? (
-        <p className="text-sm text-slate-300" role="status">Loading watchlists.</p>
-      ) : null}
-      {watchlistsQuery.isSuccess && lists.length === 0 ? (
-        <p className="text-sm text-slate-300" role="status">No watchlists yet.</p>
-      ) : null}
-      {watchlistsQuery.isSuccess ? (
-        <div className="space-y-4">
-          {lists.length > 0 ? (
-            <div className="min-w-0">
-              <label className="text-xs font-semibold text-slate-300" htmlFor="watchlist-select">Watchlist</label>
-              <Select designed={designed}
-                className={control}
-                disabled={pending}
-                id="watchlist-select"
-                onValueChange={(value) => chooseList(Number(value))}
-                value={selected?.id ?? ""}
-              >
-                <option value="">Choose a watchlist</option>
-                {lists.map((list) => (
-                  <option key={list.id} value={list.id}>{list.name}</option>
-                ))}
-              </Select>
-            </div>
-          ) : null}
-
-          <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={submitCreate}>
-            <div className="min-w-0 flex-1">
-              <label className="text-xs font-semibold text-slate-300" htmlFor="watchlist-create-name">New watchlist</label>
-              <input
-                autoComplete="off"
-                className={control}
-                disabled={pending || listsFull}
-                id="watchlist-create-name"
-                maxLength={FIELD_UNITS}
-                onChange={(event) => setCreateName(event.target.value)}
-                value={createName}
-              />
-            </div>
-            <button className={primaryButton} disabled={pending || listsFull} type="submit">Create watchlist</button>
+    <section className="watch-editor" aria-label="Watchlist editor">
+      {!standalone && <h2 id="watchlists-title">Watchlists</h2>}
+      {watchlistsQuery.isPending && <State kind="loading" title="Loading watchlists." />}
+      {watchlistsQuery.isSuccess && <div className="watch-layout">
+        <Panel className="watch-library" title="Saved lists" subtitle={`${lists.length} of ${LIST_CAP} lists`}>
+          {lists.length === 0 && <State kind="empty" title="No watchlists yet." />}
+          {lists.length > 0 && <Field id="watchlist-select" label="Watchlist">
+            <Select designed={designed} id="watchlist-select" disabled={pending}
+              className="field-control" onValueChange={(value) => chooseList(Number(value))} value={selected?.id ?? ""}>
+              <option value="">Choose a watchlist</option>
+              {lists.map((list) => <option key={list.id} value={list.id}>{list.name}</option>)}
+            </Select>
+          </Field>}
+          <form className="watch-form" onSubmit={submitCreate}>
+            <Field id="watchlist-create-name" label="New watchlist">
+              <input autoComplete="off" data-testid="watchlist-name" disabled={pending || listsFull}
+                maxLength={FIELD_UNITS} onChange={(event) => setCreateName(event.target.value)} value={createName} />
+            </Field>
+            <Button data-testid="watchlist-create" disabled={pending || listsFull} type="submit">Create watchlist</Button>
           </form>
-          {listsFull ? <p className="text-xs text-slate-400">You can keep up to 20 watchlists.</p> : null}
-
-          {selected ? (
-            <div className="space-y-4 border-t border-slate-800 pt-4">
-              <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={submitRename}>
-                <div className="min-w-0 flex-1">
-                  <label className="text-xs font-semibold text-slate-300" htmlFor="watchlist-rename">Rename</label>
-                  <input
-                    autoComplete="off"
-                    className={control}
-                    disabled={pending}
-                    id="watchlist-rename"
-                    maxLength={FIELD_UNITS}
-                    onChange={(event) => setRename(event.target.value)}
-                    value={rename}
-                  />
-                </div>
-                <button className={quietButton} disabled={pending} type="submit">Save name</button>
-              </form>
-
-              {confirmDelete ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center" role="group" aria-label="Confirm watchlist delete">
-                  <p className="text-sm text-slate-200">Delete this watchlist?</p>
-                  <button className="rounded-xl border border-rose-400/50 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300/50 disabled:opacity-50" disabled={pending} onClick={removeList} type="button">Delete watchlist</button>
-                  <button className={quietButton} disabled={pending} onClick={() => setConfirmDelete(false)} type="button">Cancel</button>
-                </div>
-              ) : (
-                <button className={quietButton} disabled={pending} onClick={() => setConfirmDelete(true)} type="button">Delete</button>
-              )}
-
-              <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={submitSymbol}>
-                <div className="min-w-0 flex-1">
-                  <label className="text-xs font-semibold text-slate-300" htmlFor="watchlist-symbol">Add symbol</label>
-                  <input
-                    autoCapitalize="characters"
-                    autoComplete="off"
-                    className={control}
-                    disabled={pending || membersFull}
-                    id="watchlist-symbol"
-                    maxLength={FIELD_UNITS}
-                    onChange={(event) => setSymbolDraft(event.target.value)}
-                    spellCheck={false}
-                    value={symbolDraft}
-                  />
-                </div>
-                <button className={primaryButton} disabled={pending || membersFull} type="submit">Add symbol</button>
-              </form>
-              {membersFull ? <p className="text-xs text-slate-400">This watchlist already has 50 symbols. Remove one to add another.</p> : null}
-
-              {members.length === 0 ? (
-                <p className="text-sm text-slate-300" role="status">No symbols on this watchlist.</p>
-              ) : (
-                <ul className="max-h-96 min-w-0 divide-y divide-slate-800 overflow-auto overscroll-contain border-y border-slate-800">
-                  {members.map((member, index) => (
-                    <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between" key={`${member.position}-${member.symbol}`}>
-                      <span className="font-mono text-sm font-semibold text-slate-100">{member.symbol}</span>
-                      <div className="flex flex-wrap gap-2">
-                        <button aria-label={`Move ${member.symbol} up`} className={quietButton} disabled={pending || index === 0} onClick={() => move(index, -1)} type="button">Move up</button>
-                        <button aria-label={`Move ${member.symbol} down`} className={quietButton} disabled={pending || index === members.length - 1} onClick={() => move(index, 1)} type="button">Move down</button>
-                        <button aria-label={`Remove ${member.symbol}`} className={quietButton} disabled={pending} onClick={() => removeMember(member.symbol)} type="button">Remove</button>
-                        <button className={quietButton} disabled={pending} onClick={() => onUseInResearch(member.symbol)} type="button">Use in research</button>
-                        <button className={quietButton} disabled={pending} onClick={() => onUseInChart(member.symbol)} type="button">Use in chart</button>
-                        <Link aria-label={`Trade ${member.symbol}`} className={`${quietButton} inline-flex items-center`} to={`/trades?symbol=${encodeURIComponent(member.symbol)}`}>Trade</Link>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="text-xs text-slate-400">
-                Research fills the company symbol only. Chart fills the history symbol only — choose a cached series and select View history to plot it.
-              </p>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {fieldError ? <p className="text-sm text-rose-200" role="alert">{fieldError}</p> : null}
-      {actionError ? <p className="text-sm text-rose-200" role="alert">{actionError}</p> : null}
-      {notice ? <p className="text-sm text-emerald-200" role="status">{notice}</p> : null}
-      {watchlistsQuery.isError || refreshFailed ? (
-        <div className="space-y-3">
-          <p className="text-sm text-rose-200" role="alert">
-            {notice
-              ? "The saved change stands, but the latest watchlists could not be refreshed."
-              : "Watchlists could not be refreshed."}
-          </p>
-          <button
-            className={quietButton}
-            disabled={watchlistsQuery.isFetching}
-            onClick={() => void refresh(generation.current)}
-            type="button"
-          >
-            Retry
-          </button>
-        </div>
-      ) : null}
-    </WatchlistCard>
+          {listsFull && <p>You can keep up to 20 watchlists.</p>}
+        </Panel>
+        {selected && <Panel className="watch-members" title={selected.name}
+          subtitle={`${members.length} of ${MEMBER_CAP} symbols`}>
+          <form className="watch-form" onSubmit={(event) => { event.preventDefault(); saveSymbol(symbolDraft); }}>
+            <Field id="watchlist-symbol" label="Add symbol">
+              <input autoCapitalize="characters" autoComplete="off" disabled={pending || membersFull}
+                maxLength={FIELD_UNITS} placeholder="Ticker" onChange={(event) => setSymbolDraft(event.target.value)}
+                spellCheck={false} value={symbolDraft} />
+            </Field>
+            <Button variant="primary" disabled={pending || membersFull} type="submit">Add symbol</Button>
+          </form>
+          {membersFull && <p>This watchlist already has 50 symbols. Remove one to add another.</p>}
+          {members.length === 0 ? <State kind="empty" title="No symbols on this watchlist."
+            action={standalone && <Button data-testid="watchlist-add-AAPL" disabled={pending}
+              onClick={() => saveSymbol("AAPL")}>Add AAPL</Button>} /> :
+            <ol className="watch-rows" aria-label="Symbols in saved order">
+              {members.map((member, index) => {
+                const company = catalog.data?.get(member.symbol);
+                return <li data-testid={`watchlist-item-${member.symbol}`} key={member.symbol}>
+                  <div className="watch-identity"><span className="watch-position">{index + 1}</span>
+                    <div>{company !== undefined ?
+                      <Link className="watch-symbol" to={`/market/${encodeURIComponent(member.symbol)}`}>{member.symbol}</Link> :
+                      <strong className="watch-symbol">{member.symbol}</strong>}
+                      {standalone && <small>{company ?? (catalog.isPending ? "Checking coverage…" : "Company detail unavailable")}</small>}
+                    </div>
+                  </div>
+                  <div className="watch-actions">
+                    <Button aria-label={`Move ${member.symbol} up`} disabled={pending || index === 0} onClick={() => move(index, -1)}>Move up</Button>
+                    <Button aria-label={`Move ${member.symbol} down`} disabled={pending || index === members.length - 1} onClick={() => move(index, 1)}>Move down</Button>
+                    <Button aria-label={`Remove ${member.symbol}`} disabled={pending} onClick={() => removeMember(member.symbol)}>Remove</Button>
+                    {onUseInResearch && <Button disabled={pending} onClick={() => onUseInResearch(member.symbol)}>Use in research</Button>}
+                    {onUseInChart && <Button disabled={pending} onClick={() => onUseInChart(member.symbol)}>Use in chart</Button>}
+                    {!standalone && <Link aria-label={`Trade ${member.symbol}`} className="nk-button" to={`/trades?symbol=${encodeURIComponent(member.symbol)}`}>Trade</Link>}
+                  </div>
+                </li>;
+              })}
+            </ol>}
+          {catalog.isError && <State kind="error" title="Company links could not be loaded."
+            action={<Button onClick={() => void catalog.refetch()}>Retry company lookup</Button>} />}
+          {standalone ? <details className="watch-manage"><summary>Manage list</summary>{manage}</details> : manage}
+        </Panel>}
+      </div>}
+      {fieldError && <p role="alert">{fieldError}</p>}
+      {actionError && <p role="alert">{actionError}</p>}
+      {notice && <p role="status" data-testid={notice === "Watchlist created." && selected ? "watchlist-created" : undefined}>{notice}</p>}
+      {(watchlistsQuery.isError || refreshFailed) && <State kind="error" role="alert"
+        title={notice ? "The saved change stands, but the latest watchlists could not be refreshed." : "Watchlists could not be refreshed."}
+        action={<Button disabled={watchlistsQuery.isFetching} onClick={() => void refresh(generation.current)}>Retry</Button>} />}
+    </section>
   );
 }
 
+// AuthProvider supplies one context object per session. Preview and editor share
+// an opaque cache partition, including across access-token rotation.
+const sessionIds = new WeakMap<object, number>();
+let nextSessionId = 1;
 function useWatchlistOwner() {
-  const { token, isAuthenticated, isInitializing } = useAuth();
+  const auth = useAuth();
+  const { token, isAuthenticated, isInitializing } = auth;
+  let sessionId = sessionIds.get(auth);
+  if (sessionId === undefined) {
+    sessionId = nextSessionId++;
+    sessionIds.set(auth, sessionId);
+  }
   const me = useQuery({
-    queryKey: ["me", token],
+    queryKey: [...keys.me, "watchlist-session", sessionId],
     queryFn: fetchMe,
     enabled: isAuthenticated && Boolean(token) && !isInitializing,
     retry: false,
   });
   const ownerId = Boolean(token) && me.isSuccess ? readOwnerId(me.data) : null;
 
-  return { token, isAuthenticated, isInitializing, me, ownerId };
+  return { token, isAuthenticated, isInitializing, me, ownerId, sessionId };
 }
 
 export function WatchlistPreview() {
   const { ownerId, me } = useWatchlistOwner();
   const collection = useQuery({
-    queryKey: ["watchlists", ownerId],
+    queryKey: keys.account(ownerId ?? 0, "watchlists"),
     queryFn: ({ signal }) => fetchWatchlists(signal),
     enabled: ownerId !== null,
     retry: false,
@@ -449,8 +415,8 @@ export function WatchlistPreview() {
   );
 }
 
-export function Watchlists({ designed, onUseInChart, onUseInResearch }: WatchlistsProps) {
-  const { token, isAuthenticated, isInitializing, me, ownerId } = useWatchlistOwner();
+export function Watchlists({ standalone, initialSymbol, designed, onUseInChart, onUseInResearch }: WatchlistsProps) {
+  const { token, isAuthenticated, isInitializing, me, ownerId, sessionId } = useWatchlistOwner();
 
   if (isInitializing) {
     return (
@@ -494,5 +460,5 @@ export function Watchlists({ designed, onUseInChart, onUseInResearch }: Watchlis
     );
   }
 
-  return <WatchlistEditor designed={designed} key={`${ownerId}:${token}`} onUseInChart={onUseInChart} onUseInResearch={onUseInResearch} ownerId={ownerId} />;
+  return <WatchlistEditor initialSymbol={initialSymbol} standalone={standalone} designed={designed} key={sessionId} onUseInChart={onUseInChart} onUseInResearch={onUseInResearch} ownerId={ownerId} />;
 }
