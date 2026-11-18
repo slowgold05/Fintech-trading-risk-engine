@@ -105,7 +105,7 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
 }
 
 function historyMetrics(bars: Parameters<typeof PriceChart>[0]["bars"], endDate: string) {
-  const closes = bars
+  const closes = sliceBars(bars, "1Y", endDate)
     .map((bar) => ({ date: bar.session_date, close: Number(bar.close) }))
     .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
     .sort((left, right) => left.date.localeCompare(right.date));

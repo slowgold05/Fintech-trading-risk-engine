@@ -245,6 +245,24 @@ describe("stock detail", () => {
     expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
   });
 
+  it("calculates labeled one-year volatility and drawdown without older cached prices", async () => {
+    const oneYearFlatBars = Array.from({ length: 31 }, (_, index) => {
+      const session = new Date(Date.UTC(2025, 10, 16 + index)).toISOString().slice(0, 10);
+      return bar(session, "100", "100", "100", "1000");
+    });
+    historyApi.fetchDailyHistory.mockResolvedValue(history([
+      bar("2024-10-01", "1000", "1000", "1000", "1000"),
+      ...oneYearFlatBars,
+    ]));
+    renderDetail();
+
+    const stats = await screen.findByRole("region", { name: "Market metrics" });
+    await waitFor(() => {
+      expect(within(stats).getByText("Volatility (1Y)").parentElement).toHaveTextContent("0.00%");
+      expect(within(stats).getByText("Max drawdown (1Y)").parentElement).toHaveTextContent("0.00%");
+    });
+  });
+
   it("shows an empty chart when the cache has no bars", async () => {
     historyApi.fetchDailyHistory.mockResolvedValue(history([], "unavailable"));
     renderDetail();
