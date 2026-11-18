@@ -33,3 +33,15 @@
   .holdings-ledger td > .ml-auto { margin-left:0; }
 }
 @media(max-width:767px) { .holdings-ledger td::before { content:attr(data-label); } }
+.performance-panel > header .field-control { width:auto; min-height:36px; padding:5px 10px; }
+.performance-panel :is(input, select):focus, .holding-ticket:focus-visible, .account-disclosure > summary:focus-visible {
+  outline:2px solid var(--focus); outline-offset:3px;
+}
+.night-portfolio .holdings-ledger td[data-label="Realized P&L"] { color:var(--ink); }
+
+.coverage-note summary { width:fit-content; padding:4px 0; cursor:pointer; }
+.coverage-note ul { max-height:9rem; overflow:auto; padding:8px 12px; border-left:1px solid var(--line); }
+
+@media(max-width:767px) {
+  .performance-panel > header .field-control, .holding-ticket { min-height:44px; }
+}

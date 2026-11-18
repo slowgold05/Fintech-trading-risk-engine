@@ -33,12 +33,16 @@ function PerformanceChart({ data }: { data: PortfolioPerformance }) {
   const adjusted = data.split_adjusted_history_sources?.SPY;
   const source = spySource ? `${spySource.provider} · ${spySource.adjustment.replace("_", " ")}`
     : adjusted ? `${adjusted} · split adjusted` : "Provider unavailable";
+  const holdingSources = Object.entries(data.demo_price_series ?? {}).filter(([symbol]) => symbol !== "SPY")
+    .map(([, entry]) => entry.provider + " " + entry.adjustment.replace("_", " "));
+  const sources = [...new Set(holdingSources)];
   const missingAccount = points.filter(p => p.account === null).length;
+  const gaps = points.filter(p => p.account === null || p.spy === null);
   const missingSpy = points.filter(p => p.account !== null && p.spy === null).length;
 
   return <figure className="return-figure">
     <figcaption><div><small>Selected session</small><strong>{point.date}</strong></div>
-      <div className="return-readings"><div><small className="return-key">Account TWR</small><b>{percent(point.account)}</b></div>
+      <div className="return-readings"><div><small className="return-key">Time-weighted return</small><b>{percent(point.account)}</b></div>
         <div><small className="return-key spy-key">SPY price</small><b>{percent(point.spy)}</b></div></div>
     </figcaption>
     {lastPriced > start && start >= 0 ? <div className="return-plot">
@@ -49,14 +53,17 @@ function PerformanceChart({ data }: { data: PortfolioPerformance }) {
         <path className="perf-cursor" d={`M${x(index)},0V150`} />
       </svg>
     </div> : <State kind="unavailable" title="The chart needs two funded, priced sessions" />}
-    {points.length > 1 && <input type="range" aria-label="Inspect performance session" aria-valuetext={point.date}
+    {points.length > 1 && <input type="range" tabIndex={0} aria-label="Inspect performance session" aria-valuetext={point.date}
       min="0" max={points.length - 1} value={index} onChange={event => setSelected(points[Number(event.target.value)].date)} />}
     <div className="performance-dates"><small>{points[0].date}</small><small>{points.at(-1)?.date}</small></div>
     <dl className="flow-readings"><div><dt>Session P&amp;L</dt><dd>{money(point.daily)}</dd></div>
       <div><dt>Range P&amp;L through session</dt><dd>{money(point.cumulative)}</dd></div></dl>
-    <p className="portfolio-note">Dollar P&amp;L excludes deposits and withdrawals. Session P&amp;L measures change since the previous priced session.</p>
-    <p className="portfolio-note">SPY end-of-day price return · {source}. {start >= 0 && `Both returns use ${points[start].date} as their base.`}</p>
-    {(missingAccount > 0 || missingSpy > 0) && <p className="coverage-note">Coverage gaps · {missingAccount} account sessions unavailable · {missingSpy} priced account sessions without a matching SPY return.{point.missing.length > 0 && ` Missing marks for ${point.missing.join(", ")}.`}</p>}
+    <p className="portfolio-note">Dollar P&amp;L excludes deposits and withdrawals. Session P&amp;L starts at the previous priced session.</p>
+    <p className="portfolio-note">End-of-day sources · Account {sources.join(", ") || "provider unavailable"} · SPY {source}.
+      {start >= 0 && ` Comparison base ${points[start].date}.`}</p>
+    {gaps.length > 0 && <details className="coverage-note"><summary>Coverage gaps · {missingAccount} account sessions · {missingSpy} additional SPY sessions</summary>
+      <ul>{gaps.map(gap => <li key={gap.date}>{gap.date} · {gap.account === null ? "Account return unavailable" : "No matching SPY return"}{gap.missing.length > 0 && ` · ${gap.missing.join(", ")}`}</li>)}</ul>
+    </details>}
   </figure>;
 }
 

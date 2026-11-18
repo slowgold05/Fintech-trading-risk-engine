@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AllocationResponse, AttributionResponse, OrderResponse, PortfolioResponse, RiskMetricsResponse } from "../types/schemas";
 import type { TradeImpactResponse } from "../types/schemas";
 import type { RiskScenariosResponse } from "../types/schemas";
+import { refreshExecution } from "../night/api";
 import { ToastProvider } from "../context/ToastProvider";
 import { Dashboard } from "./Dashboard";
 import { Portfolio } from "./Portfolio";
@@ -883,6 +884,25 @@ describe("valuation display", () => {
     expect(within(valueCard()).queryByText("$100,000")).not.toBeInTheDocument();
     expect(screen.getByText("Cash").parentElement).toHaveTextContent("$100,000");
     expect(within(screen.getByText("Total P&L").parentElement as HTMLElement).getByText("Unavailable")).toBeInTheDocument();
+  });
+
+  it("refreshes filled holdings by owner and keeps known realized P&L when attribution is offline", async () => {
+    const initial = book("complete");
+    api.fetchMe.mockResolvedValue({ id: 1, role: "trader" });
+    api.fetchPortfolio.mockResolvedValue(initial);
+    api.fetchAttribution.mockRejectedValue(new Error("attribution offline"));
+    const { client } = renderPage(<Portfolio />);
+    const row = await screen.findByTestId("holding-AAPL");
+    expect(row.querySelector('[data-label="Quantity"]')).toHaveTextContent("2");
+    const filled = structuredClone(initial);
+    Object.assign(filled.positions[0], { quantity: 3, position_value: 150, realized_pnl: 12.34 });
+    filled.summary.cash_balance -= 50;
+    filled.summary.buying_power -= 50;
+    api.fetchPortfolio.mockResolvedValue(filled);
+    await act(async () => { await refreshExecution(client, 1); });
+    await waitFor(() => expect(row.querySelector('[data-label="Quantity"]')).toHaveTextContent("3"));
+    expect(row.querySelector('[data-label="Realized P&L"]')).toHaveTextContent("$12.34");
+    expect(row.querySelector('[data-label="Account weight"]')).toHaveTextContent("0.30%");
   });
 
   it("renders cash and sector rows on the sector allocation card", async () => {

@@ -1,8 +1,12 @@
 import { apiClient } from "./client";
-import type { PortfolioResponse } from "../types/schemas";
+import type { PortfolioPositionResponse, PortfolioResponse } from "../types/schemas";
 
-export async function fetchPortfolio(): Promise<PortfolioResponse> {
-  const response = await apiClient.get<PortfolioResponse>("/portfolio/");
+type ValuedPortfolio = Omit<PortfolioResponse, "positions"> & {
+  positions: Array<PortfolioPositionResponse & { realized_pnl?: number | null }>;
+};
+
+export async function fetchPortfolio(): Promise<ValuedPortfolio> {
+  const response = await apiClient.get<ValuedPortfolio>("/portfolio/");
   return response.data;
 }
 

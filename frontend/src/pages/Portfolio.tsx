@@ -224,11 +224,11 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
   const summary = portfolio?.summary;
   const positions = portfolio?.positions ?? [];
   const valuationIncomplete = portfolio?.valuation_status === "incomplete" || positions.some(position => !hasMark(position));
-  const totalValue = valuationIncomplete ? null : (summary?.total_account_value ?? null);
+  const totalValue = valuationIncomplete ? null : numeric(summary?.total_account_value);
   const cashBalance = numeric(summary?.cash_balance);
   const buyingPower = numeric(summary?.buying_power);
   const reserved = cashBalance !== null && buyingPower !== null ? cashBalance - buyingPower : null;
-  const realized = new Map(attributionQuery.isError ? [] : attributionQuery.data?.securities.map(row => [row.symbol, numeric(row.realized_pnl)]));
+  const realizedBySymbol = new Map(attributionQuery.isError ? [] : attributionQuery.data?.securities.map(row => [row.symbol, numeric(row.realized_pnl)]));
   const totalPnl = valuationIncomplete
     ? null
     : (summary?.total_pnl ?? null);
@@ -350,6 +350,7 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
                 <tbody>
                   {positions.map((position) => {
                     const marked = hasMark(position);
+                    const realized = numeric(position.realized_pnl) ?? realizedBySymbol.get(position.symbol);
                     const exposurePercent = accountWeight(
                       marked ? position.position_value : null,
                       totalValue,
@@ -411,7 +412,7 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
                           )}
                         </td>
                         <td data-label="Realized P&L" className="text-right font-mono tabular-nums text-slate-500">
-                          {realized.get(position.symbol) == null ? "Unavailable" : formatCurrency(realized.get(position.symbol)!)}
+                          {realized == null ? "Unavailable" : formatCurrency(realized)}
                         </td>
                         <td data-label="Unrealized P&L" className="text-right">
                           {unrealized == null ? (
