@@ -22,7 +22,7 @@ export const features: readonly Feature[] = [
   {id:"portfolio-review", label:"Portfolio review", path:"/portfolio/review", access:"authenticated", Screen:lazy(() => import("./features/portfolio-review/PortfolioReview").then(m => ({default:m.PortfolioReview})))},
   {id:"watchlists", label:"Watchlists", path:"/watchlists", access:"authenticated", Screen:WatchlistsScreen},
   {id:"account", label:"Account", path:"/account", access:"authenticated", Screen:AccountScreen},
-  {id:"holding-lots", label:"Holding details", path:"/portfolio/holdings", access:"authenticated", Screen:lazy(() => import("./features/holding-details/HoldingDetails").then(m => ({default:m.HoldingDetails})))},
+  {id:"holding-lots", label:"Holding details", path:"/portfolio/holdings", access:"authenticated", Screen:lazy(() => import("./features/holding-details/HoldingNote").then(m => ({default:m.HoldingDetailsWithNote})))},
   {id:"learn", label:"Learn", path:"/learn", access:"public", Screen:LearnScreen},
   {id:"screener", label:"Stock screener", path:"/market/screener", access:"public",
     Screen: lazy(() => import("./features/explore/Screener").then(module => ({ default: module.Screener })))},

@@ -159,6 +159,11 @@ def configure(database_url: str, app_password: str) -> None:
                 cursor.execute("GRANT INSERT (user_id, alias) ON night_leaderboard_entries TO fintech_app")
                 cursor.execute("GRANT UPDATE (alias) ON night_leaderboard_entries TO fintech_app")
 
+            cursor.execute("SELECT to_regclass(%s)", ("public.night_holding_notes",))
+            if cursor.fetchone()[0] is not None:
+                cursor.execute("GRANT SELECT, INSERT, DELETE ON night_holding_notes TO fintech_app")
+                cursor.execute("GRANT UPDATE (text, updated_at) ON night_holding_notes TO fintech_app")
+
 
 def main() -> None:
     password = os.environ.get("POSTGRES_APP_PASSWORD")

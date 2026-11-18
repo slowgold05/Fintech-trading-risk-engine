@@ -39,3 +39,4 @@ from app.models.watchlist import Watchlist, WatchlistItem
 from app.models.night_alerts import NightAlert
 from app.models.night_journal import NightJournalEntry
 from app.models.night_leaderboard import NightLeaderboardEntry
+from app.models.night_holding_note import NightHoldingNote

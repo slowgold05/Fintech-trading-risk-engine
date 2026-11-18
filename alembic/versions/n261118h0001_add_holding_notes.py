@@ -1,7 +1,7 @@
 """Add private notes keyed by owner and asset.
 
 Revision ID: n261118h0001
-Revises: d01cfb893a64
+Revises: n261118l0001
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 
 
 revision = "n261118h0001"
-down_revision = "d01cfb893a64"
+down_revision = "n261118l0001"
 branch_labels = None
 depends_on = None
 
@@ -24,6 +24,13 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("user_id", "asset_id"),
         sa.CheckConstraint("length(text) BETWEEN 1 AND 2000", name="ck_night_holding_note_text_length"),
     )
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute("""
+            DO $$ BEGIN IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'fintech_app') THEN
+                GRANT SELECT, INSERT, DELETE ON public.night_holding_notes TO fintech_app;
+                GRANT UPDATE (text, updated_at) ON public.night_holding_notes TO fintech_app;
+            END IF; END $$
+        """)
 
 
 def downgrade() -> None:
