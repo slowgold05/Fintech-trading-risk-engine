@@ -1,3 +1,4 @@
+import { CloseInsights } from "../night/features/portfolio-review/CloseInsights";
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -274,6 +275,7 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
         )}
       </div>
 
+      <CloseInsights owner={owner} surface="portfolio" />
       <Performance owner={owner} />
       <Allocation incomplete={valuationIncomplete} data={allocationQuery.data} loading={allocationQuery.isPending} retry={allocationQuery.isError ? () => void allocationQuery.refetch() : undefined} />
       </div>

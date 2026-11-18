@@ -1,3 +1,4 @@
+import { CloseInsights } from "../night/features/portfolio-review/CloseInsights";
 import { useRef } from "react";
 import { fetchMe } from "../api/auth";
 import { keys } from "../night/api";
@@ -148,6 +149,7 @@ function Today({ identity }: { identity: UserResponse }) {
     <Page className="today" title="Today" description="Closing values, recent activity and current holdings."
       actions={identity.role === "trader" && portfolio && !(demo && guide === "active") && <Link ref={entry} className="nk-button" data-variant="primary" data-testid="order-open"
         to="/trades?ticket=1">Open order preview</Link>}>
+      <CloseInsights owner={identity.id} surface="today" />
       <div className="today-brief">
         <ClosingSessions owner={identity.id} />
         <ActivityBrief loadingFills={tradesQuery.isPending} loadingOrders={ordersQuery.isPending} fills={tradesQuery.isSuccess ? trades?.trades : undefined} orders={ordersQuery.isSuccess ? ordersQuery.data?.orders : undefined} />

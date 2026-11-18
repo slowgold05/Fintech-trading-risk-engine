@@ -25,7 +25,7 @@ export const keys = {
   feature: (feature: string, params: unknown) => ["night",feature,params] as const,
 };
 
-const executionReads = new Set(["holding-lots","portfolio-review","portfolio","performance","allocation","attribution","risk","orders","receipt","trades"]);
+const executionReads = new Set(["close-insights","holding-lots","portfolio-review","portfolio","performance","allocation","attribution","risk","orders","receipt","trades"]);
 const legacyReads = new Set(["portfolio","positions","performance","orders","order-detail","trades","risk","risk-detail","trade-risk","dashboard","portfolio-performance"]);
 
 export function refreshExecution(client: QueryClient, owner?: number, reset = false) {
