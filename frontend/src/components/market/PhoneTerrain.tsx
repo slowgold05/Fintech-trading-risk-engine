@@ -90,7 +90,7 @@ export function PhoneTerrain({
   useSessionPaint(read);
   useLayoutEffect(() => {
     const viewport = canvas.current?.parentElement;
-    registerHandsetSurface(viewport ?? null, 135);
+    // Let the high-density canvas paint without a separate animated layer.
     registerHandsetSurface(viewport?.parentElement?.querySelector(".fund-carousel") ?? null, 215);
   }, []);
 
