@@ -1,0 +1,16 @@
+.explore .sector-select { min-height: 44px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-align: left; }
+.explore .direction-counts { margin-block: var(--pad); }
+.explore .direction-counts figcaption { margin-bottom: 8px; font-weight: 600; }
+.explore .direction { display: grid; grid-template-columns: 5.5em minmax(24px,1fr) 3em 4.3em; gap: 8px; align-items: center; min-height: var(--row); font-variant-numeric: tabular-nums; }
+.explore .direction > :nth-last-child(-n+2) { text-align: right; }
+.explore .track { height: 10px; background: var(--raised); }
+.explore .track i { display: block; height: 100%; }
+.explore [data-direction=up] { background: var(--up); }
+.explore [data-direction=down] { background: var(--down); }
+.explore [data-direction=flat] { background: var(--muted); }
+[data-look=dial] .explore [data-direction=down] { background: repeating-linear-gradient(135deg,var(--down) 0 2px,var(--surface) 2px 4px); }
+.explore .stock-observations { border-top: 1px solid var(--line); }
+.explore .stock-observations summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
+.explore [data-testid=sector-results] caption { margin-top: var(--pad); }
+@media(max-width:767px) { .explore [data-testid=sector-results] table { font-size: 13px; } }
+.explore .sector-select { min-width: 44px; overflow-wrap: normal; }
