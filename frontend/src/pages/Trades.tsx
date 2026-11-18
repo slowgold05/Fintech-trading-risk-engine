@@ -19,6 +19,7 @@ import {
   formatDateTime,
   formatCurrency,
   formatQuantity,
+  simulatedLiquidityLabel,
 } from "../utils/format";
 import { getRiskTone } from "../utils/riskTone";
 import type { TradeResponse, TradeRiskResponse } from "../types/schemas";
@@ -77,6 +78,9 @@ function TradeHistoryRow({ trade }: { trade: TradeResponse }) {
         </td>
         <td className="text-right font-mono tabular-nums">
           {formatCurrency(trade.price_at_execution)}
+          {trade.simulated_quote_date && (
+            <small className="block">{simulatedLiquidityLabel(trade.simulated_quote_date)} · {trade.simulated_quote_source ?? "Provider unavailable"}</small>
+          )}
         </td>
         <td className="text-right font-mono tabular-nums text-slate-400">
           {trade.demo_seed ? trade.executed_at.slice(0, 10) : formatDateTime(trade.executed_at)}

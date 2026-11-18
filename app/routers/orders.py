@@ -27,7 +27,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def _execution_summary(order: Order) -> dict:
-    summary = simulated_provenance(order.simulated_quote_at)
+    summary = simulated_provenance(order.simulated_quote_date, order.simulated_quote_source)
     if settings.simulated_liquidity_enabled:
         reason = order.remainder_reason
         if reason is None and order.status == "open":
@@ -148,7 +148,7 @@ def get_order_detail(
                 "notional": f"{notional_amount(Decimal(trade.quantity), Decimal(trade.price_at_execution)):.2f}",
                 "realized_pnl": f"{Decimal(trade.realized_pnl):.2f}",
                 "executed_at": _utc_z(trade.executed_at),
-                **simulated_provenance(trade.simulated_quote_at),
+                **simulated_provenance(trade.simulated_quote_date, trade.simulated_quote_source),
             }
             for trade in returned
         ]

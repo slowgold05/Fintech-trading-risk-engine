@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Numeric, false
+from sqlalchemy import Boolean, Column, Integer, String, Date, DateTime, ForeignKey, Numeric, false
 
 
 from sqlalchemy.sql import func
@@ -24,3 +24,5 @@ class Trade(Base):
 
     executed_at = Column(DateTime, server_default=func.now(), nullable=False, index=True)
     simulated_quote_at = Column(DateTime, nullable=True)
+    simulated_quote_source = Column(String(32), nullable=True)
+    simulated_quote_date = Column(Date, nullable=True)

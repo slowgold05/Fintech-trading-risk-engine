@@ -189,6 +189,7 @@ def test_yahoo_demo_fills_and_resets_with_a_separate_system_ledger(
     assert preview["estimated_fills"] == [{
         "counterparty": "simulated", "quantity": "1.000000", "execution_price": CLOSES["AAPL"][-1],
         "simulated_quote_date": SESSIONS[-1],
+        "simulated_quote_source": "yahoo",
     }]
     payload["expected_quote_observed_at"] = preview["quote_observed_at"]
     order_headers = {**headers, "Idempotency-Key": "yahoo-demo-order"}

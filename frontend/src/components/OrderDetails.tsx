@@ -118,7 +118,7 @@ function DetailBody({
       {!isExactZero(detail.filled_quantity) && <a className="nk-button" data-testid="receipt-holding" href={`/portfolio#holding-${encodeURIComponent(detail.symbol)}`}>View {detail.symbol} holding</a>}
       <p className="text-sm text-slate-300">{executionSummary(detail)}</p>
       {detail.simulated_quote_date && !detail.fills.some((fill) => fill.simulated_quote_date) ? (
-        <p className="text-sm text-slate-300">{simulatedLiquidityLabel(detail.simulated_quote_date)}</p>
+        <p className="text-sm text-slate-300">{simulatedLiquidityLabel(detail.simulated_quote_date)} · {detail.simulated_quote_source ?? "Provider unavailable"}</p>
       ) : null}
       {detail.remainder_reason ? <p className="text-sm text-slate-300">{detail.remainder_reason}</p> : null}
       <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
@@ -201,7 +201,7 @@ function DetailBody({
                 return (
                   <tr key={fill.trade_id}>
                     <td className="text-slate-100">
-                      <span className="font-mono">{fill.trade_id}</span>
+                      <span className="font-mono" data-testid="fill-trade-id">{fill.trade_id}</span>
                       {date ? (
                         <span data-testid="close-provenance" data-source={provider ?? ""} data-session-date={date} data-basis="raw" className="block text-xs text-slate-300">
                           <span>{simulatedLiquidityLabel(date)}</span> · {provider ?? "Provider unavailable"} · raw close

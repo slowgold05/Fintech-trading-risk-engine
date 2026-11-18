@@ -64,16 +64,19 @@ def _check_shares(db: Session, user: User, asset: Asset, quantity: Decimal = Dec
 
 def _execute_match(
     db: Session, asset: Asset, order: Order, owner: User, counterparty: User, quantity: Decimal,
-    price: Decimal, *, maker: Order | None = None, simulated_quote_at: datetime | None = None,
+    price: Decimal, *, maker: Order | None = None, simulated: SimulatedFill | None = None,
 ) -> tuple[int, int]:
     counter_order_id = maker.id if maker is not None else order.id
     sides = ((owner, order.id), (counterparty, counter_order_id))
     (buyer, buy_id), (seller, sell_id) = sides if order.side == "buy" else reversed(sides)
     filled_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    buy_trade, _ = execute_fill(db, buyer, asset, "buy", quantity, price, buy_id, filled_at,
-                               simulated_quote_at=simulated_quote_at)
-    sell_trade, _ = execute_fill(db, seller, asset, "sell", quantity, price, sell_id, filled_at,
-                                simulated_quote_at=simulated_quote_at)
+    provenance = {} if simulated is None else {
+        "simulated_quote_at": simulated.quote_at,
+        "simulated_quote_source": simulated.quote_source,
+        "simulated_quote_date": simulated.quote_date,
+    }
+    buy_trade, _ = execute_fill(db, buyer, asset, "buy", quantity, price, buy_id, filled_at, **provenance)
+    sell_trade, _ = execute_fill(db, seller, asset, "sell", quantity, price, sell_id, filled_at, **provenance)
     order.remaining_quantity -= quantity
     if maker is not None:
         maker.remaining_quantity -= quantity
@@ -89,9 +92,10 @@ def _execute_simulated_match(
     db: Session, asset: Asset, order: Order, user: User, fill: SimulatedFill
 ) -> tuple[int, int]:
     provider = provision_counterparty(db, asset, order.side, fill)
-    trade_ids = _execute_match(db, asset, order, user, provider, fill.quantity, fill.price,
-                               simulated_quote_at=fill.quote_at)
+    trade_ids = _execute_match(db, asset, order, user, provider, fill.quantity, fill.price, simulated=fill)
     order.simulated_quote_at = fill.quote_at
+    order.simulated_quote_source = fill.quote_source
+    order.simulated_quote_date = fill.quote_date
     return trade_ids
 
 

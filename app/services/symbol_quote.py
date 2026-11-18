@@ -112,6 +112,7 @@ def read_symbol_quote(db: Session, symbol: str) -> dict:
             "volume": None,
             "source": None,
             "as_of": None,
+            "session_date": None,
         }
         if quote is None:
             return body
@@ -122,4 +123,5 @@ def read_symbol_quote(db: Session, symbol: str) -> dict:
         body["source"] = quote.source
         if quote.quote_at is not None:
             body["as_of"] = _iso_z(quote.quote_at)
+            body["session_date"] = quote.quote_at.date().isoformat()
         return body

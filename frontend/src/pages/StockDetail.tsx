@@ -41,11 +41,6 @@ function requestDetail(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function asOfDate(value: string | null): string {
-  const match = value ? /^(\d{4}-\d{2}-\d{2})/.exec(value) : null;
-  return match ? match[1] : "unavailable";
-}
-
 function changeText(amount: number | null, percent: number | null): string {
   if (amount == null || percent == null || !Number.isFinite(amount) || !Number.isFinite(percent)) {
     return "unavailable";
@@ -430,7 +425,7 @@ function DetailBody({
             <p className={["mt-2 text-sm leading-6 tabular-nums", changeUp ? "text-up" : changeDown ? "text-down" : "text-copy"].join(" ")}>
               {change}
             </p>
-            <p className="mt-2 text-sm leading-6 text-muted">As of {asOfDate(quote.as_of)}</p>
+            <p className="mt-2 text-sm leading-6 text-muted">Session date {quote.session_date ?? "unavailable"}</p>
             {quote.source ? <p className="mt-1 text-[12px] leading-4 text-muted">Source {quote.source}</p> : null}
           </div>
           <Link

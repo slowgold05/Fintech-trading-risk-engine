@@ -42,6 +42,7 @@ export interface OrderDetailResponse {
   next_after_id: number | null;
   fills: OrderFill[];
   simulated_quote_date?: string;
+  simulated_quote_source?: string | null;
   remainder_reason?: string;
 }
 
@@ -212,6 +213,8 @@ function parseOrderDetail(data: unknown, orderId: number, limit: number, afterId
     next_after_id: nextAfterId,
     fills,
     ...parseSimulatedDate(data.simulated_quote_date),
+    ...(typeof data.simulated_quote_source === "string" && data.simulated_quote_source.trim()
+      ? { simulated_quote_source: data.simulated_quote_source.trim() } : {}),
     ...(reason === undefined ? {} : { remainder_reason: reason }),
   };
 }

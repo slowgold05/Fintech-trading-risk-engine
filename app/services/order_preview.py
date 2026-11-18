@@ -197,7 +197,8 @@ def _preview_snapshot(db: Session, owner: User, payload: OrderCreate, read_at: d
             return finish("blocked", "Not enough holdings to sell")
         estimated_fills.append({
             "counterparty": "simulated", "quantity": _quantity(simulated.quantity),
-            "execution_price": _quantity(simulated.price), **simulated_provenance(simulated.quote_at),
+            "execution_price": _quantity(simulated.price),
+            **simulated_provenance(simulated.quote_date, simulated.quote_source),
         })
         fill_quantity += simulated.quantity
         fill_notional += simulated_notional

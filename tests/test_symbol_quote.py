@@ -22,6 +22,7 @@ QUOTE_KEYS = {
     "volume",
     "source",
     "as_of",
+    "session_date",
 }
 
 
@@ -82,6 +83,7 @@ def test_sp500_quote_comes_from_the_cache(client, db_session):
         "volume": 1234567,
         "source": "massive",
         "as_of": "2026-11-13T21:00:00Z",
+        "session_date": "2026-11-13",
     }
 
 
@@ -100,6 +102,7 @@ def test_known_symbol_without_a_cache_row_returns_null_quote_fields(client, db_s
     assert body["volume"] is None
     assert body["source"] is None
     assert body["as_of"] is None
+    assert body["session_date"] is None
 
 
 @pytest.mark.parametrize("symbol", ["SPY", "QQQ", "DIA", "IWM"])

@@ -96,6 +96,7 @@ def test_solo_market_buy_sell_provenance_idempotency_and_ledger(client, auth_hea
     assert preview["estimated_fills"] == [{
         "counterparty": "simulated", "quantity": "1.000000", "execution_price": "351.910004",
         "simulated_quote_date": "2026-11-17",
+        "simulated_quote_source": "yahoo",
     }]
     assert preview["remainder_reason"] is None
     assert db_session.scalar(select(User.id).where(User.is_system)) is None
@@ -106,13 +107,20 @@ def test_solo_market_buy_sell_provenance_idempotency_and_ledger(client, auth_hea
     bought = _place(client, headers, body, key)
     assert bought["status"] == "filled"
     assert bought["simulated_quote_date"] == "2026-11-17"
+    assert bought["simulated_quote_source"] == "yahoo"
     assert len(bought["trade_ids"]) == 2
+    quote = db_session.get(MarketQuoteCache, "AAPL")
+    quote.source = "massive"
+    db_session.commit()
     assert _place(client, headers, body, key) == bought
     detail = _detail(client, headers, bought)
     assert detail["total_fill_count"] == 1
     assert detail["fills"][0]["simulated_quote_date"] == bought["simulated_quote_date"]
+    assert detail["fills"][0]["simulated_quote_source"] == bought["simulated_quote_source"]
     assert detail["fills"][0]["execution_price"] == "351.910004"
-    assert client.get("/trades/", headers=headers).json()["trades"][0]["simulated_quote_date"] == "2026-11-17"
+    listed = client.get("/trades/", headers=headers).json()["trades"][0]
+    assert listed["simulated_quote_date"] == "2026-11-17"
+    assert listed["simulated_quote_source"] == "yahoo"
 
     sold = _place(client, headers, _order("sell"))
     assert sold["status"] == "filled"

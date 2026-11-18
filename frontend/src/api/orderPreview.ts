@@ -45,7 +45,7 @@ type EstimatedFill = {
   execution_price: string;
 } & (
   | { counterparty: "user" }
-  | { counterparty: "simulated"; simulated_quote_date: string }
+  | { counterparty: "simulated"; simulated_quote_date: string; simulated_quote_source?: string | null }
 );
 
 type PreviewStatus = OrderPreviewResponse["status"];
@@ -293,7 +293,12 @@ export function parseEstimatedExecution(
     const date = fill.simulated_quote_date;
     if (fill.counterparty !== "simulated" || index !== fills.length - 1
         || typeof date !== "string" || date !== preview.quote_observed_at?.slice(0, 10)) failResponse();
-    return { counterparty: "simulated", quantity, execution_price, simulated_quote_date: date };
+    const provider = fill.simulated_quote_source;
+    if (provider !== undefined && provider !== null && (typeof provider !== "string" || !provider.trim())) failResponse();
+    return {
+      counterparty: "simulated", quantity, execution_price, simulated_quote_date: date,
+      ...(provider === undefined ? {} : { simulated_quote_source: provider }),
+    };
   });
   if (totalQuantity !== scaled6(preview.estimated_fill_quantity)
       || totalCents !== scaled2(preview.estimated_fill_notional)) failResponse();

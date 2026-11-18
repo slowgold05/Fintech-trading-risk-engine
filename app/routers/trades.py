@@ -58,7 +58,7 @@ def list_trades(
                 "demo_seed": trade.demo_seed,
                 **({"seed_price": provenance[(asset.symbol, trade.side, trade.executed_at.date().isoformat())]}
                    if trade.demo_seed else {}),
-                **simulated_provenance(trade.simulated_quote_at),
+                **simulated_provenance(trade.simulated_quote_date, trade.simulated_quote_source),
             }
             for trade, asset in rows
         ]

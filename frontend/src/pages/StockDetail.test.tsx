@@ -88,6 +88,7 @@ const quote: SymbolQuoteResponse = {
   volume: 1000,
   source: "massive",
   as_of: "2026-11-13T21:00:00Z",
+  session_date: "2026-11-13",
 };
 
 function httpError(status: number, detail: string) {
@@ -170,7 +171,7 @@ describe("stock detail", () => {
     expect(screen.getByText("$190.50")).toBeInTheDocument();
     expect(screen.getByText("Raw last close")).toBeInTheDocument();
     expect(screen.getAllByText("Up +$1.25 (+0.66%)")).toHaveLength(2);
-    expect(screen.getByText("As of 2026-11-13")).toBeInTheDocument();
+    expect(screen.getByText("Session date 2026-11-13")).toBeInTheDocument();
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "auto", "split_adjusted", "2y");
     expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
 

@@ -93,6 +93,7 @@ def _with_history_reference(
         db, {symbol}, clock=clock,
         start=clock.date() - timedelta(days=7),
         end=clock.astimezone(_NEW_YORK).date() - timedelta(days=1),
+        raw_only=True,
     ).get(symbol)
     if history is None:
         return cached

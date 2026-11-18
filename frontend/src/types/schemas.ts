@@ -183,6 +183,7 @@ export interface TradeResponse {
     quote_at: string | null;
   };
   simulated_quote_date?: string;
+  simulated_quote_source?: string | null;
 }
 
 export interface TradesResponse {
@@ -214,6 +215,7 @@ export interface OrderResponse {
   created_at: string;
   trade_ids?: number[];
   simulated_quote_date?: string;
+  simulated_quote_source?: string | null;
   remainder_reason?: string;
 }
 
@@ -530,6 +532,7 @@ export interface SymbolQuoteResponse {
   volume: number | null;
   source: string | null;
   as_of: string | null;
+  session_date: string | null;
 }
 
 export interface MarketResearchResponse {

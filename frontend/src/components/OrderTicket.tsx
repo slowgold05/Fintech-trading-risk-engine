@@ -819,7 +819,7 @@ export function OrderTicket({ owner, onSubmitted }: {owner?: number; onSubmitted
                 <li key={index}>
                   {formatExactDecimal(fill.quantity)} shares at {formatExactMoney(fill.execution_price)}{" "}
                   ({fill.counterparty === "simulated"
-                    ? simulatedLiquidityLabel(fill.simulated_quote_date)
+                    ? `${simulatedLiquidityLabel(fill.simulated_quote_date)} · ${fill.simulated_quote_source ?? "Provider unavailable"}`
                     : "Opposing paper order"})
                 </li>
               ))}

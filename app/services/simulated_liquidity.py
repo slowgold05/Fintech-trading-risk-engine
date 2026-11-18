@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -22,6 +22,8 @@ class SimulatedFill:
     quantity: Decimal
     price: Decimal
     quote_at: datetime
+    quote_source: str
+    quote_date: date
 
 
 def is_confirmed_close(quote: MarketQuoteCache) -> bool:
@@ -52,13 +54,13 @@ def plan_simulated_fill(
     reason = None
     if quantity < remaining:
         reason = "This order reached the simulated share cap for the latest close."
-    return SimulatedFill(quantity, quote.price, quote.quote_at), reason
+    return SimulatedFill(quantity, quote.price, quote.quote_at, quote.source, quote.quote_at.date()), reason
 
 
-def simulated_provenance(quote_at: datetime | None) -> dict:
-    if quote_at is None:
+def simulated_provenance(quote_date: date | None, quote_source: str | None) -> dict:
+    if quote_date is None:
         return {}
-    return {"simulated_quote_date": quote_at.date().isoformat()}
+    return {"simulated_quote_date": quote_date.isoformat(), "simulated_quote_source": quote_source}
 
 
 def provision_counterparty(

@@ -49,7 +49,8 @@ def select_history_series(db, symbol, start, end, adjustment, clock):
     ).first()
 
 
-def _ranked_series(symbols, start, end, adjustment, clock):
+def _ranked_series(symbols, start, end, adjustment, clock, *, raw_only=False):
+    basis = (DailyBar.adjustment_type == RAW,) if raw_only else ()
     return (
         select(
             DailyBar.symbol,
@@ -61,7 +62,7 @@ def _ranked_series(symbols, start, end, adjustment, clock):
                 order_by=(_rank(adjustment), func.max(DailyBar.session_date).desc(), DailyBar.provider),
             ).label("preference"),
         )
-        .where(DailyBar.symbol.in_(symbols), DailyBar.session_date.between(start, end), *_usable(clock))
+        .where(DailyBar.symbol.in_(symbols), DailyBar.session_date.between(start, end), *_usable(clock), *basis)
         .group_by(DailyBar.symbol, DailyBar.provider, DailyBar.adjustment_type)
         .subquery()
     )
@@ -108,14 +109,14 @@ def read_analytics_closes(db, symbols, start, end):
     return selected, adjusted_sources
 
 
-def read_history_quotes(db, symbols, *, clock=None, start=None, end=None):
+def read_history_quotes(db, symbols, *, clock=None, start=None, end=None, raw_only=False):
     """Read the latest usable bars from automatically selected daily series."""
     if not symbols:
         return {}
     clock = datetime.now(timezone.utc) if clock is None else clock
     end = clock.date() if end is None else end
     start = end - timedelta(days=14) if start is None else start
-    series = _ranked_series(symbols, start, end, RAW, clock)
+    series = _ranked_series(symbols, start, end, RAW, clock, raw_only=raw_only)
     rows = db.scalars(
         select(DailyBar).join(
             series,

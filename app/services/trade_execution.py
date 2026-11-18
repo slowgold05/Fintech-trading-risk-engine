@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 
 from fastapi import HTTPException
@@ -56,6 +56,7 @@ def execute_fill(
     db: Session, user: User, asset: Asset, side: str, qty: Decimal, price: Decimal,
     order_id: int | None = None, executed_at: datetime | None = None, *,
     demo_seed: bool = False, simulated_quote_at: datetime | None = None,
+    simulated_quote_source: str | None = None, simulated_quote_date: date | None = None,
 ) -> tuple[Trade, int]:
     require_active_user(user)
     if side not in ("buy", "sell") or qty <= 0 or price <= 0:
@@ -76,7 +77,8 @@ def execute_fill(
 
     ensure_opening(db, user)
     trade = Trade(user_id=user.id, asset_id=asset.id, order_id=order_id, side=side, quantity=qty,
-                  price_at_execution=price, simulated_quote_at=simulated_quote_at)
+                  price_at_execution=price, simulated_quote_at=simulated_quote_at,
+                  simulated_quote_source=simulated_quote_source, simulated_quote_date=simulated_quote_date)
     if demo_seed:
         trade.demo_seed = True
     if executed_at is not None:
