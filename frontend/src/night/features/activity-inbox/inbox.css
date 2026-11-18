@@ -1,0 +1,26 @@
+.inbox-page { max-width: 1300px; margin-inline: auto; }
+.inbox-page .nk-layout { grid-template-columns: minmax(0, 2.1fr) minmax(220px, 1fr); align-items: start; }
+.inbox-band, .inbox-event-head, .inbox-paging, .inbox-sources div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.inbox-band { flex-wrap: wrap; padding-block: var(--gap); border-block: 1px solid var(--line); }
+.inbox-total strong { color: var(--accent); font: 500 var(--metric)/1.1 var(--font-ui); font-variant-numeric: tabular-nums; }
+.inbox-filters, .inbox-paging { display: flex; flex-wrap: wrap; gap: 6px; }
+.inbox-filters [aria-pressed=true] { color: var(--accent); border-color: var(--accent); }
+.inbox-page button, .inbox-events a { min-height: 44px; }
+.inbox-events { list-style: none; margin: 8px 0 0; padding: 0; }
+.inbox-events li { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; border-top: 1px solid var(--line); padding-block: var(--gap); }
+.inbox-events li > * { grid-column: 1/-1; }
+.inbox-event-head h3 { font-size: 17px; font-weight: 600; }
+.inbox-time, .inbox-read-state, .inbox-sources dd { color: var(--muted); }
+.inbox-read-state[data-unread=true] { color: var(--accent); }
+.inbox-events a { grid-column: 1; display: inline-flex; justify-self: start; align-items: center; text-decoration: underline; color: var(--accent); }
+.inbox-events button { grid-column: 2; justify-self: end; }
+.inbox-sources { margin-block: var(--gap); }
+.inbox-sources div { border-top: 1px solid var(--line); padding-block: 8px; }
+.inbox-paging { padding-top: var(--gap); border-top: 1px solid var(--line); }
+:root[data-look=dial] .inbox-page .nk-layout { grid-template-columns: minmax(0,3fr) minmax(210px,1fr); }
+:root[data-look=dial] .inbox-page .nk-main .nk-panel { border-inline: 0; background: var(--bg); }
+:root[data-look=dial] .inbox-band { padding: var(--pad); background: var(--surface); }
+@media (max-width:767px) {
+  .inbox-page .nk-layout, :root[data-look=dial] .inbox-page .nk-layout { grid-template-columns: minmax(0,1fr); }
+  .inbox-page { overflow-wrap: anywhere; }
+}
