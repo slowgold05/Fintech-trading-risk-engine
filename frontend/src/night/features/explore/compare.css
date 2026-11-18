@@ -1,0 +1,13 @@
+.explore .matched-charts { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(270px,100%),1fr)); gap: var(--gap); margin-top: var(--pad); }
+.explore .price-trace { padding: var(--pad); background: var(--raised); min-width: 0; }
+.explore .price-trace figcaption, .explore .trace-axis { display: flex; justify-content: space-between; gap: 6px; }
+.explore .price-trace figcaption { font: 500 18px/1.5 var(--font-mono); }
+.explore .price-trace svg { display: block; width: 100%; }
+.explore .price-trace polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.explore .price-trace circle { fill: var(--accent); }
+.explore .price-trace .zero { stroke: var(--line); }
+.explore .price-trace .cursor { stroke: var(--muted); stroke-dasharray: 2 3; }
+.explore .trace-axis { font: var(--label)/1.5 var(--font-mono); color: var(--muted); }
+.explore [data-testid=compare-series] > .nk-field { max-width: 15rem; margin-top: var(--pad); }
+[data-look=dial] .explore .price-trace { border-top: 1px solid var(--line); background: var(--surface); }
+@media (max-width: 767px) { .explore .compare-filters .nk-field:first-child { grid-column: 1/-1; } }
