@@ -3,7 +3,7 @@ import type { UserResponse } from "../types/schemas";
 
 export type Role = UserResponse["role"];
 export type Access = "public" | "authenticated" | "trader" | "privileged" | "demo";
-export type Destination = { id: string; label: string; path: string; access: Access };
+export type Destination = { id: string; label: string; path: string; href?: string; access: Access };
 export const destinations: readonly Destination[] = [
   {id:"market", label:"Markets", path:"/market", access:"public"},
   {id:"today", label:"Today", path:"/dashboard", access:"authenticated"},
@@ -14,7 +14,7 @@ export const destinations: readonly Destination[] = [
   {id:"forecasts", label:"Forecast Lab", path:"/forecasts", access:"authenticated"},
   {id:"compliance", label:"Compliance", path:"/compliance", access:"privileged"},
 ];
-export type Feature = Destination & { Screen: ComponentType; slot?: "companyEvents" };
+export type Feature = Destination & { Screen: ComponentType; slot?: "companyEvents" | "simulationMode" };
 const WatchlistsScreen = lazy(() => import("./features/discover/WatchlistsScreen").then(module => ({ default: module.WatchlistsScreen })));
 const AccountScreen = lazy(() => import("./features/account/Account").then(module => ({ default: module.Account })));
 const LearnScreen = lazy(() => import("./features/account/Learn").then(module => ({ default: module.Learn })));
@@ -34,8 +34,10 @@ export const features: readonly Feature[] = [
     Screen: lazy(() => import("./features/explore/News").then(module => ({ default: module.News })))},
   {id:"events", label:"Company events", path:"/market/AAPL?tab=events", access:"public", slot: "companyEvents",
     Screen: lazy(() => import("./features/explore/Events").then(module => ({ default: module.Events })))},
-  {id:"backtest", label:"Buy and hold simulator", path:"/research/simulate", access:"authenticated",
-    Screen: lazy(() => import("./features/simulate/BacktestScreen").then(module => ({ default: module.BacktestScreen })))},
+  {id:"backtest", label:"Buy and hold simulator", href:"/research/simulate?mode=backtest", path:"/research/simulate", access:"authenticated",
+    Screen: lazy(() => import("./features/simulate/SimulationModes").then(module => ({ default: module.SimulationModes })))},
+  {id:"recurring", label:"Recurring contributions simulator", path:"/research/simulate", access:"authenticated", slot: "simulationMode", href:"/research/simulate?mode=recurring",
+    Screen: lazy(() => import("./features/simulate/RecurringScreen").then(module => ({ default: module.RecurringScreen })))},
 ];
 export function allowed(access: Access, identity?: Pick<UserResponse,"role"|"is_demo">) {
   if (access === "public") return true;

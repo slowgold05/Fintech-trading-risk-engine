@@ -11,7 +11,7 @@ export default function ChromeMenu({ type, close, opener }: {
   type: "commands" | "account"; close: () => void; opener: RefObject<HTMLButtonElement | null>;
 }) {
   const { isAuthenticated, signOut } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const identity = useQuery({ queryKey: ["me"], queryFn: fetchMe, enabled: isAuthenticated, retry: false, staleTime: 60_000 });
 
@@ -20,7 +20,7 @@ export default function ChromeMenu({ type, close, opener }: {
       <div onClick={event => { if ((event.target as Element).closest("a")) close(); }}>
         <MarketSearch />
         <nav className="night-link-list">{[...destinations, ...features].filter(route => allowed(route.access, identity.data)).map(route =>
-          <Link key={route.id} to={route.path} aria-current={pathname === route.path ? "page" : undefined}>{route.label}</Link>)}</nav>
+          <Link key={route.id} to={route.href ?? route.path} aria-current={(route.href ?? route.path).includes("?") ? (pathname + search === (route.href ?? route.path) ? "page" : undefined) : (pathname === route.path ? "page" : undefined)}>{route.label}</Link>)}</nav>
       </div>
     </Sheet>;
   }
