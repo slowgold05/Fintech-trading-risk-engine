@@ -95,6 +95,12 @@ def _open_prices(driver):
     harness._wait(driver).until(lambda _: disclosure.get_property("open"))
 
 
+def _prices_table(driver):
+    return _section(driver).find_element(
+        By.XPATH, ".//details[summary[normalize-space()='Session prices']]//table",
+    )
+
+
 def test_cached_daily_chart(chart_api):
     now = datetime.now(timezone.utc)
     sessions = [(now - timedelta(days=4)).date(), (now - timedelta(days=2)).date()]
@@ -146,8 +152,8 @@ def test_cached_daily_chart(chart_api):
         for session in sessions:
             assert session.isoformat() in text
         _open_prices(driver)
-        harness._wait(driver).until(lambda current: "105.000000" in _section(current).find_element(By.CSS_SELECTOR, "details table").text)
-        header_text = _section(driver).find_element(By.CSS_SELECTOR, "details table thead").text
+        harness._wait(driver).until(lambda current: "105.000000" in _prices_table(current).text)
+        header_text = _prices_table(driver).find_element(By.TAG_NAME, "thead").text
         assert "volume" in header_text.lower()
         _capture(driver, canvas, artifacts / "chart-desktop.png")
 

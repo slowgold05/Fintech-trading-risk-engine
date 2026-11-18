@@ -151,12 +151,12 @@ def _open_prices(driver) -> None:
 
 
 def _indicator_cells(driver) -> list[str]:
-    table = _section(driver).find_element(By.CSS_SELECTOR, "details table")
+    table = p3a._prices_table(driver)
     return [row.find_elements(By.TAG_NAME, "td")[-1].text.strip() for row in table.find_elements(By.CSS_SELECTOR, "tbody tr")]
 
 
 def _headers(driver) -> list[str]:
-    return [(node.get_attribute("textContent") or "").strip() for node in _section(driver).find_elements(By.CSS_SELECTOR, "details table thead th")]
+    return [(node.get_attribute("textContent") or "").strip() for node in p3a._prices_table(driver).find_elements(By.CSS_SELECTOR, "thead th")]
 
 
 def _wait_prices(driver, expected: list[str], header: str) -> None:
@@ -201,7 +201,7 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         first = _starts(driver)
         assert first["indicators"] == quiet["indicators"] + 1 and first["history"] == quiet["history"]
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "sma-desktop.png")
-        t._shot(driver, _section(driver).find_element(By.CSS_SELECTOR, "details .table-shell"), ARTIFACTS / "sma-table.png")
+        t._shot(driver, p3a._prices_table(driver).find_element(By.XPATH, ".."), ARTIFACTS / "sma-table.png")
 
         h._choose_option(driver, "daily-history-indicator", "EMA")
         _frames(driver)
