@@ -69,6 +69,8 @@ class Compare(BaseModel):
     series: list[CompareSeries]
     price_type: Literal["end_of_day"] = "end_of_day"
     return_type: Literal["price_return"] = "price_return"
+    requested_start: date | None
+    requested_end: date | None
 
 
 class BreadthItem(BaseModel):
@@ -82,6 +84,8 @@ class SectorBreadth(BaseModel):
     covered: int
     median_move: WireDecimal | None
     proxy: BreadthItem | None
+    proxy_symbol: str | None
+    proxy_coverage: Coverage
 
 
 class Breadth(SessionCoverage):

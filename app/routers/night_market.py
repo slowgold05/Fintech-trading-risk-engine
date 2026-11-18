@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -51,10 +51,6 @@ SectorFilter = Annotated[str, Query(max_length=80)]
 ArticleLimit = Annotated[int, Query(ge=1, le=50)]
 
 
-# Screen ranked stocks from a single market-wide pair of observed sessions.
-# The stock scope and detail eligibility are separate response attributes.
-
-
 @router.get("/screener", response_model=schema.Screener)
 def screener(
     db: Db,
@@ -69,21 +65,13 @@ def screener(
     return read_screener(db, sector=sector, min_move=min_move, sort=sort, limit=limit, offset=offset)
 
 
+@router.get("/compare", response_model=schema.Compare)
+def compare(
+    db: Db,
+    symbols: Annotated[str, Query(min_length=3, max_length=100)],
+    range_token: Annotated[str, Query(alias="range", pattern=r"^(1m|3m|1y)$")] = "3m",
+    provider: Annotated[str, Query(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$")] = "auto",
+):
+    from app.services.night_market_compare import read_compare
 
-# Compare aligns all selected symbols on a common price-return time axis.
-# The available series can differ between provider choices.
-
-
-
-# Breadth shares the screener's price window and includes separate ETF proxies.
-# Company counts exclude the ETFs used for sector context.
-
-
-
-# News reads cached headlines with explicit article-level company associations.
-# The cache lookup key records the feed request and has broader semantics.
-
-
-
-# Events reads authoritative stored records and reports availability by kind.
-# Filing dates come from SEC metadata rather than from price ingestion.
+    return read_compare(db, symbols=symbols, range_token=range_token, provider=provider)
