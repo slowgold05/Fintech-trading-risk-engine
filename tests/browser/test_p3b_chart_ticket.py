@@ -243,7 +243,7 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
     try:
         t._css_viewport(driver, 1280, 800, False)
         driver.get(web + "/market")
-        h._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "#daily-history-series option[value]:not([value=''])"))
+        p3a._ready_history(driver)
         p3a._submit(driver, SYMBOL)
         h._wait(driver).until(p3a._plot)
         link = h._wait(driver).until(_link)
@@ -260,6 +260,7 @@ def test_chart_to_ticket_handoff(disposable_api) -> None:
         h._wait(driver).until(lambda current: "unsent changes" not in p3a._section(current).text and _symbol_only(_query(_link(current))))
 
         t._css_viewport(driver, 390, 844, True)
+        p3a._open_history(driver)
         _capture_chart(driver, ARTIFACTS / "chart-mobile.png", ARTIFACTS / "chart-mobile-link.png")
         t._css_viewport(driver, 1280, 800, False)
 

@@ -1,0 +1,18 @@
+
+:where(html[data-look="terrain"]) .pulse-focus { justify-content: space-between; }
+:where(html[data-look="terrain"]) .session-spread {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 12px; border-top: 1px solid var(--desk-line); padding-top: 9px;
+  font: 11px/1.4 var(--desk-mono);
+}
+:where(html[data-look="terrain"]) .session-spread small { color: var(--desk-muted); margin-left: 7px; font: inherit; }
+:where(html[data-look="terrain"]) .session-spread b { color: #dfcfbc; }
+:where(html[data-look="terrain"]) .pulse-panel .history-canvas { height: 255px; border: 0; }
+:where(html[data-look="terrain"]) .pulse-panel .history-coverage { align-items: center; }
+:where(html[data-look="terrain"]) .pulse-attribution { color: #b2b3b5; font: 10px var(--desk-mono); text-decoration: underline; text-underline-offset: 3px; }
+:where(html[data-look="terrain"]) .history-method { margin-left: auto; }
+:where(html[data-look="terrain"]) .history-view .comparison-tooltip {
+  min-width: 145px; padding: 9px 11px; border-left: 2px solid var(--desk-accent);
+  color: #d8d8d5; font: 11px/1.25 var(--desk-mono); pointer-events: none;
+}
+:where(html[data-look="terrain"]) .comparison-tooltip .tooltip-volume { border-top: 1px solid var(--desk-line); margin-top: 6px; padding-top: 5px; }

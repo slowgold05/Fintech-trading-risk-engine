@@ -10,8 +10,8 @@ import pytest
 pytest.importorskip("selenium")
 
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
 from sqlalchemy.orm import Session
 
 import test_p0b_acceptance as harness
@@ -23,7 +23,17 @@ from app.services.market_history import one_calendar_year_before, two_calendar_y
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = harness.disposable_api
 PROVIDER = "fixture-history"
-SECTION = "section[aria-labelledby='daily-price-history-title']"
+SECTION = "[data-testid='daily-history']"
+
+
+def _open_history(driver):
+    harness._reveal_market_tool(driver, "[data-testid='market-history-entry']")
+    harness._wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, SECTION)))
+
+
+def _ready_history(driver):
+    _open_history(driver)
+    harness._wait(driver).until(EC.element_to_be_clickable((By.ID, "daily-history-series")))
 
 
 @pytest.fixture
@@ -45,9 +55,7 @@ def _submit(driver, symbol, adjustment="raw"):
     field = _section(driver).find_element(By.ID, "daily-history-symbol")
     field.clear()
     field.send_keys(symbol)
-    Select(_section(driver).find_element(By.ID, "daily-history-series")).select_by_value(
-        json.dumps([PROVIDER, adjustment], separators=(",", ":"))
-    )
+    harness._choose_option(driver, "daily-history-series", f"{PROVIDER} · {adjustment}")
     harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))
 
 
@@ -80,9 +88,17 @@ def _no_plot(driver):
 
 
 def _open_prices(driver):
-    summary = _section(driver).find_element(By.TAG_NAME, "summary")
-    if not summary.find_element(By.XPATH, "..").get_attribute("open"):
-        harness._click(driver, summary)
+    summary = _section(driver).find_element(By.XPATH, ".//summary[normalize-space()='Session prices']")
+    disclosure = summary.find_element(By.XPATH, "..")
+    if not disclosure.get_property("open"):
+        summary.send_keys(Keys.ENTER)
+    harness._wait(driver).until(lambda _: disclosure.get_property("open"))
+
+
+def _prices_table(driver):
+    return _section(driver).find_element(
+        By.XPATH, ".//details[summary[normalize-space()='Session prices']]//table",
+    )
 
 
 def test_cached_daily_chart(chart_api):
@@ -117,17 +133,14 @@ def test_cached_daily_chart(chart_api):
     try:
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
         driver.get(chart_api.web_url + "/market")
-        harness._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "#daily-history-series option[value]:not([value=''])"))
+        _ready_history(driver)
         assert _history_reads(driver, "P3HISTORY") == 0
         assert _no_plot(driver)
-        # Market pulse charts the index proxies on load, so this chunk is already
-        # fetched. The daily history section still has no canvas until View history.
-        harness._wait(driver).until(lambda current: current.execute_script(
-            "return performance.getEntriesByType('resource').some(e => e.name.includes('lightweight-charts.production'))"
-        ))
-
         _submit(driver, "P3HISTORY")
         canvas = harness._wait(driver).until(_plot)
+        assert driver.execute_script(
+            "return performance.getEntriesByType('resource').some(e => e.name.includes('lightweight-charts.production'))"
+        )
         text = _section(driver).text
         assert PROVIDER in text and "adjustment raw" in text
         # Only 2 of the many expected NYSE trading days in the 2-year window were stored, so
@@ -139,25 +152,26 @@ def test_cached_daily_chart(chart_api):
         for session in sessions:
             assert session.isoformat() in text
         _open_prices(driver)
-        harness._wait(driver).until(lambda current: "105.000000" in _section(current).find_element(By.CSS_SELECTOR, "details table").text)
-        header_text = _section(driver).find_element(By.CSS_SELECTOR, "details table thead").text
+        harness._wait(driver).until(lambda current: "105.000000" in _prices_table(current).text)
+        header_text = _prices_table(driver).find_element(By.TAG_NAME, "thead").text
         assert "volume" in header_text.lower()
         _capture(driver, canvas, artifacts / "chart-desktop.png")
 
         two_year_start = two_calendar_years_before(now.date())
         one_year_start = one_calendar_year_before(now.date())
         assert two_year_start.isoformat() in _section(driver).text
-        Select(_section(driver).find_element(By.ID, "daily-history-range")).select_by_value("1y")
+        harness._choose_option(driver, "daily-history-range", "1 year")
         harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))
         harness._wait(driver).until(lambda current: one_year_start.isoformat() in _section(current).text)
         assert two_year_start.isoformat() not in _section(driver).text
-        Select(_section(driver).find_element(By.ID, "daily-history-range")).select_by_value("2y")
+        harness._choose_option(driver, "daily-history-range", "2 years")
         harness._click(driver, _section(driver).find_element(By.XPATH, ".//button[normalize-space()='View history']"))
         harness._wait(driver).until(lambda current: two_year_start.isoformat() in _section(current).text)
         canvas = harness._wait(driver).until(_plot)
 
         desktop_width = canvas.rect["width"]
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        _open_history(driver)
         harness._wait(driver).until(lambda current: harness._viewport(current)["width"] == 390
                                    and (plot := _plot(current)) and plot.rect["width"] < desktop_width)
         assert driver.execute_script("""
@@ -205,7 +219,8 @@ def test_cached_daily_chart(chart_api):
         assert not _section(driver).find_elements(By.TAG_NAME, "summary")
         _capture(driver, _section(driver).find_element(By.CSS_SELECTOR, "[role='alert']"), artifacts / "chart-invalid.png")
 
-        assert _section(driver).find_element(By.LINK_TEXT, "https://www.tradingview.com/").get_attribute("href") == "https://www.tradingview.com/"
+        notice = driver.find_element(By.LINK_TEXT, "https://www.tradingview.com/")
+        assert notice.is_displayed() and notice.get_attribute("href") == "https://www.tradingview.com/"
         assets = driver.execute_async_script("""
             const done = arguments[arguments.length - 1];
             Promise.all([
@@ -225,6 +240,7 @@ def test_cached_daily_chart(chart_api):
         harness._wait(driver).until(EC.url_contains("/login"))
         harness._wait(driver).until(EC.staleness_of(canvas))
         driver.back()
+        _open_history(driver)
         harness._wait(driver).until(EC.presence_of_element_located((By.ID, "daily-history-series")))
         assert _no_plot(driver)
         assert _section(driver).find_element(By.ID, "daily-history-symbol").get_attribute("value") == ""
