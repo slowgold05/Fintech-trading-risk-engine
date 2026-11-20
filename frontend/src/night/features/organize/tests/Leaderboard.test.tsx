@@ -25,3 +25,22 @@ it("never requests rankings for a regular trader", async () => {
   expect(await screen.findByTestId("night-forbidden")).toBeInTheDocument();
   expect(api.fetchRanking).not.toHaveBeenCalled();
 });
+
+it("counts signed and flat returns only for published aliases", async () => {
+  vi.mocked(fetchMe).mockResolvedValue({ id: 1, email: "demo@example.com", role: "trader", is_demo: true });
+  vi.mocked(api.fetchRanking).mockResolvedValue({
+    start: "2026-10-20", end: "2026-11-17", excluded_count: 2, coverage: "partial",
+    items: [
+      { rank: 1, alias: "Elm", return_ratio: "0.02" },
+      { rank: 2, alias: "Fir", return_ratio: "0.01" },
+      { rank: 3, alias: "Oak", return_ratio: "0" },
+      { rank: 4, alias: "Ash", return_ratio: "-0.01" },
+    ],
+    my_entry: { enabled: false, alias: null },
+  });
+  renderScreen(<Leaderboard />);
+  expect(await screen.findByRole("button", {name: /Gained\s*2/})).toBeVisible();
+  expect(screen.getByRole("button", {name: /Unchanged\s*1/})).toBeVisible();
+  expect(screen.getByRole("button", {name: /Declined\s*1/})).toBeVisible();
+  expect(screen.getByRole("cell", {name: "-1.00%"})).toBeVisible();
+});
