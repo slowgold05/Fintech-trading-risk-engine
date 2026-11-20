@@ -31,7 +31,7 @@ export function HoldingDirectory({owner, back}: {owner:number; back:string}) {
     <Panel title="Open cost basis" subtitle="Share of invested cost by holding" className="holding-distribution"
       actions={positions.length > 0 && <select className="field-control" aria-label="Inspect holding" value=""
         onChange={event => setParams(holdingParams(event.target.value))}>
-        <option value="" disabled>Inspect holding</option>
+        <option value="" disabled>Inspect…</option>
         {symbols.map(symbol => <option key={symbol}>{symbol}</option>)}
       </select>}>
       <ShareInstrument parts={parts} total={100} status={status} format={formatPercent} label="Open cost basis by symbol" centrepiece={!status}/>
