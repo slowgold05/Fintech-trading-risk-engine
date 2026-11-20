@@ -108,4 +108,15 @@ describe("historical trade risk", () => {
     expect(screen.queryByText("$20.00")).not.toBeInTheDocument();
     expect(screen.queryByText("No trade assessments yet.")).not.toBeInTheDocument();
   });
+
+  it("shows the recorded score and rule reason for the selected assessment", async () => {
+    const older = assessment(50,2);
+    older.alerts = [{rule_code:"RECORDED",severity:"medium",reason:"Historical assessment reason.",created_at:older.created_at}];
+    vi.mocked(fetchRisk).mockResolvedValue({assessments:[assessment(0),older]});
+    open();
+    fireEvent.change(await screen.findByRole("combobox",{name:"Inspect trade assessment"}),{target:{value:"2"}});
+    const panel = screen.getByRole("heading",{name:"Historical Trade Risk Score"}).closest("section")!;
+    expect(within(panel).getByRole("img",{name:"Risk score 50 of 100, Medium"})).toBeVisible();
+    expect(within(panel).getByText("Historical assessment reason.")).toBeVisible();
+  });
 });
