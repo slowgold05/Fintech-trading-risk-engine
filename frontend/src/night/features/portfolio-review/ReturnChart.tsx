@@ -1,46 +1,33 @@
-import { useState } from "react";
-import { ChartFrame, State } from "../../kit";
+import { useMemo, useState } from "react";
+import { Panel, RestInstrument, SeriesInstrument } from "../../inner";
 import { numeric } from "../portfolio/valuation";
-import { pct, type Review } from "./review";
+import { formatSignedPercent } from "../../../utils/format";
+import { dates, pct, type Review } from "./review";
 
-type Series = "portfolio_return_ratio" | "spy_return_ratio";
+const names = ["Account return", "SPY price return"];
+const formatReturn = (ratio: number) => formatSignedPercent(ratio * 100);
 
 export function ReturnChart({ review }: { review: Review }) {
-  const { points } = review;
-  const [inspected, setInspected] = useState<string | null>(null);
-  const chosen = points.findIndex(p => p.session_date === (inspected ?? review.end_used));
-  const index = chosen >= 0 ? chosen : Math.max(0, points.length - 1);
-  const point = points[index];
-  const values = points.flatMap(p => [numeric(p.portfolio_return_ratio), numeric(p.spy_return_ratio)]).filter((n): n is number => n !== null);
-  const low = Math.min(0, ...values), high = Math.max(0, ...values);
-  const x = (i: number) => 8 + 784 * i / Math.max(1, points.length - 1);
-  const y = (v: number) => high === low ? 80 : 151 - 142 * (v - low) / (high - low);
-  function series(key: Series) {
-    const readings = points.map(p => numeric(p[key]));
-    const line = readings.map((v, i) => v === null ? "" : (readings[i - 1] == null ? "M" : "L") + x(i) + "," + y(v)).join(" ");
-    return <g className={key === "spy_return_ratio" ? "review-spy" : "review-account"}>
-      <path d={line} />
-      {readings.map((v, i) => v !== null && readings[i-1] == null && readings[i+1] == null &&
-        <circle key={points[i].session_date} cx={x(i)} cy={y(v)} r="3" />)}
-    </g>;
-  }
-
-  return <ChartFrame title="Cumulative return" className="review-chart"
-    source="Account time-weighted return and SPY price return"
-    summary={point && <div className="review-inspect" aria-live="polite">
-      <time>{point.session_date}</time><span>Account <b>{pct(point.portfolio_return_ratio)}</b></span>
-      <span>SPY <b>{pct(point.spy_return_ratio)}</b></span><span>Drawdown <b>{pct(point.drawdown_ratio)}</b></span>
-    </div>}>
-    {values.length ? <div className="review-plot">
-      <div className="review-scale"><span>{pct(String(high))}</span>{high !== low && <span>{pct(String(low))}</span>}</div>
-      <svg viewBox="0 0 800 160" preserveAspectRatio="none" role="img" aria-label="Account return (solid) and SPY return (dashed), with breaks at missing closes.">
-        {[9,80,151].map(h => <line key={h} x1="0" x2="800" y1={h} y2={h} />)}
-        {series("spy_return_ratio")}{series("portfolio_return_ratio")}
-        <line className="review-cursor" x1={x(index)} x2={x(index)} y1="0" y2="160" />
-      </svg>
-    </div> : <State kind="unavailable" title="No priced returns in this period" />}
-    {points.length > 1 && <input aria-label="Inspect closing session" type="range" min="0" max={points.length - 1} value={index}
-      aria-valuetext={point.session_date} onChange={e => setInspected(points[Number(e.target.value)].session_date)} />}
-    {point && <div className="review-dates"><span>{points[0].session_date}</span><span>{points.at(-1)?.session_date}</span></div>}
-  </ChartFrame>;
+  const [inspected, setInspected] = useState<string>();
+  const samples = useMemo(() => {
+    const rows = new Map(review.points.map(point => [point.session_date, point]));
+    const sessions = new Set([...rows.keys(), ...review.missing_sessions]);
+    return [...sessions].sort().map(label => {
+      const row = rows.get(label);
+      return { label, values: [numeric(row?.portfolio_return_ratio), numeric(row?.spy_return_ratio)], drawdown: row?.drawdown_ratio ?? null };
+    });
+  }, [review.points, review.missing_sessions]);
+  const latest = samples.reduce((last, point, i) => point.values[0] === null ? last : i, -1);
+  const chosen = samples.findIndex(point => point.label === inspected);
+  const index = chosen >= 0 ? chosen : latest >= 0 ? latest : Math.max(0, samples.length - 1);
+  const point = samples[index];
+  const ready = samples.some(row => row.values.some(v => v !== null));
+  return <Panel title="Cumulative return" className="review-chart" subtitle={<><span>Time-weighted account vs. SPY price</span><span className="review-window">{dates(review.requested_start, review.requested_end)}</span></>}>
+    {ready ? <SeriesInstrument samples={samples} names={names} reference={0} format={formatReturn}
+      label="Inspect closing session" selected={index} onSelect={i => setInspected(samples[i].label)} /> :
+      <><RestInstrument label="Cumulative return" status={{kind:"unavailable",title:"No priced returns in this period"}} />
+        {samples.length > 1 && <input type="range" aria-label="Inspect closing session" aria-valuetext={point.label}
+          min="0" max={samples.length-1} value={index} onChange={e => setInspected(samples[Number(e.target.value)].label)} />}</>}
+    {point && <div className="review-inspect"><span>Drawdown at <time>{point.label}</time></span><b>{pct(point.drawdown)}</b></div>}
+  </Panel>;
 }

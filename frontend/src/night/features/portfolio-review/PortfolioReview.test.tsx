@@ -37,10 +37,11 @@ it("preserves an account series across SPY and account gaps and separates snapsh
   expect(screen.getByText(/Market coverage stale/)).toBeVisible();
   expect(screen.getByText(body.contribution.reason!)).toBeVisible();
   expect(screen.getByRole("link",{name:"Back to portfolio"})).toHaveAttribute("href","/portfolio#holdings");
-  expect(document.querySelectorAll(".review-account circle")).toHaveLength(2);
-  expect(document.querySelector(".review-account path")).not.toHaveAttribute("d",expect.stringContaining("L"));
+  expect(screen.getByRole("slider")).toHaveAttribute("aria-valuetext","2026-11-17");
+  expect(within(document.querySelector<HTMLElement>(".ins-readings")!).getByText("+2.50%")).toBeVisible();
   fireEvent.change(screen.getByRole("slider"),{target:{value:"1"}});
   expect(screen.getByRole("slider")).toHaveAttribute("aria-valuetext","2026-11-16");
+  expect(within(document.querySelector<HTMLElement>(".ins-readings")!).getAllByText("—")).toHaveLength(2);
   expect(client.getQueryData(["acct",7,"portfolio-review","1m"])).toEqual(body);
   fireEvent.change(screen.getByRole("combobox"),{target:{value:"ytd"}});
   expect(vi.mocked(apiClient.get)).toHaveBeenLastCalledWith("/night/portfolio/review",expect.objectContaining({params:{window:"ytd"}}));
