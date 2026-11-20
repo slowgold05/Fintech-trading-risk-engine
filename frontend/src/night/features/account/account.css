@@ -47,3 +47,32 @@
   background-position:calc(100% - 17px) center,calc(100% - 12px) center;
   background-repeat:no-repeat;
 }
+
+.account-page .nk-layout-analysis,:root[data-look=dial] .account-page .nk-layout-analysis {grid-template-columns:minmax(0,1.85fr) minmax(320px,1fr);align-items:start}
+.account-cache-readings {display:grid;grid-template-columns:1.35fr 1fr 1fr;border-block:1px solid var(--line);margin-block:6px 14px;background:var(--inner-paper)}
+.account-cache-readings .nk-stat strong {font-size:clamp(18px,2.1vw,30px)}
+.account-cache-stamp {border-top:1px solid var(--line);padding-top:10px;font:11px/1.65 var(--font-mono)}
+.account-cache .account-series {margin-top:10px}
+.account-page .nk-aside .nk-panel header {margin-bottom:6px}
+.account-page .account-fields {padding:6px 0}
+@media(max-width:767px){
+ .account-page .nk-layout-analysis,:root[data-look=dial] .account-page .nk-layout-analysis {grid-template-columns:minmax(0,1fr)}
+ .account-cache-readings .nk-stat {padding:6px}
+ .account-page .nk-page-head {flex-wrap:wrap}
+}
+.account-interval {background:var(--inner-ground);padding:14px clamp(10px,2vw,24px);border-block:1px solid var(--inner-rule)}
+.account-interval-label,.account-scale-key,.account-coverage {font:11px/1.5 var(--font-mono);color:var(--muted)}
+.account-interval-label {border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px}
+.account-interval .ins-gauge>div:first-child {display:block}
+.account-interval .ins-gauge strong {font-size:clamp(26px,3.3vw,48px);letter-spacing:-.05em}
+.account-interval .ins-gauge svg {height:auto;display:block}
+[data-look=dial] .account-interval .ins-gauge svg {height:142px}
+.account-scale-key,.account-coverage {display:flex;justify-content:space-between;gap:10px}
+.account-coverage {border-top:1px solid var(--line);margin-top:12px;padding-top:7px}
+.account-coverage strong {color:var(--ink);text-transform:capitalize}
+.account-cache-stamp {border:0}
+.account-interval .ins-gauge-position {display:none}
+@media(max-width:767px){
+ .account-cache-readings {grid-template-columns:minmax(0,1.1fr) minmax(0,.75fr) minmax(0,1.15fr)}
+ .account-cache-readings .nk-stat strong {font-size:clamp(16px,4.6vw,20px)}
+}
