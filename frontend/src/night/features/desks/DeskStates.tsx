@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMe } from "../../../api/auth";
-import { Button, State } from "../../kit";
+import { Button, RestInstrument, State } from "../../inner";
 import "./desks.css";
 
-export function DeskAccount({ children }: { children: (owner: number) => ReactNode }) {
+export function DeskAccount({ label = "Session history", children }: { label?: string; children: (owner: number) => ReactNode }) {
   const me = useQuery({ queryKey: ["me"], queryFn: fetchMe, retry: false });
-  if (me.isPending) return <State kind="loading" title="Loading your desk…" />;
-  if (me.isError) return <QueryError message="Your account could not be loaded." onRetry={me.refetch} />;
+  if (me.isPending) return <RestInstrument label={label} status={{kind:"loading",title:"Loading your desk…"}}/>;
+  if (me.isError) return <RestInstrument label={label} status={{kind:"error",title:"Your account could not be loaded.",action:<RefreshButton label="Retry" onClick={me.refetch}/>}}/>;
   return children(me.data.id);
 }
 
