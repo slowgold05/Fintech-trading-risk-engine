@@ -387,3 +387,30 @@
     justify-content: flex-start;
   }
 }
+
+.execution-overview { display:grid; grid-template-columns:minmax(0,2.15fr) minmax(250px,1fr); gap:var(--gap); align-items:start; }
+.execution-view .nk-page-head small { text-transform:uppercase; letter-spacing:.09em; }
+.execution-overview h2 { font-size:clamp(21px,2vw,28px); letter-spacing:-.045em; }
+.execution-overview .nk-panel>header p,.execution-flow footer,.fill-readings dt,.execution-book .execution-filter p { color:var(--muted); font-size:12px; }
+.execution-flow footer { padding-top:8px; }
+.fill-readings,.execution-counts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-block:1px solid var(--line); padding:8px 0; }
+.fill-readings dd { font:550 clamp(14px,1.5vw,20px)/1.5 var(--font-mono); }
+.execution-counts .nk-stat:first-child { border:0; padding-left:0; }
+.execution-book .execution-filter { display:grid; padding:12px 0; border:0; background:transparent; }
+.execution-book .execution-filter .nk-field { width:100%; }
+.execution-book .execution-filter p { padding:0; }
+.execution-tools nav { display:flex; flex-wrap:wrap; gap:0 18px; border-top:1px solid var(--line); }
+.execution-tools a { display:inline-flex; align-items:center; min-height:44px; text-decoration:underline; text-underline-offset:3px; }
+:root[data-look=dial] .execution-overview { grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr); gap:0; }
+.execution-activity { container-type:inline-size; }
+@container (max-width:780px) {
+  .execution-overview,:root[data-look=dial] .execution-overview { grid-template-columns:minmax(0,1fr); gap:var(--gap); }
+}
+.execution-view .nk-page-head [data-variant=primary] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+
+.working-orders { border-top:1px solid var(--line); padding-top:10px; }
+.working-orders h3 { font-weight:600; font-size:15px; }
+.working-orders button { display:flex; width:100%; min-height:44px; align-items:center; justify-content:space-between; gap:8px; text-align:left; }
+.working-orders button strong { text-decoration:underline; text-underline-offset:3px; }
+.working-orders button span { color:var(--muted); font:12px var(--font-mono); }
+.execution-tools summary { cursor:pointer; min-height:44px; padding-block:12px; border-top:1px solid var(--line); }
