@@ -17,3 +17,16 @@ it("preserves unknown median and proxy moves and scopes a sector drilldown", asy
   expect(await screen.findByTestId("night-state-unavailable")).toBeVisible();
   expect(read).toHaveBeenLastCalledWith("/night/breadth",expect.objectContaining({params:{sector:"Technology"}}));
 });
+
+it("keeps the ETF on the instrument when no stock pair is covered", async () => {
+  const proxy = { symbol:"XLK", move:"0.012", source:{provider:"yahoo",basis:"split_adjusted",coverage:"available"} };
+  vi.spyOn(apiClient,"get").mockResolvedValue({data:{
+    ...data, covered_count:0, excluded_count:100, advancing:0, declining:0, flat:0,
+    sectors:[{...data.sectors[0],covered:0,proxy,proxy_coverage:"available"}],
+  }});
+  renderMarket(<Sectors />);
+  expect(await screen.findByTestId("night-state-unavailable")).toHaveTextContent("No covered stock moves");
+  expect(screen.getByRole("combobox",{name:"Inspect sector"})).toHaveValue("Technology");
+  expect(screen.getByRole("cell",{name:"Unavailable"})).toBeVisible();
+  expect(screen.getByRole("cell",{name:/XLK.*\+1\.20%/})).toBeVisible();
+});

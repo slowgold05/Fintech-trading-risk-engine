@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Panel, Table, type InstrumentStatus } from "../../inner";
+import { Panel, State, Table, type InstrumentStatus } from "../../inner";
 import { priceMove, sourceLabel } from "./marketRead";
 import { MoveInstrument, type MoveReading } from "./MoveInstrument";
 import { ParticipationPage, type Participation } from "./Participation";
@@ -26,7 +26,7 @@ function SectorInstrument({ data, status }: { data?: Participation; status?: Ins
   return <MoveInstrument title="Sector moves" subtitle={data?.session_date ? `Ranked by stock median · ${data.session_date}` : "Ranked by stock median"}
     label="Stock median" inspectLabel="Inspect sector" rows={rows} initial={widest?.name} status={rest} reading={reading}
     legend={<><span><i />Stock median</span><span><i className="proxy" />ETF proxy</span>
-      {data?.covered_count === 0 && <span>No covered stock moves in this selection.</span>}</>} />;
+      {data?.covered_count === 0 && <State kind="unavailable" title="No covered stock moves in this selection." />}</>} />;
 }
 
 function SectorTable({ data, select }: { data: Participation; select: (sector: string) => void }) {
