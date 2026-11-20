@@ -33,3 +33,20 @@
   [data-look="dial"] .compliance-counts .nk-stat strong { font-size: 32px; }
   .health-four { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+
+.compliance-access .nk-layout {grid-template-columns:minmax(0,2fr) minmax(280px,1fr);align-items:start}
+.access-reading {display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 16px;padding-block:12px;border-block:1px solid var(--line)}
+.access-reading strong {font-size:clamp(24px,2.8vw,40px);text-transform:capitalize;letter-spacing:-.04em}
+.access-reading span {margin-left:auto;color:var(--accent);font:12px var(--font-mono)}
+.compliance-access .share-instrument,.control-inventory .share-instrument {display:grid;grid-template-columns:minmax(0,1.4fr) minmax(180px,1fr);align-items:center;gap:var(--pad);padding-block:12px}
+.compliance-access .share-graphic,.control-inventory .share-graphic {height:clamp(150px,18vw,240px)}
+.compliance-access .ins-rank,.control-inventory .ins-rank {min-height:44px}
+.access-policy>div {display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);gap:8px;padding:12px 0}
+.access-policy dt {text-transform:capitalize}
+.access-policy small {display:block;text-transform:none}
+.access-policy dd {font:12px var(--font-mono);color:var(--muted)}
+.access-policy [data-current=true] dd {color:var(--accent)}
+@media(max-width:767px){
+ .compliance-access .nk-layout,.compliance-access .share-instrument,.control-inventory .share-instrument {grid-template-columns:minmax(0,1fr)}
+ .compliance-access .share-graphic,.control-inventory .share-graphic {height:156px}
+}

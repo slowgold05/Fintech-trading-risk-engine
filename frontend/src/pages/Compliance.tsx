@@ -4,7 +4,9 @@ import { isAxiosError } from "axios";
 
 import { approveAmlActivation, approveIntent, approveRoleChange, approveSurveillanceActivation, downloadEvidenceBundle, fetchAccessReview, fetchAmlCases, fetchAmlRules, fetchControlStatuses, fetchFindings, fetchIncidents, fetchIntents, fetchKris, fetchOpsHealth, fetchRegisteredRisks, fetchRiskBrief, fetchRoleChanges, fetchRoleRequests, fetchSurveillanceCases, fetchSurveillanceRules, fetchTradingHalt, fetchTradingHaltEvents, openIncident, requestAmlActivation, requestRoleChange, requestSurveillanceActivation, setTradingHalt, submitAccessReview } from "../api/compliance";
 import { fetchMe } from "../api/auth";
-import { Button, Field, Page, Panel, Stat, State } from "../night/kit";
+import { Button, Field, Page, Panel, RestInstrument, ShareInstrument, Stat, State } from "../night/inner";
+import { ComplianceAccess } from "../night/features/desks/ComplianceAccess";
+import { allowed } from "../night/registry";
 import { keys } from "../night/api";
 import "../night/features/desks/desks.css";
 import "../night/features/desks/compliance.css";
@@ -79,7 +81,7 @@ export function Compliance() {
   const [haltReason, setHaltReason] = useState("");
   const me = useQuery({ queryKey: ["me"], queryFn: fetchMe, retry: false });
   const scope = (name: string) => keys.account(me.data?.id ?? 0, "compliance", name);
-  const authorized = me.data && ["admin", "compliance_officer", "auditor"].includes(me.data.role);
+  const authorized = allowed("privileged", me.data);
   const read = (name: string) => ({ queryKey: scope(name), enabled: Boolean(authorized), retry: false });
   const query = useQuery({ ...read("control-statuses"), queryFn: fetchControlStatuses });
   const roleChanges = useQuery({ ...read("role-changes"), queryFn: fetchRoleChanges });
@@ -176,17 +178,17 @@ export function Compliance() {
   const passed = controls.filter((control) => control.status === "pass").length;
   const failed = controls.filter((control) => control.status === "fail" || control.status === "evidence_error").length;
 
-  if (me.isPending) return <State kind="loading" title="Checking compliance access…" />;
-  if (me.isError) return <State kind="error" title="Account access could not be checked." action={<Button onClick={() => void me.refetch()}>Retry</Button>} />;
-  if (!authorized) return <State kind="unavailable" title="Compliance access is restricted." />;
+  if (me.isPending) return <RestInstrument label="Role access" status={{kind:"loading",title:"Checking compliance access…"}} />;
+  if (me.isError) return <RestInstrument label="Role access" status={{kind:"error",title:"Account access could not be checked.",action:<Button onClick={() => void me.refetch()}>Retry</Button>}} />;
+  if (!authorized) return <ComplianceAccess role={me.data.role} />;
 
   return (
     <Page className="desk-page compliance-desk" eyebrow={`Compliance · ${me.data.role.replaceAll("_", " ")}`} title="Control Status"
       description="Review control evidence, trading restrictions and access decisions.">
       {query.isError ? (
-        <Page.Full><State kind="error" title={isAxiosError(query.error) && query.error.response?.status === 403
-          ? "Compliance access is limited to compliance officers, admins, and auditors." : "Control status could not be loaded."}
-          action={<Button onClick={() => void query.refetch()}>Retry</Button>} /></Page.Full>
+        <Page.Full><RestInstrument label="Control verdicts" status={{kind:"error", title:isAxiosError(query.error) && query.error.response?.status === 403
+          ? "Compliance access is limited to compliance officers, admins, and auditors." : "Control status could not be loaded.",
+          action:<Button onClick={() => void query.refetch()}>Retry</Button>}} /></Page.Full>
       ) : (
         <>
           <Page.Full className="compliance-overview">
@@ -196,6 +198,11 @@ export function Compliance() {
               <Stat label="Failed evidence" value={query.isPending ? null : failed} />
               <Stat label="Without a verdict" value={query.isPending ? null : controls.length - passed - failed} />
             </div>
+            <Panel className="control-inventory" title="Evidence verdicts">
+              <ShareInstrument centrepiece label="Distribution of control evidence verdicts" format={String}
+                parts={[{name:"Passing",value:passed},{name:"Failed evidence",value:failed},{name:"Without a verdict",value:controls.length-passed-failed}]}
+                status={query.isPending ? {kind:"loading",title:"Reading control evidence…"} : controls.length ? undefined : {kind:"empty",title:"No control verdicts are available."}} />
+            </Panel>
             <nav aria-label="Compliance sections" className="compliance-links">
               <a href="#control-tests">Control tests</a><a href="#access-review">Access review</a>
               <a href="#surveillance">Surveillance</a><a href="#incidents">AML and incidents</a>
