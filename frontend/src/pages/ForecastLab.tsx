@@ -13,8 +13,9 @@ import {
 } from "../api/forecasts";
 import { ForecastChart } from "../components/ForecastChart";
 import { keys } from "../night/api";
-import { Button, Field, Page, Panel, State } from "../night/kit";
+import { Button, Field, Page, Panel, RestInstrument, State } from "../night/inner";
 import { DeskAccount, EmptyState, LoadingRows, QueryError, RefreshButton } from "../night/features/desks/DeskStates";
+import { ForecastWindow } from "../night/features/desks/ForecastWindow";
 import "../night/features/desks/forecast.css";
 import type { ForecastEvaluation, ForecastJob, ForecastModel, ForecastResult } from "../types/schemas";
 import { formatDateTime } from "../utils/format";
@@ -282,19 +283,6 @@ function ForecastChartCard({ owner, jobId, onClose }: { owner: number; jobId: nu
   );
 }
 
-function ModelRecord({ model }: { model: ForecastModel }) {
-  return <div className="forecast-model-record">
-    <div><span className="desk-meta">Model name</span><h3>{model.model_name}</h3>
-      <span className="desk-status" data-status={model.enabled ? "completed" : "queued"}>{model.enabled ? "enabled" : "disabled"}</span>
-    </div>
-    <div className="forecast-limits" aria-label="Server limits">
-      <p>Max lookback <strong>{model.max_lookback}</strong></p>
-      <p>Max horizon <strong>{model.max_horizon}</strong></p>
-      <p>Max sample count <strong>{model.max_sample_count}</strong></p>
-    </div>
-  </div>;
-}
-
 function EvaluationRow({ evaluation }: { evaluation: ForecastEvaluation }) {
   return (
     <li className="desk-record">
@@ -382,23 +370,25 @@ function ForecastDesk({ owner }: { owner: number }) {
   const activeModel = models.data?.models.find(model => model.enabled);
   return <Page className="desk-page forecast-desk" eyebrow="Experimental" title="Forecast Lab"
     description="Inspect model availability, generated price paths and evaluations against a baseline.">
-    <Page.Full><Panel title="Forecast model" actions={<RefreshButton onClick={models.refetch} />}>
-      {models.isPending ? <LoadingRows /> : models.isError ? <QueryError message="Forecast models could not be loaded." onRetry={models.refetch} /> :
-        models.data.models.length ? models.data.models.map(model => <ModelRecord key={model.id} model={model} />) :
-        <State kind="unavailable" title="No forecast model is configured." />}
-    </Panel></Page.Full>
     {selectedJobId !== null && <Page.Full><ForecastChartCard owner={owner} jobId={selectedJobId} onClose={() => { setSelectedJobId(null); opener.current?.focus(); }} /></Page.Full>}
-    <Page.Main className="desk-stack">{models.isPending ? <LoadingRows /> : <CreateForecastJobCard owner={owner} model={models.isError ? undefined : activeModel} />}</Page.Main>
+    <Page.Main className="desk-stack">
+      <Panel title="Forecast model" actions={<RefreshButton onClick={models.refetch} />}>
+        {models.isPending ? <RestInstrument label="Session window" status={{kind:"loading",title:"Reading model limits…"}}/> :
+          models.isError ? <RestInstrument label="Session window" status={{kind:"error",title:"Forecast models could not be loaded.",action:<RefreshButton label="Retry" onClick={models.refetch}/>}}/> :
+          <ForecastWindow models={models.data.models}/>}
+      </Panel>
+      <ForecastEvaluationsCard owner={owner} />
+    </Page.Main>
     <Page.Aside className="desk-stack">
+      {models.isPending ? <LoadingRows /> : <CreateForecastJobCard owner={owner} model={models.isError ? undefined : activeModel} />}
       <ForecastJobsCard owner={owner} onViewForecast={id => {
         opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         setSelectedJobId(id);
       }} />
-      <ForecastEvaluationsCard owner={owner} />
     </Page.Aside>
   </Page>;
 }
 
 export default function ForecastLab() {
-  return <DeskAccount>{owner => <ForecastDesk key={owner} owner={owner} />}</DeskAccount>;
+  return <DeskAccount label="Session window">{owner => <ForecastDesk key={owner} owner={owner} />}</DeskAccount>;
 }
