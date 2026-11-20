@@ -2,11 +2,14 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { fetchMe } from "./api/auth";
 import { AuthContext } from "./context/authState";
 import App from "./App";
 
 const accountDashboard = vi.hoisted(() => vi.fn(() => <h1>Account dashboard</h1>));
+const complianceDesk = vi.hoisted(() => vi.fn(() => <h1>Control Status</h1>));
 vi.mock("./pages/Dashboard", () => ({ Dashboard: accountDashboard }));
+vi.mock("./pages/Compliance", () => ({ Compliance: complianceDesk }));
 vi.mock("./pages/Login", () => ({ Login: () => <h1>Sign-in form</h1> }));
 vi.mock("./api/market", () => ({
   fetchMarketOverview: vi.fn().mockRejectedValue(new Error("Unavailable")),
@@ -27,7 +30,7 @@ vi.mock("./api/history", () => ({
   fetchDailyHistory: vi.fn().mockRejectedValue(new Error("No series selected")),
 }));
 vi.mock("./api/auth", () => ({
-  fetchMe: vi.fn().mockResolvedValue({ role: "trader" }),
+  fetchMe: vi.fn().mockResolvedValue({ role: "trader", is_demo: true }),
   startDemo: vi.fn(),
 }));
 
@@ -72,6 +75,21 @@ it.each(["/", "/dashboard"])("opens the private dashboard at %s after sign-in", 
 it.each(["/dashboard", "/portfolio", "/trades", "/risk", "/compliance"])("keeps %s behind sign-in", async (path) => {
   open(path);
   expect(await screen.findByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
+});
+
+it("shows the demo trader the compliance role policy without mounting the evidence desk", async () => {
+  open("/compliance", true);
+  expect(await screen.findByRole("heading", { name: "Access restricted" })).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Role policy for the compliance desk" })).toBeInTheDocument();
+  expect(screen.getByTestId("night-state-unavailable")).toHaveTextContent("trader");
+  expect(complianceDesk).not.toHaveBeenCalled();
+});
+
+it("opens the compliance evidence desk for an auditor", async () => {
+  vi.mocked(fetchMe).mockResolvedValueOnce({ id: 1, email: "auditor@example.com", role: "auditor" });
+  open("/compliance", true);
+  expect(await screen.findByRole("heading", { name: "Control Status" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Access restricted" })).not.toBeInTheDocument();
 });
 
 it("keeps an anonymous /trades?symbol=AAPL handoff on the sign-in form", async () => {

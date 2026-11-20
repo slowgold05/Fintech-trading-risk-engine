@@ -5,7 +5,7 @@ import { fetchMe } from "./api/auth";
 import { useAuth } from "./context/useAuth";
 import { Home } from "./pages/Home";
 import { State } from "./night/kit";
-import { allowed, features, type Access } from "./night/registry";
+import { allowed, features, type Access, type Role } from "./night/registry";
 
 const AppShell = lazy(() => import("./components/AppShell").then(m => ({default:m.AppShell})));
 const Dashboard = lazy(() => import("./pages/Dashboard").then(m => ({default:m.Dashboard})));
@@ -17,13 +17,18 @@ const Research = lazy(() => import("./pages/Research").then(m => ({default:m.Res
 const Risk = lazy(() => import("./pages/Risk").then(m => ({default:m.Risk})));
 const Trades = lazy(() => import("./night/shell/ActivityRoute"));
 const Compliance = lazy(() => import("./pages/Compliance").then(m => ({default:m.Compliance})));
+const ComplianceAccess = lazy(() => import("./night/features/desks/ComplianceAccess").then(m => ({default:m.ComplianceAccess})));
 
 function Index() {
   const { isAuthenticated, isInitializing } = useAuth();
   if (isInitializing) return <State kind="loading" title="Restoring session…" />;
   return <Navigate to={isAuthenticated ? "/dashboard" : "/market"} replace />;
 }
-function Gate({ access = "authenticated", children }: { access?: Access; children?: ReactNode }) {
+function Gate({ access = "authenticated", children, restricted }: {
+  access?: Access;
+  children?: ReactNode;
+  restricted?: (role: Role) => ReactNode;
+}) {
   const auth = useAuth();
   const location = useLocation();
   const needsRole = access !== "public" && access !== "authenticated";
@@ -36,7 +41,10 @@ function Gate({ access = "authenticated", children }: { access?: Access; childre
   }
   if (needsRole && identity.isPending) return <State kind="loading" title="Checking access…" />;
   if (needsRole && identity.isError) return <State kind="error" title="Account access could not be checked." action={<button onClick={() => void identity.refetch()}>Retry</button>} />;
-  if (needsRole && !allowed(access,identity.data)) return <section data-testid="night-forbidden"><h1>Access restricted</h1><p>Your role cannot open this page.</p></section>;
+  if (needsRole && !allowed(access,identity.data)) {
+    if (restricted && identity.data) return restricted(identity.data.role);
+    return <section data-testid="night-forbidden"><h1>Access restricted</h1><p>Your role cannot open this page.</p></section>;
+  }
   return children ?? <Outlet />;
 }
 function Screen({ id, children }: { id: string; children: ReactNode }) {
@@ -58,7 +66,11 @@ export default function App() {
           <Route path="/risk" element={<Screen id="risk"><Risk /></Screen>} />
           <Route path="/research" element={<Screen id="research"><Research /></Screen>} />
           <Route path="/forecasts" element={<Screen id="forecasts"><ForecastLab /></Screen>} />
-          <Route path="/compliance" element={<Gate access="privileged"><Screen id="compliance"><Compliance /></Screen></Gate>} />
+          <Route path="/compliance" element={
+            <Gate access="privileged" restricted={role => <Screen id="compliance"><ComplianceAccess role={role} /></Screen>}>
+              <Screen id="compliance"><Compliance /></Screen>
+            </Gate>
+          } />
           {features.filter(f => f.access !== "public" && !f.slot).map(({path,access,Screen:Feature}) => <Route key={path} path={path} element={<Gate access={access}><Feature /></Gate>} />)}
         </Route>
       </Route>
