@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { keys } from "../../api";
-import { Button, Field, Page, Panel, State, Table } from "../../kit";
+import { Button, Field, Page, Panel, Stat, Table, type InstrumentStatus } from "../../inner";
 import { errorMessage } from "./errors";
 import { fetchRanking, setMembership, type Membership } from "./leaderboardApi";
 import { Owner } from "./Owner";
-import { ReadFailure } from "./ReadFailure";
+import { ReturnBreadth } from "./ReturnBreadth";
+import "./leaderboard.css";
 
 const percent = new Intl.NumberFormat("en-US", {
   style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 6, signDisplay: "exceptZero",
@@ -42,20 +43,29 @@ function DemoRanks({ owner }: { owner: number }) {
   const ranking = useQuery({ queryKey: keys.account(owner, "leaderboard"), queryFn: fetchRanking, retry: false });
   const board = ranking.data;
   const measured = board && board.coverage !== "missing" && board.items.length >= 2;
-  return <Page className="organize" title="Demo rankings" testId="night-leaderboard" description="Compare time-weighted paper returns over the same 20-session interval.">
-    {ranking.isPending ? <Page.Full><State kind="loading" title="Loading demo rankings…" /></Page.Full> :
-      ranking.isError || !board ? <Page.Full><ReadFailure title="Rankings unavailable" error={ranking.error} retry={ranking.refetch} /></Page.Full> :
-      <>
-        <Panel title="Your participation"><AliasForm key={board.my_entry.alias ?? ""} owner={owner} entry={board.my_entry} /></Panel>
-        <Panel title="Period standings" subtitle={<><time>{board.start}</time> – <time>{board.end}</time></>} actions={<Button disabled={ranking.isFetching} onClick={() => void ranking.refetch()}>Refresh standings</Button>}>
+  const status: InstrumentStatus | undefined = ranking.isPending ? {kind:"loading",title:"Loading demo rankings…"} :
+    ranking.isError || !board ? {kind:"error",title:"Rankings unavailable",role:"alert",action:<><p>{errorMessage(ranking.error)}</p><Button onClick={() => void ranking.refetch()}>Retry</Button></>} :
+    !measured ? {kind:"unavailable",title:"Waiting for eligible returns",action:<p>Standings need at least two opted-in demos with a priced time-weighted index at both ends of this period.</p>} : undefined;
+  return <Page className="ranking-page" title="Demo rankings" testId="night-leaderboard" description="Time-weighted paper returns over a common 20-session interval."
+    actions={board && <Button disabled={ranking.isFetching} onClick={() => void ranking.refetch()}>Refresh standings</Button>}>
+    <Page.Main><Panel className="breadth-panel" title="Return breadth" subtitle="Direction of return across published aliases">
+      <ReturnBreadth board={board} status={status} />
+      {board && <div className="ranking-dates">
+        <Stat label="Opening session" value={<time>{board.start}</time>} />
+        <Stat label="Closing session" value={<time>{board.end}</time>} />
+      </div>}
+    </Panel></Page.Main>
+    {board && !ranking.isError && <>
+        <Page.Aside><Panel title="Your participation"><AliasForm key={board.my_entry.alias ?? ""} owner={owner} entry={board.my_entry} /></Panel></Page.Aside>
+        <Page.Full className={measured ? undefined : "ranking-withheld"}><Panel title="Period standings" subtitle="Ranked by time-weighted paper return">
           {measured ? <Table caption="Time-weighted return for eligible aliases" rows={board.items} rowKey={row => row.alias} columns={[
-            { key: "rank", header: "Rank", align: "left", cell: row => <span className="figure">{row.rank}</span> },
+            { key: "rank", header: "Rank", align: "right", cell: row => <span className="figure">{row.rank}</span> },
             { key: "alias", header: "Alias", align: "left", cell: row => <>{row.alias}{row.alias === board.my_entry.alias && <small> (you)</small>}</> },
             { key: "return", header: "Return", align: "right", cell: row => <span className="figure" data-tone={Number(row.return_ratio) > 0 ? "up" : Number(row.return_ratio) < 0 ? "down" : undefined}>{percent.format(Number(row.return_ratio))}</span> },
-          ]} /> : <State kind="unavailable" title="Waiting for eligible returns" detail="Standings need at least two opted-in demos with a priced time-weighted index at both ends of this period." />}
+          ]} /> : <Stat label="Published ranks" value="Unavailable" />}
           <p className="feedback detail">{board.excluded_count} opted-in {board.excluded_count === 1 ? "demo lacks" : "demos lack"} a comparable return for this period.</p>
           {measured && board.coverage === "partial" && <p className="detail">Partial coverage across participants or intervening sessions.</p>}
-        </Panel>
+        </Panel></Page.Full>
       </>}
   </Page>;
 }

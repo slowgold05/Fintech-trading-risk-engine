@@ -1,0 +1,30 @@
+.ranking-page {overflow-wrap:anywhere;}
+.ranking-page .nk-page-head h1 {font-size:clamp(32px,3.5vw,54px);line-height:1;letter-spacing:-.065em;}
+.ranking-page header p,.ranking-page .detail,.ranking-page .nk-state p,.ranking-page .nk-full > section > p {color:var(--muted);margin:5px 0;font-size:13px;}
+.ranking-page .nk-layout {grid-template-columns:minmax(0,1.9fr) minmax(250px,1fr);align-items:start;}
+.ranking-page .organize-form {display:grid;gap:12px;margin-top:14px;}
+.ranking-page input {width:100%;min-width:0;}
+.ranking-page .actions {display:flex;gap:8px;flex-wrap:wrap;}
+.breadth-panel h2 {font-size:clamp(20px,2vw,28px);letter-spacing:-.05em;}
+.breadth-body,.breadth-panel .share-instrument {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);align-items:center;gap:22px;padding:12px;background:var(--inner-ground);border-block:1px solid var(--line);}
+.breadth-rest,.breadth-panel .share-graphic {display:block;width:100%;height:clamp(160px,16vw,225px);font-family:var(--font-mono);}
+.breadth-panel .ins-rank {min-height:44px;}
+.breadth-panel .nk-state {min-height:0;padding:12px 0;}
+.ranking-dates {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line);padding-top:8px;}
+.ranking-dates .nk-stat strong {font:500 clamp(16px,1.8vw,24px) var(--font-mono);}
+.ranking-page .nk-aside .nk-button[data-variant=primary] {background:var(--ink);border-color:var(--ink);color:var(--bg);}
+.ranking-page .figure {font-family:var(--font-mono);}
+@media(max-width:767px) {
+  .ranking-page .nk-layout {grid-template-columns:minmax(0,1fr);}
+  .ranking-page .nk-page-head {flex-wrap:nowrap;}
+  .ranking-page .nk-page-head .nk-button {flex:none;font-size:12px;}
+  .breadth-body,.breadth-panel .share-instrument {grid-template-columns:minmax(0,1fr);gap:4px;}
+  .breadth-rest,.breadth-panel .share-graphic {height:164px;}
+  .breadth-panel .ins-rank {min-height:36px;}
+  .breadth-panel button.ins-rank {min-height:44px;}
+}
+@media(min-width:768px) {
+  .ranking-page .nk-layout:has(.ranking-withheld) .nk-main {grid-column:1;grid-row:1 / span 2;}
+  .ranking-page .nk-layout:has(.ranking-withheld) .nk-aside {grid-column:2;grid-row:1;}
+  .ranking-page .ranking-withheld {grid-column:2;grid-row:2;align-self:start;}
+}

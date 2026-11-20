@@ -2,7 +2,7 @@ import { CloseInsights } from "../night/features/portfolio-review/CloseInsights"
 import { useRef } from "react";
 import { fetchMe } from "../api/auth";
 import { keys } from "../night/api";
-import { Button, Page, State } from "../night/kit";
+import { Button, Page, RestInstrument, Stat, State } from "../night/inner";
 import { ClosingSessions } from "../features/dashboard/ClosingSessions";
 import { ActivityBrief } from "../features/dashboard/ActivityBrief";
 import type { UserResponse } from "../types/schemas";
@@ -11,13 +11,6 @@ import { DemoGuide } from "../night/features/account/DemoGuide";
 import { useGuide } from "../night/features/account/guideState";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ShieldCheck,
-  TrendDown,
-  TrendUp,
-  Wallet,
-  type Icon,
-} from "@phosphor-icons/react";
 import { fetchMarketOverview } from "../api/market";
 import { fetchOrders } from "../api/orders";
 import { fetchPortfolio } from "../api/portfolio";
@@ -26,7 +19,6 @@ import { fetchTrades } from "../api/trades";
 import {
   DashboardCard,
   EmptyState,
-  IconBadge,
   PnlValue,
   PositionsTable,
   RecentOrdersTable,
@@ -34,7 +26,6 @@ import {
   RiskScoreCard,
   SkeletonBlock,
 } from "../features/dashboard/components";
-import type { IconBadgeTone } from "../features/dashboard/components/IconBadge";
 import {
   getTotalPnl,
   getUnrealizedPnlPercent,
@@ -51,35 +42,10 @@ import {
   formatSignedPercent,
   formatUtcDateTime,
 } from "../utils/format";
-import { getRiskTone } from "../utils/riskTone";
-
-const riskBadgeTone = {
-  Low: "emerald",
-  Medium: "amber",
-  High: "rose",
-} as const satisfies Record<ReturnType<typeof getRiskTone>["level"], IconBadgeTone>;
-
-function assessmentTone(score: number | null): IconBadgeTone {
-  if (score == null) {
-    return "slate";
-  }
-  return riskBadgeTone[getRiskTone(score).level];
-}
-
-function pricedMove(value: number | null): { Icon: Icon; tone: IconBadgeTone } {
-  if (value == null) {
-    return { Icon: TrendUp, tone: "slate" };
-  }
-  if (value < 0) {
-    return { Icon: TrendDown, tone: "rose" };
-  }
-  return { Icon: TrendUp, tone: "emerald" };
-}
-
 export function Dashboard() {
   const identity = useQuery({queryKey: keys.me, queryFn: fetchMe, retry: false});
-  if (identity.isPending) return <State kind="loading" title="Loading account…" />;
-  if (identity.isError || !identity.data) return <State kind="error" title="Account unavailable" action={<Button onClick={() => void identity.refetch()}>Retry account</Button>} />;
+  if (identity.isPending) return <RestInstrument label="Closing sessions" status={{kind:"loading",title:"Loading account…"}} />;
+  if (identity.isError || !identity.data) return <RestInstrument label="Closing sessions" status={{kind:"error",title:"Account unavailable",action:<Button onClick={() => void identity.refetch()}>Retry account</Button>}} />;
   return <Today key={identity.data.id} identity={identity.data} />;
 }
 
@@ -140,8 +106,6 @@ function Today({ identity }: { identity: UserResponse }) {
   const isPortfolioLoading = portfolioQuery.isLoading;
   const isTradesLoading = tradesQuery.isLoading;
   const isRiskLoading = riskQuery.isLoading;
-  const totalPnlMove = pricedMove(totalPnl);
-  const unrealizedMove = pricedMove(unrealizedPnlPercent);
   const hasDashboardError =
     portfolioQuery.isError || tradesQuery.isError || riskQuery.isError;
 
@@ -149,10 +113,61 @@ function Today({ identity }: { identity: UserResponse }) {
     <Page className="today" title="Today" description="Closing values, recent activity and current holdings."
       actions={identity.role === "trader" && portfolio && !(demo && guide === "active") && <Link ref={entry} className="nk-button" data-variant="primary" data-testid="order-open"
         to="/trades?ticket=1">Open order preview</Link>}>
-      <CloseInsights owner={identity.id} surface="today" />
+      <div className="today-band">
+        <Stat label="Total P&L" data-testid="today-total-pnl" value={isPortfolioLoading ? "Loading" : totalPnl == null ? null : <PnlValue value={totalPnl} />} />
+        <Stat label="Unrealized P&L %" value={isPortfolioLoading ? "Loading" : unrealizedPnlPercent == null ? null : formatSignedPercent(unrealizedPnlPercent)} />
+        <Stat label="Cash" value={isPortfolioLoading ? "Loading" : portfolio ? formatCurrency(cashBalance, false) : null} />
+        <Stat label="Latest assessment" value={isRiskLoading ? "Loading" : riskFailed ? null : riskLabel ?? "No assessments"} source={riskScore == null ? "--" : String(riskScore)} />
+      </div>
       <div className="today-brief">
         <ClosingSessions owner={identity.id} />
-        <ActivityBrief loadingFills={tradesQuery.isPending} loadingOrders={ordersQuery.isPending} fills={tradesQuery.isSuccess ? trades?.trades : undefined} orders={ordersQuery.isSuccess ? ordersQuery.data?.orders : undefined} />
+        <div className="today-rail">
+          <DashboardCard title="Portfolio Value">
+            {isPortfolioLoading ? (
+              <div className="space-y-4">
+                <SkeletonBlock className="h-10 w-56" />
+                <SkeletonBlock className="h-28" />
+              </div>
+            ) : portfolioValue == null ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <div className="font-mono text-4xl font-semibold text-slate-400">Unavailable</div>
+                  <p className="mt-2 text-sm text-slate-300">
+                    {valuationIncomplete ? "Valuation incomplete" : "Portfolio valuation could not be loaded."}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Valuation read{" "}
+                    <span className="font-mono text-slate-300">{valuationRead}</span>
+                  </p>
+                </div>
+                {portfolio ? (
+                  <div className="text-right">
+                    <div className="text-xs text-slate-400">Buying power</div>
+                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="font-mono text-4xl font-semibold text-slate-50">
+                    {formatCurrency(portfolioValue, false)}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-400">Buying power</div>
+                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-slate-400">
+                  Valuation read{" "}
+                  <span className="font-mono text-slate-300">{valuationRead}</span>
+                </p>
+              </>
+            )}
+          </DashboardCard>
+          <ActivityBrief loadingFills={tradesQuery.isPending} loadingOrders={ordersQuery.isPending} fills={tradesQuery.isSuccess ? trades?.trades : undefined} orders={ordersQuery.isSuccess ? ordersQuery.data?.orders : undefined} />
+          <CloseInsights owner={identity.id} surface="today" />
+        </div>
       </div>
       {demo && portfolio && <DemoGuide owner={identity.id} state={guide} onDismiss={() => requestAnimationFrame(() => entry.current?.focus())} orders={ordersQuery.isSuccess ? ordersQuery.data.orders : undefined} />}
       {portfolio?.user?.is_demo && (
@@ -212,128 +227,8 @@ function Today({ identity }: { identity: UserResponse }) {
         </div>
       ) : null}
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div
-          className={[
-            "metric-tile border-l-2",
-            riskScore == null ? "border-slate-700/80" : getRiskTone(riskScore).metric,
-          ].join(" ")}
-        >
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={ShieldCheck} tone={assessmentTone(riskScore)} />
-            Latest assessment
-          </div>
-          <div className="mt-2 flex items-baseline justify-between gap-2">
-            <span className="font-mono text-base font-semibold">
-              {isRiskLoading ? (
-                <span className="text-slate-500">—</span>
-              ) : riskFailed ? (
-                <span className="text-slate-400">Unavailable</span>
-              ) : riskLabel == null ? (
-                <span className="text-slate-400">No assessments</span>
-              ) : (
-                riskLabel
-              )}
-            </span>
-            <span className="font-mono text-xs text-slate-500">
-              {isRiskLoading || riskScore == null ? "--" : riskScore}
-            </span>
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={totalPnlMove.Icon} tone={totalPnlMove.tone} />
-            Total P&amp;L
-          </div>
-          <div className="mt-2 text-base font-semibold" data-testid="today-total-pnl">
-            {isPortfolioLoading
-              ? <span className="font-mono text-slate-500">—</span>
-              : totalPnl == null
-                ? <span className="text-slate-400">Unavailable</span>
-                : <PnlValue value={totalPnl} />}
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={unrealizedMove.Icon} tone={unrealizedMove.tone} />
-            Unrealized P&amp;L %
-          </div>
-          <div className={[
-            "mt-2 font-mono text-base font-semibold",
-            unrealizedPnlPercent == null ? "text-slate-400" : unrealizedPnlPercent >= 0 ? "text-emerald-300" : "text-rose-300",
-          ].join(" ")}>
-            {isPortfolioLoading
-              ? <span className="text-slate-500">—</span>
-              : unrealizedPnlPercent == null
-                ? "Unavailable"
-                : formatSignedPercent(unrealizedPnlPercent)}
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={Wallet} tone="slate" />
-            Cash
-          </div>
-          <div className="mt-2 font-mono text-base font-semibold text-slate-200">
-            {isPortfolioLoading
-              ? <span className="text-slate-500">—</span>
-              : portfolio == null
-                ? "Unavailable"
-                : formatCurrency(cashBalance, false)}
-          </div>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.75fr)]">
         <div className="min-w-0 space-y-5">
-          <DashboardCard title="Portfolio Value">
-            {isPortfolioLoading ? (
-              <div className="space-y-4">
-                <SkeletonBlock className="h-10 w-56" />
-                <SkeletonBlock className="h-28" />
-              </div>
-            ) : portfolioValue == null ? (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="font-mono text-4xl font-semibold text-slate-400">Unavailable</div>
-                  <p className="mt-2 text-sm text-slate-300">
-                    {valuationIncomplete ? "Valuation incomplete" : "Portfolio valuation could not be loaded."}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Valuation read{" "}
-                    <span className="font-mono text-slate-300">{valuationRead}</span>
-                  </p>
-                </div>
-                {portfolio ? (
-                  <div className="text-right">
-                    <div className="text-xs text-slate-400">Buying power</div>
-                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="font-mono text-4xl font-semibold text-slate-50">
-                    {formatCurrency(portfolioValue, false)}
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-slate-400">Buying power</div>
-                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-slate-400">
-                  Valuation read{" "}
-                  <span className="font-mono text-slate-300">{valuationRead}</span>
-                </p>
-              </>
-            )}
-          </DashboardCard>
-
           <DashboardCard title="Recent Trades">
             <RecentTradesTable
               isError={tradesQuery.isError}

@@ -13,10 +13,6 @@
 .holding-details td a { display:inline-flex; align-items:center; min-height:44px; color:var(--accent); text-decoration:underline; }
 .holding-details .holding-pager { display:flex; gap:var(--gap); flex-wrap:wrap; margin-block-start:var(--gap); }
 .holding-details :is(a,button):focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-@media(min-width:1200px) {
-  [data-look="terrain"] .holding-details .nk-layout { grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); }
-  .holding-details .nk-full { grid-column:1 / -1; }
-}
 @media(max-width:767px) {
   .holding-details table, .holding-details caption, .holding-details tbody, .holding-details tr { display:block; width:100%; }
   .holding-details thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
@@ -35,4 +31,66 @@
   .holding-details [data-testid="holding-sales-table"] td:nth-child(4)::before { content:"Proceeds"; }
   .holding-details [data-testid="holding-sales-table"] td:nth-child(5)::before { content:"Realized P&L"; }
   .holding-details [data-testid="holding-sales-table"] td:nth-child(6)::before { content:"Receipt"; }
+}
+.holding-details .nk-page-head h1 { font-size:clamp(32px,3.5vw,54px);line-height:1;letter-spacing:-.065em; }
+.holding-details .nk-panel header p {font-size:12px;margin:0;}
+.holding-comparison-panel h2,.holding-distribution h2 {font-size:clamp(20px,2vw,28px);letter-spacing:-.05em;}
+.book-plate {background:var(--inner-ground);border-block:1px solid var(--line);padding:10px;}
+.book-plate svg {width:100%;height:clamp(170px,17vw,230px);display:block;}
+.book-plate text {fill:var(--muted);font:10px var(--font-mono);}
+.book-plate .book-dial-value {font:600 21px var(--font-mono);fill:var(--ink);letter-spacing:-.065em;}
+.book-readings {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
+.book-readings button {display:grid;gap:4px;text-align:left;padding:9px 8px;border-bottom:2px solid var(--line);min-height:44px;}
+.book-readings button[aria-pressed=true] {border-color:var(--accent);}
+.book-readings span,.holding-pnl dt {font:12px var(--font-mono);color:var(--muted);}
+.book-readings b {font-size:clamp(19px,2.2vw,32px);letter-spacing:-.045em;}
+.holding-details .holding-pnl {margin:12px 0 0;gap:16px;}
+.holding-details .holding-pnl dd {margin-top:3px;}
+.holding-distribution .share-instrument {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);align-items:center;gap:10px;}
+.holding-distribution .share-graphic {height:212px;}
+.holding-index {display:grid;gap:0;margin-bottom:12px;}
+.holding-index a {display:flex;align-items:center;justify-content:space-between;min-height:44px;border-bottom:1px solid var(--line);font:600 14px var(--font-mono);}
+.holding-index a:hover,.holding-index a:focus-visible {color:var(--accent);}
+.holding-note-slot {scroll-margin-top:110px;}
+@media(min-width:800px) {
+  .holding-details .nk-layout {grid-template-columns:minmax(0,2fr) minmax(260px,1fr);align-items:start;}
+  .holding-details .nk-layout:has(.holding-note) .nk-main {grid-row:1 / span 2;}
+  .holding-details .nk-layout:has(.holding-note) .holding-note-slot {grid-row:2;grid-column:2;}
+  .holding-details .nk-layout:has(.holding-note) .nk-aside {grid-row:1;grid-column:2;}
+  :root[data-look=dial] .holding-details .book-comparison {display:grid;grid-template-columns:minmax(0,1.5fr) minmax(140px,1fr);align-items:center;background:var(--inner-ground);}
+  :root[data-look=dial] .holding-details .book-readings {grid-template-columns:1fr;padding:10px;}
+  :root[data-look=dial] .holding-details .book-plate {border:0;}
+  :root[data-look=dial] .book-readings b {font-family:var(--font-mono);}
+}
+@media(max-width:767px) {
+  .holding-details .holding-pnl {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
+  .holding-details .holding-pnl dt {font-size:11px;}
+  .holding-distribution .share-instrument {grid-template-columns:minmax(0,1fr);}
+  .holding-distribution .share-graphic {height:150px;}
+  .holding-note-slot {order:1;}
+  .holding-details .nk-full:has(.nk-scroll) {order:2;}
+}
+.holding-distribution > .nk-stat {border:0;border-top:1px solid var(--line);margin-top:10px;padding:8px 0 0;}
+.holding-index a small {margin-left:auto;margin-right:14px;}
+.holding-distribution select.field-control {
+  appearance:none;width:auto;max-width:48%;height:44px;min-height:44px;padding:0 30px 0 10px;
+  border:1px solid var(--line);border-radius:var(--radius);background-color:var(--raised);
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-size:5px 5px;background-repeat:no-repeat;background-position:calc(100% - 14px) center,calc(100% - 9px) center;
+  color:var(--ink);font:500 13px var(--font-ui);
+}
+@media(min-width:800px) {
+  [data-look=terrain] .holding-details .book-comparison {display:grid;grid-template-columns:minmax(0,1.9fr) minmax(145px,.85fr);align-items:center;gap:12px;}
+  [data-look=terrain] .book-readings {grid-template-columns:minmax(0,1fr);}
+  [data-look=terrain] .book-plate svg {height:auto;min-height:172px;}
+  .holding-details .nk-layout:has(.holding-note form) .holding-note-slot {grid-column:1 / -1;grid-row:2;}
+  .holding-details .nk-layout:has(.holding-note form) .nk-main {grid-row:1;}
+
+}
+@media(max-width:767px) {
+  .book-plate svg {height:auto;}
+  .book-plate text {font-size:14px;}
+  .book-plate .book-dial-value {font-size:21px;}
+  .holding-details :is(.holding-pnl dt,.holding-pnl dd) {line-height:1.35;}
+  .holding-details .nk-scroll td {height:auto;min-height:var(--row);}
 }

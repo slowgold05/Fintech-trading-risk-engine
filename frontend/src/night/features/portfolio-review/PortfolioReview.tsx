@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { fetchMe } from "../../../api/auth";
 import { formatUtcDateTime } from "../../../utils/format";
 import { keys } from "../../api";
-import { Button, Page, Panel, Stat, State, Table } from "../../kit";
+import { Button, Page, Panel, RestInstrument, Stat, Table } from "../../inner";
 import { safeReturnTo } from "../../registry";
 import { ReturnChart } from "./ReturnChart";
 import { dates, fetchReview, pct, periods, usd, type Period, type Review } from "./review";
@@ -15,6 +15,7 @@ function ReviewBody({ data }: { data: Review }) {
   const spy = data.observations.find(o => o.symbol === "SPY");
   return <>
     <Page.Main>
+      <ReturnChart key={data.window} review={data} />
       <Panel title="Period performance" subtitle={"Requested " + dates(data.requested_start, data.requested_end)} data-testid="portfolio-review-metrics">
         <div className="review-metrics"><Stat label="Account return" value={pct(metrics.return_ratio)} />
           <Stat label="SPY price return" value={pct(metrics.spy_return_ratio)} />
@@ -28,7 +29,6 @@ function ReviewBody({ data }: { data: Review }) {
             return <li key={date}>{date} · Account {pct(p?.portfolio_return_ratio ?? null)} · SPY {pct(p?.spy_return_ratio ?? null)}</li>;
           })}</ul></details>}
       </Panel>
-      <ReturnChart key={data.window} review={data} />
     </Page.Main>
     <Page.Aside>
       <Panel title="Current exposure" subtitle={formatUtcDateTime(exposure.as_of) ?? "Snapshot date unavailable"} data-testid="portfolio-review-exposure">
@@ -78,11 +78,12 @@ export function PortfolioReview() {
     queryFn:({signal}) => fetchReview(period,signal),enabled:!!owner.data?.id,retry:false});
   const back = safeReturnTo(params.get("returnTo") ?? "/portfolio");
   return <Page title="Portfolio review" className="portfolio-review" layout="analysis" testId="night-portfolio-review"
-    actions={<div className="review-controls"><Link className="nk-button" to={back}>Back to portfolio</Link>
+    eyebrow={<Link className="review-back" to={back} aria-label="Back to portfolio">‹ Portfolio</Link>}
+    actions={<div className="review-controls">
       <label>Review period <select value={period} onChange={e => {const next = new URLSearchParams(params); next.set("window",e.target.value); setParams(next);}}>
         {Object.entries(periods).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>}>
-    {owner.isError || review.isError ? <Page.Full><State kind="error" title="Portfolio review could not be loaded"
-      action={<Button onClick={() => void (owner.isError ? owner.refetch() : review.refetch())}>Retry review</Button>} /></Page.Full> :
-      review.isPending ? <Page.Full><State kind="loading" title="Loading portfolio review…" /></Page.Full> : <ReviewBody data={review.data} />}
+    {owner.isError || review.isError ? <Page.Full><RestInstrument label="Cumulative return" status={{kind:"error",title:"Portfolio review could not be loaded",
+      action:<Button onClick={() => void (owner.isError ? owner.refetch() : review.refetch())}>Retry review</Button>}} /></Page.Full> :
+      review.isPending ? <Page.Full><RestInstrument label="Cumulative return" status={{kind:"loading",title:"Loading portfolio review…"}} /></Page.Full> : <ReviewBody data={review.data} />}
   </Page>;
 }
