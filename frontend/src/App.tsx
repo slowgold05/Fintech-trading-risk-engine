@@ -3,6 +3,7 @@ import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Dashboard } from "./pages/Dashboard";
 import ForecastLab from "./pages/ForecastLab";
+import { Market } from "./pages/Market";
 import { Home } from "./pages/Home";
 import { StockDetail } from "./pages/StockDetail";
 import { Login } from "./pages/Login";
@@ -26,7 +27,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
       </Route>
       <Route path="/market/:symbol" element={<StockDetail />} />
-      <Route path="/market" element={<Home />} />
+      <Route path="/market" element={<Market />} />
       <Route path="/login" element={<Login />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>

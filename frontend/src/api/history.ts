@@ -4,6 +4,7 @@ import { apiClient } from "./client";
 export type CanonicalHistorySeries = {
   provider: string;
   adjustment_type: string;
+  row_count?: number;
 };
 
 /**

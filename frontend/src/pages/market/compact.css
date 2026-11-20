@@ -1,0 +1,205 @@
+
+/* Compact wall: the dial, its ticker and the four reading stations share one column. */
+:where(html[data-look="dial"]) .search-glyph { display:none; }
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) .wall { padding-bottom:calc(62px + env(safe-area-inset-bottom)); }
+  :where(html[data-look="dial"]) .wall .hdr { position:relative; }
+  :where(html[data-look="dial"]) .wall .hdr-in,:where(html[data-look="dial"]) .wall .hdr[data-scrolled="true"] .hdr-in { height:54px; padding-inline:12px; gap:10px; }
+  :where(html[data-look="dial"]) .wall .hdr-chip { display:none; }
+  :where(html[data-look="dial"]) .wall .hdr .btn { min-height:44px; }
+  :where(html[data-look="dial"]) .wall .brand-name { font-size:12px; }
+  :where(html[data-look="dial"]) .wall .compact-search { min-width:0; flex:1; margin-left:auto; max-width:260px; z-index:2; }
+  :where(html[data-look="dial"]) .compact-search .search-box { gap:0; padding:0; background:#171917; border-radius:3px; }
+  :where(html[data-look="dial"]) .wall .compact-search input { min-height:44px; width:0; font-size:16px; padding:0 6px; }
+  :where(html[data-look="dial"]) .compact-search input::placeholder { font-size:11px; }
+  :where(html[data-look="dial"]) .compact-search .search-submit { min-width:44px; border-radius:0; padding:0; background:none; }
+  :where(html[data-look="dial"]) .compact-search .search-submit span { display:none; }:where(html[data-look="dial"]) .compact-search .search-glyph { display:block; }
+  :where(html[data-look="dial"]) .compact-search .search-results { width:min(340px,88vw); left:auto; right:-42px; max-height:55dvh; overflow:auto; }
+  :where(html[data-look="dial"]) .compact-search .search-results a { display:inline-grid; align-items:center; min-width:44px; min-height:44px; }
+  :where(html[data-look="dial"]) .wall-content { --gutter:12px; display:grid; grid-template-columns:minmax(0,1fr); gap:10px; padding:0 var(--gutter) 8px; }
+  :where(html[data-look="dial"]) .wall-content > .instrument,:where(html[data-look="dial"]) .wall-content > .lower-wall,:where(html[data-look="dial"]) .wall-content > :is(.instrument,.lower-wall) > div { display:contents; }
+  :where(html[data-look="dial"]) .wall-content .command { order:0; margin:16px 2px 0; display:block; }
+  :where(html[data-look="dial"]) .session-kicker { font-size:9px; }
+  :where(html[data-look="dial"]) .session-headline { font-size:clamp(23px,6.75vw,34px); line-height:1.12; margin:5px 0 7px; }
+  :where(html[data-look="dial"]) .compact-honesty { display:flex; align-items:center; gap:8px; font:10px/16px var(--font-ui); color:#b9beb6; }
+  :where(html[data-look="dial"]) .compact-honesty i { width:2px; height:2px; border-radius:50%; background:#959a92; }
+  :where(html[data-look="dial"]) .quote-strip { position:sticky; top:0; z-index:30; order:1; display:grid; grid-auto-columns:minmax(0,1fr); grid-auto-flow:column;
+    margin:0 calc(-1 * var(--gutter)); background:#121412; border-block:1px solid #41453e; }
+  :where(html[data-look="dial"]) .quote-strip:empty { display:none; }
+  :where(html[data-look="dial"]) .quote-strip button { display:grid; align-content:center; justify-items:start; gap:3px; min-height:54px; padding:5px 12px;
+    border-right:1px solid #373b35; }
+  :where(html[data-look="dial"]) .quote-strip button:last-child { border:0; }
+  :where(html[data-look="dial"]) .quote-strip span { font:550 10px/12px var(--font-num); color:#bac0b5; }
+  :where(html[data-look="dial"]) .quote-strip b { font-size:17px; line-height:20px; }
+  :where(html[data-look="dial"]) .quote-strip [aria-pressed=true] { box-shadow:inset 0 -2px rgb(var(--signal-rgb)); background:#23251f; }
+  :where(html[data-look="dial"]) .quote-strip [aria-pressed=true] span { color:rgb(var(--signal-rgb)); }
+  :where(html[data-look="dial"]) .wall-content .dial-panel { order:2; margin:-10px calc(-1 * var(--gutter)) 0; border-radius:0; border-width:0 0 1px; }
+  :where(html[data-look="dial"]) .wall .dial-panel .panel-head { background:transparent; padding:9px 14px 0; border:0; min-height:39px; }
+  :where(html[data-look="dial"]) .wall .dial-panel .panel-body { padding:0 0 8px; }
+  :where(html[data-look="dial"]) .dial-panel .dial { max-width:480px; }
+  :where(html[data-look="dial"]) .dial-bed { background-size:8px 8px; }
+  :where(html[data-look="dial"]) .dial-bed::before { background:radial-gradient(ellipse at center,transparent 58%,#101210 94%); }
+  :where(html[data-look="dial"]) .dial-extremes { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:3px; padding:4px 12px; }
+  :where(html[data-look="dial"]) .dial-extreme,:where(html[data-look="dial"]) .dial-extreme[data-slot] { position:static; max-width:none; width:auto; min-width:0; min-height:44px; justify-content:start; align-content:center;
+    border:0; border-left:2px solid #454940; padding:0 5px; text-align:left; }
+  :where(html[data-look="dial"]) .dial-extreme .lbl { font-size:8px; letter-spacing:.04em; }
+  :where(html[data-look="dial"]) .dial-extreme strong { font-size:12px; }:where(html[data-look="dial"]) .dial-extreme small { display:none; }
+  :where(html[data-look="dial"]) .dial-extreme .num { font-size:11px; }
+  :where(html[data-look="dial"]) .dial-key { gap:2px 10px; margin:4px 12px 0; padding:5px 0 0; font-size:10px; }
+  :where(html[data-look="dial"]) .wall .dial-core .fig-xl { font-size:10.6cqw; }
+  :where(html[data-look="dial"]) .dial-core .lbl { font-size:9px; line-height:1.2; }
+  :where(html[data-look="dial"]) .dial-core .num { font-size:10px; }
+  :where(html[data-look="dial"]) .wall-content .movers-panel { order:3; }
+  :where(html[data-look="dial"]) .wall-content .heat-panel { order:4; }
+  :where(html[data-look="dial"]) .wall-content #sector-etf-heatmap { order:5; }
+  :where(html[data-look="dial"]) .wall-content .pulse-panel { order:6; }
+  :where(html[data-look="dial"]) .wall-content .breadth-panel { order:7; }
+  :where(html[data-look="dial"]) .wall-content .news-panel { order:8; }
+  :where(html[data-look="dial"]) .wall-content .tool-fold { order:9; }
+  :where(html[data-look="dial"]) .wall-content .history-fold { order:10; margin:0; }
+  :where(html[data-look="dial"]) .wall-content .watch-fold { order:11; }
+  :where(html[data-look="dial"]) .wall-content [id] { scroll-margin-top:65px; }
+  :where(html[data-look="dial"]) .panel-head { padding-inline:12px; }
+  :where(html[data-look="dial"]) .panel-body { padding:10px 12px; }
+  :where(html[data-look="dial"]) .panel-title { font-size:17px; }
+  :where(html[data-look="dial"]) .panel-sub { font-size:11px; }
+  :where(html[data-look="dial"]) .mover-line { min-height:44px; }
+  :where(html[data-look="dial"]) .mover-line a,:where(html[data-look="dial"]) .tbl a { display:inline-flex; min-width:44px; min-height:44px; align-items:center; }
+  :where(html[data-look="dial"]) .more-rows { display:block; width:100%; min-height:44px; text-align:left; color:#c2c7bb; font-size:12px; border-top:1px solid #363a34; }
+  :where(html[data-look="dial"]) .more-rows::after {content:"+"; float:right;padding-right:5px;} :where(html[data-look="dial"]) .more-rows[aria-expanded=true]::after { content:"−"; }
+  :where(html[data-look="dial"]) #sector-etf-heatmap .more-rows,:where(html[data-look="dial"]) .news-panel .more-rows { padding-inline:12px; }
+  :where(html[data-look="dial"]) .sec-row { grid-template-columns:minmax(0,1.15fr) 2.1rem minmax(44px,.8fr) 3.7rem; gap:4px; min-height:44px; }
+  :where(html[data-look="dial"]) .sec-row button { min-height:44px; display:block; text-align:left; width:100%; }
+  :where(html[data-look="dial"]) .hm { display:block; }
+  :where(html[data-look="dial"]) .hm .hm-g { content-visibility:visible; animation:none!important; }
+  :where(html[data-look="dial"]) .hm .hm-g > div:first-child { display:none; }
+  :where(html[data-look="dial"]) .pager-head { display:flex; gap:4px; align-items:center; margin-bottom:6px; border-block:1px solid #363a34; }
+  :where(html[data-look="dial"]) .sector-picker { flex:1; text-align:left; font-size:14px; font-weight:570; }
+  :where(html[data-look="dial"]) .sector-picker span { color:#a6ac9e; margin-left:5px; }
+  :where(html[data-look="dial"]) .pager-head .num { font-size:10px; color:#a9afa3; }
+  :where(html[data-look="dial"]) .pager-arrow { min-width:44px; font-size:21px; }
+  :where(html[data-look="dial"]) .pager-arrow:disabled { opacity:.3; }
+  :where(html[data-look="dial"]) .sector-carousel { overflow:hidden; touch-action:pan-y; }
+  :where(html[data-look="dial"]) .sector-track { display:flex; align-items:flex-start; }
+  :where(html[data-look="dial"]) .sector-slide { flex:0 0 100%; min-width:0; }
+  :where(html[data-look="dial"]) .sector-slide .hm-tiles { grid-template-columns:repeat(4,minmax(0,1fr)); grid-auto-rows:46px; gap:3px; }
+  :where(html[data-look="dial"]) .hm[data-scale=compact] .hm-tiles { grid-template-columns:repeat(5,minmax(0,1fr)); grid-auto-rows:44px; }
+  :where(html[data-look="dial"]) .hm[data-scale=expanded] .hm-tiles { grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:52px; }
+  :where(html[data-look="dial"]) .wall .sector-slide .hm-t { grid-column:auto; grid-row:auto; align-items:start; padding:3px 6px; }
+  :where(html[data-look="dial"]) .wall .sector-slide .hm-sym { font-size:13px; line-height:17px; }
+  :where(html[data-look="dial"]) .wall .sector-slide .hm-chg { font-size:10px; line-height:14px; }
+  :where(html[data-look="dial"]) .wall .sector-slide .hm-t[data-size=mega] { grid-column:span 2; }
+  :where(html[data-look="dial"]) .hm-readout { line-height:1.4; min-height:32px; }
+  :where(html[data-look="dial"]) .hm-readout .lbl { white-space:normal; overflow:visible; }
+  :where(html[data-look="dial"]) .tile-link { display:inline-flex; align-items:center; min-height:44px; min-width:44px; color:rgb(var(--signal-rgb)); }
+  :where(html[data-look="dial"]) .idx-bank { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  :where(html[data-look="dial"]) .idx { padding:4px 5px; }:where(html[data-look="dial"]) .idx > div:first-child { display:block; }:where(html[data-look="dial"]) .idx-name { display:block; }
+  :where(html[data-look="dial"]) .idx-key { min-height:44px; min-width:44px; }:where(html[data-look="dial"]) .idx-day { gap:2px; }:where(html[data-look="dial"]) .idx-day .lbl { display:none; }:where(html[data-look="dial"]) .idx-day .fig { font-size:15px; }
+  :where(html[data-look="dial"]) .idx-level,:where(html[data-look="dial"]) .idx-period { font-size:10px; }:where(html[data-look="dial"]) .idx-period { display:grid; }
+  :where(html[data-look="dial"]) .news-panel .news-scroll { max-height:none; }
+  :where(html[data-look="dial"]) .news-link { display:inline-flex; min-height:44px; align-items:center; }
+  :where(html[data-look="dial"]) .wall .tool-fold > summary { display:flex; justify-content:space-between; min-height:48px; border-radius:3px; background:#141613; font-size:15px; font-weight:550; }
+  :where(html[data-look="dial"]) .tool-fold > summary::before { order:1; }
+  :where(html[data-look="dial"]) .wall-dock { position:fixed; z-index:40; bottom:0; left:0; right:0; display:grid; grid-template-columns:repeat(5,1fr);
+    border-top:1px solid #494d45; padding:3px 8px calc(3px + env(safe-area-inset-bottom)); background:#111310; }
+  :where(html[data-look="dial"]) .wall-dock [data-stop] { display:grid; justify-items:center; align-content:center; gap:3px; min-height:48px;
+    font:500 10px/13px var(--font-ui); color:#aeb4aa; }
+  :where(html[data-look="dial"]) .wall-dock [data-stop][aria-current] { color:rgb(var(--signal-rgb)); background:#25251e; box-shadow:inset 0 2px currentColor; }
+  :where(html[data-look="dial"]) .wall button,:where(html[data-look="dial"]) .wall .btn,:where(html[data-look="dial"]) .wall .seg-btn { min-height:44px; }
+  :where(html[data-look="dial"]) .wall .seg-btn { min-width:44px; }
+  :where(html[data-look="dial"]) .wall .seg { touch-action:pan-y; }
+  :where(html[data-look="dial"]) .wall-sheet { position:fixed; inset:0; margin:0; width:100%; height:100%; max-width:none; max-height:none;
+    padding:0; border:0; background:transparent; overflow:hidden; color:rgb(var(--fg-rgb)); }
+  :where(html[data-look="dial"]) .wall-sheet[open] { display:flex; align-items:flex-end; justify-content:center; }
+  :where(html[data-look="dial"]) .wall-sheet::backdrop { background:#000a; }
+  :where(html[data-look="dial"]) .sheet-plate { position:relative; width:min(100%,540px); max-height:80dvh; display:flex; flex-direction:column;
+    background:#1a1d19; border:1px solid #62685e; border-bottom:0; border-radius:14px 14px 0 0; padding-bottom:env(safe-area-inset-bottom); }
+  :where(html[data-look="dial"]) .sheet-grip { padding:8px 20px 15px; border-bottom:1px solid #42463e; touch-action:none; user-select:none; }
+  :where(html[data-look="dial"]) .sheet-grip i { display:block; width:36px; height:4px; margin:0 auto 14px; background:#74796e; border-radius:3px; }
+  :where(html[data-look="dial"]) .sheet-grip h2 { font-size:21px; font-weight:600; }
+  :where(html[data-look="dial"]) .sheet-close { position:absolute; right:8px; top:14px; min-width:44px; font-size:23px; }
+  :where(html[data-look="dial"]) .sheet-options { overflow-y:auto; overscroll-behavior:contain; padding:8px 18px 18px; }
+  :where(html[data-look="dial"]) .sheet-options > button { display:block; width:100%; text-align:left; border-bottom:1px solid #393d36; padding:0 9px; }
+  :where(html[data-look="dial"]) .sheet-options > button[aria-pressed=true] { color:rgb(var(--signal-rgb)); background:#28291f; box-shadow:inset 2px 0 currentColor; }
+  :where(html[data-look="dial"]) .sheet-options .seg { display:flex; width:max-content; margin:5px 0 12px; }:where(html[data-look="dial"]) .sheet-options .seg-btn { text-transform:capitalize; }
+  :where(html[data-look="dial"]) .sheet-done { background:#e5e8df; color:#141613; border-radius:4px; text-align:center!important; }
+  :where(html[data-look="dial"]) .wall button.select-trigger { display:flex; align-items:center; justify-content:space-between; width:100%; }
+  :where(html[data-look="dial"]) .wall .field-control,:where(html[data-look="dial"]) .wall .field { min-height:44px; font-size:16px; }
+  :where(html[data-look="dial"]) .wall [hidden] { display:none!important; }
+  :where(html[data-look="dial"]) .wall .rv { transition-delay:0ms; }
+  :where(html[data-look="dial"]) .wall[data-boot=opening] .dial-panel { animation:compact-arrival 420ms var(--ease-out) backwards; }
+  :where(html[data-look="dial"]) .wall[data-boot=opening] .dial .dial-sweep { animation-duration:710ms; }
+  :where(html[data-look="dial"]) .wall[data-boot=opening] .dial .roll-strip { animation-delay:60ms!important; animation-duration:350ms; }
+  :where(html[data-look="dial"]) .wall[data-boot=opening] .dial .dial-needle { animation-delay:180ms; }
+  :where(html[data-look="dial"]) .wall .rim-ticks { stroke-dasharray:.4 1.6; }
+}
+@keyframes compact-arrival { from {opacity:.3; transform:translateY(10px);} }
+@media(min-width:650px) and (max-width:959px) {
+  :where(html[data-look="dial"]) .wall-content { --gutter:16px; grid-template-columns:minmax(0,1.18fr) minmax(0,1fr); }
+  :where(html[data-look="dial"]) .wall-content > :is(.command,.quote-strip),:where(html[data-look="dial"]) .wall-content :is(.pulse-panel,.breadth-panel,.news-panel,.history-fold,.watch-fold,.tool-fold) { grid-column:1/-1; }
+  :where(html[data-look="dial"]) .wall-content .dial-panel { margin:0; border:1px solid #383c35; }
+  :where(html[data-look="dial"]) .wall-content .movers-panel,:where(html[data-look="dial"]) .wall-content #sector-etf-heatmap { align-self:start; }
+  :where(html[data-look="dial"]) .quote-strip { margin:0; }
+  :where(html[data-look="dial"]) .quote-strip button { display:flex; align-items:baseline; justify-content:space-between; }
+  :where(html[data-look="dial"]) .wall-dock { left:50%; right:auto; width:min(500px,100%); transform:translateX(-50%); border:1px solid #494d45; border-radius:7px 7px 0 0; }
+}
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) .dial-extremes { position:relative; }
+  :where(html[data-look="dial"]) .dial-reading { position:relative; display:flex; justify-content:center; align-items:center; gap:7px; padding:0 12px; height:22px;
+    color:#aeb5aa; font:10px/15px var(--font-ui); white-space:nowrap; }
+  :where(html[data-look="dial"]) .dial-reading[data-active=true] { justify-content:flex-start; background:#20221c; }
+  :where(html[data-look="dial"]) .dial-reading b,:where(html[data-look="dial"]) .dial-reading strong { font-family:var(--font-num); color:rgb(var(--signal-rgb)); }
+  :where(html[data-look="dial"]) .dial-reading span { overflow:hidden; text-overflow:ellipsis; }
+  :where(html[data-look="dial"]) .dial-reading strong { margin-left:auto; }
+  :where(html[data-look="dial"]) .dial-input circle { touch-action:auto; }
+  :where(html[data-look="dial"]) .wall .search-box input { box-shadow:none; border:0; border-radius:0; }
+  :where(html[data-look="dial"]) .wall .dial .rim-name {font-size:25px;}
+  :where(html[data-look="dial"]) .wall .mover-identity a { min-height:44px; align-items:end; }
+  :where(html[data-look="dial"]) .mover-line { padding-block:4px; }
+  :where(html[data-look="dial"]) .wall-dock [data-stop] { touch-action:manipulation; }
+}
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) .dial { overflow:clip; }
+  :where(html[data-look="dial"]) .wall .compact-search .search-box input { height:44px; min-height:44px; }
+  :where(html[data-look="dial"]) .wall footer .note a,:where(html[data-look="dial"]) .wall .skip-link:focus { display:inline-flex; min-height:44px; align-items:center; }
+  :where(html[data-look="dial"]) .wall .sec-row > :first-child { min-width:0; }
+  :where(html[data-look="dial"]) .wall .quote-strip button { min-height:48px; }
+  :where(html[data-look="dial"]) .wall .dial-key { color:#a8afa3; }
+  :where(html[data-look="dial"]) .wall .dial-key > span:last-child { font-size:9px; }
+}
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) .dial-panel::before { inset:0; }
+  :where(html[data-look="dial"]) .wall .skip-link { min-height:44px; }
+  :where(html[data-look="dial"]) .wall .hm-readout .text-fg-4 { color:#adb4a6; }
+}
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) html:has(.wall) { scroll-behavior:auto; }
+  :where(html[data-look="dial"]) .wall-content .mover-identity a { align-items:center; min-height:44px; }
+}
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) .sec-row:has(button[aria-pressed=true]) { background:#22251f; --lit:rgb(var(--signal-rgb)); }
+  :where(html[data-look="dial"]) .wall :is(.watch-fold,.history-fold) { opacity:1; transform:none; }
+  :where(html[data-look="dial"]) .wall .tool-fold summary:focus-visible { outline-offset:1px; }
+}
+
+@media(max-width:649px) {
+  :where(html[data-look="dial"]) .movers-rank[data-collapsed=true] > li:nth-child(4) { display:none; }
+}
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) .wall input.field-control:not([type=checkbox]):not([type=radio]),
+  :where(html[data-look="dial"]) .wall form button[type=submit]:not(.btn) { min-height:44px; }
+  :where(html[data-look="dial"]) .wall input.field-control:not([type=checkbox]):not([type=radio]) { font-size:16px; }
+  :where(html[data-look="dial"]) .wall details > summary,:where(html[data-look="dial"]) .wall .tool-fold a,:where(html[data-look="dial"]) .wall .tool-fold button { min-height:44px; min-width:44px; }
+  :where(html[data-look="dial"]) .wall .tool-fold a { display:inline-flex; align-items:center; }
+}
+@media(max-width:959px) {
+  :where(html[data-look="dial"]) .dial-reading[data-active=true] { position:sticky; top:48px; z-index:3; }
+}
+
+@media (max-width: 430px) {
+  :where(html[data-look="dial"]) .wall header .brand-name { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+}
+
+@media (max-width: 767px) {
+  :where(html[data-look="dial"]) .wall .compact-search input#market-symbol-search { height:44px; min-height:44px; max-height:none; }
+}

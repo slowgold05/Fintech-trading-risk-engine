@@ -38,12 +38,12 @@ import pytest
 pytest.importorskip("selenium")
 
 from selenium import webdriver
-from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
+from selenium.common.exceptions import ElementClickInterceptedException, StaleElementReferenceException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("P0B_BROWSER") != "1",
@@ -497,6 +497,37 @@ def _click(driver: webdriver.Chrome, element) -> None:
         driver.execute_script("arguments[0].click();", element)
 
 
+def _reveal_market_tool(driver: webdriver.Chrome, selector: str) -> None:
+    entry = _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+    target = driver.execute_script("return arguments[0].closest('details') || arguments[0];", entry)
+    summary = target.find_elements(By.CSS_SELECTOR, ":scope > summary")
+    if summary and not target.get_property("open"):
+        _click(driver, summary[0])
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});", entry)
+    except StaleElementReferenceException:
+        pass  # The trigger was replaced by the instrument it just loaded.
+
+
+def _select_label(driver: webdriver.Chrome, field_id: str) -> str:
+    field = driver.find_element(By.ID, field_id)
+    return Select(field).first_selected_option.text.strip() if field.tag_name == "select" else field.text.strip()
+
+
+def _choose_option(driver: webdriver.Chrome, field_id: str, label: str) -> None:
+    field = _wait(driver).until(EC.element_to_be_clickable((By.ID, field_id)))
+    if field.tag_name == "select":
+        Select(field).select_by_visible_text(label)
+        return
+    _click(driver, field)
+    option = _wait(driver).until(lambda current: next((
+        node for node in current.find_elements(By.CSS_SELECTOR, "[role='option']")
+        if node.is_displayed() and node.text.strip() == label
+    ), False), f"'{field_id}' did not offer the option '{label}'")
+    _click(driver, option)
+    _wait(driver).until(lambda current: _select_label(current, field_id) == label)
+
+
 def _sign_in(driver: webdriver.Chrome, web: str, email: str, password: str, destination: str | None = "/dashboard") -> None:
     driver.get(web + "/login")
     _wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Email']")))
@@ -911,8 +942,8 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         assert driver.find_element(By.CSS_SELECTOR, "button[aria-label='Sign in']").is_displayed()
 
         driver.get(web + "/market")
-        _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Market dashboard']")))
-        assert "/market" in driver.current_url
+        _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//h1[starts-with(normalize-space(.), 'Market overview')]")))
+        assert urlsplit(driver.current_url).path == "/market"
 
         _sign_in(driver, web, email, password)
         _wait(driver).until(lambda current: _money_after(current, "Cash") == "$100,000")
@@ -1434,58 +1465,60 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
         _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)
         driver.get(disposable_api.web_url + "/market")
-        _wait(driver).until(lambda current: "$123.45" in current.find_element(By.TAG_NAME, "body").text)
+        index = (By.CSS_SELECTOR, "[data-testid='market-index-SPY']")
+        _wait(driver).until(lambda current: "$123.45" in current.find_element(*index).text)
         text = driver.find_element(By.TAG_NAME, "body").text
         assert "SPY" in text and "SPX" not in text
         assert "5,487.03" not in text
-        assert "Provider change -1.50%" in text
+        assert "-1.50%" in driver.find_element(*index).text
         assert not driver.find_elements(By.CSS_SELECTOR, "svg[aria-label*='trend']")
         assert not driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='market pulse trend']")
-        stale = _wait(driver).until(EC.presence_of_element_located((By.XPATH, "//*[self::a or self::div][@title][.//*[normalize-space()='P1PUBLIC']]")))
-        assert "Stale" in stale.text and "+99.00%" not in stale.text
-        from selenium.common.exceptions import StaleElementReferenceException
-
         heatmap_artifacts = REPO_ROOT / ".local-tools" / "public-browser"
         heatmap_artifacts.mkdir(parents=True, exist_ok=True)
-        tile_xpath = "//*[self::a or self::div][@title][.//*[normalize-space()='P1PUBLIC']]"
+        tile_selector = "[data-testid='heatmap-stock-P1PUBLIC']"
+        _reveal_market_tool(driver, "#stock-heatmap")
+        _wait(driver).until(lambda current: "stale" in current.find_element(By.CSS_SELECTOR, tile_selector).text.casefold())
+        assert "+99.00%" not in driver.find_element(By.CSS_SELECTOR, tile_selector).text
 
         def prove_heatmap_scales() -> None:
             for scale in ("compact", "standard", "expanded"):
                 selector = f"button[aria-label='Set heatmap size to {scale}']"
+                filters = [node for node in driver.find_elements(By.XPATH, "//button[normalize-space()='Filters']") if node.is_displayed()]
+                if filters:
+                    _click(driver, filters[0])
                 _wait(driver).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
                 driver.execute_script(
                     "document.querySelector(arguments[0]).scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'});",
                     selector,
                 )
                 _click(driver, driver.find_element(By.CSS_SELECTOR, selector))
+                if filters:
+                    _click(driver, driver.find_element(By.XPATH, "//dialog[@open]//button[normalize-space()='Done']"))
+                    _wait(driver).until(EC.invisibility_of_element_located((By.CSS_SELECTOR, "dialog[open]")))
                 driver.execute_script(
                     """
-                    const tile = document.evaluate(
-                      arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                    ).singleNodeValue;
+                    const tile = document.querySelector(arguments[0]);
                     if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
                     """,
-                    tile_xpath,
+                    tile_selector,
                 )
 
                 def tile_visible(current) -> bool:
                     try:
-                        found = current.find_elements(By.XPATH, tile_xpath)
+                        found = current.find_elements(By.CSS_SELECTOR, tile_selector)
                         if not found:
                             return False
                         visible = found[0].text
                     except StaleElementReferenceException:
                         return False
-                    return "Stale" in visible and "+99" not in visible
+                    return "stale" in visible.casefold() and "+99" not in visible
 
                 _wait(driver).until(tile_visible)
-                visible = driver.find_element(By.XPATH, tile_xpath).text
-                assert "Stale" in visible and "+99" not in visible
+                visible = driver.find_element(By.CSS_SELECTOR, tile_selector).text
+                assert "stale" in visible.casefold() and "+99" not in visible
                 assert driver.execute_script(
                     """
-                    const tile = document.evaluate(
-                      arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                    ).singleNodeValue;
+                    const tile = document.querySelector(arguments[0]);
                     if (!tile) { return false; }
                     const nodes = Array.from(tile.querySelectorAll("*")).filter((node) => (node.innerText || "").trim());
                     const positive = nodes.length > 0 && nodes.every((node) => {
@@ -1493,7 +1526,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                       return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0;
                     });
                     if (!positive) { return false; }
-                    const status = tile.children[1];
+                    const status = tile.querySelector("[data-testid='heatmap-quote-status']");
                     if (!status || !(status.textContent || "").trim()) { return false; }
                     if (status.clientWidth < status.scrollWidth) { return false; }
                     const statusRect = status.getBoundingClientRect();
@@ -1515,7 +1548,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                       && statusRect.right <= window.innerWidth;
                     return withinPadding && withinViewport;
                     """,
-                    tile_xpath,
+                    tile_selector,
                 )
                 assert driver.execute_script(
                     "return document.documentElement.scrollWidth <= document.documentElement.clientWidth"
@@ -1524,18 +1557,14 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         def scroll_heatmap_tile_into_view() -> None:
             driver.execute_script(
                 """
-                const tile = document.evaluate(
-                  arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                ).singleNodeValue;
+                const tile = document.querySelector(arguments[0]);
                 if (tile) { tile.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"}); }
                 """,
-                tile_xpath,
+                tile_selector,
             )
             _wait(driver).until(lambda current: current.execute_script(
                 """
-                const tile = document.evaluate(
-                  arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                ).singleNodeValue;
+                const tile = document.querySelector(arguments[0]);
                 if (!tile) { return false; }
                 const rect = tile.getBoundingClientRect();
                 return rect.width > 0
@@ -1545,7 +1574,7 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
                   && rect.bottom <= window.innerHeight
                   && rect.right <= window.innerWidth;
                 """,
-                tile_xpath,
+                tile_selector,
             ))
 
         prove_heatmap_scales()
@@ -1558,11 +1587,13 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         driver.save_screenshot(str(heatmap_artifacts / "heatmap-mobile.png"))
         driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False})
         _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)
-        field = driver.find_element(By.ID, "research-symbol")
-        field.clear()
-        field.send_keys("P1NOFACTS")
-        _click(driver, driver.find_element(By.XPATH, "//button[normalize-space()='Research']"))
-        _wait(driver).until(lambda current: "P1NOFACTS" in current.find_element(By.TAG_NAME, "body").text)
+        _reveal_market_tool(driver, "#company-research")
+        field = _wait(driver).until(EC.visibility_of_element_located((By.ID, "research-symbol")))
+        driver.execute_script("arguments[0].focus(); arguments[0].select();", field)
+        field.send_keys(Keys.BACKSPACE, "P1NOFACTS")
+        assert field.get_property("value") == "P1NOFACTS"
+        field.send_keys(Keys.ENTER)
+        _wait(driver).until(lambda current: current.find_element(By.CSS_SELECTOR, ".research-ticker").text == "P1NOFACTS")
         _wait(driver).until(lambda current: "research assessment unavailable" in current.find_element(By.TAG_NAME, "body").text.lower())
         _wait(driver).until(lambda _current: any(
             event["path"] == "/market/research/P1NOFACTS" and event["status"] == 200

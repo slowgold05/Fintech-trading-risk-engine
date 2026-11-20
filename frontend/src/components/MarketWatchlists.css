@@ -1,0 +1,45 @@
+:where(html[data-look]) .watch-editor { color: var(--ink); min-width: 0; font-family: var(--font-ui); overflow-wrap: anywhere; }
+:where(html[data-look]) .watch-editor > h2 { margin-bottom: var(--gap); font-size: 18px; font-weight: 600; }
+:where(html[data-look]) .watch-layout, :where(html[data-look]) .watch-members, :where(html[data-look]) .watch-library { display: grid; gap: var(--gap); align-content: start; }
+:where(html[data-look]) .watch-editor .nk-panel > header { margin: 0; }
+:where(html[data-look]) .watch-editor .nk-panel > header p, :where(html[data-look]) .watch-identity small { color: var(--muted); font-size: var(--label); }
+:where(html[data-look]) .watch-form { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; min-width: 0; }
+:where(html[data-look]) .watch-form .nk-field { flex: 1 1 9rem; min-width: 0; }
+:where(html[data-look]) .watch-editor .nk-field :is(select,input) { width: 100%; min-width: 0; max-width: 100%; }
+:where(html[data-look]) .watch-rows { list-style: none; margin: 0; padding: 0; }
+:where(html[data-look]) .watch-rows li { display: flex; justify-content: space-between; align-items: center; gap: var(--gap); flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); }
+:where(html[data-look]) .watch-identity, :where(html[data-look]) .watch-actions { display: flex; align-items: center; gap: 6px; min-width: 0; }
+:where(html[data-look]) .watch-identity small { display: block; }
+:where(html[data-look]) .watch-actions { flex-wrap: wrap; }
+:where(html[data-look]) .watch-position { min-width: 2ch; color: var(--muted); font: var(--label)/1.3 var(--font-mono); }
+:where(html[data-look]) .watch-symbol { font-family: var(--font-mono); }
+:where(html[data-look]) a.watch-symbol { display: inline-flex; min-height: 44px; align-items: center; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+:where(html[data-look]) .watch-editor > [role] { margin-top: var(--gap); }
+:where(html[data-look]) .watch-editor .nk-state { padding-inline: 0; }
+:where(html[data-look]) .watch-editor .nk-state .nk-button { margin: 8px 0 0 10px; }
+:where(html[data-look]) .watch-editor :focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+@media (max-width: 920px) {
+}
+@media (max-width: 600px) {
+  :where(html[data-look]) .watch-editor .nk-field input, :where(html[data-look]) .watch-editor .nk-field select { font-size: 16px; }
+  :where(html[data-look]) .watch-editor .watch-rows li { display: grid; gap: 6px; }
+  :where(html[data-look]) .watch-editor .watch-actions button { padding-inline: 9px; min-height: 44px; }
+}
+:where(html[data-look]) .watch-editor .nk-field:has(> select) { position: relative; }
+:where(html[data-look]) .watch-editor .nk-field > select {
+  appearance: none;
+  height: 44px;
+  padding-right: 36px;
+}
+:where(html[data-look]) .watch-editor .nk-field:has(> select)::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 19px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}

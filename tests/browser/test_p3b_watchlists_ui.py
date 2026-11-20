@@ -19,7 +19,6 @@ pytest.importorskip("selenium")
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -154,14 +153,14 @@ def _status(driver, phrase: str) -> None:
 
 
 def _symbols(driver) -> list[str]:
-    return [node.text.strip() for node in _section(driver).find_elements(By.CSS_SELECTOR, "li span.font-mono")]
+    return [node.text.strip() for node in _section(driver).find_elements(By.CSS_SELECTOR, "li .watch-symbol")]
 
 
 def _choose(driver, name: str) -> None:
-    Select(driver.find_element(By.ID, "watchlist-select")).select_by_visible_text(name)
+    h._choose_option(driver, "watchlist-select", name)
     h._wait(driver).until(lambda current: (
         current.find_elements(By.ID, "watchlist-rename")
-        and Select(current.find_element(By.ID, "watchlist-select")).first_selected_option.text.strip() == name
+        and h._select_label(current, "watchlist-select") == name
     ))
 
 
@@ -169,8 +168,12 @@ def _market(driver) -> None:
     link = next(node for node in driver.find_elements(By.CSS_SELECTOR, "a[href='/market']") if node.is_displayed() and node.text.strip() == "Market")
     h._click(driver, link)
     h._wait(driver).until(EC.url_contains("/market"))
-    h._wait(driver).until(lambda current: current.find_elements(By.ID, "watchlists-title"))
+    _reveal_watchlists(driver)
     h._wait(driver).until(lambda current: "Loading watchlists." not in _section(current).text and "Loading your account." not in _section(current).text)
+
+
+def _reveal_watchlists(driver) -> None:
+    h._reveal_market_tool(driver, "#watchlists-title")
 
 
 def _login_here(driver, email: str, password: str) -> None:
@@ -185,14 +188,26 @@ def _login_here(driver, email: str, password: str) -> None:
     h._wait(driver).until(EC.url_contains("/dashboard"))
 
 
+def _click_visible(driver, locator) -> None:
+    def click(current):
+        try:
+            for element in current.find_elements(*locator):
+                if element.is_displayed() and element.is_enabled():
+                    h._click(current, element)
+                    return True
+        except StaleElementReferenceException:
+            return False
+        return False
+
+    h._wait(driver).until(click)
+
+
 def _sign_out(driver) -> None:
-    dashboards = [node for node in driver.find_elements(By.PARTIAL_LINK_TEXT, "Open dashboard") if node.is_displayed()]
-    if dashboards:
-        h._click(driver, dashboards[0])
+    if EC.url_contains("/market")(driver):
+        _click_visible(driver, (By.PARTIAL_LINK_TEXT, "Open dashboard"))
         h._wait(driver).until(EC.url_contains("/dashboard"))
-    button = next(node for node in driver.find_elements(By.XPATH, "//button[normalize-space()='Sign out']") if node.is_displayed())
     logout_before = _hits(driver, "/auth/logout")
-    h._click(driver, button)
+    _click_visible(driver, (By.XPATH, "//button[normalize-space()='Sign out']"))
     h._wait(driver).until(EC.url_contains("/login"))
     h._wait(driver).until(lambda current: _hits(current, "/auth/logout") > logout_before)
     h._wait(driver).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Email']")))
@@ -250,7 +265,8 @@ def test_private_watchlists_ui(disposable_api) -> None:
     try:
         t._css_viewport(driver, 1280, 800, False)
         driver.get(disposable_api.web_url + "/market")
-        h._wait(driver).until(lambda current: "Sign in to keep watchlists" in _section(current).text)
+        _reveal_watchlists(driver)
+        h._wait(driver).until(EC.visibility_of_element_located((By.LINK_TEXT, "Sign in to keep watchlists")))
         private_calls = _hits(driver, "/watchlists") + _hits(driver, "/auth/me")
         if private_calls:
             pytest.fail("signed-out market called private endpoints: " + json.dumps({"count": private_calls}))
@@ -271,8 +287,9 @@ def test_private_watchlists_ui(disposable_api) -> None:
         if rows != [(NAME, TWO, 1), (NAME, ONE, 2)] or orphans:
             pytest.fail("saved order mismatch: " + json.dumps({"symbols": [row[1] for row in rows], "orphans": orphans}))
         driver.refresh()
+        _reveal_watchlists(driver)
         h._wait(driver).until(lambda current: current.find_elements(By.ID, "watchlist-select"))
-        if Select(driver.find_element(By.ID, "watchlist-select")).first_selected_option.get_attribute("value"):
+        if h._select_label(driver, "watchlist-select") != "Choose a watchlist":
             pytest.fail("reloaded watchlist select did not show the placeholder")
         _choose(driver, NAME)
         if _symbols(driver) != [TWO, ONE]:
@@ -288,12 +305,15 @@ def test_private_watchlists_ui(disposable_api) -> None:
             pytest.fail("renamed member mismatch: " + json.dumps({"symbols": [row[1] for row in rows], "kept": len(rows), "orphans": orphans}))
         if not _fits(driver):
             pytest.fail("desktop market overflowed the viewport")
-        row = driver.find_element(By.XPATH, f"//section[@aria-labelledby='watchlists-title']//li[.//span[normalize-space()='{ONE}']]")
+        row = driver.find_element(By.XPATH, f"//section[@aria-labelledby='watchlists-title']//li[.//*[normalize-space()='{ONE}']]")
         t._shot(driver, row, ARTIFACTS / "lists-desktop.png")
         t._css_viewport(driver, 390, 844, True)
+        _reveal_watchlists(driver)
         h._wait(driver).until(lambda current: _fits(current) and _symbols(current) == [ONE])
-        t._shot(driver, driver.find_element(By.XPATH, f"//section[@aria-labelledby='watchlists-title']//li[.//span[normalize-space()='{ONE}']]"), ARTIFACTS / "lists-mobile.png")
+        t._shot(driver, driver.find_element(By.XPATH, f"//section[@aria-labelledby='watchlists-title']//li[.//*[normalize-space()='{ONE}']]"), ARTIFACTS / "lists-mobile.png")
         t._css_viewport(driver, 1280, 800, False)
+        h._reveal_market_tool(driver, "#company-research")
+        h._reveal_market_tool(driver, "[data-testid='market-history-entry']")
         h._wait(driver).until(lambda current: current.find_elements(By.ID, "research-symbol") and current.find_elements(By.ID, "daily-history-symbol"))
         research_before, history_before = _hits(driver, "/market/research"), _hits(driver, "/history")
         _arm_handoff(driver)
@@ -319,8 +339,6 @@ def test_private_watchlists_ui(disposable_api) -> None:
         driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": ["*alphavantage*", "*yahoo*", "*polygon*", "*/market/research*", "*/history*"]})
         blocked = True
         driver.execute_script("window.__p3wStay = 1;")
-        h._click(driver, next(node for node in driver.find_elements(By.PARTIAL_LINK_TEXT, "Open dashboard") if node.is_displayed()))
-        h._wait(driver).until(EC.url_contains("/dashboard"))
         _sign_out(driver)
         _login_here(driver, other, password)
         _market(driver)

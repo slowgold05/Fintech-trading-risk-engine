@@ -1,3 +1,6 @@
+import { ChartNotices } from "./ChartNotices";
+import { Select as DefaultSelect } from "../design/Select";
+import { Input } from "../design/primitives";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -46,6 +49,11 @@ type SubmittedSeries = {
 
 type SeriesOption = {
   key: string;
+  storedBars?: number;
+  symbols?: number;
+  firstSession?: string;
+  lastSession?: string;
+  coverage?: string;
   provider: string;
   adjustment_type: AdjustmentType;
 };
@@ -334,7 +342,15 @@ type VolumeSeriesHandle = ReturnType<typeof addVolumeSeries>;
 export function DailyHistory({
   value,
   onValueChange,
+  embedded = false,
+  SelectControl: Select = DefaultSelect,
+  catalogEnabled = true,
+  accountOverlays,
 }: {
+  embedded?: boolean;
+  SelectControl?: typeof DefaultSelect;
+  catalogEnabled?: boolean;
+  accountOverlays?: boolean;
   value?: string;
   onValueChange?: (value: string) => void;
 } = {}) {
@@ -378,8 +394,9 @@ export function DailyHistory({
     };
   }, [rangeDraft, indicatorDraft, periodDraft, chartType]);
   const catalogQuery = useQuery({
-    queryKey: ["market", "cachedseries"],
+    queryKey: ["market", accountOverlays === undefined ? "cachedseries" : "data-status"],
     queryFn: fetchCachedSeries,
+    enabled: catalogEnabled,
     retry: false,
   });
   const historyQuery = useQuery({
@@ -428,30 +445,33 @@ export function DailyHistory({
     enabled: submitted !== null,
     retry: false,
   });
+  const showAccountActivity = accountOverlays !== false && submitted !== null;
   const tradesQuery = useQuery({
     queryKey: ["trades"],
     queryFn: fetchTrades,
-    enabled: submitted !== null,
+    enabled: showAccountActivity,
   });
   const ordersQuery = useQuery({
     queryKey: ["orders"],
     queryFn: fetchOrders,
-    enabled: submitted !== null,
+    enabled: showAccountActivity,
   });
+  const trades = showAccountActivity ? tradesQuery.data?.trades : undefined;
+  const orders = showAccountActivity ? ordersQuery.data?.orders : undefined;
   const symbolTrades = useMemo(
-    () => (tradesQuery.data?.trades ?? []).filter((trade) => trade.symbol === submitted?.symbol),
-    [submitted?.symbol, tradesQuery.data?.trades],
+    () => (trades ?? []).filter((trade) => trade.symbol === submitted?.symbol),
+    [submitted?.symbol, trades],
   );
   const openLimitOrders = useMemo(
     () =>
-      (ordersQuery.data?.orders ?? []).filter(
+      (orders ?? []).filter(
         (order): order is OpenLimitOrder =>
           order.symbol === submitted?.symbol &&
           order.status === "open" &&
           order.order_type === "limit" &&
           order.limit_price !== null,
       ),
-    [ordersQuery.data?.orders, submitted?.symbol],
+    [orders, submitted?.symbol],
   );
   const catalog = useMemo(
     () => (catalogQuery.isSuccess ? readCatalog(catalogQuery.data) : null),
@@ -496,7 +516,7 @@ export function DailyHistory({
       indicator: indicatorDraft,
       period,
     };
-    if (submitted !== null) {
+    if (showAccountActivity) {
       // Trades and orders keep a stable query key, so a later view has to
       // refetch them. The first view enables those queries instead.
       void tradesQuery.refetch();
@@ -525,9 +545,23 @@ export function DailyHistory({
     return acceptHistory(historyQuery.data, submitted);
   }, [showForm, submitted, historyQuery.isSuccess, historyQuery.data]);
 
+  const SymbolInput = embedded ? Input : "input";
+  const chartTypeField = (
+    <div className="min-w-0">
+      <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-chart-type">
+        Chart type
+      </label>
+      <Select designed={embedded} className="field-control" id="daily-history-chart-type"
+        onValueChange={(value) => setChartType(readChartType(value))} value={chartType}>
+        <option value="candlestick">Candlestick</option>
+        <option value="line">Line</option>
+        <option value="area">Area</option>
+      </Select>
+    </div>
+  );
   return (
-    <section aria-labelledby="daily-price-history-title" className="dashboard-card min-w-0">
-      <div className="dashboard-card-header">
+    <section data-testid="daily-history" aria-labelledby="daily-price-history-title" className={embedded ? "history-tool-body" : "dashboard-card min-w-0"}>
+      {!embedded && <div className="dashboard-card-header">
         <div>
           <h2 id="daily-price-history-title" className="text-sm font-semibold text-slate-100">
             Daily price history
@@ -536,7 +570,7 @@ export function DailyHistory({
             Cached canonical daily bars for one explicit source and adjustment.
           </p>
         </div>
-      </div>
+      </div>}
       <div className="dashboard-card-body min-w-0 space-y-4">
         {catalogQuery.isPending ? (
           <p className="text-sm text-slate-300" role="status">
@@ -562,19 +596,29 @@ export function DailyHistory({
             No canonical daily series available.
           </p>
         ) : null}
+        {embedded && showForm && !submitted && <div className="cache-inventory">
+          {(selected ? [selected] : options).filter(s=>s.storedBars!=null).map(s=><div className="cache-series" key={s.key}>
+            <div><small>Stored daily bars</small><strong>{s.storedBars!.toLocaleString("en-US")}</strong></div>
+            <div><b>{s.provider} · {s.adjustment_type.replaceAll("_","-")}</b>
+            {s.symbols!=null && <small>{s.symbols} symbols</small>}</div>
+            {s.firstSession && s.lastSession && <div className="cache-span"><small>Stored span{s.coverage && ` · Coverage ${s.coverage}`}</small>
+              <span><time>{s.firstSession}</time><i aria-hidden="true"/><time>{s.lastSession}</time></span></div>}
+          </div>)}
+        </div>}
         {showForm ? (
-          <form className="space-y-3" onSubmit={handleSubmit}>
+          <form className={embedded ? "history-console" : "space-y-3"} onSubmit={handleSubmit}>
             <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,9rem)_auto] sm:items-end">
               <div className="min-w-0">
                 <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-symbol">
                   Symbol
                 </label>
-                <input
+                <SymbolInput
                   aria-invalid={formError !== null && (draftSymbol.length === 0 || draftSymbol.length > SYMBOL_MAX)}
                   autoCapitalize="characters"
                   autoComplete="off"
                   className="field-control"
                   id="daily-history-symbol"
+                  placeholder={embedded ? "Enter ticker" : undefined}
                   maxLength={SYMBOL_MAX}
                   onChange={(event) => updateSymbolDraft(event.target.value)}
                   spellCheck={false}
@@ -585,11 +629,11 @@ export function DailyHistory({
                 <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-series">
                   Cached series
                 </label>
-                <select
-                  aria-invalid={formError !== null && selected === null}
+                <Select designed={embedded}
+                  invalid={formError !== null && selected === null}
                   className="field-control"
                   id="daily-history-series"
-                  onChange={(event) => setSeriesKey(event.target.value)}
+                  onValueChange={(value) => setSeriesKey(value)}
                   value={seriesKey}
                 >
                   <option value="">Choose cached series</option>
@@ -598,16 +642,16 @@ export function DailyHistory({
                       {option.provider} · {option.adjustment_type}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className="min-w-0">
                 <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-range">
                   Range
                 </label>
-                <select
+                <Select designed={embedded}
                   className="field-control"
                   id="daily-history-range"
-                  onChange={(event) => setRangeDraft(readHistoryRange(event.target.value))}
+                  onValueChange={(value) => setRangeDraft(readHistoryRange(value))}
                   value={rangeDraft}
                 >
                   <option value="1m">1 month</option>
@@ -616,7 +660,7 @@ export function DailyHistory({
                   <option value="1y">1 year</option>
                   <option value="2y">2 years</option>
                   <option value="all">All</option>
-                </select>
+                </Select>
               </div>
               <button className="primary-action sm:w-auto" type="submit">
                 View history
@@ -627,10 +671,10 @@ export function DailyHistory({
                 <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-indicator">
                   Indicator
                 </label>
-                <select
+                <Select designed={embedded}
                   className="field-control"
                   id="daily-history-indicator"
-                  onChange={(event) => setIndicatorDraft(readIndicatorChoice(event.target.value))}
+                  onValueChange={(value) => setIndicatorDraft(readIndicatorChoice(value))}
                   value={indicatorDraft}
                 >
                   <option value="none">None</option>
@@ -639,8 +683,9 @@ export function DailyHistory({
                   <option value="rsi">RSI</option>
                   <option value="macd">MACD</option>
                   <option value="bollinger">Bollinger Bands</option>
-                </select>
+                </Select>
               </div>
+              {embedded && chartTypeField}
               {indicatorDraft !== "none" ? (
                 <div className="min-w-0">
                   <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-period">
@@ -668,26 +713,7 @@ export function DailyHistory({
             ) : null}
           </form>
         ) : null}
-        {showForm ? (
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,8rem)] sm:items-end">
-            <div className="min-w-0">
-              <label className="text-xs font-semibold text-slate-300" htmlFor="daily-history-chart-type">
-                Chart type
-              </label>
-              <select
-                className="field-control"
-                id="daily-history-chart-type"
-                onChange={(event) => setChartType(readChartType(event.target.value))}
-                value={chartType}
-              >
-                <option value="candlestick">Candlestick</option>
-                <option value="line">Line</option>
-                <option value="area">Area</option>
-              </select>
-            </div>
-          </div>
-        ) : null}
-
+        {showForm && !embedded && <div className="grid gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,8rem)] sm:items-end">{chartTypeField}</div>}
         {showForm && submitted ? (
           <div className="min-w-0 space-y-4">
             <p className="text-sm text-slate-200">
@@ -756,6 +782,7 @@ export function DailyHistory({
                 <HistoryFacts meta={accepted.meta} submitted={submitted} />
                 {accepted.overlay ? <IndicatorFacts overlay={accepted.overlay} /> : null}
                 <DailyHistoryCanvas
+                  instrumentTheme={!!embedded}
                   chartType={chartType}
                   macdHistogram={
                     accepted.overlay !== null && accepted.overlay.name === "macd"
@@ -800,41 +827,7 @@ export function DailyHistory({
           </div>
         ) : null}
 
-        <div className="space-y-2 border-t border-slate-800 pt-4">
-          <p className="text-xs leading-5 text-slate-400">
-            TradingView Lightweight Charts™, Copyright ({"\u0441"}) 2025 TradingView, Inc.{" "}
-            <a
-              className="text-emerald-300 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50"
-              href="https://www.tradingview.com/"
-              rel="noreferrer"
-              target="_blank"
-            >
-              https://www.tradingview.com/
-            </a>
-          </p>
-          <p className="text-xs leading-5 text-slate-400">
-            <a
-              className="text-emerald-300 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50"
-              href="/licenses/lightweight-charts-LICENSE.txt"
-            >
-              lightweight-charts license
-            </a>
-            {" · "}
-            <a
-              className="text-emerald-300 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50"
-              href="/licenses/lightweight-charts-NOTICE.txt"
-            >
-              lightweight-charts notice
-            </a>
-            {" · "}
-            <a
-              className="text-emerald-300 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50"
-              href="/licenses/fancy-canvas-LICENSE.txt"
-            >
-              fancy-canvas license
-            </a>
-          </p>
-        </div>
+        {!embedded && <ChartNotices includeTypefaces={accountOverlays !== undefined} />}
       </div>
     </section>
   );
@@ -925,7 +918,7 @@ function SessionPrices({
         Session prices
       </summary>
       <div className="table-shell mt-3 max-h-80 min-w-0 overflow-auto overscroll-contain">
-        <table className="data-table">
+        <table className="data-table session-price-table">
           <caption className="sr-only">
             Open, high, low, close, and volume
             {showIndicator ? ` and ${columnLabel}` : ""} for {submitted.symbol}, source {submitted.provider}, adjustment{" "}
@@ -965,13 +958,13 @@ function SessionPrices({
                 <th className="text-left font-mono text-slate-100" scope="row">
                   {row.session_date}
                 </th>
-                <td className="text-right font-mono">{row.open}</td>
-                <td className="text-right font-mono">{row.high}</td>
-                <td className="text-right font-mono">{row.low}</td>
-                <td className="text-right font-mono">{row.close}</td>
-                <td className="text-right font-mono">{row.volume}</td>
+                <td data-field="Open" className="text-right font-mono">{row.open}</td>
+                <td data-field="High" className="text-right font-mono">{row.high}</td>
+                <td data-field="Low" className="text-right font-mono">{row.low}</td>
+                <td data-field="Close" className="text-right font-mono">{row.close}</td>
+                <td data-field="Volume" className="text-right font-mono">{row.volume}</td>
                 {showIndicator ? (
-                  <td className="text-right font-mono">{values[index] ?? "Warm-up"}</td>
+                  <td data-field={columnLabel} className="text-right font-mono">{values[index] ?? "Warm-up"}</td>
                 ) : null}
               </tr>
             ))}
@@ -983,9 +976,10 @@ function SessionPrices({
 }
 
 function DailyHistoryCanvas({
+  instrumentTheme,
   chartType,
   points,
-  volume,
+  volume: reportedVolume,
   priceScaleLine,
   bollingerUpper,
   bollingerLower,
@@ -996,6 +990,7 @@ function DailyHistoryCanvas({
   trades,
   openLimitOrders,
 }: {
+  instrumentTheme: boolean;
   chartType: "candlestick" | "line" | "area";
   points: CandlestickData<Time>[];
   volume: HistogramData<Time>[];
@@ -1009,6 +1004,9 @@ function DailyHistoryCanvas({
   trades: TradeResponse[];
   openLimitOrders: OpenLimitOrder[];
 }) {
+  const volume = useMemo(() => instrumentTheme
+    ? reportedVolume.map((bar, index) => ({...bar, color: points[index]?.close >= points[index]?.open ? "#a9aba780" : "#5f616780"}))
+    : reportedVolume, [instrumentTheme, reportedVolume, points]);
   const closeLine = useMemo(
     () => points.map((point) => ({ time: point.time, value: point.close })),
     [points],
@@ -1113,7 +1111,7 @@ function DailyHistoryCanvas({
       lineModeSeriesRef.current?.applyOptions({ visible: chartType === "line" });
       areaModeSeriesRef.current?.applyOptions({ visible: chartType === "area" });
       volumeSeriesRef.current?.setData(volume);
-      syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, priceScaleLine);
+      syncIndicatorLine(chart, libraryRef.current, lineSeriesRef, priceScaleLine, instrumentTheme);
       setBollingerBandData(bollingerUpperSeriesRef.current, bollingerUpper, bollingerUpperPaintedRef);
       setBollingerBandData(bollingerLowerSeriesRef.current, bollingerLower, bollingerLowerPaintedRef);
       rsiSeriesRef.current?.setData(rsiLine ?? []);
@@ -1127,6 +1125,7 @@ function DailyHistoryCanvas({
       setFailed(true);
     }
   }, [
+    instrumentTheme,
     points,
     closeLine,
     chartType,
@@ -1229,18 +1228,18 @@ function DailyHistoryCanvas({
             autoSize: true,
             height: 320,
             layout: {
-              background: { type: charts.ColorType.Solid, color: "#020617" },
-              textColor: "#cbd5e1",
+              background: { type: charts.ColorType.Solid, color: instrumentTheme ? "#101113" : "#020617" },
+              textColor: instrumentTheme ? "#bfc0be" : "#cbd5e1",
               attributionLogo: true,
               fontFamily: "Geist, Satoshi, Outfit, ui-sans-serif, system-ui, sans-serif",
             },
             grid: {
-              vertLines: { color: "#1e293b" },
-              horzLines: { color: "#1e293b" },
+              vertLines: { color: instrumentTheme ? "#28292c" : "#1e293b" },
+              horzLines: { color: instrumentTheme ? "#28292c" : "#1e293b" },
             },
-            rightPriceScale: { borderColor: "#334155" },
+            rightPriceScale: { borderColor: instrumentTheme ? "#444548" : "#334155" },
             timeScale: {
-              borderColor: "#334155",
+              borderColor: instrumentTheme ? "#444548" : "#334155",
               secondsVisible: false,
               timeVisible: false,
             },
@@ -1261,6 +1260,11 @@ function DailyHistoryCanvas({
           areaModeSeries.setData(closeLineRef.current);
           areaModeSeries.applyOptions({ visible: chartTypeRef.current === "area" });
           const candleMarkers = charts.createSeriesMarkers(series, []);
+          if (instrumentTheme) {
+            series.applyOptions({ upColor: "#d4d5cf", downColor: "#74767a", wickUpColor: "#d4d5cf", wickDownColor: "#929498" });
+            lineModeSeries.applyOptions({ color: "#e0e1dc" });
+            areaModeSeries.applyOptions({ lineColor: "#e0e1dc", topColor: "#adadae44", bottomColor: "#adadae05" });
+          }
           candleMarkersRef.current = candleMarkers;
           const lineModeMarkers = charts.createSeriesMarkers(lineModeSeries, []);
           lineModeMarkersRef.current = lineModeMarkers;
@@ -1276,12 +1280,15 @@ function DailyHistoryCanvas({
           volumeSeriesRef.current = volumeSeries;
           volumeSeries.setData(volumeRef.current);
           const rsiSeries = addRsiSeries(created, charts);
+          if (instrumentTheme) rsiSeries.applyOptions({color:"#ffb271"});
           rsiSeriesRef.current = rsiSeries;
           rsiSeries.setData(rsiLineRef.current ?? []);
           const macdLineSeries = addMacdLineSeries(created, charts);
+          if (instrumentTheme) macdLineSeries.applyOptions({color:"#e7e6e1"});
           macdLineSeriesRef.current = macdLineSeries;
           macdLineSeries.setData(macdLineRef.current ?? []);
           const macdSignalSeries = addMacdSignalSeries(created, charts);
+          if (instrumentTheme) macdSignalSeries.applyOptions({color:"#ffb271"});
           macdSignalSeriesRef.current = macdSignalSeries;
           macdSignalSeries.setData(macdSignalLineRef.current ?? []);
           const macdHistogramSeries = addMacdHistogramSeries(created, charts);
@@ -1291,9 +1298,13 @@ function DailyHistoryCanvas({
           bollingerUpperSeriesRef.current = bollingerUpperSeries;
           setBollingerBandData(bollingerUpperSeries, bollingerUpperRef.current, bollingerUpperPaintedRef);
           const bollingerLowerSeries = addBollingerLowerSeries(created, charts);
+          if (instrumentTheme) {
+            bollingerUpperSeries.applyOptions({color:"#a9aba7"});
+            bollingerLowerSeries.applyOptions({color:"#a9aba7"});
+          }
           bollingerLowerSeriesRef.current = bollingerLowerSeries;
           setBollingerBandData(bollingerLowerSeries, bollingerLowerRef.current, bollingerLowerPaintedRef);
-          syncIndicatorLine(created, charts, lineSeriesRef, priceScaleLineRef.current);
+          syncIndicatorLine(created, charts, lineSeriesRef, priceScaleLineRef.current, instrumentTheme);
           created.timeScale().fitContent();
         } catch {
           failedRef.current = true;
@@ -1314,7 +1325,7 @@ function DailyHistoryCanvas({
         disposeRef.current = null;
       }
     };
-  }, [attempt]);
+  }, [attempt, instrumentTheme]);
 
   if (failed) {
     return (
@@ -1324,7 +1335,7 @@ function DailyHistoryCanvas({
     );
   }
 
-  return <div className="h-80 min-w-0 w-full" ref={containerRef} />;
+  return <div className="h-80 min-w-0 w-full" data-testid="daily-history-chart" ref={containerRef} />;
 }
 
 function historyErrorMessage(error: unknown): string {
@@ -1359,6 +1370,11 @@ function readCatalog(data: unknown): { ok: true; options: SeriesOption[] } | { o
       key,
       provider: entry.provider,
       adjustment_type: entry.adjustment_type,
+      storedBars: typeof entry.row_count === "number" && Number.isSafeInteger(entry.row_count) && entry.row_count >= 0 ? entry.row_count : undefined,
+      symbols: typeof entry.symbol_count === "number" && Number.isSafeInteger(entry.symbol_count) && entry.symbol_count >= 0 ? entry.symbol_count : undefined,
+      firstSession: typeof entry.stored_session_start === "string" ? entry.stored_session_start : undefined,
+      lastSession: typeof entry.stored_session_end === "string" ? entry.stored_session_end : undefined,
+      coverage: typeof entry.coverage_status === "string" ? entry.coverage_status.replaceAll("_"," ") : undefined,
     });
   }
   return { ok: true, options };
@@ -1433,6 +1449,7 @@ function syncIndicatorLine(
   charts: LightweightChartsModule | null,
   lineSeriesRef: { current: LineSeriesHandle | null },
   line: IndicatorLine | null,
+  instrumentTheme: boolean,
 ) {
   if (line === null) {
     lineSeriesRef.current?.setData([]);
@@ -1443,6 +1460,7 @@ function syncIndicatorLine(
   }
   if (lineSeriesRef.current === null) {
     lineSeriesRef.current = addLineSeries(chart, charts);
+    if (instrumentTheme) lineSeriesRef.current.applyOptions({ color: "#ffb271" });
   }
   lineSeriesRef.current.setData(line);
 }
