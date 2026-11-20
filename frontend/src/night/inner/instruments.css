@@ -20,6 +20,7 @@
 .series-dial .ins-graphic { max-height:324px; aspect-ratio:1; width:auto; max-width:100%; justify-self:center; }
 .ins-graphic .ins-dial-label { font-size:8px; text-transform:uppercase; fill:#a9aea1; }
 .ins-graphic .ins-dial-value { font:550 22px var(--font-mono); letter-spacing:-1.3px; fill:#f1f1e9; }
+.series-dial[data-wide-labels=true] .ins-dial-value { font-size:17px; }
 .ins-date { font-size:8px!important; }
 .ins-register { border-left:1px solid #43473e; padding:0 14px; color:#c7cbbf; }
 .ins-register-title,.ins-readings small,.ins-register small,.ins-gauge small { font:11px/1.5 var(--font-mono); color:var(--muted); display:block; }

@@ -50,6 +50,7 @@ export function PriceChart({ result, request }: { result: Simulation; request: R
       </select>
     </div>
     <SeriesInstrument samples={samples} names={mode === "return" ? returnNames : valueNames}
+      wideLabels={mode === "value"}
       selected={Math.max(index, 0)} onSelect={i => setDate(samples[i].label)}
       format={mode === "return" ? priceReturn : usd} reference={mode === "return" ? 0 : undefined}
       label="Inspect a close" status={mode === "return" && !prices ? {

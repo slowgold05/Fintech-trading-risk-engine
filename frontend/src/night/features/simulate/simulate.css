@@ -31,7 +31,6 @@
  .sim-totals>div {padding:6px}
 }
 .sim-chart-head select {flex:none;width:auto;max-width:55%;min-height:44px;padding:6px 12px;font:13px var(--font-mono)}
-.sim-page .sim-chart .ins-relief text[x="44"] {text-anchor:start;transform:translateX(-42px)}
 .sim-page .nk-button[data-variant=primary] {white-space:nowrap;background:var(--ink);color:var(--bg);border-color:var(--ink)}
 @media(max-width:767px){
  .sim-draft-readings,.sim-totals {margin-block:6px}
@@ -50,4 +49,3 @@
  .sim-draft-readings:has(>:nth-child(3)) .nk-stat strong {font-size:17px}
 }
 .sim-chart-head select {width:min(55%,176px)}
-.sim-page .ins-graphic .ins-dial-value {font-size:17px}

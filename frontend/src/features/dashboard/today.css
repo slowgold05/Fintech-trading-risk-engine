@@ -35,10 +35,6 @@
 .today-rail { display:grid; align-content:start; gap:var(--gap); min-width:0; }
 .today .today-brief, :root[data-look=dial] .today .today-brief { grid-template-columns:minmax(0,2.15fr) minmax(0,1fr); align-items:start; }
 .today .today-closes h2 { font-size:clamp(19px,2vw,27px); letter-spacing:-.05em; }
-.today-closes .ins-dial-value { font-size:18px; }
-.today-closes .series-terrain .ins-plate { padding-inline-start:26px; }
-.today-closes .series-terrain .ins-graphic {overflow:visible;}
-.today-closes .series-terrain .ins-graphic text[x="44"] {font-size:10px;}
 .today .today-closes > p, .today .today-closes header p { font-size:12px; }
 :root[data-look=dial] .today .today-activity dl { display:block; }
 :root[data-look=dial] .today .today-activity dt:not(:first-child) { margin-top:12px; }

@@ -56,14 +56,17 @@ function extent(scale: Scale, value: number) {
   return scale.high === scale.low ? 0.5 : (value - scale.low) / (scale.high - scale.low);
 }
 const HEIGHT = 240;
-function ridgeX(width: number, index: number, count: number) {
-  return fixed(52 + fractionAt(index, count) * (width - 105));
+const RIDGE_LEFT = 52;
+const RIDGE_RIGHT = 53;
+const valueTicks = [0, 0.5, 1];
+function ridgeX(width: number, left: number, index: number, count: number) {
+  return fixed(left + fractionAt(index, count) * (width - left - RIDGE_RIGHT));
 }
 function ridgeY(scale: Scale, value: number) {
   return fixed(195 - extent(scale, value) * 133);
 }
 
-const Ridge = memo(function Ridge({ samples, names, scale, format, width }: PlotProps & { width: number }) {
+const Ridge = memo(function Ridge({ samples, names, scale, format, width, left }: PlotProps & { width: number; left: number }) {
   const grid = useId();
   const depth = names.length > 1 ? Math.min(18, 40 / (names.length - 1)) : 26;
   const ticks = samples.length < 2 ? [0.5] : [0, 0.25, 0.5, 0.75, 1];
@@ -75,12 +78,12 @@ const Ridge = memo(function Ridge({ samples, names, scale, format, width }: Plot
         </pattern>
       </defs>
       <rect width={width} height={HEIGHT} fill={`url(#${grid})`} />
-      {[0, 0.5, 1].map((f, i) => {
+      {valueTicks.map((f, i) => {
         const y = 195 - f * 133;
         return (
           <g key={i}>
-            <path d={`M47 ${y}h${width - 92}`} className="ins-gridline" />
-            <text x="44" y={y - 5} textAnchor="end">
+            <path d={`M${left - 5} ${y}H${width - 45}`} className="ins-gridline" />
+            <text className="ins-axis-value" x={left - 8} y={y - 5} textAnchor="end">
               {samples.length && (scale.low !== scale.high || f === 0.5)
                 ? format(scale.low + f * (scale.high - scale.low))
                 : ""}
@@ -93,7 +96,7 @@ const Ridge = memo(function Ridge({ samples, names, scale, format, width }: Plot
         .map((k) => {
           const z = k * depth;
           const runs = traces(samples, k, (i, v) => [
-            ridgeX(width, i, samples.length) + z,
+            ridgeX(width, left, i, samples.length) + z,
             ridgeY(scale, v) - z,
           ]);
           return (
@@ -158,10 +161,10 @@ const Ridge = memo(function Ridge({ samples, names, scale, format, width }: Plot
             </g>
           );
         })}
-      <path className="ins-gridline" d={`M52 211H${width - 53}l28,-28`} />
+      <path className="ins-gridline" d={`M${left} 211H${width - RIDGE_RIGHT}l28,-28`} />
       {ticks.map((f, i) => {
         const index = Math.round(f * (samples.length - 1)),
-          x = ridgeX(width, index, samples.length);
+          x = ridgeX(width, left, index, samples.length);
         return (
           <g key={i}>
             <path stroke="#818784" d={`M${x} 211v4`} />
@@ -306,6 +309,7 @@ export type SeriesProps = {
   onSelect: (index: number) => void;
   reference?: number;
   status?: InstrumentStatus;
+  wideLabels?: boolean;
 };
 const NO_SAMPLES: readonly Sample[] = [];
 export function SeriesInstrument({
@@ -317,6 +321,7 @@ export function SeriesInstrument({
   onSelect,
   reference,
   status,
+  wideLabels = false,
 }: SeriesProps) {
   const { prefs } = useLook();
   const dial = prefs.look === "dial";
@@ -331,6 +336,11 @@ export function SeriesInstrument({
       : undefined);
   const points = state ? NO_SAMPLES : samples;
   const scale = useMemo(() => bounds(points, reference), [points, reference]);
+  const axisLabelLength = wideLabels && !dial && points.length
+    ? Math.max(...valueTicks.map(f => format(scale.low + f * (scale.high - scale.low)).length))
+    : 0;
+  // Terrain's 10px monospace labels advance 6px per character.
+  const left = Math.max(RIDGE_LEFT, 12 + 6 * axisLabelLength);
   const plotProps = { samples: points, names, format, scale };
   const index = Math.max(0, Math.min(points.length - 1, selected));
   const observation = points[index],
@@ -338,6 +348,8 @@ export function SeriesInstrument({
   const a = angleAt(fractionAt(index, points.length));
   const r = valid(value) ? 74 + extent(scale, value) * 55 : 102;
   const selection = formatValue(value);
+  // Keep long readings inside the 130px inner circle.
+  const dialValueLength = wideLabels && selection.length > 11 ? 122 : undefined;
   function formatValue(v: number | null | undefined) {
     return valid(v) ? format(v) : "—";
   }
@@ -346,7 +358,7 @@ export function SeriesInstrument({
     const box = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - box.left) / box.width,
       y = (event.clientY - box.top) / box.height;
-    const f = dial ? Math.atan2(x - 0.5, 0.5 - y) / sweep + 0.5 : (x * width - 52) / (width - 105);
+    const f = dial ? Math.atan2(x - 0.5, 0.5 - y) / sweep + 0.5 : (x * width - left) / (width - left - RIDGE_RIGHT);
     onSelect(Math.round(Math.min(1, Math.max(0, f)) * (points.length - 1)));
   }
   const extrema = useMemo(() => {
@@ -363,6 +375,7 @@ export function SeriesInstrument({
       className={`series-instrument ${dial ? "series-dial" : "series-terrain"}`}
       data-rest={Boolean(state)}
       data-state={state?.kind}
+      data-wide-labels={wideLabels || undefined}
       aria-label={label}
     >
       <div className="ins-plate">
@@ -389,7 +402,8 @@ export function SeriesInstrument({
               <text className="ins-dial-label" x="160" y="139" textAnchor="middle">
                 {names[0]}
               </text>
-              <text className="ins-dial-value" x="160" y="166" textAnchor="middle">
+              <text className="ins-dial-value" x="160" y="166" textAnchor="middle"
+                textLength={dialValueLength} lengthAdjust="spacingAndGlyphs">
                 {selection}
               </text>
               <text className="ins-date" x="160" y="184" textAnchor="middle">
@@ -398,12 +412,12 @@ export function SeriesInstrument({
             </>
           ) : (
             <>
-              <Ridge {...plotProps} width={width} />
+              <Ridge {...plotProps} width={width} left={left} />
               {observation && (
                 <g className="ins-needle">
-                  <path strokeDasharray="3 4" d={`M${ridgeX(width, index, points.length)} 26V211`} />
+                  <path strokeDasharray="3 4" d={`M${ridgeX(width, left, index, points.length)} 26V211`} />
                   {valid(value) && (
-                    <circle cx={ridgeX(width, index, points.length)} cy={ridgeY(scale, value)} r="4" />
+                    <circle cx={ridgeX(width, left, index, points.length)} cy={ridgeY(scale, value)} r="4" />
                   )}
                 </g>
               )}

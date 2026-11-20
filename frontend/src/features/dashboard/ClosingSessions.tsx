@@ -40,7 +40,7 @@ export function ClosingSessions({ owner }: { owner: number }) {
       read.isPending ? <RestInstrument label="Closing value" status={{kind:"loading",title:"Loading closing values…"}} /> :
       !latest ? <><RestInstrument label="Closing value" status={{kind:"unavailable",title:"No priced close in the past year"}} /><p>{series.length ? "The account is missing closing marks for its holdings." : "There are no recorded sessions in this account’s performance window."}</p></> :
         <>
-          <SeriesInstrument samples={samples} names={names} format={formatCurrency} label="Inspect closing value"
+          <SeriesInstrument samples={samples} names={names} format={formatCurrency} label="Inspect closing value" wideLabels
             selected={selected < 0 ? samples.findIndex(row => row.label === latestDate) : selected} onSelect={i => setInspected(samples[i].label)} />
           <div className="today-observations">
             <Observation label="Latest close" row={latest} />
