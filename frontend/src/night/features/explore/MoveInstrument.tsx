@@ -103,6 +103,7 @@ export function MoveInstrument({ title, subtitle, rows, initial, label, inspectL
       <Plot rows={status ? [] : rows} scale={scale} selected={selected} inspect={i => setChosen(rows[i].name)} label={label} />
       {!status && row && <div className="move-reading">{reading(row)}</div>}
     </div>
-    {status ? <State {...status} /> : <div className="move-key">{legend}<span>Zero = unchanged close</span></div>}
+    {status ? <State {...status} /> : <div className="move-key">{legend}<span>{prefs.look === "dial" ? "Gain outward · loss inward" : "Zero = unchanged close"}</span>
+      {prefs.look === "dial" && <span>Scale {priceMove(scale.low)} to {priceMove(scale.high)}</span>}</div>}
   </Panel>;
 }

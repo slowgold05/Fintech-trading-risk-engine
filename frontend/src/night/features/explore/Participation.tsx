@@ -48,10 +48,12 @@ export function ParticipationPage({ title, description, id, marker, children, re
     actions={<select aria-label="Sector" id="participation-sector" value={sector} onChange={e => setSector(e.target.value)}>
       <option value="">All sectors</option>{[...SECTOR_ORDER, "Other"].map(s => <option key={s}>{s}</option>)}
     </select>}>
-    <Page.Main data-testid={data ? marker : undefined}>
-      {status ? rest?.(status) ?? <RestInstrument label={title} status={status} /> : data && children(data, setSector)}
-    </Page.Main>
-    {data && <Page.Aside><Scope data={data} /></Page.Aside>}
-    {data && ledger && <Page.Full>{ledger(data, setSector)}</Page.Full>}
+    <Page.Full className="market-results-layout" data-testid={data ? marker : undefined}>
+      <Page.Main>
+        {status ? rest?.(status) ?? <RestInstrument label={title} status={status} /> : data && children(data, setSector)}
+      </Page.Main>
+      {data && <Page.Aside><Scope data={data} /></Page.Aside>}
+      {data && ledger && <Page.Full>{ledger(data, setSector)}</Page.Full>}
+    </Page.Full>
   </Page>;
 }
