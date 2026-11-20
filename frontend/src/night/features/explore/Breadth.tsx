@@ -63,7 +63,7 @@ function BreadthPlate({ data, status }: { data?: Participation; status?: Instrum
   const rest = status ?? (!total ? { kind:"unavailable" as const, title:"No covered stock moves in this selection." } : undefined);
   return <Panel title="Direction of travel" subtitle={data?.session_date ? `End-of-day moves · ${data.session_date}` : "End-of-day moves"}>
     <div className="breadth-plate" data-centrepiece={!rest}>
-      <svg className="breadth-graphic" role="img" aria-label={`Direction among ${stockCount(total)} covered stocks`} viewBox={dial ? "0 0 320 320" : "0 0 600 220"}>
+      <svg className="breadth-graphic" role="img" aria-label={data ? `Direction among ${stockCount(total)} covered stocks` : "Stock direction"} viewBox={dial ? "0 0 320 320" : "0 0 600 220"}>
         {dial ? <g className="breadth-dial-case">
           <circle cx="160" cy="160" r="151" /><circle cx="160" cy="160" r="141" />
           {Array.from({ length:96 }, (_, i) => <path key={i} transform={`rotate(${i * 3.75} 160 160)`} d={i % 4 === 0 ? "M160 10v7" : "M160 11v3"} />)}
