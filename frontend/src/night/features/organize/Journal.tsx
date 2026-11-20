@@ -4,10 +4,12 @@ import { Link } from "react-router-dom";
 import { fetchOrders } from "../../../api/orders";
 import type { OrderResponse } from "../../../types/schemas";
 import { keys } from "../../api";
-import { Button, Field, Page, Panel, State } from "../../kit";
+import { Button, Field, Page, Panel, State } from "../../inner";
 import { errorMessage } from "./errors";
 import { createNote, deleteNote, fetchJournal, updateNote, type JournalEntry, type NoteBody } from "./journalApi";
 import { Owner } from "./Owner";
+import { ReceiptIndex } from "./ReceiptIndex";
+import "./journal.css";
 import { ReadFailure } from "./ReadFailure";
 
 type Change = { kind: "create" | "edit"; id: number; body: NoteBody } | { kind: "delete"; id: number };
@@ -76,8 +78,14 @@ function TradeNotes({ owner }: { owner: number }) {
   const annotated = new Set(entries.map(entry => entry.order_id));
   const available = (orders.data?.orders ?? []).filter(order => !annotated.has(order.id));
   const editor = <NoteForm key={editing?.id ?? `new-${version}`} orders={available} editing={editing} busy={change.isPending} save={change.mutate} cancel={() => { setEditing(null); change.reset(); }} />;
-  return <Page className="organize" title="Trade journal" testId="night-journal" description="Keep a private note and tags with each paper order receipt.">
-    <Panel title={editing ? "Edit note" : "New note"}>
+  return <Page className="organize journal-book" title="Trade journal" testId="night-journal" eyebrow="Paper order receipts"
+    actions={available.length > 0 && <a className="nk-button" href="#journal-editor">Write a note</a>}>
+    <Page.Main><ReceiptIndex orders={orders.data?.orders ?? []} entries={entries} partial={!!journal.hasNextPage}
+      status={orders.isError || journal.isError ? {kind:"error", title:"Receipt coverage unavailable",
+        action:<Button onClick={() => { if (orders.isError) void orders.refetch(); if (journal.isError) void (journal.isFetchNextPageError ? journal.fetchNextPage() : journal.refetch()); }}>Retry coverage</Button>} :
+        orders.isPending || journal.isPending ? {kind:"loading", title:"Matching notes to receipts…"} :
+        !orders.data?.orders.length ? {kind:"empty", title:"Paper order receipts fill this index."} : undefined}/></Page.Main>
+    <Page.Aside><Panel id="journal-editor" title={editing ? "Edit note" : "New note"}>
       {editing ? editor : orders.isPending || journal.isPending ? <State kind="loading" title="Loading receipts…" /> :
         orders.isError ? <ReadFailure title="Receipts unavailable" error={orders.error} retry={orders.refetch} /> :
         journal.isError && !journal.data ? <p className="detail">Load your saved notes to select a receipt.</p> :
@@ -85,12 +93,12 @@ function TradeNotes({ owner }: { owner: number }) {
         <State kind="empty" title={orders.data?.orders.length ? "Recent receipts already have notes" : "No order receipts yet"}
           detail={orders.data?.orders.length ? "Choose Edit on a saved note to update it." : "Place a paper order in Activity to start your journal."} action={<Link className="receipt-link" to="/trades">Open Activity</Link>} />}
       {change.isError && change.variables.kind !== "delete" && <p role="alert" className="feedback">{errorMessage(change.error)}</p>}
-    </Panel>
-    <Panel title="Saved notes">
+    </Panel></Page.Aside>
+    <Page.Full><Panel title="Saved notes" subtitle="Private notes and tags stay with the original paper order receipt.">
       {journal.isPending ? <State kind="loading" title="Loading notes…" /> :
         journal.isError && !journal.data ? <ReadFailure title="Notes unavailable" error={journal.error} retry={journal.refetch} /> :
         !entries.length ? <State kind="empty" title="No trade notes yet" detail="Saved notes appear here with a link to the original receipt." /> :
-        <ul className="records">{entries.map(entry => <li className="record" key={entry.id} data-testid="journal-entry">
+        <ul className="records">{entries.map(entry => <li className="record" id={`journal-entry-${entry.id}`} key={entry.id} data-testid="journal-entry">
           <div className="record-head"><h3>Receipt #{entry.order_id}</h3><small>Updated <time dateTime={entry.updated_at}>{entry.updated_at.slice(0, 10)} UTC</time></small></div>
           <p className="note-text">{entry.note}</p>
           {entry.tags.length > 0 && <ul className="tag-list" aria-label="Tags">{entry.tags.map((tag, i) => <li key={i}>#{tag}</li>)}</ul>}
@@ -104,7 +112,7 @@ function TradeNotes({ owner }: { owner: number }) {
       {journal.hasNextPage && !journal.isFetchNextPageError && <Button disabled={journal.isFetching} onClick={() => void journal.fetchNextPage()}>Load older notes</Button>}
       {change.isError && change.variables.kind === "delete" && <p role="alert" className="feedback">{errorMessage(change.error)}</p>}
       <p className="feedback" role="status">{notice}</p>
-    </Panel>
+    </Panel></Page.Full>
   </Page>;
 }
 
