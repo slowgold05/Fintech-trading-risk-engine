@@ -3,3 +3,19 @@
 .holding-note textarea { min-width:0; width:100%; resize:vertical; min-height:6rem; font:inherit; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); padding:.65rem; }
 .holding-note textarea:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
 .holding-note [role="alert"] { color:var(--down); }
+.holding-note-layout {display:grid;gap:12px;grid-template-columns:minmax(88px,.8fr) minmax(0,1.4fr);align-items:start;}
+.holding-note .note-meter {padding-right:12px;border-right:1px solid var(--line);}
+.holding-note .note-meter small,.holding-note .nk-stat span {font-size:10px;}
+.holding-note .ins-gauge strong {font-size:18px;}
+.holding-note .note-content > p:first-child {margin-top:0;}
+.holding-note .note-content [role=status]:empty {display:none;}
+.holding-note-layout:has(form) {grid-template-columns:1fr;}
+.holding-note-layout:has(form) .note-meter {border:0;padding:0;}
+.holding-note .note-meter > small {display:block;margin-top:4px;}
+.holding-note .holding-note-actions {gap:6px;}
+@media(min-width:800px) {
+  .holding-note .holding-note-layout:has(form) {grid-template-columns:minmax(0,1fr) minmax(0,2fr);}
+  .holding-note .holding-note-layout:has(form) .note-meter {padding:12px 18px;background:var(--inner-ground);}
+  .holding-note-layout:has(form) .note-meter svg {height:85px;}
+  [data-look=dial] .holding-note-layout:has(form) .note-meter svg {height:130px;}
+}
