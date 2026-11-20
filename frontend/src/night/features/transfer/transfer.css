@@ -122,29 +122,28 @@
   }
 }
 
-@media (min-width: 900px) {
-  :root[data-look="dial"] .transfer-page .nk-layout-analysis {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
-  :root[data-look="dial"] .transfer-fields {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
-  }
-
-  :root[data-look="dial"] .transfer-export {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: var(--pad);
-  }
-
-  :root[data-look="dial"] .transfer-export > header {
-    grid-column: 1 / -1;
-  }
-
-  :root[data-look="dial"] .transfer-export-block + .transfer-export-block {
-    border-inline-start: 1px solid var(--line);
-    margin-top: 0;
-    padding-inline-start: var(--pad);
-  }
+.transfer-counts,.transfer-files {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.transfer-counts {grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid var(--line);margin-bottom:12px;background:var(--inner-paper)}
+.transfer-counts .nk-stat strong {font-size:clamp(20px,2.6vw,36px)}
+.transfer-files {margin-top:12px;gap:var(--pad);padding-top:12px}
+.transfer-files>.transfer-export-block {align-content:start}
+.transfer-files>.transfer-export-block+.transfer-export-block {margin-top:0;border-left:1px solid var(--line);padding-left:var(--pad)}
+.transfer-page .share-instrument {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(200px,1fr);align-items:center;gap:var(--gap);padding:8px 0}
+.transfer-page .share-graphic {height:clamp(170px,18vw,244px)}
+.transfer-page .ins-rank {min-height:44px;text-transform:capitalize}
+.transfer-page .transfer-meta {font:11px/1.6 var(--font-mono)}
+@media(max-width:767px){
+ .transfer-page .share-instrument,.transfer-files {grid-template-columns:minmax(0,1fr)}
+ .transfer-page .share-graphic {height:160px}
+ [data-look=dial] .transfer-page .share-graphic {height:184px}
+ .transfer-files>.transfer-export-block+.transfer-export-block {border-left:0;border-top:1px solid var(--line);padding:12px 0 0}
+ .transfer-counts .nk-stat {padding:6px 8px}
+}
+.transfer-dist-title {font-weight:600}
+.transfer-page .ins-rank {text-transform:none}
+@media(max-width:767px){
+ .transfer-page .share-instrument {grid-template-columns:minmax(110px,.8fr) minmax(0,1fr);gap:8px}
+ .transfer-page .ins-rank {grid-template-columns:minmax(0,1fr) 14% auto;gap:5px}
+ .transfer-page .share-graphic {height:auto}
 }

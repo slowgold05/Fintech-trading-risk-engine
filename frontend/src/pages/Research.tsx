@@ -14,7 +14,7 @@ import {
 } from "../api/research";
 import { apiClient } from "../api/client";
 import { keys } from "../night/api";
-import { Button, Field, Page, Panel, State } from "../night/kit";
+import { Button, Field, Page, Panel, State } from "../night/inner";
 import { DeskAccount, EmptyState, LoadingRows, QueryError, RefreshButton } from "../night/features/desks/DeskStates";
 import { StoredContext } from "../night/features/desks/StoredContext";
 import "../night/features/desks/research.css";
@@ -581,11 +581,11 @@ function ResearchDesk({ owner }: { owner: number }) {
     if (id === null) opener.current?.focus();
   }
 
-  return <Page className="desk-page research-desk" title="Research Desk" description="Inspect stored prices, source records and research jobs for your account.">
+  return <Page className="desk-page research-desk" title="Research Desk" description="Review a symbol’s recent closes alongside its news, filings and research jobs.">
     {(jobId !== null || reportId !== null) && <Page.Full><ResearchReportCard owner={owner} jobId={jobId} reportId={reportId} onClose={() => selectJob(null)} /></Page.Full>}
     <Page.Main className="desk-stack">
       <StoredContext symbol={symbol} onSymbol={setSymbol} />
-      <Panel title={`${symbol} source records`}>
+      <Panel title={`${symbol} source records`} actions={<Link className="nk-button" to="/research/simulate">Investment simulator</Link>}>
         <details onToggle={event => setShowSources(event.currentTarget.open)}>
           <summary>Browse news and SEC filings</summary>
           {showSources && <div className="research-sources"><ReportNews symbol={symbol} /><ReportFilings symbol={symbol} /></div>}
@@ -604,5 +604,5 @@ function ResearchDesk({ owner }: { owner: number }) {
 }
 
 export function Research() {
-  return <DeskAccount>{owner => <ResearchDesk key={owner} owner={owner} />}</DeskAccount>;
+  return <DeskAccount label="Daily closes">{owner => <ResearchDesk key={owner} owner={owner} />}</DeskAccount>;
 }

@@ -1,59 +1,66 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDailyHistory } from "../../../api/history";
 import { keys } from "../../api";
-import { State } from "../../kit";
-import { matchingPrices, priceReturn, type PricePoint, type Request, type Simulation } from "./simulation";
+import { Button, SeriesInstrument } from "../../inner";
+import { matchingPrices, money, priceReturn, type Request, type Simulation } from "./simulation";
 
-function Plot({ points, request, partial }: { points: PricePoint[]; request: Request; partial: boolean }) {
-  const [index, setIndex] = useState(points.length - 1);
-  const selected = points[Math.min(index, points.length - 1)];
-  const values = points.map(point => point.ratio);
-  const bottom = Math.min(...values, 0);
-  const top = Math.max(...values, 0);
-  const start = Date.parse(request.start);
-  const span = Date.parse(request.end) - start;
-  const x = (date: string) => 2 + 596 * (Date.parse(date) - start) / span;
-  const y = (ratio: number) => top === bottom ? 80 : 150 - 140 * (ratio - bottom) / (top - bottom);
-  const path = points.map((point, i) => {
-    // On partial coverage only consecutive calendar dates establish an unbroken segment.
-    const connect = i > 0 && (!partial || Date.parse(point.date) - Date.parse(points[i - 1].date) === 86400000);
-    return (connect ? "L" : "M") + x(point.date) + "," + y(point.ratio);
-  }).join(" ");
-  return <>
-    <div className="sim-plot">
-      <div className="sim-scale"><span>{priceReturn(top)}</span>{top !== bottom && <span>{priceReturn(bottom)}</span>}</div>
-      <svg viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="Underlying price return over the requested window">
-        <line className="sim-zero" x1="0" y1={y(0)} x2="600" y2={y(0)} />
-        <path className="sim-line" d={path} />
-        {partial && points.map(p => <circle className="sim-mark" key={p.date} cx={x(p.date)} cy={y(p.ratio)} r="1.6" />)}
-        <line className="sim-cursor" x1={x(selected.date)} x2={x(selected.date)} y1="0" y2="160" />
-        <circle className="sim-mark" cx={x(selected.date)} cy={y(selected.ratio)} r="3" />
-      </svg>
-      <div className="sim-axis"><span>{request.start}</span><span>{request.end}</span></div>
-    </div>
-    <div className="sim-inspect">
-      <label htmlFor="sim-session">Inspect a close</label>
-      <output htmlFor="sim-session">{selected.date} · ${Number(selected.close).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 6})} · {priceReturn(selected.ratio)}</output>
-      <input id="sim-session" type="range" min="0" max={points.length - 1} value={Math.min(index, points.length - 1)}
-        aria-valuetext={selected.date + ", " + priceReturn(selected.ratio)} onChange={e => setIndex(Number(e.target.value))} />
-    </div>
-  </>;
+const valueNames = ["Portfolio value", "Contributed"];
+const returnNames = ["Price return"];
+const usd = (value: number) => money(String(value));
+const numeric = (value: string | null | undefined) => value != null && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+
+function sessionDates(result: Simulation, request: Request) {
+  const dates = new Set(result.points.map(point => point.session_date));
+  if (result.coverage !== "available") {
+    for (let day = Date.parse(request.start); day <= Date.parse(request.end); day += 86400000) {
+      const date = new Date(day);
+      const weekday = date.getUTCDay();
+      if (weekday !== 0 && weekday !== 6) dates.add(date.toISOString().slice(0, 10));
+    }
+  }
+  return [...dates].sort();
 }
 
 export function PriceChart({ result, request }: { result: Simulation; request: Request }) {
+  const [mode, setMode] = useState("value");
+  const [date, setDate] = useState<string>();
   const provider = result.source?.provider;
   const history = useQuery({
     queryKey: keys.history(result.symbol, provider ?? "", "split_adjusted", "all"),
     queryFn: () => fetchDailyHistory(result.symbol, provider, "split_adjusted", "all"),
     enabled: !!provider, retry: false,
   });
-  const points = history.data && matchingPrices(result, history.data);
+  const prices = useMemo(() => history.data && matchingPrices(result, history.data), [result, history.data]);
+  const priceMap = useMemo(() => new Map(prices?.map(point => [point.date, point])), [prices]);
+  const samples = useMemo(() => {
+    const points = new Map(result.points.map(point => [point.session_date, point]));
+    return sessionDates(result, request).map(label => {
+      const point = points.get(label);
+      return { label, values: mode === "return" ? [priceMap.get(label)?.ratio ?? null]
+        : [numeric(point?.value_usd), numeric(point?.contributed_usd)] };
+    });
+  }, [mode, result, request, priceMap]);
+  const index = samples.findIndex(point => point.label === (date ?? result.end_used));
+  const point = priceMap.get(samples[index]?.label);
   return <section className="sim-chart" aria-label="Price return chart">
-    <div className="sim-chart-head"><h3>Underlying price return</h3><strong>{priceReturn(result.price_return)}</strong></div>
-    <p className="sim-definition">Each split-adjusted close divided by the first used close, minus one. Cash contributions have no effect on this percentage.</p>
-    {provider && history.isPending ? <State kind="loading" title="Loading dated closes…" /> :
-      points ? <Plot points={points} request={request} partial={result.coverage !== "available"} /> :
-      <State kind="unavailable" title="Matching price history unavailable" detail="The run totals above come from the simulation. Run again to check the dated closes." />}
+    <div className="sim-chart-head"><h3>Session history</h3>
+      <select className="field-control" aria-label="Simulation measure" value={mode} onChange={event => setMode(event.target.value)}>
+        <option value="value">Portfolio value</option><option value="return">Price return</option>
+      </select>
+    </div>
+    <SeriesInstrument samples={samples} names={mode === "return" ? returnNames : valueNames}
+      selected={Math.max(index, 0)} onSelect={i => setDate(samples[i].label)}
+      format={mode === "return" ? priceReturn : usd} reference={mode === "return" ? 0 : undefined}
+      label="Inspect a close" status={mode === "return" && !prices ? {
+        kind: provider && history.isPending ? "loading" : "unavailable",
+        title: provider && history.isPending ? "Loading dated closes…" : "Matching price history unavailable",
+      } : undefined}/>
+    {point && <p className="sim-price-reading">Selected close · {point.date} · {Number(point.close).toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:6})} · {priceReturn(point.ratio)}</p>}
+    <div className="sim-definition"><strong>Underlying price return · <span>{priceReturn(result.price_return)}</span></strong>
+      <p>Each split-adjusted close divided by the first used close, minus one. Cash contributions have no effect on this percentage.</p>
+      {mode !== "return" && !prices && <p>{provider && history.isPending ? "Loading dated closes…" : "Matching price history unavailable"}</p>}
+      {history.isError && <Button onClick={() => void history.refetch()}>Retry dated closes</Button>}
+    </div>
   </section>;
 }
