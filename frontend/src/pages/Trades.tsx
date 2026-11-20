@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { Link, useSearchParams } from "react-router-dom";
@@ -9,7 +9,8 @@ import { OrderDetails } from "../components/OrderDetails";
 import { OrderTicket } from "../components/OrderTicket";
 import { useToast } from "../context/useToast";
 import { keys, refreshExecution } from "../night/api";
-import { Button, Field, Page, Panel, State, Table } from "../night/kit";
+import { Button, Field, Page, Panel, Stat, State, Table } from "../night/inner";
+import { ExecutionFlow } from "../night/features/execution/ExecutionFlow";
 import { formatCurrency, formatQuantity, formatUtcDateTime } from "../utils/format";
 import { readPersistedOrderAttempt } from "../utils/orderAttemptStorage";
 import type { OrderResponse, TradeResponse, TradeRiskResponse } from "../types/schemas";
@@ -91,6 +92,10 @@ function cancellationError(orderId: number, error: unknown): string {
   return `Order ${orderId}: cancellation could not be confirmed.`;
 }
 
+function useFilteredTrades(trades: readonly ActivityTrade[] | undefined, filter: string) {
+  return useMemo(() => (trades ?? []).filter(trade => trade.symbol.toUpperCase().includes(filter)), [trades, filter]);
+}
+
 type TradesProps = {
   owner?: number;
   canTrade?: boolean;
@@ -125,11 +130,12 @@ export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId,
   });
   const ordersQuery = useQuery({ queryKey: ordersKey, queryFn: fetchOrders, retry: false });
   const orders = ordersQuery.data?.orders ?? [];
-  const trades = tradesQuery.data?.trades ?? [];
+
   const visibleOrders = orders.filter((order) => !filter || order.symbol.toUpperCase().includes(filter));
-  const visibleTrades = trades.filter((trade) => !filter || trade.symbol.toUpperCase().includes(filter));
+  const visibleTrades = useFilteredTrades(tradesQuery.data?.trades, filter);
   const selectedVisible = selectedOrderId !== null && (receiptId !== undefined ||
     (!ordersQuery.isError && orders.some((order) => order.id === selectedOrderId)));
+  const openOrders = ordersQuery.isSuccess ? visibleOrders.filter(order => order.status === "open") : [];
   const ticketOpen = canTrade && open;
   const hasPendingAttempt = canTrade && !ticketOpen && readPersistedOrderAttempt(owner) !== null;
 
@@ -242,7 +248,7 @@ export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId,
   }
 
   return (
-    <Page title="Activity" layout="analysis" className="execution-view"
+    <Page title="Activity" eyebrow="Paper execution" layout="analysis" className="execution-view"
       actions={canTrade && !ticketOpen && (
         <button className="nk-button" type="button" data-variant="primary" data-testid="order-open" ref={(node) => {
           if (node && returnToTicket.current) {
@@ -262,22 +268,46 @@ export function Trades({ owner, canTrade = true, open = true, onOpen, receiptId,
         </Page.Aside>
       )}
       <Page.Main className="execution-activity">
-        {canTrade && <nav aria-label="Activity tools">
-          <Link className="nk-button" to="/activity/inbox">Activity inbox</Link>
-        </nav>}
         {selectedVisible && selectedOrderId !== null && (
           <OrderDetails key={`${owner ?? ""}:${selectedOrderId}`} owner={owner} orderId={selectedOrderId} onClose={closeDetails}
             onCancel={canTrade ? () => { void handleCancel(selectedOrderId); } : undefined} cancelBusy={cancelBusy}
             cancelMessage={cancelNotice?.id === selectedOrderId ? cancelNotice.message : undefined} />
         )}
-        <div className="execution-filter">
-          <Field id="activity-ticker" label="Filter by ticker">
-            <input ref={filterRef} data-testid="activity-symbol" maxLength={20}
-              autoComplete="off" spellCheck={false} placeholder="All symbols"
-              value={filterInput} onChange={(event) => setFilterInput(event.target.value.toUpperCase())} />
-          </Field>
-          {filterInput && <Button onClick={() => { setFilterInput(""); filterRef.current?.focus(); }}>Clear filter</Button>}
-          <p>Up to {ORDER_ACTIVITY_LIMIT} recent orders and {TRADE_ACTIVITY_LIMIT} recent trades. Filters apply to these records.</p>
+        <div className="execution-overview">
+          <ExecutionFlow trades={visibleTrades} status={
+            tradesQuery.isError ? {kind:"error", title:"Execution flow unavailable", action:<Button busy={tradesQuery.isFetching} onClick={() => void tradesQuery.refetch()}>Retry execution flow</Button>} :
+            tradesQuery.isPending ? {kind:"loading", title:"Reading fill values…"} :
+            !visibleTrades.length ? {kind:"empty", title:filter ? "No fills for this ticker." : "Executed trades supply the dated fill values."} : undefined
+          } />
+          <Panel title="Recent book" className="execution-book">
+            <div className="execution-counts">
+              <Stat label="Orders" value={ordersQuery.isSuccess ? visibleOrders.length : null}/>
+              <Stat label="Open" value={ordersQuery.isSuccess ? openOrders.length : null}/>
+              <Stat label="Fills" value={tradesQuery.isSuccess ? visibleTrades.length : null}/>
+            </div>
+            <div className="execution-filter">
+              <Field id="activity-ticker" label="Filter by ticker">
+                <input ref={filterRef} data-testid="activity-symbol" maxLength={20}
+                  autoComplete="off" spellCheck={false} placeholder="All symbols"
+                  value={filterInput} onChange={(event) => setFilterInput(event.target.value.toUpperCase())} />
+              </Field>
+              {filterInput && <Button onClick={() => { setFilterInput(""); filterRef.current?.focus(); }}>Clear filter</Button>}
+              <p>Up to {ORDER_ACTIVITY_LIMIT} recent orders and {TRADE_ACTIVITY_LIMIT} recent trades. Filters apply to these records.</p>
+            </div>
+            {openOrders.length > 0 && <div className="working-orders"><h3>Latest open orders</h3>
+              <ul>{openOrders.slice(0,3).map(order => <li key={order.id}>
+                <button type="button" onClick={event => {
+                  detailTriggers.current.set(order.id, event.currentTarget);
+                  selectReceipt(order.id);
+                }}><strong>{order.symbol} · #{order.id}</strong><span>{formatQuantity(order.remaining_quantity)} unfilled</span></button>
+              </li>)}</ul>
+            </div>}
+            {canTrade && <details className="execution-tools"><summary>Activity tools</summary><nav aria-label="Activity tools">
+              <Link to="/activity/inbox">Activity inbox</Link>
+              <Link to="/activity/alerts">Close alerts</Link>
+              <Link to="/activity/journal">Trade journal</Link>
+            </nav></details>}
+          </Panel>
         </div>
         {cancelNotice && (!selectedVisible || cancelNotice.id !== selectedOrderId) && (
           <p className="execution-notice" role="status">{cancelNotice.message}</p>

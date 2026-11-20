@@ -649,3 +649,17 @@ describe("trade risk detail", () => {
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
   });
 });
+
+it("nets executions on their UTC date and recomputes the flow for the active ticker", async () => {
+  fetchOrders.mockResolvedValue({ orders: [] });
+  fetchTrades.mockResolvedValue({ trades: [
+    trade({ executed_at: "2026-11-12T20:15:00-05:00", quantity: 2, price_at_execution: 100, notional: 200 }),
+    trade({ id: 46, symbol: "MSFT", side: "sell", executed_at: "2026-11-13T01:20:00", quantity: 1, price_at_execution: 70, notional: 70 }),
+  ] });
+  renderTrades({open:false});
+  const flow = (await screen.findByRole("heading",{name:"Execution flow"})).closest("section")!;
+  await waitFor(() => expect(flow.querySelector(".ins-readings")).toHaveTextContent("$130"));
+  expect(within(flow).getByText("$200.00")).toBeVisible();
+  fireEvent.change(screen.getByRole("textbox",{name:"Filter by ticker"}),{target:{value:"MSFT"}});
+  expect(flow.querySelector(".ins-readings")).toHaveTextContent("-$70");
+});

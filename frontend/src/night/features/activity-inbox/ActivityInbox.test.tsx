@@ -86,3 +86,12 @@ it.each([null, "/activity/alerts"])(
     expect(screen.queryByRole("link", { name: "Open alerts" })?.getAttribute("href") ?? null).toBe(path);
   },
 );
+
+it("counts ticker activity only on the current page and preserves the book-wide unread count", async () => {
+  vi.mocked(readInbox).mockResolvedValue({...page, items:[event, {...event,id:"fill:42",read_at:page.read_at},
+    {...event,id:"demo:7",symbol:null,kind:"demo_started"}]});
+  mount();
+  expect(await screen.findByRole("button", {name:/AAPL\s*2/})).toBeVisible();
+  expect(screen.getByRole("button", {name:/Paper book\s*1/})).toBeVisible();
+  expect(screen.getByTestId("inbox-unread-count")).toHaveTextContent("9 unread");
+});
