@@ -7,7 +7,8 @@ import { fetchPortfolio } from "../../../api/portfolio";
 import { fetchWatchlists } from "../../../api/watchlists";
 import { formatUtcDateTime } from "../../../utils/format";
 import { keys } from "../../api";
-import { Button, Field, Page, Panel, State, Table, type Column } from "../../kit";
+import type { Column } from "../../kit";
+import { Button, Field, Page, Panel, RestInstrument, ShareInstrument, State, Stat, Table, type InstrumentStatus } from "../../inner";
 import { features } from "../../registry";
 import { importError, submitWatchlistImport, type ImportResult, type ImportRow } from "./api";
 import { MAX_IMPORT_ROWS, WATCHLIST_CAP, readSymbolFile, type SymbolRecord } from "./csv";
@@ -164,12 +165,39 @@ function WatchlistImportPanel({ owner }: { owner: number }) {
   </Panel>;
 }
 
+const formatRows = (rows: number) => countText(rows, "row");
+
 function ExportPanel({ owner }: { owner: number }) {
   const holdings = useQuery({ queryKey: keys.account(owner, "portfolio"), queryFn: fetchPortfolio, retry: false });
   const orders = useQuery({ queryKey: keys.account(owner, "orders", ORDER_ACTIVITY_LIMIT), queryFn: fetchOrders, retry: false });
   const snapshot = formatUtcDateTime(holdings.data?.snapshot_read_at);
 
+  const ready = holdings.isSuccess && orders.isSuccess;
+  const groups = new Map<string, number>();
+  if (ready) {
+    for (const row of holdings.data.positions) {
+      const name = row.symbol;
+      groups.set(name, (groups.get(name) ?? 0) + 1);
+    }
+    for (const row of orders.data.orders) {
+      const name = row.symbol;
+      groups.set(name, (groups.get(name) ?? 0) + 1);
+    }
+  }
+  const ranked = [...groups].map(([name, value]) => ({name, value})).sort((a,b) => b.value - a.value || a.name.localeCompare(b.name));
+  const parts = ranked.slice(0, 8);
+  if (ranked.length > parts.length) parts.push({name:"Other symbols",value:ranked.slice(8).reduce((sum, row) => sum + row.value, 0)});
+  const status: InstrumentStatus | undefined = holdings.isError || orders.isError ? {kind:"error",title:"Export inventory is incomplete. Retry the unavailable file below."} :
+    !ready ? {kind:"loading",title:"Counting exportable records…"} : !parts.length ? {kind:"empty",title:"No holdings or orders to export."} : undefined;
   return <Panel title="Export CSV" className="transfer-export">
+    <div className="transfer-counts">
+      <Stat label="Exportable rows" value={ready ? holdings.data.positions.length + orders.data.orders.length : null} />
+      <Stat label="Holdings" value={holdings.isSuccess ? holdings.data.positions.length : null}/>
+      <Stat label="Orders" value={orders.isSuccess ? orders.data.orders.length : null}/>
+    </div>
+    <h3 className="transfer-dist-title">Rows by symbol</h3>
+    <ShareInstrument label="Holdings and order rows by symbol" format={formatRows} parts={parts} status={status} centrepiece />
+    <div className="transfer-files">
     <div className="transfer-export-block">
       <h3>Holdings</h3>
       <p>All current holdings in your portfolio.</p>
@@ -192,6 +220,7 @@ function ExportPanel({ owner }: { owner: number }) {
         <Button data-testid="csv-export-orders" onClick={() => exportOrders(orders.data.orders)}>Download orders CSV</Button>
       </>}
     </div>
+    </div>
   </Panel>;
 }
 
@@ -201,11 +230,11 @@ export function CsvTransfer() {
   return <Page title="CSV transfer" description="Import watchlist symbols and export your holdings or order records."
     testId="night-csv" layout="analysis" className="transfer-page">
     {identity.isError || (!identity.isPending && !owner) ?
-      <Page.Full><State kind="error" title="Account unavailable"
-        action={<Button onClick={() => void identity.refetch()}>Retry account</Button>} /></Page.Full> :
+      <Page.Full><RestInstrument label="Export inventory" status={{kind:"error", title:"Account unavailable",
+        action:<Button onClick={() => void identity.refetch()}>Retry account</Button>}} /></Page.Full> :
       owner ? <>
-        <Page.Main><WatchlistImportPanel key={owner} owner={owner} /></Page.Main>
-        <Page.Aside><ExportPanel key={owner} owner={owner} /></Page.Aside>
-      </> : <Page.Full><State kind="loading" title="Reading account…" /></Page.Full>}
+        <Page.Main><ExportPanel key={owner} owner={owner} /></Page.Main>
+        <Page.Aside><WatchlistImportPanel key={owner} owner={owner} /></Page.Aside>
+      </> : <Page.Full><RestInstrument label="Export inventory" status={{kind:"loading",title:"Reading account…"}} /></Page.Full>}
   </Page>;
 }
