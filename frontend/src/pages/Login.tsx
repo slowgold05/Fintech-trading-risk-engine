@@ -1,11 +1,12 @@
 import { type FormEvent, useState } from "react";
-import { Button, Field, Page, Panel } from "../night/kit";
+import { Button, Field, Page, Panel } from "../night/inner";
 import { authFailure, type AuthFailure } from "./LoginErrors";
+import { LoginInstrument } from "./LoginInstrument";
 import "./Login.css";
 
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { completeLoginMfa, confirmMfaEnrollment, enrollMfa, login, register, startDemo } from "../api/auth";
-import { features, safeReturnTo } from "../night/registry";
+import { destinations, features, safeReturnTo } from "../night/registry";
 import { useAuth } from "../context/useAuth";
 
 type Stage = "password" | "code" | "enroll";
@@ -150,9 +151,18 @@ export function Login() {
   const submit = stage === "code" ? "Verify code" : enrollment ? enrollSecret ? "Save authenticator" : "Get setup secret" : registering ? "Create account" : "Sign in";
   const demoAvailable = import.meta.env.VITE_DEMO_ENABLED !== "false";
 
+  const entries = needsCode ? [{label:"Authenticator code",filled:/^[0-9]{6}$/.test(otp)}] :
+    [{label:"Email",filled:username.trim().length > 0},{label:"Password",filled:password.length > 0}];
+  const destinationPath = from.split(/[?#]/)[0];
+  const destination = [...destinations, ...features].find(route => route.path === destinationPath)?.label ?? destinationPath;
+  const entryStatus = isInitializing ? "Restoring session" : isStartingDemo ? "Starting demo" : isSubmitting ? "Checking entry" :
+    error ? "Review entry" : entries.every(entry => entry.filled) ? "Ready to submit" : needsCode ? "Awaiting code" : "Awaiting credentials";
+
   return <Page title={title} className="login-page" description={stage === "code" ? "Enter the current six-digit code from your authenticator." :
     enrollment ? "Connect your account to an authenticator app." : registering ? "Create a personal paper-trading account." : "Access your paper portfolio and order history."}>
-    <div className="auth-body"><Panel>
+    <div className="auth-body">
+      <LoginInstrument entries={entries} status={entryStatus} destination={"Destination · " + destination} resting={busy || isInitializing || Boolean(error)} />
+      <Panel className="auth-credentials" title={needsCode ? "Authenticator" : "Credentials"}>
       <form onSubmit={handleSubmit} aria-label={title}>
         {!needsCode && <>
           <Field id="auth-email" label="Email" error={error?.fields.email}>
