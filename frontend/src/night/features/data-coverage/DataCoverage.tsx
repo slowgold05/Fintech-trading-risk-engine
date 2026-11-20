@@ -7,18 +7,15 @@ import { fetchMarketUniverse } from "../../../api/market";
 import { useAuth } from "../../../context/useAuth";
 import { formatUtcDateTime } from "../../../utils/format";
 import { keys } from "../../api";
-import { Button, DataStamp, Field, Page, Panel, State, Stat } from "../../kit";
+import { DataStamp } from "../../kit";
+import { Button, Field, Page, Panel, State, Stat, type InstrumentStatus } from "../../inner";
+import { QuoteCensus } from "./QuoteCensus";
 import { hasCompanyDetail } from "../discover/companyLookup";
 import { readCoverage, type CoverageReport, type SymbolCoverage } from "./coverage";
 import "./coverage.css";
 
 const count = (n: number) => n.toLocaleString("en-US");
 const basisLabel = (basis: string) => basis === "split_adjusted" ? "Split-adjusted" : "Raw";
-const quoteStates = [
-  ["fresh_eod", "Fresh close"], ["stale", "Stale"], ["invalid", "Invalid"],
-  ["unconfirmed_or_other", "Unconfirmed or other"], ["missing", "Missing"],
-] as const;
-
 function CompanyLink({ symbol }: { symbol: string }) {
   const { isAuthenticated } = useAuth();
   const identity = useQuery({ queryKey: keys.me, queryFn: fetchMe, enabled: isAuthenticated, retry: false });
@@ -43,9 +40,9 @@ function Lookup({ initial, onSubmit }: { initial: string; onSubmit: (input: stri
   return <form onSubmit={submit} className="coverage-lookup">
     <Field id="coverage-ticker" label="Inspect a symbol">
       <input data-testid="data-coverage-symbol" value={value} onChange={e => setValue(e.target.value)}
-        placeholder="Ticker, e.g. AAPL" autoComplete="off" autoCapitalize="characters" spellCheck={false} />
+        placeholder="e.g. AAPL" autoComplete="off" autoCapitalize="characters" spellCheck={false} />
     </Field>
-    <Button type="submit" variant="primary">Look up</Button>
+    <Button type="submit">Look up</Button>
   </form>;
 }
 
@@ -68,20 +65,6 @@ function SymbolDetail({ item }: { item: SymbolCoverage }) {
     </div>)}
     {history.length === 0 && <p>No stored daily history for this symbol.</p>}
     <CompanyLink symbol={symbol} />
-  </Panel>;
-}
-
-function Census({ report }: { report: CoverageReport }) {
-  const { quotes, universe } = report;
-  return <Panel title="Quote census" subtitle="Active US equity listings, excluding test issues and ETFs."
-    data-testid="data-coverage-census">
-    <div className="coverage-headline"><strong>{count(quotes.present)}</strong><span>of {count(universe.eligible)} listings have a stored quote</span></div>
-    {universe.eligible > 0 && <div className="coverage-meter" aria-hidden="true">
-      <span style={{ width: (100 * quotes.present / universe.eligible) + "%" }} />
-    </div>}
-    <dl className="coverage-states">{quoteStates.map(([key, label]) =>
-      <div key={key}><dt>{label}</dt><dd>{count(quotes[key])}</dd></div>)}</dl>
-    <p className="coverage-note">A fresh confirmed close can supply the ticket reference. Preview and risk checks still apply.</p>
   </Panel>;
 }
 
@@ -113,31 +96,35 @@ export function DataCoverage() {
     else next.delete("symbol");
     setParams(next);
   }
-  const report = query.data;
-  const status = isAxiosError(query.error) ? query.error.response?.status : undefined;
-  return <Page title="Data coverage" className="coverage-page" testId="night-data-coverage"
-    description="Stored quotes, daily bars and reference feeds." actions={<Button busy={query.isFetching} onClick={() => void query.refetch()}>Refresh coverage</Button>}>
-    <Page.Full className="coverage-toolbar">
-      <div><span>Last expected session</span><strong>{report?.expected_session ?? "Unavailable"}</strong>
-        {report && <small>Cache read {formatUtcDateTime(report.read_at)} · {report.coverage} coverage</small>}</div>
-      <Lookup initial={symbol ?? ""} onSubmit={lookup} />
-    </Page.Full>
-    {query.isError ? <Page.Full><State kind={status === 404 ? "unavailable" : "error"}
-      title={status === 404 ? "Unknown symbol · " + symbol : status === 422 ? "Check the ticker symbol" : "Coverage could not be loaded"}
-      detail={status === 404 || status === 422 ? "Enter a listed ticker or clear the lookup to see the market census." : "Retry to read the selected cache report."}
-      action={<Button onClick={() => void query.refetch()}>Retry coverage</Button>} /></Page.Full> :
-      !report ? <Page.Full><State kind="loading" title="Reading the stored cache…" /></Page.Full> :
-      <>
-        <Census report={report} />
-        {report.symbol && <SymbolDetail item={report.symbol} />}
-        <StoredHistory report={report} />
-        <Panel title="Reference feeds">
-          {(["news", "filings"] as const).map(key => <div className="coverage-feed" key={key}>
-            <h3>{key === "news" ? "News" : "Filings"}</h3><p>{count(report.reference[key].cached_rows)} cached rows</p>
-            <small>Latest observation · {formatUtcDateTime(report.reference[key].latest_observed_at) ?? "Unavailable"}</small>
-          </div>)}
-          <p className="coverage-note">Dividends and splits require verified events. Price bars alone cannot establish either.</p>
-        </Panel>
-      </>}
+  const report = query.isSuccess ? query.data : undefined;
+  const code = isAxiosError(query.error) ? query.error.response?.status : undefined;
+  const status: InstrumentStatus | undefined = query.isError ? {
+    kind: code === 404 ? "unavailable" : "error", role: "alert",
+    title: code === 404 ? "Unknown symbol · " + symbol : code === 422 ? "Check the ticker symbol" : "Coverage could not be loaded",
+    action: <><p>{code === 404 || code === 422 ? "Enter a listed ticker or clear the lookup to see the market census." : "Retry to read the selected cache report."}</p>
+      <Button onClick={() => void query.refetch()}>Retry coverage</Button></>,
+  } : !report ? { kind:"loading", title:"Reading the stored cache…" } : undefined;
+
+  return <Page title="Data coverage" className="coverage-page" testId="night-data-coverage" layout="analysis"
+    description="Stored quotes, daily bars and reference feeds." actions={<div className="coverage-tools">
+      <Lookup initial={symbol ?? ""} onSubmit={lookup}/>
+      <Button busy={query.isFetching} onClick={() => void query.refetch()}>Refresh coverage</Button>
+    </div>}>
+    <Page.Main><QuoteCensus report={report} status={status}/></Page.Main>
+    {report && <Page.Aside className="coverage-inspect">
+      {report.symbol && <SymbolDetail item={report.symbol}/>}
+      <Panel className="coverage-session" title="Last expected session">
+        <strong>{report.expected_session}</strong>
+        <small>Cache read {formatUtcDateTime(report.read_at)} · {report.coverage} coverage</small>
+      </Panel>
+      <Panel title="Reference feeds">
+        {(["news", "filings"] as const).map(key => <div className="coverage-feed" key={key}>
+          <h3>{key === "news" ? "News" : "Filings"}</h3><p>{count(report.reference[key].cached_rows)} cached rows</p>
+          <small>Latest observation · {formatUtcDateTime(report.reference[key].latest_observed_at) ?? "Unavailable"}</small>
+        </div>)}
+        <p className="coverage-note">Dividends and splits require verified events. Price bars alone cannot establish either.</p>
+      </Panel>
+    </Page.Aside>}
+    {report && <Page.Main><StoredHistory report={report}/></Page.Main>}
   </Page>;
 }
