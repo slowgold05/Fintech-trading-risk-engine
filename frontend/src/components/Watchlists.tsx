@@ -1,8 +1,9 @@
-import { Button, Field, Panel, State } from "../night/kit";
+import { Button, Field, Panel, RestInstrument, State } from "../night/inner";
 import { keys } from "../night/api";
 import { fetchMarketUniverse } from "../api/market";
 import { hasCompanyDetail } from "../night/features/discover/companyLookup";
 import "./Watchlists.css";
+import { WatchlistComposition } from "../night/features/discover/WatchlistComposition";
 import { Select } from "../design/Select";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -136,7 +137,7 @@ function WatchlistEditor({
     queryKey: keys.universe(ownerId, "", 1000),
     queryFn: () => fetchMarketUniverse("", 1000),
     enabled: members.length > 0,
-    select: (data) => new Map(data.items.filter(hasCompanyDetail).map((item) => [item.symbol, item.company_name])),
+    select: (data) => new Map(data.items.map(item => [item.symbol, item])),
     retry: false,
     staleTime: 300000,
   });
@@ -299,31 +300,7 @@ function WatchlistEditor({
     </div> : <Button disabled={pending} onClick={() => setConfirmDelete(true)}>Delete</Button>}
   </>;
 
-  return (
-    <section className="watch-editor" aria-label="Watchlist editor">
-      {!standalone && <h2 id="watchlists-title">Watchlists</h2>}
-      {watchlistsQuery.isPending && <State kind="loading" title="Loading watchlists." />}
-      {watchlistsQuery.isSuccess && <div className="watch-layout">
-        <Panel className="watch-library" title="Saved lists" subtitle={`${lists.length} of ${LIST_CAP} lists`}>
-          {lists.length === 0 && <State kind="empty" title="No watchlists yet." />}
-          {lists.length > 0 && <Field id="watchlist-select" label="Watchlist">
-            <Select designed={designed} id="watchlist-select" disabled={pending}
-              className="field-control" onValueChange={(value) => chooseList(Number(value))} value={selected?.id ?? ""}>
-              <option value="">Choose a watchlist</option>
-              {lists.map((list) => <option key={list.id} value={list.id}>{list.name}</option>)}
-            </Select>
-          </Field>}
-          <form className="watch-form" onSubmit={submitCreate}>
-            <Field id="watchlist-create-name" label="New watchlist">
-              <input autoComplete="off" data-testid="watchlist-name" disabled={pending || listsFull}
-                maxLength={FIELD_UNITS} onChange={(event) => setCreateName(event.target.value)} value={createName} />
-            </Field>
-            <Button data-testid="watchlist-create" disabled={pending || listsFull} type="submit">Create watchlist</Button>
-          </form>
-          {listsFull && <p>You can keep up to 20 watchlists.</p>}
-        </Panel>
-        {selected && <Panel className="watch-members" title={selected.name}
-          subtitle={`${members.length} of ${MEMBER_CAP} symbols`}>
+  const addSymbolForm = <>
           <form className="watch-form" onSubmit={(event) => { event.preventDefault(); saveSymbol(symbolDraft); }}>
             <Field id="watchlist-symbol" label="Add symbol">
               <input autoCapitalize="characters" autoComplete="off" disabled={pending || membersFull}
@@ -333,12 +310,51 @@ function WatchlistEditor({
             <Button variant="primary" disabled={pending || membersFull} type="submit">Add symbol</Button>
           </form>
           {membersFull && <p>This watchlist already has 50 symbols. Remove one to add another.</p>}
+  </>;
+
+  const chooseWatchlist = lists.length > 0 && <Field id="watchlist-select" label="Watchlist">
+    <Select designed={designed} id="watchlist-select" disabled={pending}
+      className="field-control" onValueChange={value => chooseList(Number(value))} value={selected?.id ?? ""}>
+      <option value="">Choose a watchlist</option>
+      {lists.map(list => <option key={list.id} value={list.id}>{list.name}</option>)}
+    </Select>
+  </Field>;
+  const refreshError = notice ? "The saved change stands, but the latest watchlists could not be refreshed." : "Watchlists could not be refreshed.";
+  const retryLists = <Button disabled={watchlistsQuery.isFetching} onClick={() => void refresh(generation.current)}>Retry</Button>;
+
+  return (
+    <section className="watch-editor" aria-label="Watchlist editor">
+      {!standalone && <h2 id="watchlists-title">Watchlists</h2>}
+      {watchlistsQuery.isPending && (standalone ? <RestInstrument label="Sector mix" status={{kind:"loading",title:"Loading watchlists."}}/> : <State kind="loading" title="Loading watchlists." />)}
+      {standalone && watchlistsQuery.isError && <RestInstrument label="Sector mix" status={{kind:"error",title:refreshError,role:"alert",action:retryLists}}/>}
+      {watchlistsQuery.isSuccess && <div className="watch-layout">
+        {standalone && <WatchlistComposition members={members} name={selected?.name} catalog={catalog.data} selector={chooseWatchlist}
+          status={members.length && catalog.isPending ? {kind:"loading",title:"Loading sector classifications…"} :
+            members.length && catalog.isError ? {kind:"error",title:"Sector classifications unavailable",action:<Button onClick={() => void catalog.refetch()}>Retry sectors</Button>} : undefined} />}
+        <Panel id={standalone ? "watchlist-tools" : undefined} className="watch-library" title="Saved lists" subtitle={`${lists.length} of ${LIST_CAP} lists`}>
+          {lists.length === 0 && <State kind="empty" title="No watchlists yet." />}
+          {standalone && selected && <div className="watch-add"><h3>{selected.name}</h3>{addSymbolForm}</div>}
+          {!standalone && chooseWatchlist}
+          <form className="watch-form" onSubmit={submitCreate}>
+            <Field id="watchlist-create-name" label="New watchlist">
+              <input autoComplete="off" data-testid="watchlist-name" disabled={pending || listsFull}
+                maxLength={FIELD_UNITS} onChange={(event) => setCreateName(event.target.value)} value={createName} />
+            </Field>
+            <Button data-testid="watchlist-create" disabled={pending || listsFull} type="submit">Create watchlist</Button>
+          </form>
+          {listsFull && <p>You can keep up to 20 watchlists.</p>}
+          {standalone && selected && <details className="watch-manage"><summary>Manage list</summary>{manage}</details>}
+        </Panel>
+        {selected && <Panel className="watch-members" title={selected.name}
+          subtitle={`${members.length} of ${MEMBER_CAP} symbols`}>
+          {!standalone && addSymbolForm}
           {members.length === 0 ? <State kind="empty" title="No symbols on this watchlist."
             action={standalone && <Button data-testid="watchlist-add-AAPL" disabled={pending}
               onClick={() => saveSymbol("AAPL")}>Add AAPL</Button>} /> :
             <ol className="watch-rows" aria-label="Symbols in saved order">
               {members.map((member, index) => {
-                const company = catalog.data?.get(member.symbol);
+                const item = catalog.data?.get(member.symbol);
+                const company = item && hasCompanyDetail(item) ? item.company_name : undefined;
                 return <li data-testid={`watchlist-item-${member.symbol}`} key={member.symbol}>
                   <div className="watch-identity"><span className="watch-position">{index + 1}</span>
                     <div>{company !== undefined ?
@@ -348,8 +364,8 @@ function WatchlistEditor({
                     </div>
                   </div>
                   <div className="watch-actions">
-                    <Button aria-label={`Move ${member.symbol} up`} disabled={pending || index === 0} onClick={() => move(index, -1)}>Move up</Button>
-                    <Button aria-label={`Move ${member.symbol} down`} disabled={pending || index === members.length - 1} onClick={() => move(index, 1)}>Move down</Button>
+                    <Button aria-label={`Move ${member.symbol} up`} disabled={pending || index === 0} onClick={() => move(index, -1)}>{standalone ? <span aria-hidden="true">↑</span> : "Move up"}</Button>
+                    <Button aria-label={`Move ${member.symbol} down`} disabled={pending || index === members.length - 1} onClick={() => move(index, 1)}>{standalone ? <span aria-hidden="true">↓</span> : "Move down"}</Button>
                     <Button aria-label={`Remove ${member.symbol}`} disabled={pending} onClick={() => removeMember(member.symbol)}>Remove</Button>
                     {onUseInResearch && <Button disabled={pending} onClick={() => onUseInResearch(member.symbol)}>Use in research</Button>}
                     {onUseInChart && <Button disabled={pending} onClick={() => onUseInChart(member.symbol)}>Use in chart</Button>}
@@ -360,15 +376,13 @@ function WatchlistEditor({
             </ol>}
           {catalog.isError && <State kind="error" title="Company links could not be loaded."
             action={<Button onClick={() => void catalog.refetch()}>Retry company lookup</Button>} />}
-          {standalone ? <details className="watch-manage"><summary>Manage list</summary>{manage}</details> : manage}
+          {!standalone && manage}
         </Panel>}
       </div>}
       {fieldError && <p role="alert">{fieldError}</p>}
       {actionError && <p role="alert">{actionError}</p>}
       {notice && <p role="status" data-testid={notice === "Watchlist created." && selected ? "watchlist-created" : undefined}>{notice}</p>}
-      {(watchlistsQuery.isError || refreshFailed) && <State kind="error" role="alert"
-        title={notice ? "The saved change stands, but the latest watchlists could not be refreshed." : "Watchlists could not be refreshed."}
-        action={<Button disabled={watchlistsQuery.isFetching} onClick={() => void refresh(generation.current)}>Retry</Button>} />}
+      {(watchlistsQuery.isError ? !standalone : refreshFailed) && <State kind="error" role="alert" title={refreshError} action={retryLists} />}
     </section>
   );
 }
@@ -418,6 +432,11 @@ export function WatchlistPreview() {
 export function Watchlists({ standalone, initialSymbol, designed, onUseInChart, onUseInResearch }: WatchlistsProps) {
   const { token, isAuthenticated, isInitializing, me, ownerId, sessionId } = useWatchlistOwner();
 
+  if (standalone && (isInitializing || (isAuthenticated && token && (me.isPending || me.isError || ownerId === null)))) {
+    const loading = isInitializing || me.isPending;
+    return <RestInstrument label="Sector mix" status={loading ? {kind:"loading",title:isInitializing ? "Checking your session." : "Loading your account."} :
+      {kind:"error",role:"alert",title:"Watchlists are unavailable for this session.",action:<Button onClick={()=>void me.refetch()}>Retry</Button>}} />;
+  }
   if (isInitializing) {
     return (
       <WatchlistCard detail="Private lists stay on this account." title="Watchlists">
