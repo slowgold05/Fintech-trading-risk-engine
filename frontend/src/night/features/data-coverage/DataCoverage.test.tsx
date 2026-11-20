@@ -51,3 +51,21 @@ it("handles a failed lookup and retries the active query for an uncovered listin
   expect(readCoverage).toHaveBeenLastCalledWith("AA", expect.any(AbortSignal));
   expect(screen.queryByRole("link")).toBeNull();
 });
+
+it("keeps zero counts inspectable against the entire eligible population", async () => {
+  vi.mocked(readCoverage).mockResolvedValue(empty);
+  mount();
+  const missing = await screen.findByRole("button",{name:/^Missing/});
+  await userEvent.click(missing);
+  expect(screen.getByRole("img",{name:"Missing: 1 of 1 eligible listings"})).toBeVisible();
+  await userEvent.click(screen.getByRole("button",{name:/^Fresh close/}));
+  expect(screen.getByRole("img",{name:"Fresh close: 0 of 1 eligible listings"})).toBeVisible();
+});
+
+it("rests the census when there is no eligible population", async () => {
+  vi.mocked(readCoverage).mockResolvedValue({...empty, universe:{...empty.universe,eligible:0},quotes:{...empty.quotes,missing:0}});
+  mount();
+  expect(await screen.findByText("No eligible listings in the quote census")).toBeVisible();
+  expect(screen.queryByRole("button",{name:/^Missing/})).toBeNull();
+  expect(screen.getByLabelText("Quote counts")).toHaveTextContent("Stored quotes0");
+});
