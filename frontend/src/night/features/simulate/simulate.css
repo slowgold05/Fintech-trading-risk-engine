@@ -1,65 +1,53 @@
-.sim-page { color: var(--ink); }
-.sim-page .nk-page-head { align-items: flex-start; gap: var(--gap); margin-bottom: calc(var(--pad) * 1.5); }
-.sim-page .nk-page-head h1 { font-size: clamp(27px, 3vw, 38px); }
-.sim-page .nk-page-head p { margin-top: 6px; color: var(--muted); max-width: 62ch; }
-.sim-modes { display: flex; flex-wrap: wrap; gap: 0 14px; border-bottom: 1px solid var(--line); }
-.sim-modes a { display: inline-flex; align-items: center; min-height: 44px; padding: 2px 1px; color: var(--muted); }
-.sim-modes [aria-current] { color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
-.sim-workspace { display: grid; grid-template-columns: minmax(210px, .85fr) minmax(0, 2.7fr); align-items: start; gap: var(--gap); }
-.sim-parameters form, .sim-parameters fieldset, .sim-result { display: grid; gap: var(--gap); }
-.sim-parameters fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
-.sim-parameters :is(.nk-field,input), .sim-output { min-width: 0; }
-.sim-parameters input { width: 100%; font: 500 16px/1.4 var(--font-ui); font-variant-numeric: tabular-nums; }
-.sim-page .nk-field label { font-weight: 550; }
-.sim-limits, .sim-definition, .sim-outcome header p, .sim-method p, .sim-method li { color: var(--muted); }
-.sim-limits { font-size: 12px; }
-.sim-awaiting .nk-state { padding: var(--gap) 0; }
-.sim-awaiting .nk-state p { margin-top: 4px; max-width: 55ch; color: var(--muted); }
-.sim-totals { display: flex; gap: clamp(24px, 6vw, 90px); flex-wrap: wrap; padding: 6px 0 var(--pad); }
-.sim-totals dt { color: var(--muted); }
-.sim-totals dd { font: 500 clamp(24px, 3vw, 38px)/1.3 var(--font-ui); font-variant-numeric: tabular-nums; letter-spacing: -.035em; }
-.sim-chart { border-top: 1px solid var(--line); padding-top: var(--pad); }
-.sim-chart-head, .sim-inspect { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
-.sim-chart-head h3, .sim-chart-head strong { font-size: 18px; font-weight: 600; }
-.sim-chart-head strong { color: var(--accent); font-variant-numeric: tabular-nums; }
-.sim-definition { max-width: 72ch; margin-top: 4px; }
-.sim-plot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin-top: var(--pad); }
-.sim-plot svg { display: block; width: 100%; height: 158px; }
-.sim-line, .sim-zero, .sim-cursor { fill: none; vector-effect: non-scaling-stroke; }
-.sim-line { stroke: var(--accent); stroke-width: 2; }
-.sim-mark { fill: var(--accent); }
-.sim-zero, .sim-cursor { stroke: var(--line); }
-.sim-cursor { stroke-dasharray: 3 4; }
-.sim-scale, .sim-axis, .sim-inspect output { font: var(--label)/1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
-.sim-scale, .sim-axis { color: var(--muted); display: flex; justify-content: space-between; }
-.sim-scale { flex-direction: column; text-align: right; }
-.sim-axis { grid-column: 2; }
-.sim-inspect { margin-top: var(--gap); }
-.sim-inspect input { width: 100%; min-height: 44px; margin: 0; accent-color: var(--accent); cursor: pointer; }
-.sim-method ul { list-style: disc; padding-left: 18px; margin-top: var(--gap); display: grid; gap: 3px; }
-.sim-coverage p, .sim-skipped { margin-top: 4px; }
-.sim-source { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-bottom: 6px; color: var(--muted); font-size: var(--label); }
-.sim-source .nk-stamp { color: var(--ink); }
-.sim-scale:has(> :only-child) { justify-content: center; }
-.sim-output .nk-state { overflow-wrap: anywhere; }
-@media (min-width: 960px) {
-  :root[data-look=dial] .sim-workspace { display: block; }
-  :root[data-look=dial] .sim-parameters { border-inline: 0; border-radius: 0; }
-  :root[data-look=dial] .sim-parameters form { grid-template-columns: minmax(0,1fr) auto; align-items: end; }
-  :root[data-look=dial] .sim-parameters fieldset { display: flex; gap: var(--gap); }
-  :root[data-look=dial] .sim-parameters .nk-field { flex: 1; }
-  :root[data-look=dial] .sim-parameters button { grid-column: 2; grid-row: 1; }
-  :root[data-look=dial] .sim-limits { grid-column: 1/-1; }
-  :root[data-look=dial] .sim-output { margin-top: var(--gap); }
-  :root[data-look=dial] .sim-result { grid-template-columns: minmax(0, 1.9fr) minmax(240px, 1fr); align-items: start; }
-  :root[data-look=dial] .sim-totals dd { font-size: 40px; }
+.sim-page .nk-page-head p,.sim-limits,.sim-definition,.sim-method p,.sim-method li,.sim-source {color:var(--muted)}
+.sim-modes {display:flex;flex-wrap:wrap;gap:0 16px;border-bottom:1px solid var(--line)}
+.sim-modes a {display:inline-flex;align-items:center;min-height:44px;color:var(--muted)}
+.sim-modes [aria-current] {color:var(--ink);box-shadow:inset 0 -2px var(--accent)}
+.sim-workspace {display:grid;grid-template-columns:minmax(0,2.25fr) minmax(280px,1fr);align-items:start;gap:var(--gap)}
+.sim-parameters form,.sim-parameters fieldset,.sim-result {display:grid;gap:var(--gap)}
+.sim-parameters fieldset,.sim-output {min-width:0}
+.sim-parameters fieldset {grid-template-columns:repeat(2,minmax(0,1fr))}
+.sim-parameters .nk-field:first-child,.sim-parameters .nk-field:nth-child(n+4) {grid-column:1/-1}
+.sim-parameters input {width:100%;min-width:0;font-size:16px}
+.sim-source,.sim-price-reading,.sim-window {display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font:11px/1.5 var(--font-mono)}
+.sim-window,.sim-price-reading {border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+.sim-window {justify-content:space-between}
+.sim-window span,.sim-totals dt {color:var(--muted)}
+.sim-draft-readings,.sim-totals {display:flex;align-items:stretch;flex-wrap:wrap;margin-block:10px 14px;border-block:1px solid var(--line)}
+.sim-draft-readings>div,.sim-totals>div {flex:1;padding:8px 12px;border-left:1px solid var(--line)}
+.sim-totals dt,.sim-limits {font:12px/1.5 var(--font-mono)}
+.sim-totals dd {font-size:clamp(22px,2.5vw,36px);letter-spacing:-.045em}
+[data-look=dial] .sim-totals dd {font-family:var(--font-mono)}
+.sim-chart-head {display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.sim-chart h3 {font-size:19px;font-weight:600}
+.sim-definition {font-size:13px;margin-top:12px}
+.sim-method ul {list-style:disc;padding-left:18px;margin-top:var(--gap)}
+.sim-skipped,.sim-method p {margin-top:4px}
+@media(max-width:767px){
+ .sim-workspace {grid-template-columns:minmax(0,1fr)}
+ .sim-page .nk-page-head {display:block}
+ .sim-page .nk-panel {padding:10px}
+ .sim-page .nk-panel header {align-items:center}
+ .sim-page .sim-outcome header h2,.sim-page .sim-awaiting header h2 {font-size:18px}
+ .sim-totals>div {padding:6px}
 }
-@media (max-width: 767px) {
-  .sim-workspace { grid-template-columns: minmax(0,1fr); }
-  .sim-parameters fieldset { grid-template-columns: repeat(2,minmax(0,1fr)); align-items: end; }
-  .sim-parameters .nk-field:first-child { grid-column: 1/-1; }
-  .sim-page .nk-field label { font-size: 13px; }
-  .sim-totals { gap: 10px 20px; }
-  .sim-inspect output { display: block; }
-  :root[data-look=dial] .sim-parameters, :root[data-look=dial] .sim-outcome { border-inline: 0; border-radius: 0; }
+.sim-chart-head select {flex:none;width:auto;max-width:55%;min-height:44px;padding:6px 12px;font:13px var(--font-mono)}
+.sim-page .sim-chart .ins-relief text[x="44"] {text-anchor:start;transform:translateX(-42px)}
+.sim-page .nk-button[data-variant=primary] {white-space:nowrap;background:var(--ink);color:var(--bg);border-color:var(--ink)}
+@media(max-width:767px){
+ .sim-draft-readings,.sim-totals {margin-block:6px}
+ .sim-source {font-size:10px}
+ .sim-chart-head {margin-bottom:5px}
 }
+.sim-chart-head select {appearance:none;border:1px solid var(--line);border-radius:var(--radius);background-color:var(--raised);padding-right:30px;
+ background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+ background-size:5px 5px;background-position:calc(100% - 16px) center,calc(100% - 11px) center;background-repeat:no-repeat}
+@media(max-width:767px){
+ .sim-draft-readings {display:grid;grid-template-columns:minmax(64px,.7fr) minmax(0,1.3fr)}
+ .sim-draft-readings .nk-stat {padding:7px 9px}
+ .sim-draft-readings .nk-stat strong {font-size:clamp(18px,5.3vw,23px)}
+ .sim-draft-readings:has(>:nth-child(3)) {grid-template-columns:repeat(2,minmax(0,1fr))}
+ .sim-draft-readings:has(>:nth-child(3)) .nk-stat:first-child {grid-column:1/-1}
+ .sim-draft-readings:has(>:nth-child(3)) .nk-stat strong {font-size:17px}
+}
+.sim-chart-head select {width:min(55%,176px)}
+.sim-page .ins-graphic .ins-dial-value {font-size:17px}

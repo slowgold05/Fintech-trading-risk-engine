@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link, Navigate, useLocation, useSearchParams } from "react-router-dom";
-import { Button, Field, Page, Panel, State } from "../../kit";
+import { Button, Field, Page, Panel, RestInstrument, Stat } from "../../inner";
 import { SimulationResult } from "./SimulationResult";
-import { defaults, exchangeToday, failureDetail, runSimulation, windowLimit, type Request, type Strategy } from "./simulation";
+import { defaults, exchangeToday, failureDetail, money, runSimulation, windowLimit, type Request, type Strategy } from "./simulation";
 import "./simulate.css";
 
 function RunWorkspace({ strategy }: { strategy: Strategy }) {
@@ -22,9 +22,26 @@ function RunWorkspace({ strategy }: { strategy: Strategy }) {
     if (recurring) request.monthly_usd = Number(draft.monthly_usd).toFixed(2);
     run.mutate(request);
   }
+  const runButton = <Button data-testid="simulation-run" type="submit" form="simulation-parameters" variant="primary" busy={run.isPending}>{run.isPending ? "Running…" : "Run simulation"}</Button>;
   return <div className="sim-workspace">
+    <div className="sim-output" aria-busy={run.isPending}>
+      {run.isSuccess ? <SimulationResult result={run.data} request={run.variables} actions={runButton} /> :
+        <Panel className="sim-awaiting" title="Simulation outcome" actions={runButton}>
+          <div className="sim-draft-readings">
+            <Stat label="Symbol" value={draft.symbol || null} />
+            <Stat label="Initial capital" value={draft.initial_usd && Number(draft.initial_usd) > 0 ? money(draft.initial_usd) : null} />
+            {recurring && <Stat label="Monthly" value={draft.monthly_usd && Number(draft.monthly_usd) > 0 ? money(draft.monthly_usd) : null}/>}
+          </div>
+          <RestInstrument label="Portfolio value" status={run.isPending ? {kind:"loading",title:"Reading stored closes…"} :
+            run.isError ? {kind:"error",title:"Run could not complete"} : {kind:"empty",title:"Ready to run"}} />
+          <p className="sim-limits">{run.isError ? failureDetail(run.error) : "Run the simulation to see the ending value, total contributions and the underlying price return."}</p>
+          <div className="sim-window"><span>Requested window</span><strong>{draft.start || "—"} – {draft.end || "—"}</strong></div>
+        </Panel>}
+      <span className="sr-only" role="status">{run.isSuccess && (run.data.coverage === "missing" ?
+        "Run complete. Insufficient stored closes." : "Run complete. Results for " + run.data.symbol + " are available.")}</span>
+    </div>
     <Panel title="Run parameters" className="sim-parameters">
-      <form onSubmit={submit}>
+      <form id="simulation-parameters" onSubmit={submit}>
         <fieldset disabled={run.isPending}>
           <Field id="sim-symbol" label="Symbol"><input value={draft.symbol} required maxLength={20}
             pattern={'[A-Za-z0-9][A-Za-z0-9.\\-]*'} autoComplete="off" autoCapitalize="characters" spellCheck={false}
@@ -39,19 +56,9 @@ function RunWorkspace({ strategy }: { strategy: Strategy }) {
             value={draft.monthly_usd} onChange={e => edit("monthly_usd", e.target.value)} /></Field>}
         </fieldset>
         <p className="sim-limits">Up to 3 years · $1M initial{recurring && " · $100k monthly"}</p>
-        <Button data-testid="simulation-run" type="submit" variant="primary" busy={run.isPending}>{run.isPending ? "Running…" : "Run simulation"}</Button>
+
       </form>
     </Panel>
-    <div className="sim-output" aria-busy={run.isPending}>
-      {run.isSuccess ? <SimulationResult result={run.data} request={run.variables} /> :
-        <Panel className="sim-awaiting" title="Simulation outcome">
-          {run.isPending ? <State kind="loading" title="Reading stored closes…" /> :
-            run.isError ? <State kind="error" title="Run could not complete" detail={failureDetail(run.error)} /> :
-            <State kind="empty" title="Ready to run" detail="Run the simulation to see the ending value, total contributions and the underlying price return." />}
-        </Panel>}
-      <span className="sr-only" role="status">{run.isSuccess && (run.data.coverage === "missing" ?
-        "Run complete. Insufficient stored closes." : "Run complete. Results for " + run.data.symbol + " are available.")}</span>
-    </div>
   </div>;
 }
 
