@@ -1,5 +1,5 @@
 import type { PerformanceSession } from "../../../api/portfolio";
-import type { PortfolioPositionResponse } from "../../../types/schemas";
+import type { AllocationResponse, PortfolioPositionResponse } from "../../../types/schemas";
 
 export function numeric(value: unknown): number | null {
   if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return null;
@@ -40,4 +40,17 @@ export function performanceSeries(rows: PerformanceSession[]) {
       };
     }),
   };
+}
+
+
+export function allocationParts(data: AllocationResponse | undefined) {
+  const cash = numeric(data?.cash_weight_pct);
+  if (data?.status !== "complete" || cash === null || !data.sectors || (numeric(data.total_account_value) ?? 0) <= 0) return [];
+  const parts = [{name:"Cash", value:cash}];
+  for (const row of data.sectors) {
+    const weight = numeric(row.weight_pct);
+    if (weight === null) return [];
+    parts.push({name:row.sector, value:weight});
+  }
+  return parts.sort((a,b)=>b.value-a.value);
 }

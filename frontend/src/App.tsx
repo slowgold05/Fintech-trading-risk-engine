@@ -5,7 +5,6 @@ import { fetchMe } from "./api/auth";
 import { useAuth } from "./context/useAuth";
 import { Home } from "./pages/Home";
 import { State } from "./night/kit";
-import { ChromeTools } from "./night/shell/ChromeTools";
 import { allowed, features, type Access } from "./night/registry";
 
 const AppShell = lazy(() => import("./components/AppShell").then(m => ({default:m.AppShell})));
@@ -43,21 +42,16 @@ function Gate({ access = "authenticated", children }: { access?: Access; childre
 function Screen({ id, children }: { id: string; children: ReactNode }) {
   return <section className="night-screen" data-testid={`night-${id}`}>{children}</section>;
 }
-function PublicShell() {
-  return <><header className="night-market-tools"><a href="/market">Sentinel Markets</a><ChromeTools /></header><Outlet /></>;
-}
 export default function App() {
   return <Suspense fallback={<State kind="loading" title="Loading page…" />}>
     <Routes>
       <Route index element={<Index />} />
       <Route path="/market" element={<Home />} />
-      <Route element={<PublicShell />}>
+      <Route element={<AppShell />}>
         <Route path="/market/:symbol" element={<Screen id="company"><StockDetail /></Screen>} />
         <Route path="/login" element={<Screen id="login"><Login /></Screen>} />
         {features.filter(f => f.access === "public" && !f.slot).map(({path,Screen:Feature}) => <Route key={path} path={path} element={<Feature />} />)}
-      </Route>
-      <Route element={<Gate />}>
-        <Route element={<AppShell />}>
+        <Route element={<Gate />}>
           <Route path="/dashboard" element={<Screen id="today"><Dashboard /></Screen>} />
           <Route path="/trades" element={<Screen id="activity"><Trades /></Screen>} />
           <Route path="/portfolio" element={<Screen id="portfolio"><Portfolio /></Screen>} />

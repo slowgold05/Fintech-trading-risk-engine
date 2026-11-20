@@ -45,3 +45,59 @@
 @media(max-width:767px) {
   .performance-panel > header .field-control, .holding-ticket { min-height:44px; }
 }
+.night-portfolio { --panel-face:#141617; }
+.night-portfolio .nk-page-head { margin:0 0 14px; gap:8px; }
+.night-portfolio .nk-page-head h1 { font-size:clamp(32px,3.5vw,54px); line-height:1; letter-spacing:-.065em; }
+.night-portfolio .nk-page-head small { font:10px var(--font-mono); text-transform:uppercase; letter-spacing:.09em; }
+.portfolio-actions { display:flex; gap:6px; align-items:center; }
+.portfolio-more { position:relative; }
+.portfolio-more summary { cursor:pointer; padding:11px; min-height:44px; color:var(--muted); }
+.portfolio-more>div { position:absolute; z-index:4; right:0; top:100%; display:grid; width:210px; padding:6px; gap:4px; background:var(--raised); border:1px solid var(--line); }
+.night-portfolio .portfolio-overview { display:grid; margin-top:0; gap:12px; grid-template-columns:minmax(0,2.35fr) minmax(290px,1fr); grid-template-areas:"values values" "performance allocation" "insights insights"; align-items:start; }
+.night-portfolio .portfolio-values { grid-area:values; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-block:1px solid var(--line); padding:5px 0; background:var(--inner-paper); }
+.night-portfolio .portfolio-values .nk-stat:first-child { border:0; }
+.night-portfolio .portfolio-values .nk-stat strong { font-size:clamp(19px,2.1vw,32px); }
+.night-portfolio .portfolio-values .nk-stat small { display:block; color:var(--muted); font:10px var(--font-mono); }
+.night-portfolio .performance-panel { grid-area:performance; }
+.night-portfolio .exposure-panel { grid-area:allocation; }
+.night-portfolio .portfolio-overview .nk-panel { background:var(--panel-face); border:1px solid var(--inner-rule); }
+.night-portfolio .performance-panel h2,.night-portfolio .exposure-panel h2 { font-size:clamp(19px,1.8vw,26px); letter-spacing:-.045em; }
+[data-look=dial] .night-portfolio .portfolio-overview { grid-template-columns:minmax(0,1.65fr) minmax(360px,1fr); gap:0; grid-template-areas:"values values" "performance allocation" "performance insights"; }
+[data-look=dial] .night-portfolio .portfolio-overview .nk-panel { border-radius:0; }
+[data-look=dial] .night-portfolio .exposure-panel { align-self:stretch; }
+[data-look=dial] .night-portfolio .share-instrument { display:grid; grid-template-columns:minmax(115px,1fr) minmax(0,1.8fr); gap:10px; align-items:center; }
+[data-look=dial] .night-portfolio .share-graphic { width:100%; height:auto; }
+.night-portfolio .portfolio-note { font-size:11px; }
+@media(max-width:900px) {
+  .night-portfolio .portfolio-overview,[data-look=dial] .night-portfolio .portfolio-overview { grid-template-columns:minmax(0,1fr); grid-template-areas:"performance" "values" "allocation" "insights"; gap:9px; }
+}
+@media(max-width:767px) {
+  .night-portfolio .nk-page-head { align-items:center; }
+  .portfolio-actions { gap:3px; font-size:12px; }
+  .portfolio-actions .nk-button,.portfolio-more summary { padding-inline:8px; }
+  .night-portfolio .portfolio-values { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .night-portfolio .portfolio-overview .nk-panel { padding:10px; }
+  .flow-readings { padding-top:7px; margin-top:3px; }
+}
+.night-portfolio .portfolio-overview>.close-insights { grid-area:insights; }
+[data-look=dial] .night-portfolio .portfolio-overview>.close-insights { align-self:stretch; }
+.night-portfolio .portfolio-values .nk-stat [aria-label^="gain:"] { color:var(--up); }
+.night-portfolio .portfolio-values .nk-stat [aria-label^="loss:"] { color:var(--down); }
+.night-portfolio .portfolio-detail .dashboard-card-body :is([class*="bg-slate-900"],[class*="bg-slate-800"]) { background-color:var(--raised); }
+.night-portfolio .account-breakdowns .dashboard-card-body [class*="border-slate-"] { border-color:var(--line); }
+.night-portfolio .account-breakdowns .dashboard-card-body [class*="text-slate-5"] { color:var(--muted); }
+.night-portfolio .portfolio-detail .dashboard-card-header { min-height:44px; padding:8px var(--pad); border-radius:var(--radius) var(--radius) 0 0; }
+.night-portfolio .portfolio-detail .dashboard-card-body { padding:var(--pad); }
+.night-portfolio .account-disclosure input:not([type=range]),.night-portfolio .account-disclosure select { background-color:var(--raised); color:var(--ink); border-color:var(--line); border-radius:var(--radius); }
+.night-portfolio .account-disclosure button { min-height:36px; }
+.night-portfolio .account-disclosure :is(button[type=submit],button[class*="bg-emerald-400"],button[aria-pressed=true]) { background:var(--ink); color:var(--bg); box-shadow:none; }
+.night-portfolio .account-disclosure [class*="bg-emerald-400/70"] { background:var(--muted); }
+@media(max-width:767px) {
+  .night-portfolio .account-disclosure :is(button,input,select) { min-height:44px; }
+}
+.night-portfolio .performance-panel select.field-control {
+  appearance:none; margin-top:0; min-height:36px; padding:0 30px 0 11px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 13px) center,calc(100% - 8px) center; background-size:5px 5px; background-repeat:no-repeat;
+}
+@media(max-width:767px) { .night-portfolio .performance-panel select.field-control { height:44px; font-size:16px; } }

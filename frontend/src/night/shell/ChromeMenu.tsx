@@ -7,8 +7,8 @@ import { useAuth } from "../../context/useAuth";
 import { Button, Sheet } from "../kit";
 import { allowed, destinations, features } from "../registry";
 
-export default function ChromeMenu({ type, close, opener }: {
-  type: "commands" | "account"; close: () => void; opener: RefObject<HTMLButtonElement | null>;
+export default function ChromeMenu({ type, close, opener, workspace }: {
+  workspace?: boolean; type: "commands" | "account"; close: () => void; opener: RefObject<HTMLButtonElement | null>;
 }) {
   const { isAuthenticated, signOut } = useAuth();
   const { pathname, search } = useLocation();
@@ -26,6 +26,11 @@ export default function ChromeMenu({ type, close, opener }: {
   }
   return <Sheet open onOpenChange={close} returnFocusRef={opener} title="Account">
     <p>{identity.data?.is_demo ? "Demo portfolio" : identity.data?.display_name || identity.data?.role || "Signed in"}</p>
+    {workspace && <div className="inner-account-context">
+      {identity.data && <p>{identity.data.is_demo ? identity.data.display_name : identity.data.email} · {identity.data.role}</p>}
+      <time>{new Intl.DateTimeFormat("en-US",{weekday:"long",month:"long",day:"numeric"}).format(new Date())}</time>
+      <p role="status">Notifications unavailable</p>
+    </div>}
     <nav className="night-link-list">
       <Link to="/portfolio" onClick={close}>Portfolio</Link>
       <Button data-testid="sign-out" onClick={() => { close(); signOut(); navigate("/login"); }}>Sign out</Button>

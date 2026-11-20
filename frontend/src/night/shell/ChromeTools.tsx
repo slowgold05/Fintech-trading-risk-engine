@@ -7,7 +7,7 @@ import { Button } from "../kit";
 
 const ChromeMenu = lazy(() => import("./ChromeMenu"));
 
-export function ChromeTools({ market = false }: { market?: boolean }) {
+export function ChromeTools({ market = false, workspace = false }: { market?: boolean; workspace?: boolean }) {
   const { prefs, update } = useLook();
   const { isAuthenticated, isInitializing, signIn } = useAuth();
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ export function ChromeTools({ market = false }: { market?: boolean }) {
       market && import.meta.env.VITE_DEMO_ENABLED !== "false" && <Button variant="primary" data-testid="demo-start" disabled={isInitializing} busy={busy} onClick={demo}>{busy ? "Starting…" : "Try the demo"}</Button>}
     {failure && <span role="alert">{failure}</span>}
     {dialog && <Suspense fallback={null}>
-      <ChromeMenu key={dialog} type={dialog} opener={dialog === "commands" ? trigger : account} close={() => setDialog(null)} />
+      <ChromeMenu key={dialog} workspace={workspace} type={dialog} opener={dialog === "commands" ? trigger : account} close={() => setDialog(null)} />
     </Suspense>}
   </div>;
 }

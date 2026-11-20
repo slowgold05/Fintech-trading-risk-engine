@@ -91,3 +91,73 @@
   transform: rotate(45deg);
   pointer-events: none;
 }
+.inner-content .discover-company { background:transparent; min-height:0; }
+.inner-content .company-frame { max-width:none; width:100%; padding:0; }
+.company-back { font:11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; }
+.company-back::before { content:"‹ "; }
+.company-frame .nk-page-head { align-items:center; margin:0 0 12px; padding:4px 0 0; }
+.company-frame .nk-page-head p { font-size:14px; }
+.company-frame .nk-page-head .nk-button { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+.company-frame .company-quote { gap:clamp(20px,5vw,78px); padding:9px 14px; }
+.company-frame .company-quote strong { font-size:clamp(24px,2.7vw,38px); }
+.company-frame .company-quote span,.company-frame .company-quote small { font:11px var(--font-mono); }
+.company-frame .nk-layout { gap:8px 12px; }
+.company-tabs a { min-height:34px; }
+.company-chart .price-controls { display:flex; flex-flow:row wrap; align-items:center; justify-content:space-between; gap:6px 10px; margin-bottom:8px; }
+.company-chart .price-controls h2 { font-size:24px; letter-spacing:-.05em; }
+.company-chart .price-controls [role=group] { display:flex; gap:1px; }
+.company-chart .price-controls button[aria-pressed] { font:11px var(--font-mono); min-height:34px; min-width:32px; padding:0 9px; }
+.company-chart .price-controls button[aria-pressed=true] { box-shadow:none; background:#473728; color:#ffcc92; }
+[data-look=dial] .company-chart .price-controls button[aria-pressed] { border-radius:18px; }
+[data-look=dial] .company-chart .price-controls button[aria-pressed=true] { background:var(--ink); color:var(--bg); }
+.company-profile .profile-ohlc { display:flex; gap:8px 16px; flex-wrap:wrap; border-block:1px solid var(--line); padding:8px 0; }
+.profile-ohlc dt { color:var(--muted); font:10px var(--font-mono); text-transform:uppercase; }
+.profile-ohlc dd { font:12px var(--font-mono); }
+.price-context p { font-size:12px; line-height:1.5; color:var(--muted); }
+.company-range .ins-gauge { padding:0; }
+.company-range .ins-gauge-scale { justify-content:space-between; }
+.company-chart table td { font-family:var(--font-mono); text-align:right; }
+.company-chart table thead th:not(:first-child) { text-align:right; }
+.company-chart table th,.company-chart table td { border-bottom:1px solid var(--inner-rule); }
+.company-chart table tbody tr { background:transparent; }
+.company-chart table thead { position:sticky; top:0; }
+.company-chart .company-stamp { padding:5px 12px; font-size:10px; }
+@media(min-width:768px) {
+  .company-chart .price-controls>div:first-child { flex:1; }
+  .company-chart .price-controls>p { flex-basis:100%; }
+}
+@media(max-width:767px) {
+  .company-frame .company-quote { gap:6px 14px; padding:6px 10px; }
+  .company-frame .company-quote div:last-child { display:flex; flex-wrap:wrap; column-gap:5px; padding-top:4px; }
+  .company-quote div:last-child b,.company-frame .company-quote div:last-child small,.company-frame .company-quote div:last-child span { font-size:10px; }
+  .company-frame .nk-page-head h1 { font-size:31px; }
+  .company-frame .nk-page-head p { font-size:12px; }
+  .company-chart > section { padding:10px; }
+  .company-chart .price-controls { display:flex!important; justify-content:flex-start; }
+  .company-chart .price-controls>div:first-child { display:block!important; }
+  .company-chart .price-controls h2 { font-size:19px; }
+  .company-chart .price-controls button[aria-pressed] { min-height:44px; min-width:44px; }
+  .company-frame .nk-page-head { margin-bottom:6px; }
+  .company-chart .price-context { order:4; }
+}
+.company-frame .nk-page-head h1 { font-size:clamp(32px,3.5vw,54px); letter-spacing:-.065em; line-height:1; }
+.company-details .text-up { color:var(--up); }
+.company-details .text-down { color:var(--down); }
+.company-chart .price-mobile-controls { display:none; }
+.company-frame .company-quote>div+div { margin-top:0; }
+@media(max-width:767px) {
+  .company-chart { display:flex; flex-direction:column; }
+  .company-chart>.company-stamp { order:1; }
+  .company-chart>.company-session { order:2; }
+  .company-chart .price-controls { justify-content:space-between; }
+  .company-chart .price-mobile-controls { display:flex; gap:6px; }
+  .company-chart .price-mobile-controls select { min-height:44px; color:var(--ink); background:var(--raised); border:1px solid var(--line); border-radius:var(--radius); padding-inline:6px; font:16px var(--font-ui); }
+  .company-chart .price-controls:has(.price-mobile-controls)>[role=group] { display:none; }
+}
+@media(max-width:767px) {
+  .company-chart .price-mobile-controls select {
+    appearance:none; height:44px; padding-inline:10px 28px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-position:calc(100% - 13px) center,calc(100% - 8px) center; background-size:5px 5px; background-repeat:no-repeat;
+  }
+}

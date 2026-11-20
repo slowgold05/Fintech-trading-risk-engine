@@ -7,7 +7,7 @@ import { AppShell } from "./AppShell";
 const api = vi.hoisted(() => ({ fetchMe: vi.fn(), signOut: vi.fn() }));
 vi.mock("../api/auth", () => ({ fetchMe: api.fetchMe }));
 vi.mock("../context/useAuth", () => ({
-  useAuth: () => ({ token: "shell-test", signOut: api.signOut }),
+  useAuth: () => ({ token: "shell-test", isAuthenticated: true, signOut: api.signOut }),
 }));
 
 let desktop = false;
@@ -126,81 +126,47 @@ describe("mobile shell", () => {
     expect(document.body.style.overflow).not.toBe("hidden");
   });
 
-  it("keeps the persistent mobile header to navigation and brand", async () => {
-    api.fetchMe.mockResolvedValue({ role: "trader", email: "ada@example.com" });
+  it("keeps symbol lookup and account actions in the compact header", () => {
     renderShell();
-    const header = screen.getByRole("banner");
-    const formattedDate = new Intl.DateTimeFormat("en-US", {
-      weekday: "long", month: "long", day: "numeric",
-    }).format(new Date());
-    const openNavigation = within(header).getByRole("button", { name: "Open navigation" });
-    const brand = within(header).getByText("Sentinel Markets");
-    expect(openNavigation.compareDocumentPosition(brand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(header).getByText("Sentinel Markets")).toBeInTheDocument();
-    expect(header.firstElementChild).toHaveClass("h-14");
-    expect(within(header).queryByRole("link", { name: "Search markets" })).not.toBeInTheDocument();
-    expect(within(header).queryByRole("status")).not.toBeInTheDocument();
-    expect(within(header).queryByText("ada@example.com")).not.toBeInTheDocument();
-    expect(header).not.toHaveTextContent(formattedDate);
-    const main = screen.getByRole("main");
-    expect(main).toHaveTextContent(formattedDate);
-    expect(within(main).getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
-    expect(within(main).getByRole("status")).toHaveTextContent("Notifications unavailable");
-    expect(await within(main).findByText("ada@example.com")).toBeInTheDocument();
-    expect(within(main).getByText("trader")).toBeInTheDocument();
+    const header = within(screen.getByRole("banner"));
+    expect(header.getByRole("link", {name:"Sentinel Markets"})).toHaveAttribute("href","/market");
+    expect(header.getByRole("textbox", {name:"Search symbols"})).toBeInTheDocument();
+    expect(header.getByRole("button", {name:"Switch to Dial"})).toBeInTheDocument();
+    expect(header.getByRole("button", {name:"Open command menu"})).toBeInTheDocument();
+    expect(header.getByRole("button", {name:"Account"})).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).getByRole("button", {name:"Page action"})).toBeInTheDocument();
   });
 });
 
 describe("desktop shell", () => {
-  it("shows the formatted date and signed-in identity in the top bar", async () => {
+  it("shows the signed-in identity, direct symbol search and command menu", async () => {
     desktop = true;
     api.fetchMe.mockResolvedValue({ role: "trader", email: "ada@example.com" });
     renderShell();
-    const header = screen.getByRole("banner");
-    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
-    expect(header).toHaveTextContent(new Intl.DateTimeFormat("en-US", {
-      weekday: "long", month: "long", day: "numeric",
-    }).format(new Date()));
-    expect(await within(header).findByText("ada@example.com")).toBeInTheDocument();
-    expect(within(header).getByText("trader")).toBeInTheDocument();
-    expect(header.querySelector("span[aria-hidden='true']")).toHaveTextContent("A");
-    expect(within(header).getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
-    expect(within(header).getByRole("status")).toHaveTextContent("Notifications unavailable");
-    expect(within(header).queryByRole("button", { name: /notification/i })).not.toBeInTheDocument();
-    expect(within(screen.getByLabelText("Sidebar")).getByText("Sentinel Markets")).toBeInTheDocument();
-    expect(screen.queryByText("getrichyesterday")).not.toBeInTheDocument();
-    expect(screen.queryByText("GY")).not.toBeInTheDocument();
+    const header = within(screen.getByRole("banner"));
+    expect(await header.findByText("ada@example.com · trader")).toBeInTheDocument();
+    expect(header.getByRole("textbox", {name:"Search symbols"})).toBeInTheDocument();
+    expect(header.getByRole("button", {name:"Open command menu"})).toBeInTheDocument();
+    expect(header.getByRole("link", {name:"Sentinel Markets"})).toHaveAttribute("href","/market");
+    expect(header.queryByRole("button", {name:"Open navigation"})).not.toBeInTheDocument();
   });
 
-  it("toggles the desktop sidebar between expanded and collapsed widths", async () => {
+  it("opens Terrain with its icon rail and keeps the destination mounted when expanded", async () => {
     desktop = true;
-    api.fetchMe.mockResolvedValue({ role: "trader", email: "ada@example.com" });
+    api.fetchMe.mockResolvedValue({role:"trader",email:"ada@example.com"});
     renderShell("/portfolio");
     const sidebar = screen.getByLabelText("Sidebar");
-    expect(sidebar).toHaveClass("w-60");
-    expect(sidebar.className).not.toContain("drawer-in");
-    expect(sidebar).not.toHaveClass("w-[72px]");
-    const collapse = within(sidebar).getByRole("button", { name: "Collapse sidebar" });
-    expect(collapse).toHaveAttribute("type", "button");
-    expect(collapse).toHaveAttribute("aria-expanded", "true");
-    const trades = await within(sidebar).findByRole("link", { name: "Activity" });
-    expect(within(sidebar).getByRole("link", { name: "Portfolio" }).querySelector("span")).not.toHaveClass("sr-only");
-    expect(trades.querySelector("span")).not.toHaveClass("sr-only");
-    fireEvent.click(collapse);
-    expect(sidebar).toHaveClass("w-[72px]");
-    expect(sidebar).not.toHaveClass("w-60");
-    const expand = within(sidebar).getByRole("button", { name: "Expand sidebar" });
-    expect(expand).toHaveAttribute("aria-expanded", "false");
-    for (const name of ["Markets", "Today", "Activity", "Portfolio", "Risk", "Research", "Forecast Lab"]) {
-      const link = within(sidebar).getByRole("link", { name });
-      expect(link.querySelector("span")).toHaveClass("sr-only");
+    expect(sidebar).toHaveAttribute("data-collapsed","true");
+    const expand = within(sidebar).getByRole("button",{name:"Expand sidebar"});
+    expect(expand).toHaveAttribute("aria-expanded","false");
+    fireEvent.click(expand);
+    expect(sidebar).toHaveAttribute("data-collapsed","false");
+    fireEvent.click(within(sidebar).getByRole("button",{name:"Collapse sidebar"}));
+    expect(sidebar).toHaveAttribute("data-collapsed","true");
+    for (const name of ["Markets","Today","Activity","Portfolio","Risk","Research","Forecast Lab"]) {
+      expect(within(sidebar).getByRole("link",{name})).toBeInTheDocument();
     }
-    expect(within(sidebar).queryByRole("link", { name: "Compliance" })).not.toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Sign out" })).toBeInTheDocument();
-    expect(within(sidebar).getByText("Sentinel Markets")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Portfolio destination" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Holdings & Valuation" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Open positions, cost basis, and exposure.")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Search markets" })).toHaveAttribute("href", "/market");
+    expect(within(sidebar).queryByRole("link",{name:"Compliance"})).not.toBeInTheDocument();
+    expect(screen.getByRole("heading",{name:"Portfolio destination"})).toBeInTheDocument();
   });
 });

@@ -10,11 +10,10 @@ import { fetchAttribution } from "../api/attribution";
 import { fetchPortfolio } from "../api/portfolio";
 import { fetchRiskMetrics } from "../api/riskMetrics";
 import { useToast } from "../context/useToast";
-import { AllocationRing } from "../components/AllocationRing";
-import { Button, State } from "../night/kit";
+import { Button, RestInstrument, ShareInstrument, Stat } from "../night/inner";
 import { Performance } from "../night/features/portfolio/Performance";
 import { Allocation } from "../night/features/portfolio/Allocation";
-import { accountWeight, hasMark, numeric } from "../night/features/portfolio/valuation";
+import { accountWeight, allocationParts, hasMark, numeric } from "../night/features/portfolio/valuation";
 import "../night/features/portfolio/portfolio.css";
 import { saveDraft } from "../night/shell/ticketDraft";
 import { keys, refreshExecution } from "../night/api";
@@ -159,9 +158,9 @@ function CashPanel() {
 export function Portfolio() {
   const identity = useQuery({ queryKey: keys.me, queryFn: fetchMe, retry: false });
   if (identity.isError || (!identity.isPending && !identity.data?.id)) {
-    return <State kind="error" title="Account unavailable" action={<Button onClick={() => void identity.refetch()}>Retry account</Button>} />;
+    return <RestInstrument status={{kind:"error",title:"Account unavailable",action:<Button onClick={() => void identity.refetch()}>Retry account</Button>}} />;
   }
-  if (identity.isPending) return <State kind="loading" title="Loading account…" />;
+  if (identity.isPending) return <RestInstrument status={{kind:"loading",title:"Loading account…"}} />;
   return <AccountPortfolio key={identity.data.id} owner={identity.data.id} canTrade={identity.data.role === "trader"} />;
 }
 
@@ -185,7 +184,7 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
     queryFn: () => fetchRiskMetrics(riskMetricsRange),
   });
 
-  if (portfolioQuery.isError) return <State kind="error" title="Portfolio could not be loaded" action={<Button onClick={() => void portfolioQuery.refetch()}>Retry portfolio</Button>} />;
+  if (portfolioQuery.isError) return <RestInstrument status={{kind:"error",title:"Portfolio could not be loaded",action:<Button onClick={() => void portfolioQuery.refetch()}>Retry portfolio</Button>}} />;
   const portfolio = portfolioQuery.data;
   const summary = portfolio?.summary;
   const positions = portfolio?.positions ?? [];
@@ -204,8 +203,8 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
     <div className="night-portfolio space-y-6">
       <header className="nk-page-head"><div><small>Paper account</small><h1>Portfolio</h1></div>
         <div className="portfolio-actions">{canTrade && <a data-testid="order-open" href="/trades?ticket=1" className="nk-button">Open order ticket</a>}
-          <Link className="nk-button" to={"/portfolio/review?returnTo=" + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}>Portfolio review</Link>
-          {portfolio?.user?.is_demo && <Link className="nk-button" to="/account">Reset demo from Account</Link>}</div>
+          <details className="portfolio-more"><summary>Account tools</summary><div><Link className="nk-button" to={"/portfolio/review?returnTo=" + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}>Portfolio review</Link>
+          {portfolio?.user?.is_demo && <Link className="nk-button" to="/account">Reset demo from Account</Link>}</div></details></div>
       </header>
       {valuationIncomplete && portfolio ? (
         <p className="rounded-md border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-slate-200">
@@ -216,70 +215,18 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
         </p>
       ) : null}
 
-      <div className="portfolio-overview"><div className="portfolio-values">
-        {portfolioQuery.isLoading ? (
-          [0, 1, 2, 3].map((item) => (
-            <div className="metric-tile" key={item}>
-              <SkeletonBlock className="h-4 w-24" />
-              <SkeletonBlock className="mt-3 h-5 w-32" />
-            </div>
-          ))
-        ) : (
-          <>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Account value
-              </div>
-              <div className="mt-1 font-mono text-lg font-semibold text-slate-50">
-                {totalValue == null ? (
-                  <span className="text-slate-400">Unavailable</span>
-                ) : (
-                  formatCurrency(totalValue)
-                )}
-              </div>
-            </div>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Cash
-              </div>
-              <div className="mt-1 font-mono text-lg font-semibold text-slate-50">
-                {cashBalance == null ? (
-                  <span className="text-slate-400">Unavailable</span>
-                ) : (
-                  formatCurrency(cashBalance)
-                )}
-              </div>
-            </div>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Total P&L
-              </div>
-              <div className="mt-1 text-sm" data-testid="portfolio-total-pnl">
-                {totalPnl == null ? (
-                  <span className="text-slate-400">Unavailable</span>
-                ) : (
-                  <PnlValue value={totalPnl} />
-                )}
-              </div>
-            </div>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Buying power
-              </div>
-              <div className="mt-1 font-mono text-sm text-slate-200">
-                {buyingPower === null ? "Unavailable" : formatCurrency(buyingPower)}
-              </div>
-              <small>{reserved === null ? "Cash reserve unavailable" : `${formatCurrency(reserved)} reserved for open buys`}</small>
-            </div>
-          </>
-        )}
-      </div>
-
-      <CloseInsights owner={owner} surface="portfolio" />
+      <div className="portfolio-overview">
       <Performance owner={owner} />
-      <Allocation incomplete={valuationIncomplete} data={allocationQuery.data} loading={allocationQuery.isPending} retry={allocationQuery.isError ? () => void allocationQuery.refetch() : undefined} />
+      <div className="portfolio-values">
+        <Stat label="Account value" value={portfolioQuery.isLoading ? "Loading" : totalValue == null ? null : formatCurrency(totalValue)}/>
+        <Stat label="Cash" value={portfolioQuery.isLoading ? "Loading" : cashBalance == null ? null : formatCurrency(cashBalance)}/>
+        <Stat label="Total P&L" data-testid="portfolio-total-pnl" value={portfolioQuery.isLoading ? "Loading" : totalPnl == null ? null : <PnlValue value={totalPnl}/>}/>
+        <Stat label="Buying power" value={portfolioQuery.isLoading ? "Loading" : buyingPower == null ? null : formatCurrency(buyingPower)}
+          source={reserved === null ? "Cash reserve unavailable" : `${formatCurrency(reserved)} reserved for open buys`}/>
       </div>
-
+      <Allocation incomplete={valuationIncomplete} data={allocationQuery.data} loading={allocationQuery.isPending} retry={allocationQuery.isError ? () => void allocationQuery.refetch() : undefined} />
+      <CloseInsights owner={owner} surface="portfolio" />
+      </div>
       <div className="portfolio-detail grid min-w-0 gap-5">
         <DashboardCard
           action={
@@ -577,12 +524,8 @@ function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolea
               />
             ) : (
               <div className="space-y-4">
-                <AllocationRing
-                  cashBalance={allocationQuery.data.cash_balance}
-                  cashWeightPct={allocationQuery.data.cash_weight_pct}
-                  sectors={allocationQuery.data.sectors ?? []}
-                  totalAccountValue={allocationQuery.data.total_account_value}
-                />
+                <Stat label="Total account value" value={totalValue == null ? null : formatCurrency(totalValue)}/>
+                <ShareInstrument label="Sector allocation including cash" parts={allocationParts(allocationQuery.data)} total={100} format={formatPercent}/>
                 <SectorAllocationTable
                   cashBalance={allocationQuery.data.cash_balance}
                   cashWeightPct={allocationQuery.data.cash_weight_pct}

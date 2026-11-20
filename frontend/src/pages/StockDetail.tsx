@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { isAxiosError } from "axios";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
-import { Button, Page, Panel, State } from "../night/kit";
+import { Button, Page, Panel, RestInstrument, ValueGauge } from "../night/inner";
 import { allowed, features } from "../night/registry";
 import { saveDraft } from "../night/shell/ticketDraft";
 import { fetchMe } from "../api/auth";
@@ -83,17 +83,10 @@ function marginPeriod(period: MarketResearchResponse["profit_margin_period"]): s
 
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <main className="discover-company">
-      <div className="company-frame">
-        <Link
-          className="inline-flex min-h-11 w-fit items-center rounded-full px-3 text-sm font-semibold text-copy hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          to="/market"
-        >
-          Market
-        </Link>
-        {children}
-      </div>
-    </main>
+    <div className="discover-company"><div className="company-frame">
+      <Link className="company-back" to="/market">Market</Link>
+      {children}
+    </div></div>
   );
 }
 
@@ -273,16 +266,16 @@ export function StockDetail() {
   const sma50Query = useStockIndicator(symbol, priceProvider, priceSeries, "sma", 50);
 
   if (symbol === null) {
-    return <Frame><State kind="unavailable" role="alert" title="This symbol is not in the supported format." /></Frame>;
+    return <Frame><RestInstrument status={{kind:"unavailable",role:"alert",title:"This symbol is not in the supported format."}} /></Frame>;
   }
 
   if (quoteQuery.isError) {
-    return <Frame><State kind="error" role="alert" title={requestDetail(quoteQuery.error, "The quote could not be loaded.")}
-      action={<Button onClick={() => void quoteQuery.refetch()}>Retry</Button>} /></Frame>;
+    return <Frame><RestInstrument status={{kind:"error",role:"alert",title:requestDetail(quoteQuery.error, "The quote could not be loaded."),
+      action:<Button onClick={() => void quoteQuery.refetch()}>Retry</Button>}} /></Frame>;
   }
 
   if (!quoteQuery.data) {
-    return <Frame><State kind="loading" title={`Loading ${symbol}`} /></Frame>;
+    return <Frame><RestInstrument status={{kind:"loading",title:`Loading ${symbol}`}} /></Frame>;
   }
 
   return (
@@ -426,19 +419,22 @@ function DetailBody({
       </nav></Page.Full>}
       {eventsOpen && Events ? <Page.Full><Events /></Page.Full> : <>
         <Page.Main className="company-chart" data-testid="company-history">
-          {historyLoading ? <State kind="loading" title="Loading daily prices" /> : historyError ?
-            <State kind="error" role="alert" title={historyError} action={<Button data-testid="history-retry" onClick={onRetryHistory}>Retry daily prices</Button>} /> :
-            !lastBar ? <State kind="empty" title={`No cached daily bars for ${quote.symbol} in the requested two years.`} /> :
+          {historyLoading ? <RestInstrument status={{kind:"loading",title:"Loading daily prices"}} /> : historyError ?
+            <RestInstrument status={{kind:"error",role:"alert",title:historyError,action:<Button data-testid="history-retry" onClick={onRetryHistory}>Retry daily prices</Button>}} /> :
+            !lastBar ? <RestInstrument status={{kind:"empty",title:`No cached daily bars for ${quote.symbol} in the requested two years.`}} /> :
             <>
               <p className="company-stamp" data-testid="close-provenance" data-session-date={lastBar.session_date}
                 data-source={lastBar.provider} data-basis={lastBar.adjustment_type}>
                 {lastBar.provider} · {lastBar.adjustment_type.replace("_", "-")} · exchange session {lastBar.session_date}
               </p>
-              <PriceChart bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={seriesLabel} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
+              <PriceChart instrument bars={bars} coverageStatus={coverageStatus} endDate={endDate} seriesLabel={seriesLabel} sma20={sma20} sma50={sma50} symbol={quote.symbol} />
               <StockDetailSession bars={bars} />
             </>}
         </Page.Main>
         <Page.Aside className="company-details">
+          <Panel className="company-range" title="Range position">
+            <ValueGauge value={seriesClose} min={stats.low ?? NaN} max={stats.high ?? NaN} format={formatCurrency} label="52-week low / high"/>
+          </Panel>
           <TechnicalScorecard session={lastBar?.session_date} loading={indicatorsLoading} price={seriesClose} rsi={rsi} sma20={sma20} sma50={sma50} />
           <Panel title="Company details">
             <dl><Stat label="Exchange" value={quote.exchange || "Unavailable"} />
