@@ -44,6 +44,8 @@ vi.mock("../api/market", () => ({
 
 vi.mock("../api/history", () => historyApi);
 
+vi.mock("../api/auth", () => ({ fetchMe: async () => ({ id: 41 }) }));
+
 const clients: QueryClient[] = [];
 
 function renderPage(node: ReactNode = <Research />) {
@@ -112,6 +114,7 @@ function brief(overrides: Partial<ResearchBrief> & Pick<ResearchBrief, "id">): R
 describe("Research desk", () => {
   beforeEach(() => {
     api.createResearchJob.mockReset();
+    historyApi.fetchDailyHistory.mockResolvedValue({ symbol: "AAPL", bars: [] });
     api.listResearchJobs.mockReset();
     api.cancelResearchJob.mockReset();
     api.listResearchReports.mockReset();
@@ -175,7 +178,7 @@ describe("Research desk", () => {
       expect(api.createResearchJob).toHaveBeenCalledWith("AAPL");
     });
     expect(await screen.findByText("queued")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Research job queued for AAPL.");
+    expect(screen.getByText("Research job queued for AAPL.")).toHaveAttribute("role", "status");
     expect(screen.getByLabelText("Symbol")).toHaveValue("");
   });
 

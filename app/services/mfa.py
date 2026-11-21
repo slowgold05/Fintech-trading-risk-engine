@@ -163,7 +163,7 @@ def consume_login_challenge(db: Session, challenge_id: int, code: str | None) ->
     if preview is None or preview.consumed_at is not None or preview.expires_at <= now:
         raise HTTPException(status_code=401, detail="Authenticator challenge is invalid or expired")
     user = db.get(User, preview.user_id)
-    if user is None or consume_totp(db, user.id, code) is None:
+    if user is None or user.is_system or consume_totp(db, user.id, code) is None:
         raise HTTPException(status_code=401, detail="Authenticator code is incorrect")
     locked = db.execute(
         select(LoginChallenge).where(LoginChallenge.id == challenge_id).with_for_update().execution_options(populate_existing=True)
@@ -184,7 +184,7 @@ def consume_login_challenge(db: Session, challenge_id: int, code: str | None) ->
 
 
 def check_mfa_enrollment(db: Session) -> dict:
-    users = db.execute(select(User.id)).scalars().all()
+    users = db.execute(select(User.id).where(~User.is_system)).scalars().all()
     confirmed = set(db.execute(select(MfaFactor.user_id).where(MfaFactor.confirmed_at.is_not(None))).scalars())
     missing = [user_id for user_id in users if user_id not in confirmed]
     return {"checked": len(users), "violation_count": len(missing), "missing_user_ids": missing[:20]}

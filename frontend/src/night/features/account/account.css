@@ -1,0 +1,78 @@
+.account-page .nk-slot,.account-fields,.account-series,.learn-lessons,.account-guide ol {display:grid;gap:var(--gap)}
+.account-page .nk-slot {align-content:start}
+.account-fields {grid-template-columns:repeat(2,minmax(0,1fr));gap:calc(var(--gap) * 1.5);padding-block:var(--gap)}
+.account-fields label {font-size:16px;font-weight:600}
+.account-fields select {width:100%;min-width:0}
+.account-actions {display:flex;align-items:center;gap:var(--gap);flex-wrap:wrap;margin-top:var(--gap)}
+.account-guide ol {list-style:decimal;padding-left:1.5em}
+.account-guide li::marker {color:var(--accent);font-family:var(--font-mono)}
+.account-series {list-style:none;margin-top:var(--pad);gap:0}
+.account-series li {display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;column-gap:var(--gap);padding-block:8px;border-top:1px solid var(--line)}
+.account-series li small {flex-basis:100%;margin-top:4px}
+.account-series li strong {text-transform:capitalize}
+.account-page .nk-page-head p,.learn-page .nk-page-head p,.account-page header p,.account-page p,.account-series span,.learn-page p,.account-guide p {color:var(--muted)}
+.account-page strong {overflow-wrap:anywhere}
+.account-error {color:var(--down);margin-top:var(--gap)}
+.learn-page {width:min(1120px,100%);margin:0 auto;padding:clamp(20px,4vw,60px) clamp(14px,3vw,40px)}
+.learn-index {display:flex;gap:0 var(--pad);flex-wrap:wrap;border-block:1px solid var(--line);margin-block:var(--gap)}
+.learn-index a,.learn-lessons summary {display:inline-flex;align-items:center;min-height:44px;color:var(--accent)}
+.learn-lessons {grid-template-columns:repeat(2,minmax(0,1fr))}
+.learn-lessons section {scroll-margin-top:var(--chrome-height)}
+.learn-lessons section:first-child {grid-column:1/-1}
+.learn-lessons h3 {font-weight:600;margin-bottom:6px}
+.learn-lessons p {max-width:78ch}
+.learn-lessons details {margin-top:var(--gap);border-top:1px solid var(--line)}
+.learn-lessons summary {display:list-item;cursor:pointer;line-height:44px}
+.learn-markets {justify-self:start}
+:root[data-look=dial] .account-page .nk-layout-analysis {grid-template-columns:minmax(0,1fr) minmax(250px,.55fr)}
+:root[data-look=dial] .account-fields {grid-template-columns:minmax(0,1fr)}
+:root[data-look=dial] .account-fields .nk-field {display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line);padding-bottom:var(--gap)}
+:root[data-look=dial] .account-fields small {grid-column:1/-1}
+:root[data-look=dial] .learn-lessons {grid-template-columns:minmax(0,1fr)}
+:root[data-look=dial] .learn-lessons section {display:grid;grid-template-columns:minmax(180px,1fr) minmax(0,2fr);column-gap:var(--pad)}
+:root[data-look=dial] .learn-lessons header {grid-row:1/4}
+:root[data-look=dial] .learn-lessons :is(p,details,h3) {grid-column:2}
+@media(max-width:767px){
+  .learn-lessons,.account-fields,:root[data-look=dial] .account-page .nk-layout-analysis {grid-template-columns:minmax(0,1fr)}
+  :root[data-look=dial] .learn-lessons section {display:block}
+  .account-fields :is(input,select) {font-size:16px}
+}
+.account-fields .nk-field select {
+  appearance:none;
+  -webkit-appearance:none;
+  min-height:44px;
+  padding-right:32px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-size:5px 5px;
+  background-position:calc(100% - 17px) center,calc(100% - 12px) center;
+  background-repeat:no-repeat;
+}
+
+.account-page .nk-layout-analysis,:root[data-look=dial] .account-page .nk-layout-analysis {grid-template-columns:minmax(0,1.85fr) minmax(320px,1fr);align-items:start}
+.account-cache-readings {display:grid;grid-template-columns:1.35fr 1fr 1fr;border-block:1px solid var(--line);margin-block:6px 14px;background:var(--inner-paper)}
+.account-cache-readings .nk-stat strong {font-size:clamp(18px,2.1vw,30px)}
+.account-cache-stamp {border-top:1px solid var(--line);padding-top:10px;font:11px/1.65 var(--font-mono)}
+.account-cache .account-series {margin-top:10px}
+.account-page .nk-aside .nk-panel header {margin-bottom:6px}
+.account-page .account-fields {padding:6px 0}
+@media(max-width:767px){
+ .account-page .nk-layout-analysis,:root[data-look=dial] .account-page .nk-layout-analysis {grid-template-columns:minmax(0,1fr)}
+ .account-cache-readings .nk-stat {padding:6px}
+ .account-page .nk-page-head {flex-wrap:wrap}
+}
+.account-interval {background:var(--inner-ground);padding:14px clamp(10px,2vw,24px);border-block:1px solid var(--inner-rule)}
+.account-interval-label,.account-scale-key,.account-coverage {font:11px/1.5 var(--font-mono);color:var(--muted)}
+.account-interval-label {border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px}
+.account-interval .ins-gauge>div:first-child {display:block}
+.account-interval .ins-gauge strong {font-size:clamp(26px,3.3vw,48px);letter-spacing:-.05em}
+.account-interval .ins-gauge svg {height:auto;display:block}
+[data-look=dial] .account-interval .ins-gauge svg {height:142px}
+.account-scale-key,.account-coverage {display:flex;justify-content:space-between;gap:10px}
+.account-coverage {border-top:1px solid var(--line);margin-top:12px;padding-top:7px}
+.account-coverage strong {color:var(--ink);text-transform:capitalize}
+.account-cache-stamp {border:0}
+.account-interval .ins-gauge-position {display:none}
+@media(max-width:767px){
+ .account-cache-readings {grid-template-columns:minmax(0,1.1fr) minmax(0,.75fr) minmax(0,1.15fr)}
+ .account-cache-readings .nk-stat strong {font-size:clamp(16px,4.6vw,20px)}
+}

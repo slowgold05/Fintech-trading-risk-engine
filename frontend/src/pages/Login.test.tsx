@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AxiosError } from "axios";
 
 import { AuthContext } from "../context/authState";
 import { Login } from "./Login";
@@ -11,6 +12,7 @@ const authApi = vi.hoisted(() => ({
   enrollMfa: vi.fn(),
   confirmMfaEnrollment: vi.fn(),
   register: vi.fn(),
+  startDemo: vi.fn(),
 }));
 
 vi.mock("../api/auth", () => authApi);
@@ -94,6 +96,30 @@ describe("Login", () => {
     authApi.enrollMfa.mockReset();
     authApi.confirmMfaEnrollment.mockReset();
     authApi.register.mockReset();
+    authApi.startDemo.mockReset();
+  });
+
+  it("starts a demo without credentials and opens the dashboard", async () => {
+    authApi.startDemo.mockResolvedValueOnce({ access_token: "demo-session" });
+    const signIn = renderReturn({ from: safeFrom });
+    fireEvent.click(screen.getByRole("button", { name: "Try the demo" }));
+    expect(await screen.findByRole("heading", { name: "Landed /dashboard" })).toBeInTheDocument();
+    expect(authApi.startDemo).toHaveBeenCalledTimes(1);
+    expect(authApi.login).not.toHaveBeenCalled();
+    expect(authApi.register).not.toHaveBeenCalled();
+    expect(signIn).toHaveBeenCalledWith("demo-session");
+  });
+
+  it("shows a demo signup error and allows another attempt", async () => {
+    authApi.startDemo.mockRejectedValueOnce(new AxiosError("Busy", undefined, undefined, undefined, {
+      status: 429,
+      data: { detail: "Demo signup is busy. Try again shortly." },
+    } as AxiosError["response"]));
+    const signIn = renderLogin();
+    fireEvent.click(screen.getByRole("button", { name: "Try the demo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Demo signup is busy");
+    expect(screen.getByRole("button", { name: "Try the demo" })).toBeEnabled();
+    expect(signIn).not.toHaveBeenCalled();
   });
 
   it("signs in when the password response includes an access token", async () => {
@@ -202,5 +228,48 @@ describe("Login", () => {
     renderReturn(state, true);
     expect(screen.getByRole("heading", { name: "Landed /dashboard" })).toBeInTheDocument();
     expect(authApi.login).not.toHaveBeenCalled();
+  });
+});
+
+describe("registration and authenticator setup", () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllEnvs(); });
+
+  it("associates server validation messages with the failed input", async () => {
+    authApi.register.mockRejectedValueOnce(new AxiosError("Invalid", undefined, undefined, undefined, {
+      status:422, data:{detail:[{loc:["body","password"],msg:"Value error, Password is too common"}]},
+    } as AxiosError["response"]));
+    renderLogin();
+    fireEvent.click(screen.getByRole("button",{name:/Need an account/}));
+    fireEvent.change(screen.getByLabelText("Email"),{target:{value:"tester@example.com"}});
+    fireEvent.change(screen.getByLabelText("Password"),{target:{value:"qwerty123"}});
+    fireEvent.click(screen.getByTestId("auth-submit"));
+    expect(await screen.findByText("Password is too common")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toHaveAttribute("aria-invalid","true");
+    expect(screen.getByLabelText("Password")).toHaveAccessibleDescription(/Password is too common/);
+    expect(authApi.login).not.toHaveBeenCalled();
+  });
+
+  it("enrolls an authenticator and returns to the password form", async () => {
+    authApi.enrollMfa.mockResolvedValueOnce({secret:"fixture"});
+    authApi.confirmMfaEnrollment.mockResolvedValueOnce(undefined);
+    renderLogin();
+    fireEvent.click(screen.getByRole("button",{name:"Set up an authenticator"}));
+    fireEvent.change(screen.getByLabelText("Email"),{target:{value:"tester@example.com"}});
+    fireEvent.change(screen.getByLabelText("Password"),{target:{value:"password123"}});
+    fireEvent.click(screen.getByTestId("auth-submit"));
+    fireEvent.change(await screen.findByLabelText("Enrollment code"),{target:{value:"123456"}});
+    fireEvent.click(screen.getByTestId("auth-submit"));
+    expect(await screen.findByText("Authenticator saved. Sign in to continue.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Authenticator secret")).not.toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"Sign in"})).toBeEnabled();
+  });
+
+  it("keeps regular sign-in and registration available with demo disabled", () => {
+    vi.stubEnv("VITE_DEMO_ENABLED","false");
+    renderLogin();
+    expect(screen.queryByTestId("demo-start")).not.toBeInTheDocument();
+    expect(screen.getByTestId("auth-submit")).toBeEnabled();
+    fireEvent.click(screen.getByRole("button",{name:/Need an account/}));
+    expect(screen.getByRole("heading",{name:"Create account"})).toBeInTheDocument();
   });
 });

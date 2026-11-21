@@ -1,0 +1,22 @@
+.compare-page .market-query-form { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.compare-page .market-query-form > :first-child,.compare-page .market-query-form .nk-button { grid-column:1/-1; }
+.compare-page .matched-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); gap:10px 22px; }
+.compare-page .price-trace { min-width:0; padding-top:10px; border-top:1px solid var(--line); }
+.compare-page .price-trace svg { width:100%; height:76px; }
+.compare-page .price-trace figcaption,.compare-page .trace-axis { display:flex; justify-content:space-between; gap:6px; }
+.compare-page .price-trace figcaption { font:500 16px/1.5 var(--font-mono); }
+.compare-page .price-trace polyline { stroke:#b8beb3; stroke-width:1.6; fill:none; vector-effect:non-scaling-stroke; }
+.compare-page .price-trace circle { fill:var(--accent); }
+.compare-page .price-trace .zero { stroke:var(--line); }
+.compare-page .price-trace .cursor { stroke:var(--muted); stroke-dasharray:2 3; }
+.compare-page .trace-axis,.compare-page .context { color:var(--muted); font:11px/1.5 var(--font-mono); }
+.compare-page .nk-main header { align-items:center; flex-wrap:wrap; }
+.compare-page .nk-main .nk-field { display:flex; align-items:center; gap:6px; }
+@media(max-width:767px) {
+  .compare-page .nk-main header { flex-wrap:nowrap; }
+  .compare-page .nk-main .nk-field { display:grid; gap:2px; flex:none; }
+  .compare-page .nk-main .nk-field label { font:10px var(--font-mono); color:var(--muted); }
+}
+.compare-page .nk-main { display:grid; gap:12px; }
+.compare-page .nk-main header > div:first-child { min-width:0; overflow-wrap:anywhere; }
+.compare-page .nk-main .nk-field label { white-space:nowrap; }

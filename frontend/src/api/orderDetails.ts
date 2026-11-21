@@ -1,3 +1,4 @@
+import type { Provenance } from "../night/api";
 import { apiClient } from "./client";
 
 const REQUEST_ERROR = "Invalid order detail request";
@@ -9,12 +10,16 @@ const MONEY_SIGNED = /^-?(?:0|[1-9]\d*)\.\d{2}$/;
 const UTC_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?Z$/;
 
 export interface OrderFill {
+  mode: "eod_simulated" | "order_book";
+  source: Provenance | null;
+  simulated_quote_source?: string;
   trade_id: number;
   quantity: string;
   execution_price: string;
   notional: string;
   realized_pnl: string;
   executed_at: string;
+  simulated_quote_date?: string;
 }
 
 export interface OrderDetailResponse {
@@ -36,6 +41,10 @@ export interface OrderDetailResponse {
   has_more: boolean;
   next_after_id: number | null;
   fills: OrderFill[];
+  reservation?: { amount: string; unit: "USD" | "shares" } | null;
+  simulated_quote_date?: string;
+  simulated_quote_source?: string | null;
+  remainder_reason?: string;
 }
 
 export interface OrderDetailOptions {
@@ -96,10 +105,49 @@ function requireUtc(value: unknown): string {
   return value;
 }
 
+function parseSimulatedDate(value: unknown): { simulated_quote_date?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== "string" || !isUtcTimestamp(`${value}T00:00:00Z`)) fail();
+  return { simulated_quote_date: value };
+}
+
+function parseReservation(value: unknown): NonNullable<OrderDetailResponse["reservation"]> | null {
+  if (!isRecord(value)) return null;
+  if (value.unit === "USD" && typeof value.amount === "string" && MONEY.test(value.amount)) {
+    return { amount: value.amount, unit: "USD" };
+  }
+  if (value.unit === "shares" && typeof value.amount === "string" && QTY.test(value.amount)) {
+    return { amount: value.amount, unit: "shares" };
+  }
+  return null;
+}
+
+function legacyReservation(
+  side: OrderDetailResponse["side"],
+  status: OrderDetailResponse["status"],
+  remaining: string,
+  limitPrice: string | null,
+): OrderDetailResponse["reservation"] {
+  if (side === "sell") return { amount: status === "open" ? remaining : "0.000000", unit: "shares" };
+  if (status !== "open") return { amount: "0.00", unit: "USD" };
+  if (limitPrice === null) return null;
+  // Both inputs have six decimal places. Round the product to cents, half up.
+  const cents = (scaled6(remaining) * scaled6(limitPrice) + 5_000_000_000n) / 10_000_000_000n;
+  return { amount: `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`, unit: "USD" };
+}
+
 function parseFill(value: unknown, afterId: number): OrderFill {
   if (!isRecord(value)) fail();
   const tradeId = value.trade_id;
   if (!isPositiveSafeInteger(tradeId) || tradeId <= afterId) fail();
+  const session = parseSimulatedDate(value.simulated_quote_date).simulated_quote_date;
+  const reported = isRecord(value.source) && value.source.basis === "raw" ? value.source : null;
+  const date = session ?? parseSimulatedDate(reported?.session_date ?? undefined).simulated_quote_date;
+  const nativeProvider = typeof value.simulated_quote_source === "string" ? value.simulated_quote_source.trim() : "";
+  const provider = nativeProvider || (reported?.session_date === date && typeof reported?.provider === "string" ? reported.provider.trim() : "");
+  const source: Provenance | null = date && provider
+    ? { provider, basis: "raw", session_date: date, observed_at: null, coverage: "available" }
+    : null;
   return {
     trade_id: tradeId,
     quantity: requireQty(value.quantity, true),
@@ -107,6 +155,10 @@ function parseFill(value: unknown, afterId: number): OrderFill {
     notional: requireMoney(value.notional, false),
     realized_pnl: requireMoney(value.realized_pnl, true),
     executed_at: requireUtc(value.executed_at),
+    ...(date ? { simulated_quote_date: date } : {}),
+    ...(provider && date ? { simulated_quote_source: provider } : {}),
+    mode: date || value.mode === "eod_simulated" ? "eod_simulated" : "order_book",
+    source,
   };
 }
 
@@ -152,6 +204,8 @@ function parseOrderDetail(data: unknown, orderId: number, limit: number, afterId
 
   const count = data.total_fill_count;
   if (count < fills.length) fail();
+  const reason = data.remainder_reason;
+  if (reason !== undefined && (typeof reason !== "string" || !reason.trim() || scaled6(remaining) === 0n)) fail();
   let nextAfterId: number | null;
   if (data.has_more) {
     const last = fills[fills.length - 1];
@@ -184,6 +238,13 @@ function parseOrderDetail(data: unknown, orderId: number, limit: number, afterId
     has_more: data.has_more,
     next_after_id: nextAfterId,
     fills,
+    reservation: "reservation" in data
+      ? parseReservation(data.reservation)
+      : legacyReservation(data.side, data.status, remaining, limitPrice),
+    ...parseSimulatedDate(data.simulated_quote_date),
+    ...(typeof data.simulated_quote_source === "string" && data.simulated_quote_source.trim()
+      ? { simulated_quote_source: data.simulated_quote_source.trim() } : {}),
+    ...(reason === undefined ? {} : { remainder_reason: reason }),
   };
 }
 

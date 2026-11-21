@@ -1,0 +1,950 @@
+
+
+/*
+ * Data-wall foundation. Tokens live on :root; the look applies inside `.wall`.
+ * Screens that are not moved yet keep the legacy tokens and classes from styles.css.
+ */
+:root[data-look="dial"] {
+  /* Colour: near-black ground, greys carry everything, one signal, small gain/loss marks. */
+  --ground-rgb: 6 7 7;
+  --panel-rgb: 12 13 13;
+  --panel2-rgb: 19 21 21;
+  --panel3-rgb: 29 32 32;
+  --rule-rgb: 36 40 40;
+  --rule2-rgb: 58 63 63;
+  --fg-rgb: 241 243 240;
+  --fg2-rgb: 176 181 178;
+  --fg3-rgb: 126 132 130;
+  --fg4-rgb: 74 80 79;
+  --signal-rgb: 255 178 36;
+  --gain-rgb: 65 214 147;
+  --loss-rgb: 255 93 108;
+
+  /* Legacy palette bridge: Tailwind's own values until a scope re-tones them. */
+  --c-slate-50: 248 250 252; --c-slate-100: 241 245 249; --c-slate-200: 226 232 240;
+  --c-slate-300: 203 213 225; --c-slate-400: 148 163 184; --c-slate-500: 100 116 139;
+  --c-slate-600: 71 85 105; --c-slate-700: 51 65 85; --c-slate-800: 30 41 59;
+  --c-slate-900: 15 23 42; --c-slate-950: 2 6 23;
+  --c-emerald-50: 236 253 245; --c-emerald-100: 209 250 229; --c-emerald-200: 167 243 208;
+  --c-emerald-300: 110 231 183; --c-emerald-400: 52 211 153; --c-emerald-500: 16 185 129;
+  --c-emerald-600: 5 150 105; --c-emerald-700: 4 120 87; --c-emerald-800: 6 95 70;
+  --c-emerald-900: 6 78 59; --c-emerald-950: 2 44 34;
+
+  /* Type */
+  --font-ui: "Archivo Variable", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-num: "Martian Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Space (4px base), radius, elevation */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
+  --r-1: 3px; --r-2: 6px; --r-3: 10px; --r-pill: 999px;
+  --e-1: inset 0 1px 0 rgb(255 255 255 / 0.035);
+  --e-2: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 2px 6px rgb(0 0 0 / 0.5), 0 22px 44px -18px rgb(0 0 0 / 0.9);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Real spring, perceptual duration 0.32s, bounce 0.3, sampled until it settles. */
+  --spring: linear(0, 0.053, 0.179, 0.336, 0.496, 0.644, 0.768, 0.867, 0.94, 0.99, 1.022, 1.039, 1.046, 1.045, 1.04, 1.033, 1.026, 1.019, 1.013, 1.008, 1.004, 1.001, 0.999, 0.998, 0.998, 0.998, 1);
+  --spring-dur: 470ms;
+  --dur-press: 120ms;
+  --dur-fast: 160ms;
+  --dur-mid: 240ms;
+  --dur-slow: 420ms;
+  --dur-reveal: 640ms;
+}
+
+:root[data-look="dial"]:has(.wall) body { background: rgb(var(--ground-rgb)); }
+:root[data-look="dial"]:has(.wall) { scroll-padding-top: 72px; }
+
+:where(html[data-look="dial"]) .wall {
+  --gain-rgb: 224 228 225;
+  --loss-rgb: 139 145 141;
+  /* shared components re-toned: slate becomes neutral grey, emerald becomes white */
+  --c-slate-50: 244 245 243; --c-slate-100: 236 238 235; --c-slate-200: 214 217 214;
+  --c-slate-300: 176 181 178; --c-slate-400: 146 152 149; --c-slate-500: 126 132 130;
+  --c-slate-600: 84 89 88; --c-slate-700: 58 63 63; --c-slate-800: 36 40 40;
+  --c-slate-900: 19 21 21; --c-slate-950: 9 10 10;
+  --c-emerald-50: 255 255 255; --c-emerald-100: 250 251 249; --c-emerald-200: 244 245 243;
+  --c-emerald-300: 241 243 240; --c-emerald-400: 236 238 235; --c-emerald-500: 200 204 201;
+  --c-emerald-600: 150 155 152; --c-emerald-700: 104 110 108; --c-emerald-800: 58 63 63;
+  --c-emerald-900: 36 40 40; --c-emerald-950: 19 21 21;
+  --sm-canvas: rgb(var(--ground-rgb)); --sm-sidebar: rgb(var(--panel-rgb)); --sm-surface: rgb(var(--panel-rgb));
+  --sm-raised: rgb(var(--panel2-rgb)); --sm-hover: rgb(var(--panel3-rgb)); --sm-line: rgb(var(--rule2-rgb));
+  --sm-ink: rgb(var(--fg-rgb)); --sm-copy: rgb(var(--fg2-rgb)); --sm-muted: rgb(var(--fg3-rgb));
+  --sm-focus: rgb(var(--signal-rgb));
+
+  min-height: 100dvh;
+  background-color: rgb(var(--ground-rgb));
+  color: rgb(var(--fg-rgb));
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 19px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  color-scheme: dark;
+  accent-color: rgb(var(--signal-rgb));
+}
+:where(html[data-look="dial"]) .wall ::selection { background: rgb(var(--signal-rgb)); color: #130d00; }
+:where(html[data-look="dial"]) .wall :focus-visible { outline: 2px solid rgb(var(--signal-rgb)); outline-offset: 2px; }
+:where(html[data-look="dial"]) .wall .font-mono, :where(html[data-look="dial"]) .wall .num { font-family: var(--font-num); font-stretch: 78%; font-variant-numeric: tabular-nums; }
+:where(html[data-look="dial"]) .wall h1, :where(html[data-look="dial"]) .wall h2, :where(html[data-look="dial"]) .wall h3 { text-wrap: balance; }
+:where(html[data-look="dial"]) .wall [id] { scroll-margin-top: 72px; }
+:where(html[data-look="dial"]) .wall ::-webkit-scrollbar-thumb { background: rgb(var(--rule2-rgb)); }
+
+:where(html[data-look="dial"]) .skip-link {
+  position: fixed; left: 12px; top: 8px; z-index: 80; padding: 8px 12px; border-radius: var(--r-pill);
+  background: rgb(var(--fg-rgb)); color: #0b0c0c; font-weight: 600; transform: translateY(-160%);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+:where(html[data-look="dial"]) .skip-link:focus-visible { transform: none; }
+
+/* ── Panel: hairline frame with bracket corners that re-light on hover ───────── */
+
+:where(html[data-look="dial"]) .panel {
+    position: relative; min-width: 0; border: 1px solid rgb(var(--rule-rgb)); border-radius: var(--r-2);
+    background-color: rgb(var(--panel-rgb)); box-shadow: var(--e-1);
+  }
+
+:where(html[data-look="dial"]) .panel::before {
+    content: ""; position: absolute; inset: -1px; border-radius: inherit;
+    pointer-events: none; color: rgb(var(--fg3-rgb));
+    --corner: linear-gradient(currentColor, currentColor);
+    background: var(--corner) top left / 9px 1px, var(--corner) top left / 1px 9px,
+      var(--corner) top right / 9px 1px, var(--corner) top right / 1px 9px,
+      var(--corner) bottom left / 9px 1px, var(--corner) bottom left / 1px 9px,
+      var(--corner) bottom right / 9px 1px, var(--corner) bottom right / 1px 9px;
+    background-repeat: no-repeat;
+  }
+
+:where(html[data-look="dial"]) .panel-head {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+    min-height: 38px; padding: 6px 12px; border-bottom: 1px solid rgb(var(--rule-rgb));
+  }
+
+:where(html[data-look="dial"]) .panel-title { font-size: 13px; line-height: 18px; font-weight: 650; font-stretch: 112%; letter-spacing: 0.01em; color: rgb(var(--fg-rgb)); }
+
+:where(html[data-look="dial"]) .panel-sub { font-size: 11px; line-height: 15px; color: rgb(var(--fg3-rgb)); }
+
+:where(html[data-look="dial"]) .panel-body { padding: 12px; min-width: 0; }
+
+:where(html[data-look="dial"]) .lbl {
+    font-family: var(--font-num); font-stretch: 80%; font-size: 10px; line-height: 14px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; color: rgb(var(--fg3-rgb));
+  }
+
+:where(html[data-look="dial"]) .note { font-size: 11px; line-height: 16px; color: rgb(var(--fg3-rgb)); text-wrap: pretty; }
+
+:where(html[data-look="dial"]) .fig { font-family: var(--font-num); font-stretch: 76%; font-weight: 600; font-size: 22px; line-height: 26px; letter-spacing: -0.02em; color: rgb(var(--fg-rgb)); }
+
+:where(html[data-look="dial"]) .fig-lg { font-size: 34px; line-height: 38px; letter-spacing: -0.03em; }
+
+:where(html[data-look="dial"]) .fig-xl { font-size: clamp(30px, 3.4vw, 46px); line-height: 1.05; letter-spacing: -0.035em; }
+
+:where(html[data-look="dial"]) .ruler {
+    height: 8px;
+    background-image: repeating-linear-gradient(90deg, rgb(var(--fg3-rgb)) 0 1px, transparent 1px 40px), repeating-linear-gradient(90deg, rgb(var(--fg4-rgb)) 0 1px, transparent 1px 8px);
+    background-size: 100% 8px, 100% 4px; background-repeat: no-repeat; background-position: left bottom;
+  }
+
+:where(html[data-look="dial"]) .hatch { background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.05) 0 1px, transparent 1px 6px); }
+
+:where(html[data-look="dial"]) .dotgrid { background-image: radial-gradient(rgb(255 255 255 / 0.075) 1px, transparent 1.2px); background-size: 14px 14px; }
+
+/* ── Delta mark: direction is a glyph and a sign, colour is the small extra ─── */
+
+:where(html[data-look="dial"]) .delta { display: inline-block; font-size: 0.62em; line-height: 1; transform: translateY(-0.12em); color: rgb(var(--fg3-rgb)); }
+
+:where(html[data-look="dial"]) .delta[data-dir="up"] { color: rgb(var(--gain-rgb)); }
+
+:where(html[data-look="dial"]) .delta[data-dir="down"] { color: rgb(var(--loss-rgb)); }
+
+/* ── Pill / badge ──────────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .pill {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 20px; padding: 2px 8px; border-radius: var(--r-pill);
+    border: 1px solid rgb(var(--rule2-rgb)); font-family: var(--font-num); font-stretch: 80%; font-size: 10px; line-height: 14px;
+    font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: rgb(var(--fg2-rgb)); white-space: nowrap;
+  }
+
+:where(html[data-look="dial"]) .pill-solid { background: rgb(var(--fg-rgb)); border-color: rgb(var(--fg-rgb)); color: #0b0c0c; font-weight: 650; }
+
+:where(html[data-look="dial"]) .pill-signal { border-color: rgb(var(--signal-rgb) / 0.6); color: rgb(var(--signal-rgb)); }
+
+:where(html[data-look="dial"]) .pill-quiet { border-style: dashed; color: rgb(var(--fg3-rgb)); }
+
+:where(html[data-look="dial"]) .pill-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* ── Button ────────────────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 14px;
+    border: 1px solid transparent; border-radius: var(--r-pill); font-size: 13px; line-height: 1; font-weight: 650;
+    white-space: nowrap; user-select: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+
+:where(html[data-look="dial"]) .btn:active { transform: scale(0.97); }
+
+:where(html[data-look="dial"]) .btn-solid { background: rgb(var(--fg-rgb)); color: #0b0c0c; }
+
+:where(html[data-look="dial"]) .btn-ghost { border-color: rgb(var(--rule2-rgb)); color: rgb(var(--fg-rgb)); background: rgb(var(--panel2-rgb) / 0.6); }
+
+:where(html[data-look="dial"]) .btn-signal { background: rgb(var(--signal-rgb)); color: #130d00; }
+
+:where(html[data-look="dial"]) .btn-icon { padding: 0; min-width: 36px; }
+
+:where(html[data-look="dial"]) .btn-sm { min-height: 30px; padding: 0 12px; font-size: 12px; }
+
+@media (hover: hover) and (pointer: fine) {
+    :where(html[data-look="dial"]) .btn-solid:hover { background: #fff; }
+    :where(html[data-look="dial"]) .btn-ghost:hover { border-color: rgb(var(--fg3-rgb)); background: rgb(var(--panel3-rgb)); }
+    :where(html[data-look="dial"]) .btn-signal:hover { background: rgb(255 194 82); }
+    :where(html[data-look="dial"]) .panel:hover::before { color: rgb(var(--fg-rgb)); }
+  }
+
+@media (pointer: coarse) { :where(html[data-look="dial"]) .btn { min-height: 44px; } :where(html[data-look="dial"]) .btn-icon { min-width: 44px; } :where(html[data-look="dial"]) .seg-btn { min-height: 44px; } }
+
+/* ── Segmented control: one white pill slides under the labels on a spring ──── */
+
+:where(html[data-look="dial"]) .seg {
+    position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; max-width: 100%;
+    border: 1px solid rgb(var(--rule2-rgb)); border-radius: var(--r-pill); background: rgb(var(--ground-rgb));
+  }
+
+:where(html[data-look="dial"]) .seg-ind {
+    position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--n)); border-radius: var(--r-pill);
+    background: rgb(var(--fg-rgb)); transform: translateX(calc(var(--i) * 100%));
+    transition: transform var(--spring-dur) var(--spring);
+  }
+
+:where(html[data-look="dial"]) .seg-btn {
+    position: relative; z-index: 1; min-height: 28px; min-width: 38px; padding: 0 10px; border-radius: var(--r-pill);
+    font-family: var(--font-num); font-stretch: 80%; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: rgb(var(--fg2-rgb)); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    transition: color var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
+  }
+
+:where(html[data-look="dial"]) .seg-btn[aria-pressed="true"] { color: #0b0c0c; }
+
+:where(html[data-look="dial"]) .seg-btn:active { transform: scale(0.95); }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .seg-btn[aria-pressed="false"]:hover { color: rgb(var(--fg-rgb)); } }
+
+/* ── Field ─────────────────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .field {
+    height: 36px; min-width: 0; padding: 0 10px; border: 1px solid rgb(var(--rule2-rgb)); border-radius: var(--r-2);
+    background: rgb(var(--ground-rgb)); color: rgb(var(--fg-rgb)); font-family: var(--font-num); font-stretch: 80%; font-size: 13px;
+    transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  }
+
+:where(html[data-look="dial"]) .field::placeholder { color: rgb(var(--fg4-rgb)); }
+
+:where(html[data-look="dial"]) .field:focus-visible { outline: none; border-color: rgb(var(--fg-rgb)); box-shadow: 0 0 0 3px rgb(var(--fg-rgb) / 0.14); }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .field:hover { border-color: rgb(var(--fg3-rgb)); } }
+
+@media (pointer: coarse) { :where(html[data-look="dial"]) .field { height: 44px; font-size: 16px; } }
+
+/* ── Skeleton, empty state ─────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .sk { display: block; border-radius: var(--r-1); background: rgb(var(--panel3-rgb)); animation: sk-pulse 900ms var(--ease-in-out) 10 alternate both; }
+
+:where(html[data-look="dial"]) .empty {
+    display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px dashed rgb(var(--rule2-rgb)); border-radius: var(--r-2);
+    background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.028) 0 1px, transparent 1px 7px);
+    color: rgb(var(--fg2-rgb)); font-size: 12px; line-height: 17px;
+  }
+
+:where(html[data-look="dial"]) .empty-mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border: 1px solid rgb(var(--fg3-rgb)); border-radius: 50%; position: relative; }
+
+:where(html[data-look="dial"]) .empty-mark::after { content: ""; position: absolute; left: 2px; right: 2px; top: 50%; height: 1px; background: rgb(var(--fg3-rgb)); transform: rotate(-45deg); }
+
+:where(html[data-look="dial"]) .empty-detail { display: block; color: rgb(var(--fg3-rgb)); font-size: 11px; line-height: 16px; }
+
+/* ── Table rows ────────────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+:where(html[data-look="dial"]) .tbl th { padding: 6px 8px; font-family: var(--font-num); font-stretch: 80%; font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: rgb(var(--fg3-rgb)); border-bottom: 1px solid rgb(var(--rule2-rgb)); }
+
+:where(html[data-look="dial"]) .tbl td { padding: 6px 8px; border-bottom: 1px solid rgb(var(--rule-rgb)); color: rgb(var(--fg2-rgb)); transition: background-color var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .tbl tr:last-child td { border-bottom: 0; }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .tbl tbody tr:hover td { background: rgb(var(--panel2-rgb)); } }
+
+/* ── Motion primitives ─────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .rv { opacity: 0; transform: translateY(14px); transition: opacity var(--dur-reveal) var(--ease-out) var(--d, 0ms), transform var(--dur-reveal) var(--ease-out) var(--d, 0ms); }
+
+:where(html[data-look="dial"]) .rv[data-seen="true"] { opacity: 1; transform: none; }
+
+:where(html[data-look="dial"]) .swap-in { animation: swap-in 260ms var(--ease-out) both; }
+
+:where(html[data-look="dial"]) .roll { display: inline-block; vertical-align: bottom; white-space: nowrap; }
+
+:where(html[data-look="dial"]) .roll-row { display: inline-flex; height: 1.16em; line-height: 1.16; overflow: hidden; }
+
+:where(html[data-look="dial"]) .roll-col { display: block; height: 1.16em; }
+
+:where(html[data-look="dial"]) .roll-strip { display: block; white-space: pre; transition: transform var(--roll-dur, 560ms) var(--ease-out); animation: roll-in 1000ms var(--ease-out) backwards; }
+
+:where(html[data-look="dial"]) .roll-sym { display: block; }
+
+/* ── Header and drawer ─────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .hdr { position: sticky; top: 0; z-index: 40; background: rgb(var(--ground-rgb) / 0.72); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); }
+
+:where(html[data-look="dial"]) .hdr::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: rgb(var(--rule2-rgb)); opacity: 0; transition: opacity var(--dur-mid) var(--ease-out); }
+
+:where(html[data-look="dial"]) .hdr[data-scrolled="true"]::after { opacity: 1; }
+
+:where(html[data-look="dial"]) .hdr-in { display: flex; align-items: center; gap: 12px; height: 52px; }
+
+:where(html[data-look="dial"]) .brand-mark { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid rgb(var(--fg-rgb)); border-radius: var(--r-1); font-family: var(--font-num); font-stretch: 76%; font-size: 11px; font-weight: 700; }
+
+:where(html[data-look="dial"]) .brand-name { font-family: var(--font-num); font-stretch: 84%; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+
+:where(html[data-look="dial"]) .hdr-link { position: relative; display: inline-flex; align-items: center; height: 30px; padding: 0 10px; border-radius: var(--r-pill); font-size: 12px; font-weight: 550; color: rgb(var(--fg3-rgb)); transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .hdr-link[aria-current="true"] { color: rgb(var(--fg-rgb)); background: rgb(var(--panel3-rgb)); }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .hdr-link:hover { color: rgb(var(--fg-rgb)); } }
+
+:where(html[data-look="dial"]) .hdr-chip { opacity: 0; transform: translateY(8px) scale(0.96); transition: opacity var(--dur-mid) var(--ease-out), transform var(--spring-dur) var(--spring); }
+
+:where(html[data-look="dial"]) .hdr[data-pulse="true"] .hdr-chip { opacity: 1; transform: none; }
+
+:where(html[data-look="dial"]) .scrim { position: absolute; inset: 0; background: rgb(0 0 0 / 0.62); opacity: 0; transition: opacity 280ms var(--ease-out); }
+
+:where(html[data-look="dial"]) .drawer { background: rgb(var(--panel-rgb)); border-right: 1px solid rgb(var(--rule2-rgb)); box-shadow: var(--e-2); transform: translateX(-102%); transition: transform 380ms var(--ease-drawer); touch-action: pan-y; }
+
+:where(html[data-look="dial"]) [data-open="true"] > .scrim { opacity: 1; }
+
+:where(html[data-look="dial"]) [data-open="true"] > .drawer { transform: none; }
+
+:where(html[data-look="dial"]) .drawer-link { display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: var(--r-2); font-size: 14px; font-weight: 550; color: rgb(var(--fg2-rgb)); transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out); }
+
+:where(html[data-look="dial"]) .drawer-link:active { transform: scale(0.98); }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .drawer-link:hover { background: rgb(var(--panel3-rgb)); color: rgb(var(--fg-rgb)); } }
+
+/* ── Session dial ──────────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .dial { position: relative; aspect-ratio: 1; width: 100%; max-width: 620px; margin-inline: auto; }
+
+:where(html[data-look="dial"]) .dial svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+:where(html[data-look="dial"]) .dial-ring { fill: none; stroke: rgb(var(--fg4-rgb)); stroke-width: 1; stroke-dasharray: 1 6; vector-effect: non-scaling-stroke; opacity: 0; transform: scale(0.93); transform-origin: 500px 500px; transition: opacity 520ms var(--ease-out) calc(var(--k) * 60ms), transform 760ms var(--ease-out) calc(var(--k) * 60ms); }
+
+:where(html[data-look="dial"]) .dial-ring[data-zero] { stroke: rgb(var(--fg3-rgb)); stroke-dasharray: none; }
+
+:where(html[data-look="dial"]) .dial-ticks { fill: none; stroke: rgb(var(--fg4-rgb)); stroke-width: 7; stroke-dasharray: 1.4 6.44; opacity: 0; transition: opacity 700ms var(--ease-out) 420ms; }
+
+:where(html[data-look="dial"]) .dial-arc { fill: none; stroke: rgb(var(--fg3-rgb)); stroke-width: 2; opacity: 0; transition: opacity 500ms var(--ease-out) calc(var(--k) * 45ms + 300ms), stroke var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .dial-code { font-family: var(--font-num); font-stretch: 78%; font-size: 17px; font-weight: 500; letter-spacing: 0.06em; fill: rgb(var(--fg3-rgb)); opacity: 0; transition: opacity 500ms var(--ease-out) calc(var(--k) * 45ms + 340ms), fill var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .dial-scale { font-family: var(--font-num); font-stretch: 78%; font-size: 15px; fill: rgb(var(--fg3-rgb)); opacity: 0; transition: opacity 500ms var(--ease-out) 600ms; }
+
+:where(html[data-look="dial"]) .dial[data-on="true"] :is(.dial-ring, .dial-ticks, .dial-arc, .dial-code, .dial-scale) { opacity: 1; transform: none; }
+
+:where(html[data-look="dial"]) .spk { transition: opacity var(--dur-fast) var(--ease-out); cursor: crosshair; }
+
+:where(html[data-look="dial"]) .spike { transform-box: fill-box; transform: scaleY(0); transition: transform 820ms var(--ease-out) calc(var(--i) * 8ms + 260ms), fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .spike-up { transform-origin: 50% 100%; fill: var(--lit, rgb(var(--fg-rgb))); }
+
+:where(html[data-look="dial"]) .spike-dn { transform-origin: 50% 0%; fill: var(--lit, rgb(var(--fg-rgb) / 0.09)); stroke: var(--lit, rgb(var(--fg2-rgb))); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+:where(html[data-look="dial"]) .dial[data-on="true"] .spike { transform: scaleY(var(--f)); }
+
+:where(html[data-look="dial"]) .spk-base { stroke-width: 2.4; stroke: rgb(var(--fg4-rgb)); }
+
+:where(html[data-look="dial"]) .spk-base[data-dir="up"] { stroke: rgb(var(--gain-rgb)); }
+
+:where(html[data-look="dial"]) .spk-base[data-dir="down"] { stroke: rgb(var(--loss-rgb)); }
+
+:where(html[data-look="dial"]) .spk-cap { stroke: var(--lit, rgb(var(--fg2-rgb))); stroke-width: 1.6; opacity: 0; transition: opacity 400ms var(--ease-out) 1100ms; }
+
+:where(html[data-look="dial"]) .dial[data-on="true"] .spk-cap { opacity: 1; }
+
+:where(html[data-look="dial"]) .dial-sweep {
+    position: absolute; inset: 0; border-radius: 50%; pointer-events: none; opacity: 0;
+    background: conic-gradient(from 0deg, transparent 0deg 286deg, rgb(255 255 255 / 0.1) 357deg, rgb(255 255 255 / 0.5) 359.5deg, transparent 360deg);
+    -webkit-mask: radial-gradient(circle closest-side, transparent 37.2%, #000 37.6%, #000 87%, transparent 87.4%);
+    mask: radial-gradient(circle closest-side, transparent 37.2%, #000 37.6%, #000 87%, transparent 87.4%);
+    transition: opacity 1200ms var(--ease-out) 1100ms; animation: dial-sweep 18s linear infinite; animation-play-state: paused;
+  }
+
+:where(html[data-look="dial"]) .dial[data-on="true"] .dial-sweep { opacity: 1; }
+
+:where(html[data-look="dial"]) .dial[data-live="true"] .dial-sweep { animation-play-state: running; }
+
+:where(html[data-look="dial"]) .dial-core { position: absolute; left: 50%; top: 50%; width: 34%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 2px; text-align: center; pointer-events: none; }
+
+/* ── Market pulse ──────────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .idx { position: relative; display: block; width: 100%; padding: 8px 10px; border-radius: var(--r-2); text-align: left; border: 1px solid transparent; transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out); }
+
+:where(html[data-look="dial"]) .idx:active { transform: scale(0.985); }
+
+:where(html[data-look="dial"]) .idx[aria-pressed="true"] { background: rgb(var(--panel2-rgb)); border-color: rgb(var(--rule2-rgb)); }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .idx:hover { background: rgb(var(--panel2-rgb)); } }
+
+:where(html[data-look="dial"]) .idx-swatch { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; transition: background-color var(--dur-mid) var(--ease-out); }
+
+:where(html[data-look="dial"]) .chart-box { position: relative; height: 252px; min-width: 0; border-radius: var(--r-1); }
+
+:where(html[data-look="dial"]) .chart-wipe { height: 100%; clip-path: inset(0 100% 0 0); }
+
+:where(html[data-look="dial"]) .chart-wipe[data-on="true"] { clip-path: inset(0 0 0 0); transition: clip-path 1400ms cubic-bezier(0.65, 0, 0.35, 1) 300ms; }
+
+/* ── Sector divergence bars ────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .sec-row { display: grid; grid-template-columns: minmax(0, 9.5rem) 2.6rem minmax(3rem, 1fr) 4.4rem; align-items: center; gap: 10px; min-height: 24px; padding: 0 12px; transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out); }
+
+@media (min-width: 640px) { :where(html[data-look="dial"]) .sec-row { grid-template-columns: minmax(0, 9.5rem) 2.6rem minmax(3rem, 1fr) 4.4rem minmax(0, 8.5rem); } }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .sec-row:hover { background: rgb(var(--panel2-rgb)); } }
+
+:where(html[data-look="dial"]) .sec-track { position: relative; height: 10px; }
+
+:where(html[data-look="dial"]) .sec-track::before { content: ""; position: absolute; left: 50%; top: -7px; bottom: -7px; width: 1px; background: rgb(var(--rule2-rgb)); }
+
+:where(html[data-look="dial"]) .sec-bar { position: absolute; top: 0; bottom: 0; width: 50%; transition: clip-path 760ms var(--ease-out) calc(var(--k) * 40ms + 200ms); }
+
+:where(html[data-look="dial"]) .sec-bar[data-dir="up"] { left: 50%; background: var(--lit, rgb(var(--fg-rgb))); clip-path: inset(0 100% 0 0); }
+
+:where(html[data-look="dial"]) .sec-bar[data-dir="down"] { right: 50%; border: 1px solid var(--lit, rgb(var(--fg2-rgb))); background-image: repeating-linear-gradient(135deg, var(--lit, rgb(var(--fg2-rgb))) 0 1px, transparent 1px 4px); clip-path: inset(0 0 0 100%); }
+
+:where(html[data-look="dial"]) [data-on="true"] .sec-bar[data-dir="up"] { clip-path: inset(0 calc(100% - var(--f) * 100%) 0 0); }
+
+:where(html[data-look="dial"]) [data-on="true"] .sec-bar[data-dir="down"] { clip-path: inset(0 0 0 calc(100% - var(--f) * 100%)); }
+
+/* ── Breadth dot matrix ────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .br-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: end; gap: 2px; }
+
+:where(html[data-look="dial"]) .br-col { display: flex; flex-direction: column-reverse; align-items: center; gap: 2px; min-height: 8px; }
+
+:where(html[data-look="dial"]) .br-dot { width: 100%; max-width: 9px; aspect-ratio: 1; border-radius: 50%; opacity: 0; transform: translateY(-10px); transition: opacity 420ms var(--ease-out) calc(var(--c) * 14ms + var(--r) * 26ms + 200ms), transform 520ms var(--ease-out) calc(var(--c) * 14ms + var(--r) * 26ms + 200ms), background-color var(--dur-fast), border-color var(--dur-fast); }
+
+:where(html[data-look="dial"]) .br-dot[data-dir="up"] { background: var(--lit, rgb(var(--fg-rgb))); }
+
+:where(html[data-look="dial"]) .br-dot[data-dir="down"] { border: 1px solid var(--lit, rgb(var(--fg2-rgb))); }
+
+:where(html[data-look="dial"]) .br-dot[data-dir="flat"] { background: rgb(var(--fg4-rgb)); }
+
+:where(html[data-look="dial"]) [data-on="true"] .br-dot { opacity: 1; transform: none; }
+
+/* ── Tile matrix (stock heat map) ──────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .hm { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 10px; --uw: 54px; --uh: 40px; }
+
+:where(html[data-look="dial"]) .hm[data-scale="compact"] { --uw: 42px; --uh: 32px; }
+
+:where(html[data-look="dial"]) .hm[data-scale="expanded"] { --uw: 72px; --uh: 54px; }
+
+:where(html[data-look="dial"]) .hm-g { flex: var(--cols) 1 calc(var(--cols) * var(--uw)); min-width: 0; max-width: 100%; transition: opacity var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .hm-tiles { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-auto-rows: var(--uh); grid-auto-flow: dense; gap: 2px; }
+
+:where(html[data-look="dial"]) .hm-t {
+    position: relative; display: flex; flex-direction: column; justify-content: center; min-width: 0; overflow: hidden; padding: 2px 6px 2px 8px;
+    border-radius: var(--r-1); background-color: rgb(var(--fg-rgb) / var(--a, 0.06)); color: rgb(var(--fg-rgb));
+    box-shadow: inset 0 0 0 1px var(--lit, transparent); opacity: 0; transform: scale(0.9);
+    transition: transform var(--spring-dur) var(--spring), opacity 380ms var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+    transition-delay: calc(var(--i) * 9ms), calc(var(--i) * 9ms), 0ms, 0ms;
+  }
+
+:where(html[data-look="dial"]) [data-on="true"] .hm-t { opacity: 1; transform: none; }
+
+:where(html[data-look="dial"]) [data-settled="true"] .hm-t { transition-delay: 0ms; }
+
+:where(html[data-look="dial"]) .hm-t::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: rgb(var(--fg4-rgb)); }
+
+:where(html[data-look="dial"]) .hm-t[data-dir="up"]::before { background: rgb(var(--gain-rgb)); }
+
+:where(html[data-look="dial"]) .hm-t[data-dir="down"]::before { background: rgb(var(--loss-rgb)); }
+
+:where(html[data-look="dial"]) .hm-t[data-dir="down"] { background-color: rgb(var(--fg-rgb) / 0.03); background-image: repeating-linear-gradient(135deg, rgb(var(--fg-rgb) / var(--a, 0.06)) 0 1.5px, transparent 1.5px 5px); }
+
+:where(html[data-look="dial"]) .hm-t[data-dir="stale"] { background: none; box-shadow: inset 0 0 0 1px rgb(var(--rule2-rgb)); color: rgb(var(--fg3-rgb)); }
+
+:where(html[data-look="dial"]) .hm-t[data-mag="1"] { --a: 0.12; }
+
+:where(html[data-look="dial"]) .hm-t[data-mag="2"] { --a: 0.22; }
+
+:where(html[data-look="dial"]) .hm-t[data-mag="3"] { --a: 0.36; }
+
+:where(html[data-look="dial"]) .hm-t[data-dir="down"][data-mag="1"] { --a: 0.2; }
+
+:where(html[data-look="dial"]) .hm-t[data-dir="down"][data-mag="2"] { --a: 0.36; }
+
+:where(html[data-look="dial"]) .hm-t[data-dir="down"][data-mag="3"] { --a: 0.6; }
+
+:where(html[data-look="dial"]) .hm-t[data-size="mega"] { grid-column: span 2; grid-row: span 2; }
+
+:where(html[data-look="dial"]) .hm-t[data-size="large"] { grid-column: span 2; }
+
+:where(html[data-look="dial"]) .hm-sym { font-family: var(--font-num); font-stretch: 76%; font-size: 11px; line-height: 13px; font-weight: 650; white-space: nowrap; }
+
+:where(html[data-look="dial"]) .hm-chg { font-family: var(--font-num); font-stretch: 76%; font-size: 10px; line-height: 12px; color: rgb(var(--fg2-rgb)); white-space: nowrap; }
+
+:where(html[data-look="dial"]) .hm-t[data-size="mega"] .hm-sym { font-size: 15px; line-height: 18px; }
+
+:where(html[data-look="dial"]) .hm-t[data-size="mega"] .hm-chg { font-size: 12px; line-height: 15px; }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) a.hm-t:hover, :where(html[data-look="dial"]) .hm-t:hover { transform: scale(1.06); z-index: 2; background-color: rgb(var(--fg-rgb) / 0.3); box-shadow: inset 0 0 0 1px rgb(var(--fg-rgb)), 0 8px 18px -8px #000; } }
+
+:where(html[data-look="dial"]) a.hm-t:active { transform: scale(0.97); }
+
+:where(html[data-look="dial"]) .sec-tile { display: flex; flex-direction: column; justify-content: space-between; gap: 10px; min-width: 0; padding: 10px 12px; border-radius: var(--r-2); border: 1px solid rgb(var(--rule2-rgb)); background-color: rgb(var(--fg-rgb) / var(--a, 0.05)); transition: opacity var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .sec-tile[data-dir="down"] { background-color: transparent; background-image: repeating-linear-gradient(135deg, rgb(var(--fg-rgb) / var(--a, 0.08)) 0 1.5px, transparent 1.5px 6px); }
+
+/* ── News, research ────────────────────────────────────────────────────────── */
+
+:where(html[data-look="dial"]) .news-item { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); gap: 10px; padding: 9px 12px; border-bottom: 1px solid rgb(var(--rule-rgb)); transition: background-color var(--dur-fast) var(--ease-out); }
+
+:where(html[data-look="dial"]) .news-item:last-child { border-bottom: 0; }
+
+:where(html[data-look="dial"]) .news-link { font-size: 13px; line-height: 18px; font-weight: 550; color: rgb(var(--fg-rgb)); text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: text-decoration-color var(--dur-fast) var(--ease-out); overflow-wrap: anywhere; }
+
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .news-item:hover { background: rgb(var(--panel2-rgb)); } :where(html[data-look="dial"]) .news-link:hover { text-decoration-color: rgb(var(--fg-rgb)); } }
+
+:where(html[data-look="dial"]) .stat { min-width: 0; padding: 8px 10px; border-left: 1px solid rgb(var(--rule2-rgb)); }
+
+:where(html[data-look="dial"]) .stat-value { font-family: var(--font-num); font-stretch: 76%; font-size: 18px; line-height: 24px; font-weight: 600; color: rgb(var(--fg-rgb)); }
+
+:where(html[data-look="dial"]) .stat-value[data-empty="true"] { color: rgb(var(--fg4-rgb)); }
+
+:where(html[data-look="dial"]) .gauge { display: grid; grid-template-columns: repeat(25, 1fr); gap: 2px; }
+
+:where(html[data-look="dial"]) .gauge i { height: 8px; border-radius: 1px; background: rgb(var(--panel3-rgb)); }
+
+:where(html[data-look="dial"]) .gauge i[data-on="true"] { background: rgb(var(--fg-rgb)); }
+
+/* ── Shared components inside the wall (not purged, not layered) ─────────────── */
+:where(html[data-look="dial"]) .wall .dashboard-card { border: 1px solid rgb(var(--rule-rgb)); border-radius: var(--r-2); background: rgb(var(--panel-rgb)); box-shadow: var(--e-1); backdrop-filter: none; }
+:where(html[data-look="dial"]) .wall .dashboard-card-header { min-height: 38px; padding: 8px 12px; border-bottom: 1px solid rgb(var(--rule-rgb)); background: none; }
+:where(html[data-look="dial"]) .wall .dashboard-card-header h2 { font-size: 13px; line-height: 18px; font-weight: 650; font-stretch: 112%; color: rgb(var(--fg-rgb)); }
+:where(html[data-look="dial"]) .wall .dashboard-card-body { padding: 12px; }
+:where(html[data-look="dial"]) .wall .field-control, :where(html[data-look="dial"]) .wall select, :where(html[data-look="dial"]) .wall input:not([type="checkbox"]):not([type="radio"]):not(.field) {
+  min-height: 36px; padding: 0 10px; border: 1px solid rgb(var(--rule2-rgb)); border-radius: var(--r-2); background-color: rgb(var(--ground-rgb));
+  color: rgb(var(--fg-rgb)); font-family: var(--font-num); font-stretch: 80%; font-size: 13px; box-shadow: none;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+:where(html[data-look="dial"]) .wall select {
+  -webkit-appearance: none; appearance: none; padding-right: 30px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23b0b5b2' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+:where(html[data-look="dial"]) .wall .field-control:hover, :where(html[data-look="dial"]) .wall select:hover { border-color: rgb(var(--fg3-rgb)); }
+:where(html[data-look="dial"]) .wall .field-control:focus, :where(html[data-look="dial"]) .wall select:focus, :where(html[data-look="dial"]) .wall .field-control:focus-visible, :where(html[data-look="dial"]) .wall select:focus-visible { outline: none; border-color: rgb(var(--fg-rgb)); box-shadow: 0 0 0 3px rgb(var(--fg-rgb) / 0.14); }
+:where(html[data-look="dial"]) .wall .primary-action, :where(html[data-look="dial"]) .wall form button[type="submit"]:not(.btn) {
+  min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--r-pill); background: rgb(var(--fg-rgb)); color: #0b0c0c; font-size: 13px; font-weight: 650; box-shadow: none;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+:where(html[data-look="dial"]) .wall .primary-action:active, :where(html[data-look="dial"]) .wall form button[type="submit"]:not(.btn):active { transform: scale(0.97); }
+:where(html[data-look="dial"]) .wall .status-badge, :where(html[data-look="dial"]) .wall .risk-chip { border-radius: var(--r-pill); font-family: var(--font-num); font-stretch: 80%; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+:where(html[data-look="dial"]) .wall .table-shell { border: 1px solid rgb(var(--rule-rgb)); border-radius: var(--r-2); background: none; }
+:where(html[data-look="dial"]) .wall .data-table th { font-family: var(--font-num); font-stretch: 80%; font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: rgb(var(--fg3-rgb)); background: rgb(var(--panel2-rgb)); border-color: rgb(var(--rule-rgb)); }
+:where(html[data-look="dial"]) .wall .data-table td { font-family: var(--font-num); font-stretch: 80%; font-size: 12px; border-color: rgb(var(--rule-rgb)); }
+@media (pointer: coarse) { :where(html[data-look="dial"]) .wall .field-control, :where(html[data-look="dial"]) .wall select { min-height: 44px; font-size: 16px; } }
+
+@keyframes sk-pulse { from { opacity: 0.45; } to { opacity: 1; } }
+@keyframes swap-in { from { opacity: 0; transform: scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes roll-in { from { transform: translateY(0); } }
+@keyframes dial-sweep { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  :where(html[data-look="dial"]) .wall .rv { transform: none; transition-duration: 200ms; transition-delay: 0ms; }
+  :where(html[data-look="dial"]) .wall .roll-strip { animation: none; transition: none; }
+  :where(html[data-look="dial"]) .wall .dial-sweep { display: none; }
+  :where(html[data-look="dial"]) .wall .spike, :where(html[data-look="dial"]) .wall .sec-bar, :where(html[data-look="dial"]) .wall .br-dot, :where(html[data-look="dial"]) .wall .hm-t, :where(html[data-look="dial"]) .wall .dial-ring, :where(html[data-look="dial"]) .wall .seg-ind, :where(html[data-look="dial"]) .wall .drawer, :where(html[data-look="dial"]) .wall .hdr-chip { transition-duration: 1ms; transition-delay: 0ms; }
+  :where(html[data-look="dial"]) .wall .chart-wipe, :where(html[data-look="dial"]) .wall .chart-wipe[data-on="true"] { clip-path: none; transition: none; }
+  :where(html[data-look="dial"]) .wall .swap-in { animation-duration: 120ms; }
+  :where(html[data-look="dial"]) .wall .sk { animation: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :where(html[data-look="dial"]) .wall .hdr { background: rgb(var(--ground-rgb)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  :where(html[data-look="dial"]) .wall { --fg3-rgb: 176 181 178; --rule-rgb: 84 89 88; --rule2-rgb: 126 132 130; }
+}
+
+/* Rolling figures: glyphs are generated content, the value itself is a hidden text node. */
+:where(html[data-look="dial"]) .roll-strip::before { content: "0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9"; display: block; white-space: pre; }
+:where(html[data-look="dial"]) .roll-sym::before { content: attr(data-ch); white-space: pre; }
+
+/* Later refinements, kept unlayered so they win over the component layer. */
+:where(html[data-look="dial"]) .wall { position: relative; }
+:where(html[data-look="dial"]) .idx { cursor: pointer; }
+:where(html[data-look="dial"]) .idx[data-selected="true"] { background: rgb(var(--panel2-rgb)); border-color: rgb(var(--rule2-rgb)); }
+:where(html[data-look="dial"]) .idx-key { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding-right: 6px; border-radius: var(--r-1); }
+:where(html[data-look="dial"]) .idx-swatch { flex: none; }
+:where(html[data-look="dial"]) .idx-swatch[data-dash="2"] { -webkit-mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 6px); mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 6px); }
+:where(html[data-look="dial"]) .idx-swatch[data-dash="1"] { -webkit-mask: repeating-linear-gradient(90deg, #000 0 2px, transparent 2px 4px); mask: repeating-linear-gradient(90deg, #000 0 2px, transparent 2px 4px); }
+:where(html[data-look="dial"]) .chart-box[data-empty="true"] { height: 132px; }
+:where(html[data-look="dial"]) .chart-wipe { clip-path: inset(-6px 100% -6px -6px); }
+:where(html[data-look="dial"]) .chart-wipe[data-on="true"] { clip-path: inset(-6px -6px -6px -6px); }
+:where(html[data-look="dial"]) .chart-readout {
+  position: absolute; top: 8px; left: 0; z-index: 3; width: 172px; padding: 8px; border: 1px solid rgb(var(--rule2-rgb));
+  border-radius: var(--r-2); background: rgb(var(--ground-rgb) / 0.9); box-shadow: var(--e-2); pointer-events: none; opacity: 0;
+}
+:where(html[data-look="dial"]) .chart-readout[data-show="true"] { opacity: 1; transition: opacity 140ms var(--ease-out); }
+:where(html[data-look="dial"]) .roll-quick .roll-strip { animation: none; }
+:where(html[data-look="dial"]) .dial-arc { stroke: var(--lit, rgb(var(--fg3-rgb))); }
+:where(html[data-look="dial"]) .dial-code { fill: var(--lit, rgb(var(--fg3-rgb))); }
+:where(html[data-look="dial"]) .dial-scale { paint-order: stroke; stroke: rgb(var(--panel-rgb)); stroke-width: 8px; stroke-linejoin: round; }
+:where(html[data-look="dial"]) .dial g.x-sec { transition: opacity var(--dur-fast) var(--ease-out); }
+:where(html[data-look="dial"]) .sec-row { grid-template-columns: minmax(0, 9.5rem) 2.4rem minmax(3rem, 1fr) 4.6rem; }
+:where(html[data-look="dial"]) .menu-layer { visibility: hidden; transition: visibility 0s linear 380ms; }
+:where(html[data-look="dial"]) .menu-layer[data-open="true"] { visibility: visible; transition-delay: 0s; }
+:where(html[data-look="dial"]) .news-item { grid-template-columns: 1.5rem minmax(0, 1fr); }
+:where(html[data-look="dial"]) .dial::before {
+  content: ""; position: absolute; inset: 20%; border: 1px dashed rgb(var(--rule2-rgb)); border-radius: 50%;
+  animation: sk-pulse 900ms var(--ease-in-out) 10 alternate both; transition: opacity 400ms var(--ease-out);
+}
+:where(html[data-look="dial"]) .dial[data-on="true"]::before { opacity: 0; animation: none; }
+:where(html[data-look="dial"]) .hm-readout { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 22px; margin-bottom: 8px; }
+:where(html[data-look="dial"]) .hm-key { display: inline-block; width: 26px; height: 10px; border-radius: 2px; border: 1px solid rgb(var(--rule2-rgb)); }
+:where(html[data-look="dial"]) .hm-key[data-dir="up"] { background: rgb(var(--fg-rgb) / 0.86); border-color: transparent; }
+:where(html[data-look="dial"]) .hm-key[data-dir="down"] { background: repeating-linear-gradient(135deg, rgb(var(--fg-rgb) / 0.5) 0 1px, transparent 1px 4px); border-color: rgb(var(--fg-rgb) / 0.5); }
+:where(html[data-look="dial"]) .ghost-bar { display: block; height: 12px; border-radius: 2px; border: 1px dashed rgb(var(--rule2-rgb)); background: repeating-linear-gradient(135deg, rgb(var(--fg-rgb) / 0.07) 0 1px, transparent 1px 5px); }
+:where(html[data-look="dial"]) .news-scroll { max-height: 30rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgb(var(--rule2-rgb)) transparent; }
+
+/* Quiet missing figures, monochrome sparklines, and the daily history block laid out as one control bar. */
+:where(html[data-look="dial"]) .stat-value[data-empty="true"] { font-size: 12px; font-weight: 500; letter-spacing: 0.02em; color: rgb(var(--fg4-rgb)); }
+:where(html[data-look="dial"]) .wall .stroke-rose-400, :where(html[data-look="dial"]) .wall .stroke-emerald-400 { stroke: rgb(var(--fg-rgb)); }
+:where(html[data-look="dial"]) .history-idle {
+  display: grid; place-content: center; justify-items: center; gap: 4px; min-height: 168px; padding: 16px; text-align: center;
+  border: 1px dashed rgb(var(--rule2-rgb)); border-radius: var(--r-2);
+  background-image: radial-gradient(rgb(var(--fg-rgb) / 0.09) 1px, transparent 1px); background-size: 14px 14px;
+}
+:where(html[data-look="dial"]) .history-idle-title { font-family: var(--font-num); font-stretch: 78%; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: rgb(var(--fg2-rgb)); }
+:where(html[data-look="dial"]) .history-idle-detail { max-width: 46ch; font-size: 12px; line-height: 17px; color: rgb(var(--fg3-rgb)); }
+@media (min-width: 1024px) {
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] > .dashboard-card-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(8rem, 13vw, 11rem); gap: 14px 12px; align-items: end; }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] > .dashboard-card-body > * { grid-column: 1 / -1; margin-top: 0; }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] > .dashboard-card-body > form { grid-column: 1; display: grid; grid-template-columns: minmax(0, 1fr) clamp(9rem, 14vw, 13rem); gap: 12px; align-items: end; }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] form > div:first-child { grid-template-columns: clamp(5rem, 10vw, 11rem) minmax(10rem, 1fr) minmax(5rem, 7rem) auto; }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] form > div:nth-child(2) { grid-template-columns: 1fr; }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] > .dashboard-card-body > form:has(#daily-history-period) { grid-template-columns: minmax(0, 1fr) clamp(14rem, 21vw, 19rem); }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] form > div:nth-child(2):has(#daily-history-period) { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] > .dashboard-card-body > form > * { margin-top: 0; }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] > .dashboard-card-body > form > p { grid-column: 1 / -1; }
+  :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] > .dashboard-card-body > form + div { grid-column: 2; grid-template-columns: minmax(0, 1fr); }
+}
+:where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; padding: 10px 12px; border: 1px solid rgb(var(--rule-rgb)); border-radius: var(--r-2); }
+@media (min-width: 768px) { :where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] dl { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+:where(html[data-look="dial"]) .wall [aria-labelledby="daily-price-history-title"] dd { font-size: 12px; line-height: 16px; margin-top: 2px; }
+:where(html[data-look="dial"]) .wall details > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid rgb(var(--rule2-rgb)); border-radius: var(--r-pill); font-size: 12px; transition: background-color var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out); }
+:where(html[data-look="dial"]) .wall details > summary::-webkit-details-marker { display: none; }
+:where(html[data-look="dial"]) .wall details > summary::before { content: "+"; font-family: var(--font-num); color: rgb(var(--fg3-rgb)); }
+:where(html[data-look="dial"]) .wall details[open] > summary::before { content: "\2212"; }
+:where(html[data-look="dial"]) .wall details > summary:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .wall details > summary:hover { background: rgb(var(--panel2-rgb)); } }
+
+/* Round two of looking: dial core that scales with the dial, readable hatched tiles, empty matrix slots, phone grids. */
+:where(html[data-look="dial"]) .dial { container-type: inline-size; }
+@container (max-width: 430px) {
+  :where(html[data-look="dial"]) .dial-core { width: 40%; gap: 1px; }
+  :where(html[data-look="dial"]) .dial-core .lbl { font-size: 8px; line-height: 11px; letter-spacing: 0.06em; }
+  :where(html[data-look="dial"]) .dial-core .fig-xl { font-size: 28px; line-height: 32px; }
+  :where(html[data-look="dial"]) .dial-core .fig-lg { font-size: 20px; line-height: 24px; }
+  :where(html[data-look="dial"]) .dial-core .num { font-size: 9px; line-height: 12px; }
+  :where(html[data-look="dial"]) .dial-core .lbl.mt-1 { margin-top: 1px; }
+}
+:where(html[data-look="dial"]) .hm-tiles { background-image: radial-gradient(rgb(var(--fg-rgb) / 0.11) 1px, transparent 1.5px); background-size: 8px 8px; border-radius: var(--r-1); }
+:where(html[data-look="dial"]) .hm-t { background-color: color-mix(in srgb, rgb(var(--fg-rgb)) calc(var(--a, 0.06) * 100%), rgb(var(--panel-rgb))); }
+:where(html[data-look="dial"]) .hm-t[data-dir="down"], :where(html[data-look="dial"]) .hm-t[data-dir="stale"] { background-color: rgb(var(--panel-rgb)); }
+:where(html[data-look="dial"]) .hm-t[data-dir="down"] .hm-sym, :where(html[data-look="dial"]) .hm-t[data-dir="down"] .hm-chg { align-self: flex-start; margin-left: -3px; padding: 0 3px; background: rgb(var(--panel-rgb)); }
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .hm-t:hover { background-color: color-mix(in srgb, rgb(var(--fg-rgb)) 30%, rgb(var(--panel-rgb))); } }
+@media (max-width: 639px) {
+  :where(html[data-look="dial"]) .hm-g { flex-basis: 100%; }
+  :where(html[data-look="dial"]) .hm-tiles { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); }
+  :where(html[data-look="dial"]) .sec-row { grid-template-columns: minmax(0, 7.4rem) 2.2rem minmax(3rem, 1fr) 4.4rem; gap: 8px; }
+}
+
+/* Fixes from the motion review. */
+:where(html[data-look="dial"]) .chart-wipe[data-on="true"] { transition: clip-path 1100ms cubic-bezier(0.65, 0, 0.35, 1) 160ms; }
+:where(html[data-look="dial"]) [data-settled="true"] .hm-t { transition: transform 160ms var(--ease-out), opacity 200ms var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out); transition-delay: 0ms; }
+@media (hover: hover) and (pointer: fine) { :where(html[data-look="dial"]) .dial:hover .dial-sweep { animation-play-state: paused; opacity: 0.3; transition: opacity 240ms var(--ease-out); } }
+
+/* Session masthead and shared instrument bed */
+:where(html[data-look="dial"]) .wall { background: #070808 radial-gradient(ellipse 82% 820px at 38% 250px,#151616 0%,#090a0a 67%,#070808 100%) top / 100% 1100px no-repeat; }
+:where(html[data-look="dial"]) .wall :is(select,input,button,textarea) { appearance: none; -webkit-appearance: none; }
+:where(html[data-look="dial"]) html:has(.wall) { scrollbar-color: #494c4b #090a0a; scrollbar-width: thin; }
+:where(html[data-look="dial"]) .hdr { background: #090a0af7; border-bottom: 1px solid #292b2a; -webkit-backdrop-filter: none; backdrop-filter: none; }
+:where(html[data-look="dial"]) .hdr-in { height: 48px; }
+:where(html[data-look="dial"]) .hdr[data-scrolled="true"] .hdr-in { height: 42px; }
+:where(html[data-look="dial"]) .command { display: grid; grid-template-columns: minmax(0,1fr) minmax(210px,24%); align-items: center; gap: 12px; margin: 6px 0 18px; }
+:where(html[data-look="dial"]) .session-kicker,:where(html[data-look="dial"]) .plot-notes b,:where(html[data-look="dial"]) .dial-key b,:where(html[data-look="dial"]) .quote-note b { font: 500 10px/1.5 var(--font-num); letter-spacing: .12em; text-transform: uppercase; }
+:where(html[data-look="dial"]) .session-kicker { display:flex; align-items:center; gap:12px; color:#d5d7d5; }
+:where(html[data-look="dial"]) .session-kicker h1 { display:inline-flex; gap:8px; align-items:center; }
+:where(html[data-look="dial"]) .session-kicker h1::before { content:""; width:6px; height:6px; background:currentColor; }
+:where(html[data-look="dial"]) .session-kicker time { padding-left:12px; border-left:1px solid #454846; color:#a6aaa7; }
+:where(html[data-look="dial"]) .session-headline { font-size:clamp(30px,3.4vw,52px); letter-spacing:-.045em; line-height:1.12; font-weight:570; font-stretch:102%; margin:6px 0 9px; }
+:where(html[data-look="dial"]) .honesty { display:flex; flex-wrap:wrap; gap:5px; }
+:where(html[data-look="dial"]) .honesty .pill { font-size:9px; }
+:where(html[data-look="dial"]) .search-box { display:flex; align-items:center; gap:4px; border:1px solid #454846; border-radius:5px; padding:3px; background:#111312; }
+:where(html[data-look="dial"]) .wall .search-box input { border:0; background:none; height:32px; min-height:32px; padding:0 8px; font:13px var(--font-ui); }
+:where(html[data-look="dial"]) .search-submit { background:#2a2d2b; border-radius:3px; min-height:30px; }
+:where(html[data-look="dial"]) .search-results { position:absolute; z-index:45; top:calc(100% + 4px); left:0; right:0; border:1px solid #484b49; padding:12px; border-radius:4px; background:#151716; }
+:where(html[data-look="dial"]) .command:focus-within { z-index:41; position:relative; }
+:where(html[data-look="dial"]) .panel { background:linear-gradient(145deg,#161817,#0e100f 66%); }
+:where(html[data-look="dial"]) .panel-head { min-height:44px; padding-inline:16px; }
+:where(html[data-look="dial"]) .panel-title,:where(html[data-look="dial"]) .plot-title { font-size:15px; font-weight:600; line-height:20px; letter-spacing:-.012em; }
+:where(html[data-look="dial"]) .panel-body { padding:13px 16px; }
+:where(html[data-look="dial"]) .instrument .dial-panel { background:radial-gradient(ellipse at 50% 44%, #262927 0%,#171918 38%,#101211 72%,#0d0f0e 100%); }
+:where(html[data-look="dial"]) .dial-panel .dial { max-width:482px; }
+:where(html[data-look="dial"]) .pulse-in { display:grid; gap:12px; }
+:where(html[data-look="dial"]) .idx-bank { border-block:1px solid #363937; background:#101211; }
+:where(html[data-look="dial"]) .idx { border:0; border-right:1px solid #323533; border-radius:0; padding:8px 11px; }
+:where(html[data-look="dial"]) .idx:last-child { border-right:0; }
+:where(html[data-look="dial"]) .idx[data-selected="true"] { background:linear-gradient(150deg,#262824,#191b19); box-shadow:inset 0 2px rgb(var(--signal-rgb)); }
+:where(html[data-look="dial"]) .idx-name { color:#b6bbb7; font:11px/14px var(--font-ui); }
+:where(html[data-look="dial"]) .idx-day { display:flex; align-items:baseline; gap:5px; margin-top:4px; }
+:where(html[data-look="dial"]) .idx-day .fig { font-size:clamp(17px,1.65vw,25px); line-height:1.25; }
+:where(html[data-look="dial"]) .idx-level { font-size:11px; color:#bec2bf; }
+:where(html[data-look="dial"]) .idx-period { display:flex; flex-wrap:wrap; gap:3px 8px; justify-content:space-between; padding-top:5px; margin-top:6px; border-top:1px solid #333633; font-size:11px; color:#bbc0bc; }
+:where(html[data-look="dial"]) .plot-notes { display:flex; flex-wrap:wrap; gap:2px 14px; padding-top:7px; border-top:1px solid #323533; }
+:where(html[data-look="dial"]) .plot-notes b,:where(html[data-look="dial"]) .quote-note b,:where(html[data-look="dial"]) .dial-key b { color:#c3c8c4; margin-right:6px; font-size:9px; }
+:where(html[data-look="dial"]) .dial-key { text-align:center; margin:6px 0 0; }
+@media(min-width:1024px){
+ :where(html[data-look="dial"]) .instrument { gap:0; border:1px solid #414441; border-radius:6px; background:#101211; }
+ :where(html[data-look="dial"]) .instrument > div { gap:0; }
+ :where(html[data-look="dial"]) .instrument .panel { border:0; box-shadow:none; border-radius:0; }
+ :where(html[data-look="dial"]) .instrument > div:first-child { border-right:1px solid #343735; }
+ :where(html[data-look="dial"]) .instrument .panel + .panel { border-top:1px solid #343735; }
+ :where(html[data-look="dial"]) .instrument .panel-head { background:#141615; }
+ :where(html[data-look="dial"]) .instrument .panel::before { opacity:.6; inset:0; }
+}
+@media(min-width:768px) and (max-width:1140px){ :where(html[data-look="dial"]) .idx { padding:7px; } :where(html[data-look="dial"]) .idx-key { gap:4px; } :where(html[data-look="dial"]) .idx .idx-name { font-size:10px; } :where(html[data-look="dial"]) .idx > div:first-child { flex-wrap:wrap; gap:0 4px; } }
+@media(max-width:767px){ :where(html[data-look="dial"]) .command { grid-template-columns:1fr; } }
+:where(html[data-look="dial"]) .dial-bed { position:relative; isolation:isolate; background-image: radial-gradient(#a6aaa518 .8px,transparent .9px); background-size:7px 7px; }
+:where(html[data-look="dial"]) .dial-bed::before { content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at center,transparent 36%,#111312 84%); }
+:where(html[data-look="dial"]) .dial-extremes { pointer-events:none; }
+:where(html[data-look="dial"]) .dial-extreme { position:absolute; pointer-events:auto; display:grid; gap:1px; width:max-content; max-width:24%; border-left:1px solid #4a504c; padding:0 0 0 7px; color:var(--lit,#d5d8d5); line-height:1.25; }
+:where(html[data-look="dial"]) .dial-extreme[data-slot="0"],:where(html[data-look="dial"]) .dial-extreme[data-slot="1"] { top:5px; }
+:where(html[data-look="dial"]) .dial-extreme[data-slot="2"],:where(html[data-look="dial"]) .dial-extreme[data-slot="3"] { bottom:5px; }
+:where(html[data-look="dial"]) .dial-extreme[data-slot="1"],:where(html[data-look="dial"]) .dial-extreme[data-slot="3"] { right:0; border-left:0; border-right:1px solid #4a504c; text-align:right; padding:0 7px 0 0; }
+:where(html[data-look="dial"]) .dial-extreme .lbl { font-size:9px; }
+:where(html[data-look="dial"]) .dial-extreme strong { font-size:13px; font-weight:570; }
+:where(html[data-look="dial"]) .dial-extreme .num { font-size:12px; }
+:where(html[data-look="dial"]) .dial-major { fill:none; stroke:#babeba; stroke-width:12; opacity:.46; }
+:where(html[data-look="dial"]) .wedge-hit { fill:none; stroke:transparent; stroke-width:38; cursor:crosshair; }
+:where(html[data-look="dial"]) .wedge-rule { stroke:#898f89; stroke-width:1; opacity:.3; }
+:where(html[data-look="dial"]) .dial-needle { fill:rgb(var(--signal-rgb)); stroke:rgb(var(--signal-rgb)); stroke-width:2.5; }
+:where(html[data-look="dial"]) .needle-halo { opacity:.14; }
+:where(html[data-look="dial"]) .dial-core .fig-xl { font-size:clamp(27px,8.2cqw,48px); }
+:where(html[data-look="dial"]) .dial-core .lbl { color:#b4b9b4; font-size:9px; }
+:where(html[data-look="dial"]) .dial-core .lbl:last-child { color:rgb(var(--signal-rgb)); }
+:where(html[data-look="dial"]) .dial-company { font-size:clamp(9px,2.6cqw,14px); line-height:1.1; text-wrap:balance; }
+:where(html[data-look="dial"]) .dial-key { display:flex; justify-content:center; gap:4px 14px; flex-wrap:wrap; padding:7px 0 0; border-top:1px solid #333733; }
+:where(html[data-look="dial"]) .dial-key i { display:inline-block; width:6px;height:8px; vertical-align:-1px; margin-right:3px; }
+:where(html[data-look="dial"]) .solid-key { background:#e4e8e4; }:where(html[data-look="dial"]) .hollow-key { border:1px solid #c1c5c2; }
+:where(html[data-look="dial"]) [data-lit] { --lit:rgb(var(--signal-rgb)); }
+:where(html[data-look="dial"]) .dial .spike,:where(html[data-look="dial"]) .dial .dial-arc,:where(html[data-look="dial"]) .dial .dial-code { transition-property:transform,opacity; }
+:where(html[data-look="dial"]) .dial .spk-base { stroke:#9a9e9b; }
+:where(html[data-look="dial"]) .sec-row[data-lit] { background:#21231f; }
+:where(html[data-look="dial"]) .br-dot[data-lit] { background:var(--lit); }
+:where(html[data-look="dial"]) .dial-code { fill:var(--lit,#acb2ac); font-size:19px; }
+:where(html[data-look="dial"]) .dial-scale { fill:#a6aca6; stroke:#171918; }
+:where(html[data-look="dial"]) .dial .spike-dn { fill:var(--lit,#91979233); stroke:var(--lit,#c1c6c1); }
+:where(html[data-look="dial"]) .dial-sweep { background:conic-gradient(transparent 0deg 312deg,#fff1 359.5deg,#fff6 359.8deg,transparent 360deg); }
+@media(min-width:1024px){
+ :where(html[data-look="dial"]) .instrument { grid-template-columns: minmax(0, .88fr) minmax(0,1.12fr); }
+ :where(html[data-look="dial"]) .instrument > div { display:contents; }
+ :where(html[data-look="dial"]) .instrument .dial-panel { grid-area:1/1; border-right:1px solid #353835; }
+ :where(html[data-look="dial"]) .instrument .pulse-panel { grid-area:1/2; }
+ :where(html[data-look="dial"]) .instrument .breadth-panel { grid-area:2/1; border-right:1px solid #353835; }
+ :where(html[data-look="dial"]) .instrument #sector-etf-heatmap { grid-area:2/2; }
+ :where(html[data-look="dial"]) .dial-panel .panel-body { padding:12px 14px 10px; }
+}
+@media(max-width:1100px){ :where(html[data-look="dial"]) .dial-extreme { max-width:23%; } :where(html[data-look="dial"]) .dial-extreme .lbl {font-size:8px;} :where(html[data-look="dial"]) .dial-extreme strong {font-size:11px;} }
+
+/* The opening clock starts at navigation. The readouts and hit targets are usable throughout. */
+:where(html[data-look="dial"]) .command.rv,:where(html[data-look="dial"]) .instrument .rv { opacity:1; transform:none; transition:none; }
+:where(html[data-look="dial"]) .instrument .panel-head { position:relative; }
+:where(html[data-look="dial"]) .instrument .panel-head::after { content:""; pointer-events:none; position:absolute; bottom:-1px; height:1px; left:0; right:0; background:linear-gradient(90deg,#757d77,#303431); transform-origin:left; }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .instrument .panel-head::after { animation:power-rule 580ms var(--ease-out) both; }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .instrument .panel::before { animation:power-brackets 600ms var(--ease-out) both; }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .instrument .panel-title,:where(html[data-look="dial"]) .wall[data-boot="opening"] .session-kicker { animation:power-type 520ms steps(16,end) 90ms backwards; }
+@keyframes power-rule { from { transform:scaleX(0); } }
+@keyframes power-brackets { from { clip-path: inset(0 49% 0 49%); opacity:0; } }
+@keyframes power-type { from { clip-path: inset(0 100% 0 0); } }
+@keyframes scribe { from { stroke-dashoffset:1; } to { stroke-dashoffset:0; } }
+@keyframes land { from { opacity:0; transform:translateY(-9px); } 70% { opacity:1; transform:translateY(1px); } to { opacity:1; transform:none; } }
+@keyframes lamp { 50% { opacity:.34; } }
+@keyframes scan-on { from { transform:rotate(0deg); opacity:0; } 12% { opacity:1; } to { transform:rotate(360deg); opacity:.22; } }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .dial[data-live="true"] .scribe-stroke,:where(html[data-look="dial"]) .wall[data-boot="opening"] .dial[data-live="true"] .dial-arc { stroke-dasharray:1 1; animation:scribe 1200ms cubic-bezier(.22,.55,.26,1) 110ms backwards; }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .dial[data-live="true"] .dial-arc { animation-duration:360ms; animation-delay:calc(270ms + var(--k)*88ms); }
+:where(html[data-look="dial"]) .dial .dial-ring { transform:none; transition:none; opacity:1; }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .spike { transition:transform 440ms var(--ease-out) var(--fire); }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .dial-needle,:where(html[data-look="dial"]) .wall[data-boot="opening"] .dial-core .lbl:last-child { animation:lamp-on 360ms ease-out 1760ms backwards; }
+@keyframes lamp-on { from {opacity:0;} 65% {opacity:1;} 77% {opacity:.64;} }
+:where(html[data-look="dial"]) .dial[data-live="true"] .needle-halo { animation:lamp 5s ease-in-out infinite alternate; }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .dial[data-live="true"] .dial-sweep { animation:scan-on 1620ms cubic-bezier(.32,.38,.34,.95) 110ms both; }
+:where(html[data-look="dial"]) .wall[data-boot="ready"] .instrument :is(.dial-ring,.spike,.dial-ticks,.dial-arc,.dial-code,.dial-scale,.spk-cap,.chart-wipe,.roll-strip,.br-dot,.sec-bar) { animation:none; transition-delay:0ms; }
+:where(html[data-look="dial"]) .wall[data-boot="ready"] .instrument :is(.spike,.dial-ticks,.dial-arc,.dial-code,.dial-scale,.spk-cap,.chart-wipe) { transition:none; }
+:where(html[data-look="dial"]) .wall[data-boot="ready"] .instrument .roll-strip { transition:transform 420ms var(--ease-out); }
+:where(html[data-look="dial"]) .wall[data-boot="ready"] .instrument .chart-wipe { clip-path:none; }
+:where(html[data-look="dial"]) .chart-wipe { position:relative; }
+:where(html[data-look="dial"]) .plot-ends { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+:where(html[data-look="dial"]) .plot-end { position:absolute; top:0;left:0; font:600 9px/14px var(--font-num); letter-spacing:.04em; background:#121413ee; padding:0 2px; }
+:where(html[data-look="dial"]) .plot-end i { position:absolute; left:35px; top:calc(5px + var(--offset)); width:5px; height:5px; border-radius:50%; background:currentColor; }
+:where(html[data-look="dial"]) .plot-end[data-active="true"] i::after { content:""; position:absolute; inset:-4px; border:1px solid currentColor; border-radius:50%; opacity:.24; animation:lamp 4s ease-in-out infinite; }
+:where(html[data-look="dial"]) .wall[data-boot="opening"] .plot-end i,:where(html[data-look="dial"]) .wall[data-boot="opening"] .plot-end { animation-name:lamp-on; animation-duration:320ms; animation-delay:1410ms; animation-fill-mode:backwards; }
+:where(html[data-look="dial"]) .rv[data-seen="true"] > .panel-head::after { transform:none; }
+:where(html[data-look="dial"]) .drawer { transition:transform 390ms var(--spring); }
+:where(html[data-look="dial"]) .wall :is(button,a,summary):active { opacity:.82; }
+@media(min-width:1024px) and (max-width:1140px){ :where(html[data-look="dial"]) .chart-box { height:205px; } :where(html[data-look="dial"]) .dial-key {gap:3px 9px;} }
+@media(prefers-reduced-motion:reduce){
+ :where(html[data-look="dial"]) html:has(.wall) { scroll-behavior:auto!important; }
+ :where(html[data-look="dial"]) .wall *, :where(html[data-look="dial"]) .wall *::before, :where(html[data-look="dial"]) .wall *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+ :where(html[data-look="dial"]) .wall :is(.rv,.swap-in,.hm-t:hover,.btn:active,.idx:active,.seg-btn:active) { transform:none; }
+ :where(html[data-look="dial"]) .wall .chart-wipe {clip-path:none;}
+ :where(html[data-look="dial"]) .wall .dial-sweep {display:none;}
+}
+:where(html[data-look="dial"]) .plot-ends { z-index:4; }
+:where(html[data-look="dial"]) .chart-readout { z-index:6; }
+
+/* Cached movers rank absolute change. The bar lengths share the local maximum. */
+:where(html[data-look="dial"]) .mover-line { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(40px,.7fr) 65px; gap:12px; align-items:center; padding:8px 0; border-bottom:1px solid #2c302d; }
+:where(html[data-look="dial"]) .mover-identity { display:grid; line-height:16px; }
+:where(html[data-look="dial"]) .mover-identity .num,:where(html[data-look="dial"]) .mover-line strong { font-size:13px; color:var(--lit,#e5e9e5); font-weight:600; }
+:where(html[data-look="dial"]) .mover-identity > span { color:#a8ada8; font-size:11px; overflow-wrap:anywhere; }
+:where(html[data-look="dial"]) .mover-line strong { text-align:right; }
+:where(html[data-look="dial"]) .mover-meter,:where(html[data-look="dial"]) .filing-row i { display:block; height:7px; background:#262925; position:relative; }
+:where(html[data-look="dial"]) .mover-meter::after,:where(html[data-look="dial"]) .filing-row i::after { content:""; position:absolute; inset:0 auto 0 0; width:calc(var(--value)*100%); background:var(--lit,#c7ccc7); }
+:where(html[data-look="dial"]) .mover-meter[data-loss="true"]::after { background:repeating-linear-gradient(135deg,var(--lit,#aeb4af) 0 1px,transparent 1px 4px); border:1px solid var(--lit,#7d837d); }
+:where(html[data-look="dial"]) .research-id[data-lit] .fig { color:var(--lit); }
+:where(html[data-look="dial"]) .research-stats { display:flex; flex-wrap:wrap; gap:6px; }
+:where(html[data-look="dial"]) .research-stats .stat { flex:1 1 110px; }
+:where(html[data-look="dial"]) .filing { display:grid; gap:8px; }
+:where(html[data-look="dial"]) .filing-row { display:grid; grid-template-columns:1fr auto; gap:3px; font-size:12px; }
+:where(html[data-look="dial"]) .filing-row i { grid-column:1 / -1; height:4px; }
+:where(html[data-look="dial"]) .filing-row:nth-of-type(2) i::after { background:#8e948e; }
+:where(html[data-look="dial"]) .research-history { border-block:1px solid #323632; padding:6px 0; background:repeating-linear-gradient(0deg,transparent 0 26px,#ffffff0b 26px 27px); }
+:where(html[data-look="dial"]) .research-history strong { color:#e0e3df; }
+:where(html[data-look="dial"]) .history-axis { display:flex; justify-content:space-between; font-size:10px; color:#a2a8a2; }
+:where(html[data-look="dial"]) .news-item { grid-template-columns:3.4rem minmax(0,1fr); gap:11px; }
+:where(html[data-look="dial"]) .news-clock { border-right:1px solid #464a46; font-size:11px; color:#bcc2bc; position:relative; }
+:where(html[data-look="dial"]) .news-clock::after { content:""; position:absolute; right:-2.5px; top:7px; width:4px;height:4px;background:#c4c9c4; }
+:where(html[data-look="dial"]) .history-idle { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:start; gap:4px 14px; min-height:0; padding:9px 0; text-align:left; border:0; border-top:1px solid #363a36; background:none; }
+:where(html[data-look="dial"]) .history-idle-detail { max-width:none; }
+:where(html[data-look="dial"]) .wall [aria-labelledby="watchlists-title"]:has(a[href="/login"]) { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+:where(html[data-look="dial"]) .wall [aria-labelledby="watchlists-title"]:has(a[href="/login"]) .dashboard-card-header { border:0; }
+:where(html[data-look="dial"]) .wall [aria-labelledby="watchlists-title"]:has(a[href="/login"]) .dashboard-card-body { padding-block:6px; }
+@keyframes bar-build { from { transform:scaleX(0); } }
+:where(html[data-look="dial"]) .rv[data-seen="true"] :is(.mover-meter,.filing-row i)::after { transform-origin:left; animation:bar-build 500ms var(--ease-out) backwards; }
+:where(html[data-look="dial"]) .dial::before { pointer-events:none; }
+:where(html[data-look="dial"]) .morph-ink { position:absolute; z-index:4; left:0; top:0; pointer-events:none; background-color:#0c0d0d; background-image:linear-gradient(#ffffff09 1px,transparent 1px),linear-gradient(90deg,#ffffff06 1px,transparent 1px); background-size:100% 25%,14.285% 100%; }
+:where(html[data-look="dial"]) .morph-ink:not([hidden]) + .plot-ends { opacity:0; }
+@media(min-width:1024px){
+ :where(html[data-look="dial"]) .wall .instrument { grid-template-columns:minmax(0, .94fr) minmax(0,1.06fr); }
+ :where(html[data-look="dial"]) .command { grid-template-columns:minmax(0,1fr) minmax(250px,24%); margin-bottom:13px; }
+ :where(html[data-look="dial"]) .breadth-layout { grid-template-columns:minmax(0, .68fr) minmax(0,1.32fr); align-items:center; }
+ :where(html[data-look="dial"]) .breadth-layout dl { grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:8px; row-gap:14px; }
+ :where(html[data-look="dial"]) .breadth-layout > p { grid-column:1 / -1; }
+ :where(html[data-look="dial"]) .wall .dial-key { margin:6px 0 0; }
+}
+:where(html[data-look="dial"]) .research-cursor { position:absolute; top:0;bottom:0; width:1px; background:rgb(var(--signal-rgb)); pointer-events:none; }
+:where(html[data-look="dial"]) .news-item[data-reading] .news-clock { color:rgb(var(--signal-rgb)); }
+:where(html[data-look="dial"]) .hm-g[data-lit] > div:first-child .lbl { color:var(--lit); }
+:where(html[data-look="dial"]) .dial-core .fig-xl { font-size:clamp(28px,9.25cqw,49px); }
+:where(html[data-look="dial"]) .dial .needle-layer { position:absolute; inset:0; pointer-events:none; }
+:where(html[data-look="dial"]) .wall[data-boot="ready"] .dial-scribed { mask:none; }
+:where(html[data-look="dial"]) .plot-ends[data-live="false"] .plot-end i::after { animation-play-state:paused; }
+:where(html[data-look="dial"]) .dial-extreme small { max-width:120px; font-size:10px; color:#aab0ab; }
+:where(html[data-look="dial"]) .wall .sec-bar { width:calc(50% * var(--f)); transform:scaleX(0); clip-path:none; transition:transform 620ms var(--ease-out) calc(var(--k) * 32ms); }
+:where(html[data-look="dial"]) .wall .sec-bar[data-dir="down"] {transform-origin:right;}
+:where(html[data-look="dial"]) .wall .sec-bar[data-dir="up"] {transform-origin:left;}
+:where(html[data-look="dial"]) .wall [data-on="true"] .sec-bar {transform:scaleX(1);clip-path:none;}
+@media(max-width:1100px){ :where(html[data-look="dial"]) .dial-extreme small { max-width:80px; } }
+@media(prefers-reduced-motion:no-preference){ :where(html[data-look="dial"]) .dial[data-live="true"] .selected-arc { animation:sector-light 4s ease-in-out infinite; } }
+@keyframes sector-light { 50% {opacity:.58;} }
+:where(html[data-look="dial"]) .dial .dial-face { position:absolute; inset:0; pointer-events:none; transform:translateZ(0); }
+:where(html[data-look="dial"]) .dial .dial-marks { position:relative; transform:translateZ(0); }
+:where(html[data-look="dial"]) .dial .needle-layer { transform:translateZ(0); }
+:where(html[data-look="dial"]) .dial-core { contain:layout style; }
+:where(html[data-look="dial"]) .news-clock::after { right:0; }
+:where(html[data-look="dial"]) .chart-readout {top:0;}
+@media(min-width:1024px) and (max-width:1140px) {
+ :where(html[data-look="dial"]) .wall .breadth-layout { grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); }
+ :where(html[data-look="dial"]) .breadth-layout .lbl {letter-spacing:.045em;font-size:9px;}
+}
+:where(html[data-look="dial"]) .hm-g .hm-t:not([data-lit]) { --lit:transparent; }
+:where(html[data-look="dial"]) .hm-t[data-lit] { outline:1px solid rgb(var(--signal-rgb)); outline-offset:-1px; }
+:where(html[data-look="dial"]) .tbl tr[data-lit] td:first-child,:where(html[data-look="dial"]) .sec-tile .pill[data-lit] { color:var(--lit); }
+@media(prefers-reduced-motion:reduce){ :where(html[data-look="dial"]) .hdr[data-scrolled="true"] .hdr-in {height:48px;} }
+
+/* Keep the matrix and indicators cheap to repaint while a quote is being inspected. */
+:where(html[data-look="dial"]) .hm-tiles { contain: layout style; }
+:where(html[data-look="dial"]) .br-dot { transition-property: opacity, transform; }
+:where(html[data-look="dial"]) [data-settled="true"] .hm-t { transition-property: transform, opacity; }
+:where(html[data-look="dial"]) .dial { touch-action: manipulation; }
+@media (max-width: 767px) {
+  :where(html[data-look="dial"]) .hm-g { content-visibility: auto; contain-intrinsic-block-size: auto 110px; }
+  :where(html[data-look="dial"]) .hm .hm-t { opacity: 1; transform: none; transition: none; }
+  :where(html[data-look="dial"]) .hm[data-on="true"] .hm-g { animation: matrix-sector-in 360ms var(--ease-out) backwards; }
+}
+@media (min-width: 960px) {
+  /* Keep the wide cache settled so entering a section doesn't animate every stock. */
+  :where(html[data-look="dial"]) .br-dot { opacity: 1; transform: none; transition: none; }
+  :where(html[data-look="dial"]) .hm-t {
+    opacity: 1;
+    transform: none;
+    transition: transform 160ms var(--ease-out), opacity 200ms var(--ease-out);
+  }
+}
+@keyframes matrix-sector-in { from { opacity: 0; transform: translateY(5px); } }
+
+:where(html[data-look="dial"]) .dial-core { transform: translate3d(-50%, -50%, 0); }
+:where(html[data-look="dial"]) .dial-selection { fill: rgb(var(--signal-rgb)); }
+:where(html[data-look="dial"]) .dial-selection .dial-code { fill: currentColor; color: rgb(var(--signal-rgb)); }
+:where(html[data-look="dial"]) .selected-arc { stroke: rgb(var(--signal-rgb)); stroke-width: 4; fill: none; }
+:where(html[data-look="dial"]) .wall[data-interrupted] .instrument :is(.spike,.br-dot,.sec-bar,.roll-strip,.dial-sweep) { transition: none; }
+
+/* The engraved face is one static layer. Only the scan rotates. */
+:where(html[data-look="dial"]) .dial-input { position:absolute; inset:0; pointer-events:none; }
+:where(html[data-look="dial"]) .dial-input circle { pointer-events:stroke; cursor:crosshair; touch-action:none; }
+:where(html[data-look="dial"]) .dial .rim-ticks { fill:none; stroke:#aeb3a9; stroke-width:10; stroke-dasharray:.24 .76; }
+:where(html[data-look="dial"]) .rim-name,:where(html[data-look="dial"]) .rim-mover text,:where(html[data-look="dial"]) .face-scale { font-family:var(--font-num); fill:#e4e7df; font-weight:540; }
+:where(html[data-look="dial"]) .rim-name { font-size:23px; letter-spacing:.065em; }
+:where(html[data-look="dial"]) .rim-mover text { font-size:22px; paint-order:stroke; stroke:#202420; stroke-width:6px; stroke-linejoin:round; }
+:where(html[data-look="dial"]) .face-scale { font-size:19px; fill:#b3b9af; }
+:where(html[data-look="dial"]) .core-counts { display:flex; gap:10px; align-items:center; border-top:1px solid #41463e; margin-top:5px; padding-top:5px; font-size:11px; }
+:where(html[data-look="dial"]) .core-counts > span { display:inline-flex; align-items:center; gap:3px; }
+:where(html[data-look="dial"]) .dial-core { width:37%; }
+:where(html[data-look="dial"]) .dial-core .fig-xl { font-size:clamp(30px,10.4cqw,52px); line-height:1.05; }
+:where(html[data-look="dial"]) .dial-sweep { inset:0; background:conic-gradient(transparent 0deg 320deg,rgb(var(--signal-rgb) / .12) 358deg,rgb(var(--signal-rgb) / .6) 359.7deg,transparent 360deg); mask:radial-gradient(circle closest-side, transparent 43%,#000 43.4%,#000 85.8%,transparent 86%); }
+:where(html[data-look="dial"]) .hollow-key { background:repeating-linear-gradient(135deg,#ced3c9 0 1px,transparent 1px 3px); border:0; }
+:where(html[data-look="dial"]) .pointer-arm {
+  position:absolute; top:6.4%; left:48.6%; width:2.8%; height:43.6%;
+  transform-origin:50% 100%; pointer-events:none; contain:layout paint;
+}
+
+/* Reveal the chart with a moving cover so WebKit can keep the plotted canvas cached. */
+:where(html[data-look="dial"]) .wall[data-boot=opening] .chart-wipe,
+:where(html[data-look="dial"]) .wall[data-boot=opening] .chart-wipe[data-on=true] { clip-path:none; transition:none; }
+:where(html[data-look="dial"]) .wall[data-boot=opening] .chart-wipe::after {
+  content:""; position:absolute; inset:0; z-index:6; pointer-events:none;
+  background:#0c0d0d; transform:scaleX(1); transform-origin:right;
+}
+:where(html[data-look="dial"]) .wall[data-boot=opening] .chart-wipe[data-on=true]::after {
+  animation:chart-cover 1100ms cubic-bezier(.65,0,.35,1) 160ms both;
+}
+@keyframes chart-cover { to { transform:scaleX(0); } }
+:where(html[data-look="dial"]) .dial:has(.needle-layer) .dial-sweep { animation-play-state:paused; opacity:.3; }
+:where(html[data-look="dial"]) .dial .pointer-arm { will-change:transform; }
+:where(html[data-look="dial"]) .dial-core { contain:layout style paint; }

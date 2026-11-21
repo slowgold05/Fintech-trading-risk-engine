@@ -12,7 +12,12 @@ export interface UserResponse {
   id: number;
   email: string;
   role: "trader" | "analyst" | "compliance_officer" | "admin" | "auditor";
+  is_demo?: boolean;
+  display_name?: string | null;
+  demo_seed_mode?: DemoSeedMode | null;
 }
+
+export type DemoSeedMode = "historical" | "cached_quotes" | "cash_only";
 
 export interface ControlStatusResponse {
   id: string;
@@ -171,6 +176,14 @@ export interface TradeResponse {
   realized_pnl: number;
   realized_pnl_pct: number;
   executed_at: string;
+  demo_seed?: boolean;
+  seed_price?: {
+    provider: string;
+    adjustment: "raw" | "split_adjusted" | "legacy" | "cached_quote";
+    quote_at: string | null;
+  };
+  simulated_quote_date?: string;
+  simulated_quote_source?: string | null;
 }
 
 export interface TradesResponse {
@@ -201,6 +214,9 @@ export interface OrderResponse {
   status: "open" | "filled" | "canceled";
   created_at: string;
   trade_ids?: number[];
+  simulated_quote_date?: string;
+  simulated_quote_source?: string | null;
+  remainder_reason?: string;
 }
 
 export interface CreateOrderPayload {
@@ -209,6 +225,7 @@ export interface CreateOrderPayload {
   quantity: number | string;
   order_type: "limit" | "market";
   limit_price?: number | string;
+  expected_quote_observed_at?: string;
 }
 
 export type ValuationStatus = "complete" | "incomplete";
@@ -250,6 +267,8 @@ export interface PortfolioResponse {
   user: {
     id: number;
     email: string;
+    is_demo?: boolean;
+    demo_seed_mode?: DemoSeedMode;
   };
   valuation_status: ValuationStatus;
   snapshot_read_at: string;
@@ -332,6 +351,7 @@ export interface RiskContribution {
 }
 
 export interface RiskMetricsResponse {
+  split_adjusted_history_sources?: Record<string, string>;
   user: { id: number; email: string };
   range: "1y" | "2y";
   requested_start: string;
@@ -404,7 +424,9 @@ export interface MarketTrendResponse {
   value: number;
   change: number;
   change_percent: number;
-  price_basis?: "end_of_day_previous_close" | null;
+  source?: string;
+  price_basis?: "end_of_day_previous_close" | "end_of_day_open_to_close" | null;
+  adjustment_type?: "raw" | "split_adjusted";
 }
 
 export interface MarketSectorResponse {
@@ -413,7 +435,9 @@ export interface MarketSectorResponse {
   change_percent: number;
   weight: "large" | "medium" | "small";
   leaders: string[];
-  price_basis?: "end_of_day_previous_close" | null;
+  source?: string;
+  price_basis?: "end_of_day_previous_close" | "end_of_day_open_to_close" | null;
+  adjustment_type?: "raw" | "split_adjusted";
 }
 
 export interface MarketOverviewResponse {
@@ -463,7 +487,8 @@ export interface MarketHeatmapItemResponse {
   age_seconds: number | null;
   source: string;
   as_of: string | null;
-  price_basis?: "end_of_day_previous_close" | null;
+  price_basis?: "end_of_day_previous_close" | "end_of_day_open_to_close" | null;
+  adjustment_type?: "raw" | "split_adjusted";
 }
 
 export interface MarketHeatmapResponse {
@@ -484,7 +509,9 @@ export interface MarketMoverResponse {
 }
 
 export interface MarketTrendingResponse {
-  as_of: string;
+  as_of: string | null;
+  source?: "featured_universe_cached_quotes";
+  session_date?: string | null;
   top_gainers: MarketMoverResponse[];
   top_losers: MarketMoverResponse[];
   most_active: MarketMoverResponse[];
@@ -505,6 +532,7 @@ export interface SymbolQuoteResponse {
   volume: number | null;
   source: string | null;
   as_of: string | null;
+  session_date: string | null;
 }
 
 export interface MarketResearchResponse {
@@ -521,6 +549,8 @@ export interface MarketResearchResponse {
   pe_basis?: string | null;
   price_basis?: string | null;
   price_as_of?: string | null;
+  price_source?: string;
+  adjustment_type?: "raw" | "split_adjusted";
   valuation_notice?: string | null;
   profit_margin?: number | null;
   profit_margin_period?: {

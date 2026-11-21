@@ -13,10 +13,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_exp_minutes: int = 30
     refresh_token_exp_days: int = 30
+    refresh_cookie_name: str = Field(default="refresh_token", pattern=r"^[A-Za-z0-9_-]+$")
     refresh_cookie_secure: bool = False
     enable_hsts: bool = False
     enable_api_docs: bool = True
     rate_limit_enabled: bool = True
+    demo_daily_limit: int = Field(default=200, ge=0, le=1000)
     mfa_required: bool = False
     impossible_travel_minutes: int = Field(default=60, ge=1, le=1440)
     login_geo_prefixes: str = ""
@@ -38,6 +40,8 @@ class Settings(BaseSettings):
     twelve_data_api_key: str = ""
     kronos_checkpoint: str = ""
     trading_halted: bool = False
+    simulated_liquidity_enabled: bool = True
+    simulated_liquidity_max_shares: int = Field(default=100, ge=1, le=1_000_000)
     scheduled_jobs_enabled: bool = False
     scheduled_job_interval_hours: int = Field(default=24, ge=1, le=168)
     scheduled_market_hot_limit: int = Field(default=200, ge=1, le=1000)

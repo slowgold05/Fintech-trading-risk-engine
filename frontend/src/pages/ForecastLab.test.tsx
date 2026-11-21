@@ -37,7 +37,10 @@ vi.mock("../api/forecasts", () => ({
 
 vi.mock("../api/history", () => ({
   fetchDailyHistory: api.fetchDailyHistory,
+  fetchCachedSeries: async () => ({ canonical_history: { series: [{ provider: "alpaca", adjustment_type: "split_adjusted" }] } }),
 }));
+
+vi.mock("../api/auth", () => ({ fetchMe: async () => ({ id: 41 }) }));
 
 const clients: QueryClient[] = [];
 
@@ -200,7 +203,7 @@ describe("Forecast lab", () => {
     api.fetchDailyHistory.mockReset();
     api.listForecastJobs.mockResolvedValue({ jobs: [] });
     api.listForecastResults.mockResolvedValue({ results: [] });
-    api.listForecastModels.mockResolvedValue({ models: [] });
+    api.listForecastModels.mockResolvedValue({ models: [forecastModel()] });
     api.listForecastEvaluations.mockResolvedValue({ evaluations: [] });
     api.fetchDailyHistory.mockResolvedValue(historyResponse([]));
   });
@@ -230,6 +233,7 @@ describe("Forecast lab", () => {
     renderPage();
 
     expect(await screen.findByText("No forecast jobs yet.")).toBeInTheDocument();
+    await screen.findByRole("option", { name: "alpaca" });
     fillForecastForm("AAPL");
     fireEvent.click(screen.getByRole("button", { name: "Queue job" }));
 
@@ -244,7 +248,7 @@ describe("Forecast lab", () => {
       });
     });
     expect(await screen.findByText("queued")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Forecast job queued for AAPL.");
+    expect(screen.getByText("Forecast job queued for AAPL.")).toHaveAttribute("role", "status");
     expect(screen.getByLabelText("Symbol")).toHaveValue("");
     expect(screen.getByLabelText("Lookback")).toHaveValue(null);
   });
@@ -253,6 +257,7 @@ describe("Forecast lab", () => {
     api.createForecastJob.mockRejectedValue(httpError("Unknown or inactive stock symbol"));
     renderPage();
 
+    await screen.findByRole("option", { name: "alpaca" });
     fillForecastForm("ZZZZ");
     fireEvent.click(await screen.findByRole("button", { name: "Queue job" }));
 
@@ -374,9 +379,20 @@ describe("Forecast lab", () => {
 
     expect(await screen.findByText("NeoQuasar/Kronos-small")).toBeInTheDocument();
     expect(screen.getByText("enabled")).toBeInTheDocument();
-    expect(screen.getByText("Max lookback 512")).toBeInTheDocument();
-    expect(screen.getByText("Max horizon 24")).toBeInTheDocument();
-    expect(screen.getByText("Max sample count 5")).toBeInTheDocument();
+    expect(screen.getByText("Max lookback")).toHaveTextContent("Max lookback 512");
+    expect(screen.getByText("Max horizon")).toHaveTextContent("Max horizon 24");
+    expect(screen.getByText("Max sample count")).toHaveTextContent("Max sample count 5");
+  });
+
+  it("keeps new runs disabled while existing work remains readable", async () => {
+    api.listForecastModels.mockResolvedValue({ models: [forecastModel({ enabled: false })] });
+    api.listForecastJobs.mockResolvedValue({ jobs: [job({ id: 7, symbol: "AAPL", status: "completed" })] });
+    renderPage();
+    expect(await screen.findByText("New runs unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Queue job" })).toBeDisabled();
+    expect(screen.getByLabelText("Lookback")).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "View forecast" })).toBeEnabled();
+    expect(api.createForecastJob).not.toHaveBeenCalled();
   });
 
   it("test_evaluations_card_shows_the_empty_state_when_none_exist", async () => {

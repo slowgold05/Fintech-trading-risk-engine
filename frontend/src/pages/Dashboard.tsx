@@ -1,32 +1,31 @@
+import { CloseInsights } from "../night/features/portfolio-review/CloseInsights";
 import { useRef } from "react";
+import { fetchMe } from "../api/auth";
+import { keys } from "../night/api";
+import { Button, Page, RestInstrument, Stat, State } from "../night/inner";
+import { ClosingSessions } from "../features/dashboard/ClosingSessions";
+import { ActivityBrief } from "../features/dashboard/ActivityBrief";
+import type { UserResponse } from "../types/schemas";
+import "../features/dashboard/today.css";
+import { DemoGuide } from "../night/features/account/DemoGuide";
+import { useGuide } from "../night/features/account/guideState";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
-import {
-  ShieldCheck,
-  TrendDown,
-  TrendUp,
-  Wallet,
-  type Icon,
-} from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { fetchMarketOverview } from "../api/market";
 import { fetchOrders } from "../api/orders";
 import { fetchPortfolio } from "../api/portfolio";
 import { fetchRisk } from "../api/risk";
-import { createTrade, fetchTrades } from "../api/trades";
+import { fetchTrades } from "../api/trades";
 import {
   DashboardCard,
   EmptyState,
-  IconBadge,
   PnlValue,
   PositionsTable,
-  QuickTradePanel,
   RecentOrdersTable,
   RecentTradesTable,
   RiskScoreCard,
   SkeletonBlock,
 } from "../features/dashboard/components";
-import type { IconBadgeTone } from "../features/dashboard/components/IconBadge";
 import {
   getTotalPnl,
   getUnrealizedPnlPercent,
@@ -38,60 +37,43 @@ import {
   mapPortfolioPositions,
   mapRecentTrades,
 } from "../features/dashboard/adapters";
-import type { QuickTradeFormValues } from "../features/dashboard/types";
-import { useToast } from "../context/useToast";
 import {
   formatCurrency,
   formatSignedPercent,
   formatUtcDateTime,
 } from "../utils/format";
-import { getRiskTone } from "../utils/riskTone";
-
-const riskBadgeTone = {
-  Low: "emerald",
-  Medium: "amber",
-  High: "rose",
-} as const satisfies Record<ReturnType<typeof getRiskTone>["level"], IconBadgeTone>;
-
-function assessmentTone(score: number | null): IconBadgeTone {
-  if (score == null) {
-    return "slate";
-  }
-  return riskBadgeTone[getRiskTone(score).level];
-}
-
-function pricedMove(value: number | null): { Icon: Icon; tone: IconBadgeTone } {
-  if (value == null) {
-    return { Icon: TrendUp, tone: "slate" };
-  }
-  if (value < 0) {
-    return { Icon: TrendDown, tone: "rose" };
-  }
-  return { Icon: TrendUp, tone: "emerald" };
-}
-
 export function Dashboard() {
-  const pendingTrade = useRef<{ payload: string; key: string } | null>(null);
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
+  const identity = useQuery({queryKey: keys.me, queryFn: fetchMe, retry: false});
+  if (identity.isPending) return <RestInstrument label="Closing sessions" status={{kind:"loading",title:"Loading account…"}} />;
+  if (identity.isError || !identity.data) return <RestInstrument label="Closing sessions" status={{kind:"error",title:"Account unavailable",action:<Button onClick={() => void identity.refetch()}>Retry account</Button>}} />;
+  return <Today key={identity.data.id} identity={identity.data} />;
+}
 
+function Today({ identity }: { identity: UserResponse }) {
+  const entry = useRef<HTMLAnchorElement>(null);
+  const guide = useGuide(identity.id);
+  const demo = import.meta.env.VITE_DEMO_ENABLED !== "false" && identity.is_demo && identity.role === "trader";
   const portfolioQuery = useQuery({
-    queryKey: ["portfolio"],
+    queryKey: keys.account(identity.id, "portfolio"),
+    retry: false,
     queryFn: fetchPortfolio,
   });
 
   const tradesQuery = useQuery({
-    queryKey: ["trades"],
+    queryKey: keys.account(identity.id, "trades"),
+    retry: false,
     queryFn: fetchTrades,
   });
 
   const riskQuery = useQuery({
-    queryKey: ["risk"],
+    queryKey: keys.account(identity.id, "risk"),
+    retry: false,
     queryFn: fetchRisk,
   });
 
   const ordersQuery = useQuery({
-    queryKey: ["orders"],
+    queryKey: keys.account(identity.id, "orders"),
+    retry: false,
     queryFn: fetchOrders,
   });
 
@@ -101,29 +83,6 @@ export function Dashboard() {
     queryFn: fetchMarketOverview,
     refetchInterval: 300000,
     retry: false,
-  });
-
-  const tradeMutation = useMutation({
-    mutationFn: createTrade,
-    onSuccess: async (result) => {
-      pendingTrade.current = null;
-      showToast(
-        "success",
-        `Trade submitted. New risk score: ${result.risk_score}.`,
-      );
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["trades"] }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
-        queryClient.invalidateQueries({ queryKey: ["risk"] }),
-      ]);
-    },
-    onError: (error) => {
-      const detail =
-        isAxiosError(error) && typeof error.response?.data?.detail === "string"
-          ? error.response.data.detail
-          : "Trade submission failed.";
-      showToast("error", detail);
-    },
   });
 
   const portfolio = portfolioQuery.data;
@@ -147,61 +106,80 @@ export function Dashboard() {
   const isPortfolioLoading = portfolioQuery.isLoading;
   const isTradesLoading = tradesQuery.isLoading;
   const isRiskLoading = riskQuery.isLoading;
-  const totalPnlMove = pricedMove(totalPnl);
-  const unrealizedMove = pricedMove(unrealizedPnlPercent);
   const hasDashboardError =
     portfolioQuery.isError || tradesQuery.isError || riskQuery.isError;
 
-  function handleQuickTradeSubmit(values: QuickTradeFormValues) {
-    if (!values.symbol || values.quantity <= 0) {
-      showToast("error", "Enter a symbol and quantity greater than zero.");
-      return;
-    }
-
-    const payload = {
-      symbol: values.symbol,
-      asset_type: values.assetType,
-      side: values.side,
-      quantity: values.quantity,
-    };
-    const fingerprint = JSON.stringify(payload);
-    if (pendingTrade.current?.payload !== fingerprint) {
-      pendingTrade.current = { payload: fingerprint, key: crypto.randomUUID() };
-    }
-    tradeMutation.mutate({ ...payload, idempotencyKey: pendingTrade.current.key });
-  }
-
   return (
-    <div className="space-y-6">
-      {/* Page header */}
-      <div className="border-b border-slate-800/60 pb-6">
-        <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-              Trading &amp; Risk Overview
-            </h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Portfolio value, recent executions, open positions, and order entry in one view.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {hasDashboardError ? (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-rose-400/30 bg-rose-950/40 px-2.5 py-1 text-xs font-medium text-rose-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
-                Degraded
-              </span>
+    <Page className="today" title="Today" description="Closing values, recent activity and current holdings."
+      actions={identity.role === "trader" && portfolio && !(demo && guide === "active") && <Link ref={entry} className="nk-button" data-variant="primary" data-testid="order-open"
+        to="/trades?ticket=1">Open order preview</Link>}>
+      <div className="today-band">
+        <Stat label="Total P&L" data-testid="today-total-pnl" value={isPortfolioLoading ? "Loading" : totalPnl == null ? null : <PnlValue value={totalPnl} />} />
+        <Stat label="Unrealized P&L %" value={isPortfolioLoading ? "Loading" : unrealizedPnlPercent == null ? null : formatSignedPercent(unrealizedPnlPercent)} />
+        <Stat label="Cash" value={isPortfolioLoading ? "Loading" : portfolio ? formatCurrency(cashBalance, false) : null} />
+        <Stat label="Latest assessment" value={isRiskLoading ? "Loading" : riskFailed ? null : riskLabel ?? "No assessments"} source={riskScore == null ? "--" : String(riskScore)} />
+      </div>
+      <div className="today-brief">
+        <ClosingSessions owner={identity.id} />
+        <div className="today-rail">
+          <DashboardCard title="Portfolio Value">
+            {isPortfolioLoading ? (
+              <div className="space-y-4">
+                <SkeletonBlock className="h-10 w-56" />
+                <SkeletonBlock className="h-28" />
+              </div>
+            ) : portfolioValue == null ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <div className="font-mono text-4xl font-semibold text-slate-400">Unavailable</div>
+                  <p className="mt-2 text-sm text-slate-300">
+                    {valuationIncomplete ? "Valuation incomplete" : "Portfolio valuation could not be loaded."}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Valuation read{" "}
+                    <span className="font-mono text-slate-300">{valuationRead}</span>
+                  </p>
+                </div>
+                {portfolio ? (
+                  <div className="text-right">
+                    <div className="text-xs text-slate-400">Buying power</div>
+                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
+                  </div>
+                ) : null}
+              </div>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/20 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-400">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping-slow absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                </span>
-                Cached prices
-              </span>
+              <>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="font-mono text-4xl font-semibold text-slate-50">
+                    {formatCurrency(portfolioValue, false)}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-400">Buying power</div>
+                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-slate-400">
+                  Valuation read{" "}
+                  <span className="font-mono text-slate-300">{valuationRead}</span>
+                </p>
+              </>
             )}
-          </div>
+          </DashboardCard>
+          <ActivityBrief loadingFills={tradesQuery.isPending} loadingOrders={ordersQuery.isPending} fills={tradesQuery.isSuccess ? trades?.trades : undefined} orders={ordersQuery.isSuccess ? ordersQuery.data?.orders : undefined} />
+          <CloseInsights owner={identity.id} surface="today" />
         </div>
       </div>
+      {demo && portfolio && <DemoGuide owner={identity.id} state={guide} onDismiss={() => requestAnimationFrame(() => entry.current?.focus())} orders={ordersQuery.isSuccess ? ordersQuery.data.orders : undefined} />}
+      {portfolio?.user?.is_demo && (
+        <p className="rounded-xl border border-emerald-400/25 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
+          <strong>Demo account.</strong>{" "}
+          {portfolio.user.demo_seed_mode === "cached_quotes"
+            ? "The demo was seeded from stored quotes because daily history was unavailable."
+            : portfolio.user.demo_seed_mode === "cash_only"
+              ? "The account starts with paper cash because seed prices were unavailable."
+              : "The simulated trading history uses stored daily closing prices."}
+        </p>
+      )}
 
       {hasDashboardError && (
         <p className="rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
@@ -249,134 +227,8 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div
-          className={[
-            "metric-tile border-l-2",
-            riskScore == null ? "border-slate-700/80" : getRiskTone(riskScore).metric,
-          ].join(" ")}
-        >
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={ShieldCheck} tone={assessmentTone(riskScore)} />
-            Latest assessment
-          </div>
-          <div className="mt-2 flex items-baseline justify-between gap-2">
-            <span className="font-mono text-base font-semibold">
-              {isRiskLoading ? (
-                <span className="text-slate-500">—</span>
-              ) : riskFailed ? (
-                <span className="text-slate-400">Unavailable</span>
-              ) : riskLabel == null ? (
-                <span className="text-slate-400">No assessments</span>
-              ) : (
-                riskLabel
-              )}
-            </span>
-            <span className="font-mono text-xs text-slate-500">
-              {isRiskLoading || riskScore == null ? "--" : riskScore}
-            </span>
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={totalPnlMove.Icon} tone={totalPnlMove.tone} />
-            Total P&amp;L
-          </div>
-          <div className="mt-2 text-base font-semibold">
-            {isPortfolioLoading
-              ? <span className="font-mono text-slate-500">—</span>
-              : totalPnl == null
-                ? <span className="text-slate-400">Unavailable</span>
-                : <PnlValue value={totalPnl} />}
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={unrealizedMove.Icon} tone={unrealizedMove.tone} />
-            Unrealized P&amp;L %
-          </div>
-          <div className={[
-            "mt-2 font-mono text-base font-semibold",
-            unrealizedPnlPercent == null ? "text-slate-400" : unrealizedPnlPercent >= 0 ? "text-emerald-300" : "text-rose-300",
-          ].join(" ")}>
-            {isPortfolioLoading
-              ? <span className="text-slate-500">—</span>
-              : unrealizedPnlPercent == null
-                ? "Unavailable"
-                : formatSignedPercent(unrealizedPnlPercent)}
-          </div>
-        </div>
-
-        <div className="metric-tile">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <IconBadge Icon={Wallet} tone="slate" />
-            Cash
-          </div>
-          <div className="mt-2 font-mono text-base font-semibold text-slate-200">
-            {isPortfolioLoading
-              ? <span className="text-slate-500">—</span>
-              : portfolio == null
-                ? "Unavailable"
-                : formatCurrency(cashBalance, false)}
-          </div>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.75fr)]">
         <div className="min-w-0 space-y-5">
-          <DashboardCard title="Portfolio Value">
-            {isPortfolioLoading ? (
-              <div className="space-y-4">
-                <SkeletonBlock className="h-10 w-56" />
-                <SkeletonBlock className="h-28" />
-              </div>
-            ) : portfolioValue == null ? (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="font-mono text-4xl font-semibold text-slate-400">Unavailable</div>
-                  <p className="mt-2 text-sm text-slate-300">
-                    {valuationIncomplete ? "Valuation incomplete" : "Portfolio valuation could not be loaded."}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Valuation read{" "}
-                    <span className="font-mono text-slate-300">{valuationRead}</span>
-                  </p>
-                </div>
-                {portfolio ? (
-                  <div className="text-right">
-                    <div className="text-xs text-slate-400">Buying power</div>
-                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="font-mono text-4xl font-semibold text-slate-50">
-                    {formatCurrency(portfolioValue, false)}
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-slate-400">Buying power</div>
-                    <div className="font-mono text-sm text-slate-100">{formatCurrency(buyingPower, false)}</div>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-slate-400">
-                  Valuation read{" "}
-                  <span className="font-mono text-slate-300">{valuationRead}</span>
-                </p>
-                <div className="mt-6 border-t border-slate-800 pt-5">
-                  <EmptyState
-                    message="Performance history unavailable"
-                    detail="Your current account value is shown above. A performance chart needs recorded account values over time."
-                  />
-                </div>
-              </>
-            )}
-          </DashboardCard>
-
           <DashboardCard title="Recent Trades">
             <RecentTradesTable
               isError={tradesQuery.isError}
@@ -448,24 +300,15 @@ export function Dashboard() {
             </DashboardCard>
           )}
           <DashboardCard title="Positions">
-            <PositionsTable
+            <p className="mb-3">Concentration is the share of account value held in one security. Larger weights make that security’s price changes matter more.</p>
+            {portfolioQuery.isError ? <State kind="error" title="Positions could not be loaded" /> : <PositionsTable
               isLoading={isPortfolioLoading}
               positions={positions}
-            />
+            />}
           </DashboardCard>
-          {portfolio ? (
-            <QuickTradePanel
-              buyingPower={buyingPower}
-              isSubmitting={tradeMutation.isPending}
-              onSubmit={handleQuickTradeSubmit}
-            />
-          ) : (
-            <DashboardCard title="Quick Trade">
-              <EmptyState message="Account data unavailable" detail="Order entry will appear when your account data loads." />
-            </DashboardCard>
-          )}
+          {portfolioQuery.isError && <State kind="error" title="Account data unavailable" action={<Button onClick={() => void portfolioQuery.refetch()}>Retry portfolio</Button>} />}
         </div>
       </div>
-    </div>
+    </Page>
   );
 }

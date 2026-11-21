@@ -1,0 +1,53 @@
+.market-instrument-page { min-width:0; color:var(--ink); }
+.market-instrument-page .nk-page-head { align-items:center; gap:10px 20px; margin:0 0 15px; }
+.market-instrument-page .nk-page-head h1 { font-size:clamp(32px,3.45vw,51px); letter-spacing:-.065em; line-height:1.05; }
+.market-instrument-page .nk-page-head p { color:var(--muted); margin-top:5px; }
+.market-instrument-page .nk-layout { align-items:start; gap:12px; }
+.market-instrument-page .nk-panel { padding:clamp(12px,1.35vw,20px); background:var(--inner-paper,var(--surface)); }
+.market-instrument-page .nk-panel h2 { font-size:clamp(19px,1.65vw,24px); line-height:1.16; letter-spacing:-.045em; }
+.market-instrument-page .nk-panel header p, .market-note { color:var(--muted); font-size:12px; margin-top:4px; }
+.market-instrument-page .nk-field :is(input,select) { width:100%; min-width:0; }
+.market-instrument-page select { appearance:none; height:44px; padding-inline:10px 30px; border:1px solid var(--line); border-radius:var(--radius); background:var(--raised); color:var(--ink); }
+.market-instrument-page select,.inner-content .market-instrument-page .nk-field select {
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23b3b4b8' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; padding-inline-end:30px;
+}
+.market-instrument-page .nk-button[data-variant=primary] { background:var(--ink); border-color:var(--ink); color:var(--bg); }
+.market-instrument-page .nk-scroll caption { padding-bottom:8px; font-size:13px; color:var(--muted); }
+.market-instrument-page .nk-scroll th { text-align:left; }
+.market-instrument-page .nk-scroll td:not(:first-child) { font-variant-numeric:tabular-nums; }
+.market-instrument-page .row-note { display:block; color:var(--muted); font:12px/1.4 var(--font-ui); }
+.market-stamp { color:var(--muted); font:11px/1.55 var(--font-mono); }
+.market-instrument-page .market-band { display:flex; flex-wrap:wrap; gap:6px 24px; padding:10px 0; border-block:1px solid var(--inner-rule,var(--line)); }
+.market-instrument-page .market-band .nk-stat { flex:1; min-width:max-content; }
+.market-instrument-page .market-band .nk-stat:first-child { border-left:0; }
+.market-instrument-page .nk-stat strong { font-size:clamp(20px,2.1vw,31px); }
+.market-instrument-page .market-ledger { margin:0; }
+.market-ledger > div { display:flex; gap:18px; padding-block:10px; justify-content:space-between; align-items:baseline; border-top:1px solid var(--inner-rule,var(--line)); }
+.market-ledger dt { color:var(--muted); font-size:13px; }
+.market-ledger dd { text-align:right; font:13px/1.5 var(--font-mono); overflow-wrap:anywhere; }
+.market-instrument-page .nk-aside { display:grid; gap:12px; }
+.market-instrument-page summary { cursor:pointer; min-height:44px; padding-block:11px; }
+.market-retry { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+@media(min-width:850px) {
+  .market-instrument-page .nk-layout { grid-template-columns:minmax(0,2.1fr) minmax(280px,1fr); }
+}
+@media(max-width:849px) {
+  .market-instrument-page .nk-layout { grid-template-columns:minmax(0,1fr); }
+  .market-instrument-page .nk-page-head { margin:0 0 10px; gap:6px; }
+  .market-instrument-page .nk-page-head p { font-size:12px; }
+  .market-instrument-page .nk-field :is(input,select), .market-instrument-page select { font-size:16px; }
+  .market-instrument-page .market-band { gap:6px; }
+  .market-instrument-page .market-band .nk-stat { padding-inline:8px; }
+}
+.market-query-form { display:grid; gap:12px; }
+.market-query-form .nk-field { min-width:0; }
+.market-query-form .nk-button { justify-self:start; }
+.market-instrument-page .market-query-open { display:none; }
+@media(max-width:849px) {
+  .market-instrument-page .market-query-open { display:inline-flex; }
+  .market-instrument-page .market-inline-form { display:none; }
+  .market-instrument-page:has(.market-query-open) .nk-page-head { flex-wrap:nowrap; }
+}
+.market-results-layout { display:grid; grid-template-columns:subgrid; align-items:start; gap:inherit; }
+.market-instrument-page .market-query-open { flex:none; white-space:nowrap; }

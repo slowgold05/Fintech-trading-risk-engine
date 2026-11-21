@@ -6,7 +6,7 @@ P1-B local schema decision, 2026-11-05. Raw and separately labeled split-adjuste
 
 `market_bars_daily` is a daily-only table. Its primary key is `(symbol, session_date, provider, adjustment_type)`. The interval is implicitly `1d`; intraday data needs a separate reviewed contract. `session_date` is the provider's exchange session date, not a fabricated midnight observation timestamp. The symbol references the canonical symbol table.
 
-Provider and adjustment type are required parts of identity. Two providers, or raw and adjusted prices, cannot overwrite one another under the same key. Read and ingestion paths must select one explicit provider and adjustment series; they must not combine whichever rows happen to exist into a continuous-looking curve.
+Provider and adjustment type are required parts of identity. Two providers, or raw and adjusted prices, cannot overwrite one another under the same key. Reads select one provider and adjustment series for each window. Clients can specify the series or use the automatic choice. See [free data sources](FREE_DATA_SOURCES.md) for the current preference order.
 
 `adjustment_type` is `raw` or `split_adjusted`. The latter is a research series, not a total-return series and never an execution reference. OHLC and volume are provider-reported for that named series. Massive's grouped daily endpoint confirms the requested split adjustment in its `adjusted` response field; its aggregate volume can be fractional. Neither series is dividend-adjusted. An adjusted backfill stores a separate series and never relabels raw bars.
 

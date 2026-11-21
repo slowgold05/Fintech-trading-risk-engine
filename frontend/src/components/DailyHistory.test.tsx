@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryRange, HistoryResponse, MarketDataStatus } from "../api/history";
+import { AuthContext } from "../context/authState";
 import type { OrderResponse, TradeResponse } from "../types/schemas";
 import { saveChartPreferences } from "../utils/chartPreferences";
 import { DailyHistory } from "./DailyHistory";
@@ -194,13 +195,21 @@ function mountChart() {
   return { addSeries, timeScale: () => ({ fitContent }), remove };
 }
 
-function renderHistory() {
+function renderHistory(isAuthenticated = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   clients.push(client);
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <DailyHistory />
+        <AuthContext.Provider value={{
+          token: isAuthenticated ? "fixture-token" : null,
+          isAuthenticated,
+          isInitializing: false,
+          signIn: () => undefined,
+          signOut: () => undefined,
+        }}>
+          <DailyHistory />
+        </AuthContext.Provider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -712,6 +721,20 @@ describe("DailyHistory", () => {
       period: "20",
       chartType: "candlestick",
     });
+  });
+
+  it("loads and reloads public history without requesting private orders or trades", async () => {
+    historyApi.fetchCachedSeries.mockResolvedValue(catalog);
+    historyApi.fetchDailyHistory.mockResolvedValue(history());
+    renderHistory(false);
+    await screen.findByRole("button", { name: "View history" });
+    fillTest();
+    submitForm();
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    submitForm();
+    await waitFor(() => expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(2));
+    expect(tradesApi.fetchTrades).not.toHaveBeenCalled();
+    expect(ordersApi.fetchOrders).not.toHaveBeenCalled();
   });
 
   it("marks buy and sell executions on the loaded session dates for every price series", async () => {

@@ -61,6 +61,12 @@ function http(status: number) {
   return new AxiosError(`HTTP ${status}`, AxiosError.ERR_BAD_REQUEST, undefined, undefined, { status, data: {} } as AxiosResponse);
 }
 
+vi.mock("../api/market", () => ({
+  fetchMarketUniverse: async () => ({
+    items: [{ symbol: "BRK.B", company_name: "Berkshire Hathaway", in_featured_universe: true }],
+  }),
+}));
+
 function sign(next: Partial<typeof auth.state>) {
   auth.state = { ...auth.state, ...next };
 }
@@ -125,7 +131,7 @@ describe("Watchlists", () => {
     meApi.fetchMe.mockReturnValue(pending.promise);
     sign({ token: TOKEN_A, isAuthenticated: true, isInitializing: false });
     const view = mount();
-    view.client.setQueryData(["watchlists", 4], collection([book(1, "Cached Secret")]));
+    view.client.setQueryData(["acct", 4, "watchlists"], collection([book(1, "Cached Secret")]));
     expect(await screen.findByText("Loading your account.")).toBeInTheDocument();
     expect(listsApi.fetchWatchlists).not.toHaveBeenCalled();
     expect(screen.queryByText("Cached Secret")).not.toBeInTheDocument();
@@ -166,27 +172,27 @@ describe("Watchlists", () => {
     const view = mount();
     loaded.resolve(alpha);
     expect(await screen.findByRole("option", { name: "Alpha Book" })).toBeInTheDocument();
-    expect(view.client.getQueryData(["watchlists", 11])).toEqual(alpha);
+    expect(view.client.getQueryData(["acct", 11, "watchlists"])).toEqual(alpha);
     expect(signals[0]?.aborted).toBe(false);
-    void view.client.refetchQueries({ queryKey: ["watchlists", 11] }).catch(() => undefined);
+    void view.client.refetchQueries({ queryKey: ["acct", 11, "watchlists"] }).catch(() => undefined);
     await waitFor(() => expect(listsApi.fetchWatchlists).toHaveBeenCalledTimes(2));
     const pendingRefresh = signals[1];
     expect(pendingRefresh?.aborted).toBe(false);
     sign({ token: TOKEN_B, isAuthenticated: true, isInitializing: false });
     view.rerender();
     await waitFor(() => expect(pendingRefresh?.aborted).toBe(true));
-    await waitFor(() => expect(view.client.getQueryState(["watchlists", 11])).toBeUndefined());
+    await waitFor(() => expect(view.client.getQueryState(["acct", 11, "watchlists"])).toBeUndefined());
     expect(screen.queryByText("Alpha Book")).not.toBeInTheDocument();
     expect(signals[0]?.aborted).toBe(false);
     await waitFor(() => expect(listsApi.fetchWatchlists).toHaveBeenCalledTimes(3));
     fetchB.resolve(beta);
     expect(await screen.findByRole("option", { name: "Beta Book" })).toBeInTheDocument();
     refreshA.resolve(collection([book(9, "Late Alpha")]));
-    await waitFor(() => expect(view.client.getQueryData(["watchlists", 22])).toEqual(beta));
+    await waitFor(() => expect(view.client.getQueryData(["acct", 22, "watchlists"])).toEqual(beta));
     expect(screen.getByRole("option", { name: "Beta Book" })).toBeInTheDocument();
     expect(screen.queryByText("Late Alpha")).not.toBeInTheDocument();
     expect(screen.queryByText("Alpha Book")).not.toBeInTheDocument();
-    expect(view.client.getQueryState(["watchlists", 11])).toBeUndefined();
+    expect(view.client.getQueryState(["acct", 11, "watchlists"])).toBeUndefined();
     expect(signals[0]?.aborted).toBe(false);
     expect(document.body.textContent).not.toContain(TOKEN_A);
     expect(document.body.textContent).not.toContain(TOKEN_B);
@@ -220,8 +226,8 @@ describe("Watchlists", () => {
     expect(screen.queryByText("Pending Alpha")).not.toBeInTheDocument();
     expect(listsApi.createWatchlist).toHaveBeenCalledTimes(1);
     expect(listsApi.fetchWatchlists.mock.calls.length).toBe(readsBeforeSwap + 1);
-    expect(view.client.getQueryData(["watchlists", 22])).toEqual(collection([]));
-    expect(view.client.getQueryState(["watchlists", 11])).toBeUndefined();
+    expect(view.client.getQueryData(["acct", 22, "watchlists"])).toEqual(collection([]));
+    expect(view.client.getQueryState(["acct", 11, "watchlists"])).toBeUndefined();
   });
 
   it("aborts the previous session mutation when the same owner presents a new token", async () => {
@@ -240,19 +246,20 @@ describe("Watchlists", () => {
     fireEvent.change(screen.getByLabelText("New watchlist"), { target: { value: "Session draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Create watchlist" }));
     await waitFor(() => expect(createSignal).toBeDefined());
-    view.client.setQueryData(["me", TOKEN_NEXT], user(5));
+    view.client.setQueryData(["me"], user(5));
     const readsBefore = listsApi.fetchWatchlists.mock.calls.length;
     sign({ token: TOKEN_NEXT, isAuthenticated: true, isInitializing: false });
     view.rerender();
     await waitFor(() => expect(createSignal?.aborted).toBe(true));
-    expect(screen.queryByText("Loading your account.")).not.toBeInTheDocument();
+    expect(screen.getByText("Loading your account.")).toBeInTheDocument();
+    expect(JSON.stringify(view.client.getQueryCache().getAll().map((query) => query.queryKey))).not.toContain(TOKEN_NEXT);
+    meHold.resolve(user(5));
     created.resolve(book(9, "Session draft"));
     await waitFor(() => expect(listsApi.fetchWatchlists.mock.calls.length).toBe(readsBefore + 1));
     expect(screen.queryByText("Watchlist created.")).not.toBeInTheDocument();
     expect(listsApi.createWatchlist).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).not.toContain(TOKEN_A);
     expect(document.body.textContent).not.toContain(TOKEN_NEXT);
-    meHold.resolve(user(5));
   });
 
   it("keeps raw session tokens out of the document and the console", async () => {
@@ -315,7 +322,7 @@ describe("Watchlists", () => {
     listsApi.fetchWatchlists.mockRejectedValueOnce(new Error("offline"));
     sign({ token: TOKEN_A, isAuthenticated: true, isInitializing: false });
     mount();
-    expect((await screen.findByRole("alert")).textContent).toBe("Watchlists could not be refreshed.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Watchlists could not be refreshed.");
     expect(screen.queryByText("No watchlists yet.")).not.toBeInTheDocument();
     listsApi.fetchWatchlists.mockResolvedValueOnce(collection([book(3, "Stale Book", [{ symbol: "AAPL", position: 1 }])]));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -430,6 +437,7 @@ describe("Watchlists", () => {
     expect(listsApi.addWatchlistSymbol).toHaveBeenCalledWith(3, "BRK.B", expect.any(AbortSignal));
     expect(screen.getByRole("link", { name: "Trade BRK.B" })).toHaveAttribute("href", "/trades?symbol=BRK.B");
     expect(screen.getByRole("link", { name: "Trade BRK.B" }).getAttribute("href")).not.toMatch(/qty|amount|quantity/i);
+    expect(await screen.findByRole("link", { name: "BRK.B" })).toHaveAttribute("href", "/market/BRK.B");
     fireEvent.click(screen.getAllByRole("button", { name: "Use in research" })[0] as HTMLElement);
     fireEvent.click(screen.getAllByRole("button", { name: "Use in chart" })[0] as HTMLElement);
     expect(onResearch).toHaveBeenCalledTimes(1);

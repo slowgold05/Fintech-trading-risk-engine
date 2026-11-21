@@ -36,3 +36,8 @@ from app.models.sar import SarDraft
 from app.models.expansion import ExpansionAlert, Finding, RiskBrief, TradeIntent
 from app.models.ops_state import DetectionCursor, SchedulerLock
 from app.models.watchlist import Watchlist, WatchlistItem
+from app.models.night_alerts import NightAlert
+from app.models.night_journal import NightJournalEntry
+from app.models.night_leaderboard import NightLeaderboardEntry
+from app.models.night_holding_note import NightHoldingNote
+from app.models.night_inbox import NightInboxRead

@@ -28,7 +28,7 @@ describe("SectorPerformanceGrid", () => {
     cleanup();
   });
 
-  it("renders returned sector ETF names and signed percents in order", () => {
+  it("renders returned sector ETF names and signed percents ranked by session change", () => {
     render(<SectorPerformanceGrid sectors={proxies} />);
 
     expect(screen.getByRole("heading", { name: "Sector ETF performance" })).toBeInTheDocument();
@@ -37,14 +37,14 @@ describe("SectorPerformanceGrid", () => {
 
     const items = screen.getAllByRole("listitem");
     expect(items.map((item) => item.getAttribute("aria-label"))).toEqual([
-      "Technology, XLK, down -1.67%",
       "Financials, XLF, up +1.60%",
+      "Utilities, XLU, flat +0.00%",
       "Communication, XLC, down -0.16%",
       "Consumer Staples, XLP, down -0.40%",
-      "Utilities, XLU, flat +0.00%",
+      "Technology, XLK, down -1.67%",
     ]);
-    expect(items[0]).toHaveTextContent("Technology");
-    expect(items[0]).toHaveTextContent("-1.67%");
+    expect(items[4]).toHaveTextContent("Technology");
+    expect(items[4]).toHaveTextContent("-1.67%");
     expect(items[3]).toHaveTextContent("Consumer Staples");
     expect(items[3]).toHaveTextContent("-0.40%");
     expect(screen.queryByText("MSFT")).not.toBeInTheDocument();
@@ -52,7 +52,7 @@ describe("SectorPerformanceGrid", () => {
     expect(screen.queryByText("Infrastructure")).not.toBeInTheDocument();
   });
 
-  it("uses uniform tiles whose color intensity follows the move", () => {
+  it("shows each proxy in a ledger row with a proportional magnitude bar", () => {
     render(<SectorPerformanceGrid sectors={proxies} />);
 
     const technology = screen.getByRole("listitem", { name: /Technology, XLK, down -1\.67%/ });
@@ -61,15 +61,14 @@ describe("SectorPerformanceGrid", () => {
     const staples = screen.getByRole("listitem", { name: /Consumer Staples, XLP, down -0\.40%/ });
     const utilities = screen.getByRole("listitem", { name: /Utilities, XLU, flat \+0\.00%/ });
 
-    expect(technology).toHaveClass("bg-rose-700", "text-white");
-    expect(financials).toHaveClass("bg-emerald-700", "text-white");
-    expect(staples).toHaveClass("bg-rose-900", "text-rose-50");
-    expect(communication).toHaveClass("bg-rose-950", "text-rose-100");
-    expect(utilities).toHaveClass("bg-slate-800", "text-slate-100");
-    expect(technology.className).not.toMatch(/col-span|row-span|min-h-32|min-h-44/);
-    expect(technology.className).toContain("min-h-12");
-    expect(utilities.className).toContain("min-h-12");
-    expect(screen.getByRole("list").className).toContain("minmax(min(100%,max(4.75rem,22%)),1fr)");
+    expect(technology).toHaveClass("down");
+    expect(financials).toHaveClass("up");
+    expect(utilities).toHaveClass("flat");
+    expect(technology.querySelector("em")).toHaveStyle({ transform: "scaleX(1)" });
+    expect(utilities.querySelector("em")).toHaveStyle({ transform: "scaleX(0)" });
+    expect(staples.querySelector("em")?.style.transform).toBe(`scaleX(${0.4 / 1.67})`);
+    expect(communication.querySelector("em")?.style.transform).toBe(`scaleX(${0.16 / 1.67})`);
+    expect(screen.getByRole("list")).toHaveClass("sector-ledger");
     expect(technology.className).not.toMatch(/truncate|overflow-hidden/);
     expect(screen.getByText("Communication").className).not.toMatch(/truncate|break-all/);
   });

@@ -36,7 +36,7 @@ from app.routers.watchlists import (
 )
 from app.schemas.watchlist import WatchlistCreate, WatchlistPatch, WatchlistSymbolCreate
 from app.scripts.configure_postgres_role import configure
-from app.services.ledger_service import ensure_opening
+from tests.legacy_book import seed_legacy_book
 from tests.test_order_preview_postgres import _disposable_url
 
 pytestmark = pytest.mark.skipif(not os.environ.get("AUDIT_DATABASE_URL"), reason="AUDIT_DATABASE_URL is not set")
@@ -104,19 +104,12 @@ def _digests(engine, only=None):
 
 def _seed(engine):
     with Session(engine) as db:
-        user = User(
-            email=f"watchlist-migration-{uuid4().hex}@example.com",
-            password_hash="fixture",
-            cash_balance=Decimal("100000.00"),
-            role="trader",
-        )
-        db.add(user)
+        user_id = seed_legacy_book(db, f"watchlist-migration-{uuid4().hex}@example.com")
         db.add_all([
             MarketSymbol(symbol="P3BWA", company_name="Fixture A", exchange="NASDAQ", is_active=True),
             MarketSymbol(symbol="P3BWB", company_name="Fixture B", exchange="NASDAQ", is_active=True),
         ])
         db.flush()
-        ensure_opening(db, user)
         db.add(PriceHistoryDaily(
             symbol="P3BWA",
             date=date(2026, 11, 4),
@@ -141,7 +134,7 @@ def _seed(engine):
             quality_status="valid",
         ))
         db.commit()
-        return int(user.id)
+        return user_id
 
 
 def _preserved_counts(engine):

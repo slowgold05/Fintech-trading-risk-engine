@@ -14,6 +14,7 @@ def assess_trade_risk(db: Session, user_id: int, trade_notional: Decimal) -> tup
     five_min_ago = datetime.utcnow() - timedelta(minutes=5)
     count_stmt = select(func.count()).select_from(Trade).where(
         Trade.user_id == user_id,
+        Trade.demo_seed.is_(False),
         Trade.executed_at >= five_min_ago
     )
     recent_trades = db.execute(count_stmt).scalar_one()

@@ -1,379 +1,113 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { fetchMe } from "../api/auth";
+import { fetchPortfolio } from "../api/portfolio";
 import { fetchRisk } from "../api/risk";
-import { PageHeader } from "../components/PageHeader";
-import {
-  DashboardCard,
-  EmptyState,
-  RiskScoreCard,
-  SkeletonBlock,
-} from "../features/dashboard/components";
-import { getRiskScore } from "../features/dashboard/adapters";
-import {
-  formatCurrency,
-  formatPercent,
-  formatQuantity,
-} from "../utils/format";
-import { getRiskLevel, getRiskTone } from "../utils/riskTone";
-import type { RiskAlertResponse, RiskAssessmentResponse } from "../types/schemas";
+import { keys } from "../night/api";
+import { Button, Page, Panel, RestInstrument, State, ValueGauge } from "../night/inner";
+import { CompanyFactors } from "../night/features/portfolio/CompanyFactors";
+import { accountWeight, hasMark, numeric } from "../night/features/portfolio/valuation";
+import { formatCurrency, formatPercent } from "../utils/format";
+import { getRiskLevel } from "../utils/riskTone";
+import type { RiskAssessmentResponse } from "../types/schemas";
+import "./Risk.css";
 
-const pageDescription =
-  "Latest trade assessment, historical rule factors, and assessed trade notionals.";
-
-function finiteScore(score: unknown): number | null {
-  return typeof score === "number" && Number.isFinite(score) ? score : null;
+function tradeNotional(trade: RiskAssessmentResponse["trade"]) {
+  if (!trade || numeric(trade.quantity) === null || numeric(trade.price_at_execution) === null) return null;
+  return numeric(trade.quantity * trade.price_at_execution);
+}
+function scoreOf(row?: RiskAssessmentResponse) {
+  const score = numeric(row?.risk_score);
+  return score !== null && score >= 0 && score <= 100 ? score : null;
 }
 
-function tradeNotional(trade: RiskAssessmentResponse["trade"]): number | null {
-  if (!trade) {
-    return null;
-  }
-
-  const notional = trade.quantity * trade.price_at_execution;
-  return Number.isFinite(notional) ? notional : null;
-}
-
-function getInterpretation(level: ReturnType<typeof getRiskLevel>, score: number) {
-  return `Latest trade assessment score ${score} is ${level}. It describes the newest scored trade.`;
-}
-
-function getAllAlerts(assessments: RiskAssessmentResponse[]) {
-  return assessments.flatMap((assessment) =>
-    assessment.alerts.map((alert) => ({
-      ...alert,
-      assessmentId: assessment.assessment_id,
-      symbol: assessment.trade?.symbol ?? "--",
-    })),
-  );
-}
-
-function getRiskFactors(alerts: Array<RiskAlertResponse & { symbol: string }>) {
-  const counts = alerts.reduce<Record<string, number>>((acc, alert) => {
-    acc[alert.rule_code] = (acc[alert.rule_code] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  return Object.entries(counts)
-    .map(([ruleCode, count]) => ({ ruleCode, count }))
-    .sort((a, b) => b.count - a.count);
-}
-
-function getAssessedNotional(assessments: RiskAssessmentResponse[]) {
-  const notionals = assessments.reduce<Record<string, number>>((acc, assessment) => {
-    const trade = assessment.trade;
-    const notional = tradeNotional(trade);
-    if (!trade || notional == null) {
-      return acc;
-    }
-
-    const assetType = trade.asset_type.toUpperCase();
-    acc[assetType] = (acc[assetType] ?? 0) + notional;
-    return acc;
-  }, {});
-
-  return Object.entries(notionals)
-    .map(([assetType, value]) => ({ assetType, value }))
-    .sort((a, b) => b.value - a.value);
-}
+const rules = [
+  { code: "MANY_TRADES_5MIN", reason: "At least 5 non-seed trades in the last 5 minutes", points: 40 },
+  { code: "LARGE_TRADE", reason: "Trade notional of $10,000 or more", points: 30 },
+];
 
 export function Risk() {
-  const riskQuery = useQuery({
-    queryKey: ["risk"],
-    queryFn: fetchRisk,
-  });
+  const me = useQuery({ queryKey: keys.me, queryFn: fetchMe, retry: false });
+  if (me.isPending) return <RestInstrument label="Trade assessment" status={{kind:"loading", title:"Loading account…"}}/>;
+  if (me.isError || !me.data.id) return <RestInstrument label="Trade assessment" status={{kind:"error", title:"Account unavailable", action:<Button onClick={() => void me.refetch()}>Retry account</Button>}}/>;
+  return <AccountRisk key={me.data.id} owner={me.data.id} />;
+}
 
-  if (riskQuery.isError) {
-    return (
-      <div className="min-w-0 space-y-6">
-        <PageHeader
-          title="Risk Engine"
-          description={pageDescription}
-        />
-        <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
-          <p>
-            Risk assessments could not be loaded. Check the API server and
-            authentication state. A previously loaded result is not shown.
-          </p>
-          <button
-            className="mt-3 rounded-md border border-rose-400/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
-            onClick={() => {
-              void riskQuery.refetch();
-            }}
-            type="button"
-          >
-            Retry
-          </button>
+function AccountRisk({ owner }: { owner: number }) {
+  const risk = useQuery({ queryKey: keys.account(owner, "risk"), queryFn: fetchRisk, retry: false });
+  const book = useQuery({ queryKey: keys.account(owner, "portfolio"), queryFn: fetchPortfolio, retry: false });
+  const [selection, setSelection] = useState("");
+  const rows = risk.isError ? [] : risk.data?.assessments ?? [];
+  const latest = rows[0];
+  const [assessmentId, setAssessmentId] = useState<number | null>(null);
+  const inspected = rows.find(row => row.assessment_id === assessmentId) ?? latest;
+  const score = scoreOf(inspected);
+  const scoreStatus = risk.isError ? {kind:"error" as const, title:"Risk assessments could not be loaded",
+    action:<Button onClick={() => void risk.refetch()}>Retry</Button>} :
+    risk.isPending ? {kind:"loading" as const, title:"Loading scored trades…"} :
+    !latest ? {kind:"empty" as const, title:"No trade assessments yet.", detail:"A trade must be assessed before it has a score."} :
+    score === null ? {kind:"unavailable" as const, title:inspected === latest ? "Latest trade score unavailable." : "Trade score unavailable."} : undefined;
+  const alerts = rows.flatMap(row => row.alerts);
+  const positions = book.isError ? [] : book.data?.positions ?? [];
+  const symbols = [...new Set([...positions.map(row => row.symbol), ...rows.flatMap(row => row.trade ? [row.trade.symbol] : [])])].sort();
+  const symbol = symbols.includes(selection) ? selection : symbols.includes(latest?.trade?.symbol ?? "") ? latest.trade!.symbol : symbols[0];
+  const position = positions.find(row => row.symbol === symbol);
+  const wholeBook = book.data?.valuation_status !== "incomplete" && positions.every(hasMark);
+  const weight = book.data && !book.isError && wholeBook
+    ? accountWeight(position ? position.position_value : 0, numeric(book.data.summary.total_account_value)) : null;
+  const notionals = rows.map(row => tradeNotional(row.trade));
+  const priced = notionals.filter((value): value is number => value !== null);
+  return <Page title="Risk" className="risk-workbench" eyebrow="Trade assessments">
+    <div className="risk-split">
+      <Panel className="risk-assessment" title={inspected === latest ? "Latest Trade Risk Score" : "Historical Trade Risk Score"}
+        subtitle="Behavioral score recorded at execution" actions={rows.length > 1 && <select className="field-control"
+          aria-label="Inspect trade assessment" value={inspected.assessment_id} onChange={e => setAssessmentId(Number(e.target.value))}>
+          {rows.map((row,i) => <option key={row.assessment_id} value={row.assessment_id}>{i === 0 ? "Latest · " : ""}{row.trade?.symbol ?? "Trade"} #{row.trade_id}</option>)}
+        </select>}>
+        <div className="risk-meter">
+          <div className="risk-meter-id"><small>{inspected?.trade?.symbol ?? "Trade assessment"}</small>
+            <strong>{score === null ? "—" : getRiskLevel(score)}</strong>
+            {inspected && <p>{inspected.trade?.side ?? "Side unavailable"} · trade #{inspected.trade_id}<br/>
+              Assessed {inspected.created_at.slice(0, 10)}{inspected.trade?.demo_seed && <><br/>Seeded demo trade</>}</p>}
+          </div>
+          <div className="risk-scale" role={score !== null ? "img" : undefined} aria-label={score !== null ? `Risk score ${score} of 100, ${getRiskLevel(score)}` : undefined}>
+            <ValueGauge centrepiece={score !== null} label="Score / 100" value={score} min={0} max={100} format={String}/>
+          </div>
         </div>
-      </div>
-    );
-  }
-
-  const isLoading = riskQuery.isLoading;
-  const assessments = riskQuery.data?.assessments ?? [];
-  const score = isLoading ? null : getRiskScore(riskQuery.data);
-  const level = score == null ? null : getRiskLevel(score);
-  const tone = level == null ? null : getRiskTone(level);
-  const alerts = getAllAlerts(assessments);
-  const riskFactors = getRiskFactors(alerts);
-  const notionals = getAssessedNotional(assessments);
-  const totalNotional = notionals.reduce((sum, item) => sum + item.value, 0);
-
-  return (
-    <div className="min-w-0 space-y-6">
-      <PageHeader
-        title="Risk Engine"
-        description={pageDescription}
-      />
-
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <div className="min-w-0 space-y-5">
-          {isLoading ? (
-            <DashboardCard title="Latest Trade Risk Score">
-              <div className="space-y-4">
-                <SkeletonBlock className="h-28" />
-                <SkeletonBlock className="h-20" />
-              </div>
-            </DashboardCard>
-          ) : assessments.length === 0 ? (
-            <DashboardCard title="Latest Trade Risk Score">
-              <EmptyState
-                detail="Scores appear after a trade is assessed. This is not a current portfolio risk score."
-                message="No trade assessments yet."
-              />
-            </DashboardCard>
-          ) : score != null && level != null ? (
-            <RiskScoreCard label={level} score={score} />
-          ) : (
-            <DashboardCard title="Latest Trade Risk Score">
-              <p className="text-sm text-slate-300">Latest trade score unavailable.</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                The newest assessment has no usable score. Older assessed trades stay listed. This is not current account risk.
-              </p>
-            </DashboardCard>
-          )}
-
-          {tone != null && level != null && score != null ? (
-            <div
-              className={[
-                "rounded-md border px-4 py-4",
-                tone.border,
-                tone.bg,
-              ].join(" ")}
-            >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Latest trade assessment
-                  </div>
-                  <p className={["mt-2 max-w-3xl text-sm leading-6", tone.text].join(" ")}>
-                    {getInterpretation(level, score)}
-                  </p>
-                </div>
-                <span className={["risk-chip shrink-0", tone.chip].join(" ")}>
-                  {level}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          {level === "Medium" || level === "High" ? (
-            <DashboardCard title={level === "High" ? "High assessment" : "Medium assessment"}>
-              <div
-                className={[
-                  "rounded border px-4 py-3 text-sm",
-                  level === "High"
-                    ? "border-rose-400/35 bg-rose-950/45 text-rose-100"
-                    : "border-amber-400/30 bg-amber-950/25 text-amber-100",
-                ].join(" ")}
-              >
-                {level === "High"
-                  ? "Latest trade assessment is High. Listed alerts are historical rule factors from assessed trades."
-                  : "Latest trade assessment is Medium. Listed alerts are historical rule factors from assessed trades."}
-              </div>
-            </DashboardCard>
-          ) : null}
-
-          <DashboardCard
-            action={
-              <span className="font-mono text-xs text-slate-500">
-                {isLoading ? "--" : `${alerts.length} assessment alerts`}
-              </span>
-            }
-            title="Rule factors"
-          >
-            {isLoading ? (
-              <div className="space-y-3">
-                {[0, 1, 2].map((item) => (
-                  <SkeletonBlock className="h-10" key={item} />
-                ))}
-              </div>
-            ) : riskFactors.length === 0 ? (
-              <EmptyState
-                detail="Rule factors appear when an assessed trade records an alert."
-                message="No assessment alerts."
-              />
-            ) : (
-              <div className="table-shell">
-                <table className="data-table min-w-[520px]">
-                  <thead>
-                    <tr>
-                      <th className="text-left">Rule</th>
-                      <th className="text-right">Count</th>
-                      <th className="text-right">Share</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {riskFactors.map((factor) => {
-                      const share = alerts.length
-                        ? (factor.count / alerts.length) * 100
-                        : 0;
-                      return (
-                        <tr key={factor.ruleCode}>
-                          <td className="font-mono text-slate-100">
-                            {factor.ruleCode}
-                          </td>
-                          <td className="text-right font-mono tabular-nums">
-                            {factor.count}
-                          </td>
-                          <td className="text-right font-mono tabular-nums">
-                            {formatPercent(share)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </DashboardCard>
-        </div>
-
-        <div className="min-w-0 space-y-5">
-          <DashboardCard title="Assessed Trade Notional">
-            <p className="mb-3 text-xs leading-5 text-slate-400">
-              Historical assessed trade value. Includes buys and sells, not current holdings.
-            </p>
-            {isLoading ? (
-              <div className="space-y-3">
-                {[0, 1, 2].map((item) => (
-                  <SkeletonBlock className="h-12" key={item} />
-                ))}
-              </div>
-            ) : notionals.length === 0 ? (
-              <EmptyState
-                detail="Sums appear when assessed trades include quantity and price."
-                message="No assessed trade notionals."
-              />
-            ) : (
-              <div className="space-y-3">
-                {notionals.map((item) => {
-                  const share = totalNotional > 0 ? (item.value / totalNotional) * 100 : 0;
-                  return (
-                    <div
-                      className="rounded border border-slate-800 bg-slate-900/60 p-3"
-                      key={item.assetType}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-mono text-sm font-semibold text-slate-100">
-                            {item.assetType}
-                          </div>
-                          <div className="mt-0.5 text-xs text-slate-500">
-                            Assessed notional
-                          </div>
-                        </div>
-                        <div className="text-right font-mono text-sm text-slate-200">
-                          {formatCurrency(item.value, false)}
-                          <div className="text-[11px] text-slate-500">
-                            {formatPercent(share)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-3 h-1.5 overflow-hidden rounded bg-slate-800">
-                        <div
-                          className={["h-full rounded", tone?.bar ?? "bg-slate-400/75"].join(" ")}
-                          style={{ width: `${Math.min(share, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </DashboardCard>
-
-          <DashboardCard
-            action={
-              <span className="font-mono text-xs text-slate-500">
-                {isLoading ? "--" : `${assessments.length} rows`}
-              </span>
-            }
-            title="Assessment Feed"
-          >
-            {isLoading ? (
-              <div className="space-y-3">
-                {[0, 1, 2, 3].map((item) => (
-                  <SkeletonBlock className="h-12" key={item} />
-                ))}
-              </div>
-            ) : assessments.length === 0 ? (
-              <EmptyState
-                detail="Each scored trade adds a row with score, symbol, notional, and assessment alerts."
-                message="No assessments yet."
-              />
-            ) : (
-              <div className="table-shell max-h-[520px]">
-                <table className="data-table min-w-[640px]">
-                  <thead className="sticky top-0 z-10">
-                    <tr>
-                      <th className="text-left">Trade</th>
-                      <th className="text-right">Score</th>
-                      <th className="text-right">Notional</th>
-                      <th className="text-right">Alerts</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assessments.map((assessment) => {
-                      const trade = assessment.trade;
-                      const notional = tradeNotional(trade);
-                      const rowScore = finiteScore(assessment.risk_score);
-                      const rowLevel = rowScore == null ? null : getRiskLevel(rowScore);
-                      const rowTone = rowLevel == null ? null : getRiskTone(rowLevel);
-
-                      return (
-                        <tr key={assessment.assessment_id}>
-                          <td>
-                            <div className="font-mono text-sm font-semibold text-slate-100">
-                              {trade?.symbol ?? "--"}
-                            </div>
-                            <div className="font-mono text-[11px] uppercase text-slate-500">
-                              {trade?.side ?? "unknown"}
-                            </div>
-                          </td>
-                          <td className="text-right">
-                            {rowScore == null || rowTone == null ? (
-                              <span className="text-slate-400">Unavailable</span>
-                            ) : (
-                              <span className={["risk-chip", rowTone.chip].join(" ")}>
-                                {rowScore}
-                              </span>
-                            )}
-                          </td>
-                          <td className="text-right font-mono tabular-nums">
-                            {notional == null ? "Unavailable" : formatCurrency(notional, false)}
-                          </td>
-                          <td className="text-right font-mono tabular-nums">
-                            {formatQuantity(assessment.alerts.length)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </DashboardCard>
-        </div>
-      </div>
+        {scoreStatus ? <State {...scoreStatus}/> : <dl className="score-bands" aria-label="Score levels">
+          {([["Low","0–49"],["Medium","50–79"],["High","80–100"]] as const).map(([level,range]) =>
+            <div key={level} data-current={score !== null && level === getRiskLevel(score)}><dt>{level}</dt><dd>{range}</dd></div>)}</dl>}
+        {inspected && score !== null && <div className="risk-trigger-note">
+          <small>Recorded on this trade</small>
+          {inspected.alerts.length ? <ul>{inspected.alerts.map((alert,i) => <li key={i}>{alert.reason}</li>)}</ul> : <p>No alerts recorded.</p>}
+        </div>}
+      </Panel>
+    <Panel className="risk-company" title="Company price factors" subtitle="One month of stored price observations" actions={symbol &&
+      <select aria-label="Company for price factors" className="field-control" value={symbol} onChange={event => setSelection(event.target.value)}>
+        {symbols.map(s => <option key={s}>{s}</option>)}</select>}>
+      {symbol ? <CompanyFactors symbol={symbol} /> : book.isPending || risk.isPending ? <State kind="loading" title="Loading symbols…" /> :
+        <State kind="unavailable" title="No company symbol available" detail="Company factors use symbols from available holdings and assessed trades." />}
+      <div className="risk-weight"><strong>Current account weight</strong><span>{symbol && weight !== null ? formatPercent(weight) : "Unavailable"}</span>
+        <small>{symbol ?? "No symbol selected"} · includes cash in total account value. {book.isError ? "Holdings could not be loaded." : !wholeBook ? "Missing marks prevent a complete valuation." : ""}</small>
+        {book.isError && <Button onClick={() => void book.refetch()}>Retry holdings</Button>}</div>
+    </Panel>
     </div>
-  );
+    <div className="risk-context">
+      <Panel className="risk-rules" title="Trade scoring rules" subtitle="Points added when a rule fires at execution">
+        <dl>{rules.map(rule => <div key={rule.code}><dt>{rule.reason}<small>{rule.code}</small></dt><dd>+{rule.points}</dd></div>)}</dl>
+      </Panel>
+
+      {!risk.isError && <Panel title="Assessed Trade Notional" subtitle="Includes buys and sells in the loaded assessments.">
+      {risk.isPending ? <State kind="loading" title="Loading trade values…" /> : <><strong className="notional-value">{priced.length ? formatCurrency(priced.reduce((sum, n) => sum + n, 0)) : "Unavailable"}</strong>
+        <p>{priced.length} of {rows.length} trades with a quantity and execution price · {alerts.length ? `${alerts.length} assessment alerts` : "No assessment alerts."}</p></>}
+    </Panel>}
+    </div>
+    {!risk.isError && <Panel title="Assessment Feed" subtitle="Up to 50 scored trades, newest first. Each alert gives the recorded rule and reason.">
+      {risk.isPending ? <State kind="loading" title="Loading assessments…" /> : rows.length === 0 ? <State kind="empty" title="No assessments yet." /> :
+        <div className="risk-feed"><table><thead><tr><th>Trade</th><th>Score</th><th>Notional</th><th>Recorded alerts</th></tr></thead>
+          <tbody>{rows.map((row, i) => <tr key={row.assessment_id}><td><b>{row.trade?.symbol ?? "Symbol unavailable"}</b><small>{row.trade?.side ?? "Side unavailable"} · #{row.trade_id} · {row.trade?.executed_at.slice(0, 10) ?? "Execution date unavailable"}{row.trade?.demo_seed && " · demo seed"}</small></td>
+            <td data-label="Score">{scoreOf(row) ?? "Unavailable"}</td><td data-label="Notional">{notionals[i] === null ? "Unavailable" : formatCurrency(notionals[i])}</td>
+            <td data-label="Alerts">{row.alerts.length === 0 ? "None recorded" : row.alerts.map((alert, j) => <div key={j}><b>{alert.rule_code}</b><small>{alert.severity} · {alert.reason}</small></div>)}</td></tr>)}</tbody></table></div>}
+    </Panel>}
+  </Page>;
 }

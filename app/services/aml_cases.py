@@ -133,7 +133,8 @@ def _lookback(rules: list[dict]) -> timedelta:
 
 
 def events_from_db(db: Session, since: datetime) -> list[CashEvent]:
-    rows = db.execute(select(CashMovement).where(CashMovement.created_at >= since)).scalars()
+    rows = db.execute(select(CashMovement).join(User, CashMovement.user_id == User.id)
+                      .where(CashMovement.created_at >= since, ~User.is_system)).scalars()
     return [CashEvent(f"cash-{row.id}", row.created_at, row.user_id, row.kind, row.amount) for row in rows]
 
 

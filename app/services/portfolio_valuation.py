@@ -10,19 +10,19 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from types import SimpleNamespace
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.read_snapshot import SnapshotClockError, consistent_read, snapshot_clock
 from app.models.asset import Asset
 from app.models.holding import Holding
-from app.models.ledger_entry import LedgerEntry
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.order import Order
 from app.models.trade import Trade
 from app.models.user import User
 from app.services.market_cache_service import _freshness
+from app.services.ledger_service import trade_in_current_book
 from app.services.trade_execution import notional_amount
 
 CENT = Decimal("0.01")
@@ -84,20 +84,10 @@ def _realized_sell_scope(user_id: int):
     boundary. With no reset, every sell counts. With a reset, only sells
     posted on a trade ledger row after that reset count.
     """
-    latest_reset_id = (
-        select(func.max(LedgerEntry.id))
-        .where(LedgerEntry.user_id == user_id, LedgerEntry.event_kind == "reset")
-        .scalar_subquery()
-    )
-    trades_after_reset = select(LedgerEntry.trade_id).where(
-        LedgerEntry.user_id == user_id,
-        LedgerEntry.event_kind == "trade",
-        LedgerEntry.id > latest_reset_id,
-    )
     return (
         Trade.user_id == user_id,
         Trade.side == "sell",
-        or_(latest_reset_id.is_(None), Trade.id.in_(trades_after_reset)),
+        trade_in_current_book(user_id, Trade.id),
     )
 
 
@@ -220,6 +210,8 @@ def _value_portfolio(
     snapshot_stmt = (
         select(
             User.cash_balance,
+            User.demo_seed,
+            User.is_demo.label("is_demo"),
             Holding.asset_id,
             Holding.quantity,
             Holding.avg_cost,
@@ -332,8 +324,11 @@ def _value_portfolio(
             "total_pnl": None,
         })
 
+    identity = {"id": user_id, "email": email}
+    if rows[0].is_demo:
+        identity.update(is_demo=True, demo_seed_mode=rows[0].demo_seed["mode"])
     return {
-        "user": {"id": user_id, "email": email},
+        "user": identity,
         "valuation_status": "complete" if complete else "incomplete",
         "snapshot_read_at": _iso_z(snapshot),
         "unavailable_symbols": unavailable_symbols,

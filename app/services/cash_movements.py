@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import require_active_user
 from app.models.aml import CashMovement
 from app.models.user import User
 from app.services.ledger_service import append_event
@@ -15,6 +16,7 @@ def post_movement(db: Session, user: User, kind: str, amount: Decimal, screening
     locked = db.execute(
         select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True)
     ).scalar_one()
+    require_active_user(locked)
     posted = notional_amount(Decimal(1), amount)
     if posted <= 0:
         raise HTTPException(status_code=422, detail="Amount must be positive")

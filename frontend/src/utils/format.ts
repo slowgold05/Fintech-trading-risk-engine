@@ -69,3 +69,7 @@ export function formatSignedPercent(value: number) {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${formatPercent(value)}`;
 }
+
+export function simulatedLiquidityLabel(sessionDate: string): string {
+  return "Simulated liquidity at the latest end-of-day close, " + sessionDate;
+}

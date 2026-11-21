@@ -1,145 +1,75 @@
-import type { OrderPreviewPayload, OrderPreviewResponse } from "../api/orderPreview";
-import type { TradeSide } from "../types/schemas";
+import { normalizeOrderDecimal, type OrderPreviewPayload } from "../api/orderPreview";
+import { ORDER_ATTEMPT_SLOT } from "./orderAttemptSlot";
+export { clearPersistedOrderAttempt } from "./orderAttemptSlot";
 
 export type PersistedAttempt = {
-  fingerprint: string;
-  payload: OrderPreviewPayload;
+  payload: OrderPreviewPayload & { expected_quote_observed_at?: string };
   key: string;
 };
 
 export type PersistedOrderAttempt = {
   attempt: PersistedAttempt;
-  preview: OrderPreviewResponse;
+  stepUpRequired: boolean;
 };
 
-const STORAGE_SLOT = "orderTicket.pendingAttempt.v1";
-
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value !== "";
-}
-
-function isSide(value: unknown): value is TradeSide {
-  return value === "buy" || value === "sell";
-}
-
-function isOrderType(value: unknown): value is OrderPreviewPayload["order_type"] {
-  return value === "limit" || value === "market";
-}
-
-function isPreviewStatus(value: unknown): value is OrderPreviewResponse["status"] {
-  return value === "eligible" || value === "blocked" || value === "unavailable";
-}
-
-function isStringOrNull(value: unknown): value is string | null {
-  return value === null || typeof value === "string";
-}
-
-function parsePayload(value: unknown): OrderPreviewPayload | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.symbol !== "string") return null;
-  if (!isSide(value.side)) return null;
-  if (!isOrderType(value.order_type)) return null;
-  if (typeof value.quantity !== "string") return null;
-
-  const payload: OrderPreviewPayload = {
-    symbol: value.symbol,
-    side: value.side,
-    order_type: value.order_type,
-    quantity: value.quantity,
-  };
-  if (Object.prototype.hasOwnProperty.call(value, "limit_price")) {
-    if (typeof value.limit_price !== "string") return null;
-    payload.limit_price = value.limit_price;
-  }
-  return payload;
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function parseAttempt(value: unknown): PersistedAttempt | null {
-  if (!isRecord(value)) return null;
-  if (!isNonEmptyString(value.fingerprint)) return null;
-  if (!isNonEmptyString(value.key)) return null;
-  const payload = parsePayload(value.payload);
-  if (payload === null) return null;
+  if (!isRecord(value) || typeof value.key !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(value.key)) return null;
+  const payload = value.payload;
+  if (!isRecord(payload)) return null;
+  if (typeof payload.symbol !== "string" || !payload.symbol.trim() || payload.symbol.length > 20) return null;
+  if (payload.side !== "buy" && payload.side !== "sell") return null;
+  if (payload.order_type !== "market" && payload.order_type !== "limit") return null;
+  if (typeof payload.quantity !== "string" || normalizeOrderDecimal(payload.quantity) === null) return null;
+  if (payload.order_type === "limit") {
+    if (typeof payload.limit_price !== "string" || normalizeOrderDecimal(payload.limit_price) === null) return null;
+  } else if (payload.limit_price !== undefined) {
+    return null;
+  }
+  const quote = payload.expected_quote_observed_at;
+  if (quote !== undefined && (typeof quote !== "string" || !quote || !Number.isFinite(Date.parse(quote)))) return null;
+  // Keep the literal request fields. Formatting them again changes the replay fingerprint.
   return {
-    fingerprint: value.fingerprint,
-    payload,
     key: value.key,
+    payload: {
+      symbol: payload.symbol,
+      side: payload.side,
+      order_type: payload.order_type,
+      quantity: payload.quantity,
+      ...(typeof payload.limit_price === "string" ? { limit_price: payload.limit_price } : {}),
+      ...(typeof quote === "string" ? { expected_quote_observed_at: quote } : {}),
+    },
   };
 }
 
-function parsePreview(value: unknown): OrderPreviewResponse | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.symbol !== "string") return null;
-  if (!isSide(value.side)) return null;
-  if (!isOrderType(value.order_type)) return null;
-  if (typeof value.quantity !== "string") return null;
-  if (!isStringOrNull(value.limit_price)) return null;
-  if (typeof value.read_at !== "string") return null;
-  if (!isStringOrNull(value.quote_observed_at)) return null;
-  if (!isPreviewStatus(value.status)) return null;
-  if (!isStringOrNull(value.reason)) return null;
-  if (typeof value.step_up_required !== "boolean" && value.step_up_required !== null) return null;
-  if (typeof value.buying_power !== "string") return null;
-  if (!isStringOrNull(value.sell_available)) return null;
-  if (!isStringOrNull(value.initial_reservation)) return null;
-  if (!isStringOrNull(value.estimated_fill_quantity)) return null;
-  if (!isStringOrNull(value.estimated_fill_notional)) return null;
-  if (!isStringOrNull(value.unfilled_quantity)) return null;
-
-  return {
-    symbol: value.symbol,
-    side: value.side,
-    order_type: value.order_type,
-    quantity: value.quantity,
-    limit_price: value.limit_price,
-    read_at: value.read_at,
-    quote_observed_at: value.quote_observed_at,
-    status: value.status,
-    reason: value.reason,
-    step_up_required: value.step_up_required,
-    buying_power: value.buying_power,
-    sell_available: value.sell_available,
-    initial_reservation: value.initial_reservation,
-    estimated_fill_quantity: value.estimated_fill_quantity,
-    estimated_fill_notional: value.estimated_fill_notional,
-    unfilled_quantity: value.unfilled_quantity,
-  };
-}
-
-function parsePersistedOrderAttempt(value: unknown): PersistedOrderAttempt | null {
-  if (!isRecord(value)) return null;
-  const attempt = parseAttempt(value.attempt);
-  const preview = parsePreview(value.preview);
-  if (attempt === null || preview === null) return null;
-  return { attempt, preview };
-}
-
-export function readPersistedOrderAttempt(): PersistedOrderAttempt | null {
+export function readPersistedOrderAttempt(owner?: number): PersistedOrderAttempt | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_SLOT);
-    if (raw === null) return null;
-    return parsePersistedOrderAttempt(JSON.parse(raw));
+    const value: unknown = JSON.parse(sessionStorage.getItem(ORDER_ATTEMPT_SLOT) ?? "null");
+    if (!isRecord(value)) return null;
+    const attempt = parseAttempt(value.attempt);
+    if ("owner" in value) {
+      if (value.owner !== (owner ?? null) || typeof value.stepUpRequired !== "boolean") return null;
+      return attempt && { attempt, stepUpRequired: value.stepUpRequired };
+    }
+    // The previous format was cleared on auth changes in this tab. Keep its existing
+    // key when upgrading a running session, and discard the stored preview.
+    if (!isRecord(value.preview) || value.preview.status !== "eligible"
+      || typeof value.preview.step_up_required !== "boolean") return null;
+    return attempt && { attempt, stepUpRequired: value.preview.step_up_required };
   } catch {
     return null;
   }
 }
 
-export function writePersistedOrderAttempt(value: PersistedOrderAttempt): void {
+export function writePersistedOrderAttempt(value: PersistedOrderAttempt, owner?: number): void {
   try {
-    sessionStorage.setItem(STORAGE_SLOT, JSON.stringify(value));
+    const attempt = parseAttempt(value.attempt);
+    if (attempt === null) return;
+    sessionStorage.setItem(ORDER_ATTEMPT_SLOT, JSON.stringify({ attempt, stepUpRequired: value.stepUpRequired, owner: owner ?? null }));
   } catch {
-    // A storage failure only drops reload recovery. The in-memory attempt is still correct.
-  }
-}
-
-export function clearPersistedOrderAttempt(): void {
-  try {
-    sessionStorage.removeItem(STORAGE_SLOT);
-  } catch {
-    // Clearing is best-effort. A later read still rejects garbage.
+    // The same attempt remains available in memory if session storage is blocked.
   }
 }

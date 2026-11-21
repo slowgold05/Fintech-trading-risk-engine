@@ -1,3 +1,5 @@
+import { keys } from "../night/api";
+import { fetchDailyHistory } from "../api/history";
 import type { LineData, Time, WhitespaceData } from "lightweight-charts";
 
 export const INDEX_PROXIES = [
@@ -10,6 +12,15 @@ export const INDEX_PROXIES = [
 export const PULSE_RANGES = ["1m", "3m", "6m", "1y", "2y"] as const;
 
 export type PulseChartRange = (typeof PULSE_RANGES)[number];
+
+export function proxyHistoryQuery(symbol: string, provider: string, adjustment: string, range: PulseChartRange) {
+  return {
+    queryKey: keys.history(symbol, provider ?? "auto", adjustment, range),
+    queryFn: () => fetchDailyHistory(symbol, provider, adjustment, range),
+    retry: false as const,
+    staleTime: 300000,
+  };
+}
 
 const SESSION_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 

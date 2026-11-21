@@ -1,7 +1,12 @@
+import { loadDraft, saveDraft } from "../night/shell/ticketDraft";
+import { refreshExecution } from "../night/api";
+import { previewTradeImpact } from "../api/tradeImpact";
+import { fetchSymbolQuote } from "../api/market";
+import type { TradeImpactResponse } from "../types/schemas";
 import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import { Button, Field, State } from "../night/kit";
 import { useSearchParams } from "react-router-dom";
 import {
   normalizeOrderDecimal,
@@ -11,7 +16,7 @@ import {
 } from "../api/orderPreview";
 import { createOrder } from "../api/orders";
 import { useToast } from "../context/useToast";
-import { formatDateTime } from "../utils/format";
+import { formatUtcDateTime, simulatedLiquidityLabel } from "../utils/format";
 import type { OrderResponse, TradeSide } from "../types/schemas";
 import {
   clearPersistedOrderAttempt,
@@ -36,9 +41,6 @@ type DraftValues = {
   side: TradeSide;
   orderType: OrderType;
 };
-
-const inputClass = "field-control min-h-11 w-full min-w-0 placeholder:text-slate-400";
-const labelClass = "mb-1.5 block text-sm font-medium text-slate-300";
 
 function formatExactDecimal(value: string): string {
   const negative = value.startsWith("-");
@@ -66,11 +68,6 @@ function displayMoney(value: string | null): string {
   return formatExactMoney(value);
 }
 
-function displayReservation(preview: OrderPreviewResponse): string {
-  if (preview.side === "sell") return "Not applicable";
-  return displayMoney(preview.initial_reservation);
-}
-
 function capturedIntentSummary(preview: OrderPreviewResponse): string {
   const sideLabel = preview.side === "buy" ? "Buy" : "Sell";
   const quantity = formatExactDecimal(preview.quantity);
@@ -86,25 +83,11 @@ function isStatusWord(value: string): boolean {
 }
 
 function orderStatusMessage(result: OrderResponse): string {
-  const matchCount = result.trade_ids?.length;
-  if (matchCount) {
-    return `Order ${result.status}; ${matchCount / 2} match(es).`;
-  }
   return `Order ${result.status}.`;
 }
 
-function attemptFingerprint(payload: OrderPreviewPayload): string {
-  return JSON.stringify({
-    symbol: payload.symbol,
-    side: payload.side,
-    order_type: payload.order_type,
-    quantity: payload.quantity,
-    limit_price: payload.limit_price ?? null,
-  });
-}
-
-function capturedFromPreview(preview: OrderPreviewResponse): OrderPreviewPayload {
-  const payload: OrderPreviewPayload = {
+function capturedFromPreview(preview: OrderPreviewResponse): PersistedAttempt["payload"] {
+  const payload: PersistedAttempt["payload"] = {
     symbol: preview.symbol,
     side: preview.side,
     order_type: preview.order_type,
@@ -112,6 +95,9 @@ function capturedFromPreview(preview: OrderPreviewResponse): OrderPreviewPayload
   };
   if (preview.order_type === "limit" && preview.limit_price !== null) {
     payload.limit_price = preview.limit_price;
+  }
+  if (preview.quote_observed_at !== null) {
+    payload.expected_quote_observed_at = preview.quote_observed_at;
   }
   return payload;
 }
@@ -124,24 +110,37 @@ function draftsMatch(preview: OrderPreviewResponse, draft: DraftValues): boolean
   return normalizeOrderDecimal(draft.limitPrice) === preview.limit_price;
 }
 
-function isUnknownOutcome(error: unknown): boolean {
-  if (!isAxiosError(error)) return true;
-  const status = error.response?.status;
-  if (status == null) return true;
-  return status >= 500;
+function isDefinitiveRejection(error: unknown, replay: boolean): boolean {
+  if (!isAxiosError(error) || !error.response) return false;
+  const { status, data } = error.response;
+  if (status === 503) {
+    return data?.detail === "Usable reference quote unavailable (SM-PT-02)"
+      || data?.detail === "Trading is halted (SM-PT-01)";
+  }
+  if (replay) {
+    // A replay can meet auth, throttling or conflict before reading a stored success.
+    return status === 400 && typeof data?.detail === "string" && data.detail.trim() !== "";
+  }
+  return status >= 400 && status < 500;
 }
 
-function isExplicitBusinessRejection(error: unknown): boolean {
-  if (!isAxiosError(error) || error.response?.status !== 400) return false;
-  const detail = error.response.data?.detail;
-  return typeof detail === "string" && detail.trim() !== "";
+function readableReason(reason: string, quoteObserved?: string | null): string {
+  if (reason === "Usable reference quote unavailable (SM-PT-02)") {
+    return quoteObserved === null
+      ? "No usable cached quote is available for this symbol."
+      : "The cached quote is stale or unavailable.";
+  }
+  if (reason === "Trading is halted (SM-PT-01)") return "Order entry is paused while trading is halted.";
+  if (reason === "Idempotency key was used for a different request") {
+    return "This submission conflicts with an existing order attempt. Check Activity for its outcome.";
+  }
+  return reason;
 }
 
 function readDetail(error: unknown, fallback: string): string {
   if (!isAxiosError(error)) return fallback;
   const detail = error.response?.data?.detail;
-  if (typeof detail === "string" && detail.trim() !== "") return detail;
-  return fallback;
+  return typeof detail === "string" && detail.trim() !== "" ? readableReason(detail) : fallback;
 }
 
 function initialSymbolFromSearch(search: URLSearchParams): string {
@@ -165,60 +164,44 @@ function readPreviewError(error: unknown): string {
   return "The preview could not be refreshed. Earlier figures are hidden. Preview the order again.";
 }
 
-function PreviewFact({
-  label,
-  value,
-  detail,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  mono?: boolean;
-}) {
-  const useMono = mono && !isStatusWord(value);
+function PreviewFact({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="grid gap-1 py-2.5 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] sm:items-baseline sm:gap-3">
-      <dt className="text-sm text-slate-300">
-        {label}
-        {detail ? (
-          <span className="mt-0.5 block text-sm leading-5 font-normal text-slate-300">
-            {detail}
-          </span>
-        ) : null}
-      </dt>
-      <dd
-        className={[
-          "min-w-0 text-sm text-slate-100 sm:text-right",
-          useMono ? "font-mono break-all tabular-nums" : "font-medium break-words",
-        ].join(" ")}
-      >
-        {value}
-      </dd>
+    <div>
+      <dt>{label}{detail && <small>{detail}</small>}</dt>
+      <dd className={isStatusWord(value) ? undefined : "execution-number"}>{value}</dd>
     </div>
   );
 }
 
-export function OrderTicket() {
+export function OrderTicket({ owner, onSubmitted }: {owner?: number; onSubmitted?: (id: number) => void} = {}) {
   const [searchParams] = useSearchParams();
   // Read once on mount. An unresolved attempt seeds the ticket and its idempotency key.
-  const [persistedAttempt] = useState(readPersistedOrderAttempt);
-  const [side, setSide] = useState<TradeSide>(persistedAttempt?.preview.side ?? "buy");
+  const entrySymbol = initialSymbolFromSearch(searchParams);
+  const [saved] = useState(() => {
+    const draft = loadDraft(owner);
+    if (!draft || !entrySymbol) return draft;
+    const savedEntry = "entrySymbol" in draft ? draft.entrySymbol : draft.symbol;
+    return entrySymbol === savedEntry ? draft : null;
+  });
+  const [impact,setImpact] = useState<TradeImpactResponse|null>(null);
+  const [impactMessage,setImpactMessage] = useState("");
+  const [persistedAttempt] = useState(() => readPersistedOrderAttempt(owner));
+  const pendingPayload = persistedAttempt?.attempt.payload;
+  const [side, setSide] = useState<TradeSide>(pendingPayload?.side ?? saved?.side ?? "buy");
   const [orderType, setOrderType] = useState<OrderType>(
-    persistedAttempt?.preview.order_type ?? "limit",
+    pendingPayload?.order_type ?? saved?.orderType ?? (owner ? "market" : "limit"),
   );
   const [symbol, setSymbol] = useState(
-    persistedAttempt?.preview.symbol ?? initialSymbolFromSearch(searchParams),
+    pendingPayload?.symbol ?? saved?.symbol ?? entrySymbol,
   );
-  const [quantity, setQuantity] = useState(persistedAttempt?.preview.quantity ?? "");
+  const [quantity, setQuantity] = useState(pendingPayload?.quantity ?? saved?.quantity ?? (owner ? "1" : ""));
   const [limitPrice, setLimitPrice] = useState(
-    persistedAttempt?.preview.limit_price ?? "",
+    pendingPayload?.limit_price ?? saved?.limitPrice ?? "",
   );
   const [stepUpCode, setStepUpCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [preview, setPreview] = useState<OrderPreviewResponse | null>(
-    persistedAttempt?.preview ?? null,
-  );
+  const [preview, setPreview] = useState<OrderPreviewResponse | null>(null);
+  const [retryNeedsCode, setRetryNeedsCode] = useState(persistedAttempt?.stepUpRequired ?? false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewPending, setPreviewPending] = useState(false);
   const [previewConfirmable, setPreviewConfirmable] = useState(false);
@@ -226,6 +209,19 @@ export function OrderTicket() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [outcomeUnknown, setOutcomeUnknown] = useState(persistedAttempt !== null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const symbolField = useRef<HTMLInputElement>(null);
+  const stepUpField = useRef<HTMLInputElement>(null);
+  const retryButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!owner) return;
+    if (persistedAttempt) {
+      writePersistedOrderAttempt(persistedAttempt, owner);
+      (persistedAttempt.stepUpRequired ? stepUpField.current : retryButton.current)?.focus();
+    } else {
+      symbolField.current?.focus();
+    }
+  }, [owner, persistedAttempt]);
 
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -251,6 +247,10 @@ export function OrderTicket() {
     orderType: "limit",
   });
 
+  useEffect(() => {
+    const draft = { symbol, quantity, side, orderType, limitPrice, entrySymbol };
+    saveDraft(owner, draft);
+  }, [owner, symbol, quantity, side, orderType, limitPrice, entrySymbol]);
   const draft: DraftValues = { symbol, quantity, limitPrice, side, orderType };
   // Handlers read these refs to see the latest committed values. Sync them at commit,
   // before any handler can run, so a discarded render never leaks into a confirmation.
@@ -281,16 +281,19 @@ export function OrderTicket() {
     stepUpKnown &&
     !outcomeUnknown;
   const showStepUp =
-    preview?.step_up_required === true && (showConfirm || outcomeUnknown || confirmPending);
+    (preview?.step_up_required === true && (showConfirm || confirmPending)) ||
+    (outcomeUnknown && retryNeedsCode);
 
   function invalidateFinancialDraft(patch: Partial<DraftValues>) {
-    if (confirmPending || outcomeUnknown) return;
+    if (confirmLockRef.current || outcomeUnknownRef.current) return;
     previewRevisionRef.current += 1;
     previewRef.current = null;
     previewConfirmableRef.current = false;
     attemptRef.current = null;
     stepUpCodeRef.current = "";
     setPreview(null);
+    setImpact(null);
+    setImpactMessage("");
     setPreviewError(null);
     setPreviewPending(false);
     setPreviewConfirmable(false);
@@ -352,11 +355,14 @@ export function OrderTicket() {
 
   async function handlePreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (confirmPending || outcomeUnknown) return;
+    if (confirmLockRef.current || outcomeUnknownRef.current) return;
     const payload = validateDraft(draftRef.current);
     if (payload === null) return;
 
     const requestRevision = ++previewRevisionRef.current;
+    setImpact(null);
+    setImpactMessage("Calculating estimated impact…");
+    if (owner) void loadImpact(payload, requestRevision);
     previewRef.current = null;
     setPreviewPending(true);
     setPreview(null);
@@ -386,492 +392,267 @@ export function OrderTicket() {
     }
   }
 
-  function ensureAttempt(payload: OrderPreviewPayload): PersistedAttempt {
-    const fingerprint = attemptFingerprint(payload);
-    const current = attemptRef.current;
-    if (current && current.fingerprint === fingerprint) return current;
-    const created: PersistedAttempt = {
-      fingerprint,
-      payload,
-      key: crypto.randomUUID(),
-    };
-    attemptRef.current = created;
-    return created;
+  async function loadImpact(payload: OrderPreviewPayload, revision: number) {
+    try {
+      const reference = payload.limit_price ?? (await fetchSymbolQuote(payload.symbol)).price;
+      const price = reference === null ? null : normalizeOrderDecimal(String(reference));
+      if (price === null) throw new Error("Missing reference price");
+      const { symbol, side, order_type, quantity } = payload;
+      const result = await previewTradeImpact({ symbol, side, order_type, quantity, reference_price: price });
+      if (mountedRef.current && revision === previewRevisionRef.current) setImpact(result);
+    } catch {
+      if (mountedRef.current && revision === previewRevisionRef.current) {
+        setImpactMessage("Estimated portfolio impact unavailable.");
+      }
+    }
   }
 
   async function submitConfirmation(retry: boolean) {
     if (confirmLockRef.current) return;
+    const accepted = previewRef.current;
+    const prior = attemptRef.current;
+    if (retry) {
+      if (!outcomeUnknownRef.current || prior === null) return;
+    } else if (outcomeUnknownRef.current || !previewConfirmableRef.current ||
+      accepted?.status !== "eligible" || !draftsMatch(accepted, draftRef.current) ||
+      typeof accepted.step_up_required !== "boolean") {
+      return;
+    }
+
+    const needsCode = retry ? retryNeedsCode : accepted?.step_up_required === true;
+    const code = needsCode ? stepUpCodeRef.current.trim() : undefined;
+    if (code !== undefined && !/^\d{6}$/.test(code)) {
+      setFieldErrors((current) => ({ ...current, stepUp: "Enter the current six-digit authenticator code." }));
+      return;
+    }
+    const attempt = retry ? prior : accepted && {
+      payload: capturedFromPreview(accepted),
+      key: crypto.randomUUID(),
+    };
+    if (attempt === null) return;
+
+    const generation = ++confirmGenerationRef.current;
+    const isActive = () => mountedRef.current && generation === confirmGenerationRef.current;
+    attemptRef.current = attempt;
     confirmLockRef.current = true;
-    let generation = 0;
-    let requestStarted = false;
+    setConfirmPending(true);
+    setConfirmError(null);
+    setSuccessMessage(null);
+    // Record the request before sending it. A reload can occur while the server is committing.
+    writePersistedOrderAttempt({ attempt, stepUpRequired: needsCode }, owner);
 
+    let result: OrderResponse;
     try {
-      const accepted = previewRef.current;
-      if (accepted === null || accepted.status !== "eligible") return;
-      if (typeof accepted.step_up_required !== "boolean") return;
-      if (retry) {
-        if (!outcomeUnknownRef.current || attemptRef.current === null) return;
-      } else if (!previewConfirmableRef.current || !draftsMatch(accepted, draftRef.current)) {
-        return;
-      }
-
-      let code: string | undefined;
-      if (accepted.step_up_required) {
-        const currentCode = stepUpCodeRef.current.trim();
-        if (!/^\d{6}$/.test(currentCode)) {
-          setFieldErrors((current) => ({
-            ...current,
-            stepUp: "Enter the current six-digit authenticator code.",
-          }));
-          return;
-        }
-        code = currentCode;
-      }
-
-      const attempt = retry ? attemptRef.current : ensureAttempt(capturedFromPreview(accepted));
-      if (attempt === null) return;
-
-      generation = ++confirmGenerationRef.current;
-      requestStarted = true;
-      setConfirmPending(true);
-      setConfirmError(null);
-
-      let result: OrderResponse;
-      try {
-        result = await confirmMutation.mutateAsync({
-          symbol: attempt.payload.symbol,
-          side: attempt.payload.side,
-          order_type: attempt.payload.order_type,
-          quantity: attempt.payload.quantity,
-          ...(attempt.payload.limit_price !== undefined
-            ? { limit_price: attempt.payload.limit_price }
-            : {}),
-          idempotencyKey: attempt.key,
-          ...(code !== undefined ? { stepUpCode: code } : {}),
-        });
-      } catch (error) {
-        if (!mountedRef.current || generation !== confirmGenerationRef.current) return;
-        // A retry can fail before the server reads a stored success. Only an explicit
-        // business 400 may release that attempt; other HTTP errors stay unresolved.
-        const definitiveRejection = retry
-          ? isExplicitBusinessRejection(error)
-          : !isUnknownOutcome(error);
-        if (!definitiveRejection) {
-          outcomeUnknownRef.current = true;
-          previewConfirmableRef.current = false;
-          setOutcomeUnknown(true);
-          setPreviewConfirmable(false);
-          setSuccessMessage(null);
-          writePersistedOrderAttempt({ attempt, preview: accepted });
-          return;
-        }
-        attemptRef.current = null;
-        outcomeUnknownRef.current = false;
-        previewConfirmableRef.current = false;
-        clearPersistedOrderAttempt();
-        setOutcomeUnknown(false);
-        setPreviewConfirmable(false);
-        setSuccessMessage(null);
-        setConfirmError(readDetail(error, "The order was rejected."));
-        return;
-      }
-
-      if (!mountedRef.current || generation !== confirmGenerationRef.current) return;
-      attemptRef.current = null;
-      stepUpCodeRef.current = "";
-      outcomeUnknownRef.current = false;
+      result = await confirmMutation.mutateAsync({
+        ...attempt.payload,
+        idempotencyKey: attempt.key,
+        ...(code === undefined ? {} : { stepUpCode: code }),
+      });
+    } catch (error) {
+      if (!isActive()) return;
       previewConfirmableRef.current = false;
-      clearPersistedOrderAttempt();
-      setStepUpCode("");
-      setOutcomeUnknown(false);
       setPreviewConfirmable(false);
-      setFieldErrors((current) => (current.stepUp ? { ...current, stepUp: undefined } : current));
-      const message = orderStatusMessage(result);
-      setSuccessMessage(message);
+      if (!isDefinitiveRejection(error, retry)) {
+        outcomeUnknownRef.current = true;
+        setOutcomeUnknown(true);
+        setRetryNeedsCode(needsCode);
+        if (retry && isAxiosError(error) && error.response?.status && error.response.status < 500) {
+          setConfirmError(readDetail(error, "This retry did not resolve the order."));
+        }
+        return;
+      }
+      attemptRef.current = null;
+      outcomeUnknownRef.current = false;
+      clearPersistedOrderAttempt(owner);
+      setOutcomeUnknown(false);
+      previewRevisionRef.current += 1;
+      previewRef.current = null;
+      setPreview(null);
+      setImpact(null);
+      setImpactMessage("");
+      updateStepUpCode("");
+      setConfirmError(readDetail(error, "The order was rejected."));
+      return;
+    } finally {
+      confirmLockRef.current = false;
+      if (isActive()) setConfirmPending(false);
+    }
+
+    if (!isActive()) return;
+    attemptRef.current = null;
+    outcomeUnknownRef.current = false;
+    previewConfirmableRef.current = false;
+    clearPersistedOrderAttempt(owner);
+    updateStepUpCode("");
+    setOutcomeUnknown(false);
+    setPreviewConfirmable(false);
+    const message = orderStatusMessage(result);
+    setSuccessMessage(message);
+    if (onSubmitted) {
+      saveDraft(owner, null);
+      onSubmitted(result.id);
+    } else {
       try {
         showToast("success", message);
       } catch {
-        // The server status is already on the ticket. A toast failure is not an order outcome.
-      }
-    } finally {
-      confirmLockRef.current = false;
-      if (requestStarted && mountedRef.current && generation === confirmGenerationRef.current) {
-        setConfirmPending(false);
+        // The server acknowledgement already establishes the order outcome.
       }
     }
-
-    if (!mountedRef.current || generation !== confirmGenerationRef.current) return;
-    try {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["orders"] }),
-        queryClient.invalidateQueries({ queryKey: ["trades"] }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
-        queryClient.invalidateQueries({ queryKey: ["risk"] }),
-      ]);
-    } catch {
-      // The order response is already known. A later list refresh is not an unknown outcome.
-    }
+    const refresh = owner ? refreshExecution(queryClient, owner) : Promise.all(
+      ["orders", "trades", "portfolio", "risk"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })),
+    );
+    void refresh.catch(() => {
+      // Receipt loading and list refresh have their own error states.
+    });
   }
 
-  const sideButtonClass = (selected: boolean, tone: "buy" | "sell") =>
-    [
-      "flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold tracking-wide transition-colors duration-200",
-      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
-      "disabled:cursor-not-allowed disabled:opacity-50",
-      tone === "buy"
-        ? "focus-visible:outline-emerald-300"
-        : "focus-visible:outline-rose-300",
-      selected
-        ? tone === "buy"
-          ? "bg-emerald-400 text-slate-950"
-          : "bg-rose-400 text-slate-950 hover:bg-rose-300"
-        : tone === "buy"
-          ? "border border-slate-700 bg-slate-900/60 text-slate-300 hover:border-emerald-400/50 hover:text-emerald-300"
-          : "border border-slate-700 bg-slate-900/60 text-slate-300 hover:border-rose-400/50 hover:text-rose-300",
-    ].join(" ");
-
-  const quoteObserved =
-    preview === null
-      ? "Unavailable"
-      : preview.quote_observed_at === null
-        ? "Unavailable"
-        : formatDateTime(preview.quote_observed_at);
-
   return (
-    <form
-      aria-busy={previewPending || confirmPending}
-      className="min-w-0 space-y-4"
-      noValidate
-      onSubmit={(event) => {
-        void handlePreview(event);
-      }}
-    >
-      <fieldset disabled={financialLocked}>
-        <legend className={labelClass}>Side</legend>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            aria-label="Buy"
-            aria-pressed={side === "buy"}
-            className={sideButtonClass(side === "buy", "buy")}
-            disabled={financialLocked}
-            onClick={() => {
-              if (side !== "buy") invalidateFinancialDraft({ side: "buy" });
-            }}
-            type="button"
-          >
-            <ArrowUp aria-hidden="true" className="size-4 shrink-0" weight="bold" />
-            BUY
-          </button>
-          <button
-            aria-label="Sell"
-            aria-pressed={side === "sell"}
-            className={sideButtonClass(side === "sell", "sell")}
-            disabled={financialLocked}
-            onClick={() => {
-              if (side !== "sell") invalidateFinancialDraft({ side: "sell" });
-            }}
-            type="button"
-          >
-            <ArrowDown aria-hidden="true" className="size-4 shrink-0" weight="bold" />
-            SELL
-          </button>
+    <form data-testid="order-ticket" aria-label="Order ticket" aria-busy={previewPending || confirmPending}
+      className="execution-ticket" noValidate onSubmit={(event) => { void handlePreview(event); }}>
+      <fieldset className="execution-side" disabled={financialLocked}>
+        <legend>Side</legend>
+        <div>
+          {(["buy", "sell"] as const).map((value) => (
+            <Button key={value} aria-pressed={side === value} disabled={financialLocked}
+              onClick={() => { if (side !== value) invalidateFinancialDraft({ side: value }); }}>
+              {value === "buy" ? "Buy" : "Sell"}
+            </Button>
+          ))}
         </div>
       </fieldset>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="block min-w-0">
-          <span className={labelClass}>Symbol</span>
-          <input
-            aria-describedby={fieldErrors.symbol ? "order-symbol-error" : undefined}
-            aria-invalid={fieldErrors.symbol ? true : undefined}
-            aria-label="Trade symbol"
-            autoCapitalize="characters"
-            autoComplete="off"
-            autoCorrect="off"
-            className={`${inputClass} font-mono uppercase`}
-            disabled={financialLocked}
-            id="order-symbol"
-            maxLength={20}
-            onChange={(event) =>
-              invalidateFinancialDraft({
-                symbol: event.target.value.toUpperCase().slice(0, 20),
-              })
-            }
-            placeholder="AAPL"
-            spellCheck={false}
-            type="text"
-            value={symbol}
-          />
-          {fieldErrors.symbol ? (
-            <p className="mt-1.5 text-sm leading-6 text-rose-200" id="order-symbol-error" role="alert">
-              {fieldErrors.symbol}
-            </p>
-          ) : null}
-        </label>
-        <label className="block min-w-0">
-          <span className={labelClass}>Quantity</span>
-          <input
-            aria-describedby={fieldErrors.quantity ? "order-quantity-error" : undefined}
-            aria-invalid={fieldErrors.quantity ? true : undefined}
-            aria-label="Trade quantity"
-            autoComplete="off"
-            className={`${inputClass} text-right font-mono`}
-            disabled={financialLocked}
-            id="order-quantity"
-            inputMode="decimal"
+      <div className="execution-ticket-inputs">
+        <Field id="order-symbol" label="Symbol" error={fieldErrors.symbol}>
+          <input ref={symbolField} aria-label="Trade symbol" autoCapitalize="characters" autoComplete="off" autoCorrect="off"
+            className="execution-number" disabled={financialLocked} data-testid="order-symbol"
+            maxLength={20} onChange={(event) => invalidateFinancialDraft({ symbol: event.target.value.toUpperCase() })}
+            placeholder="AAPL" spellCheck={false} value={symbol} />
+        </Field>
+        <Field id="order-quantity" label="Quantity" error={fieldErrors.quantity}>
+          <input aria-label="Trade quantity" autoComplete="off" className="execution-number"
+            disabled={financialLocked} data-testid="order-quantity" inputMode="decimal"
             onChange={(event) => invalidateFinancialDraft({ quantity: event.target.value })}
-            placeholder="100"
-            spellCheck={false}
-            type="text"
-            value={quantity}
-          />
-          {fieldErrors.quantity ? (
-            <p className="mt-1.5 text-sm leading-6 text-rose-200" id="order-quantity-error" role="alert">
-              {fieldErrors.quantity}
-            </p>
-          ) : null}
-        </label>
+            placeholder="1" spellCheck={false} value={quantity} />
+        </Field>
+        <Field id="order-type" label="Order type">
+          <select aria-label="Order type" disabled={financialLocked} data-testid="order-type" value={orderType}
+            onChange={(event) => invalidateFinancialDraft({ orderType: event.target.value === "market" ? "market" : "limit" })}>
+            <option value="market">Market</option>
+            <option value="limit">Limit</option>
+          </select>
+        </Field>
+        {orderType === "limit" && (
+          <Field id="order-limit-price" label="Limit price" error={fieldErrors.limitPrice}>
+            <input aria-label="Limit price" autoComplete="off" className="execution-number" disabled={financialLocked}
+              data-testid="order-limit" inputMode="decimal"
+              onChange={(event) => invalidateFinancialDraft({ limitPrice: event.target.value })}
+              placeholder="150.00" spellCheck={false} value={limitPrice} />
+          </Field>
+        )}
       </div>
-
-      <label className="block min-w-0">
-        <span className={labelClass}>Order type</span>
-        <select
-          aria-label="Order type"
-          className={inputClass}
-          disabled={financialLocked}
-          id="order-type"
-          onChange={(event) =>
-            invalidateFinancialDraft({
-              orderType: event.target.value === "market" ? "market" : "limit",
-            })
-          }
-          value={orderType}
-        >
-          <option value="limit">Limit</option>
-          <option value="market">Market</option>
-        </select>
-      </label>
-
-      {orderType === "limit" ? (
-        <label className="block min-w-0">
-          <span className={labelClass}>Limit price</span>
-          <input
-            aria-describedby={fieldErrors.limitPrice ? "order-limit-error" : "order-limit-help"}
-            aria-invalid={fieldErrors.limitPrice ? true : undefined}
-            aria-label="Limit price"
-            autoComplete="off"
-            className={`${inputClass} text-right font-mono`}
-            disabled={financialLocked}
-            id="order-limit-price"
-            inputMode="decimal"
-            onChange={(event) => invalidateFinancialDraft({ limitPrice: event.target.value })}
-            placeholder="150.00"
-            spellCheck={false}
-            type="text"
-            value={limitPrice}
-          />
-          {fieldErrors.limitPrice ? (
-            <p className="mt-1.5 text-sm leading-6 text-rose-200" id="order-limit-error" role="alert">
-              {fieldErrors.limitPrice}
-            </p>
-          ) : (
-            <p className="mt-1.5 text-sm leading-6 text-slate-300" id="order-limit-help">
-              Required for a limit order.
-            </p>
-          )}
-        </label>
-      ) : (
-        <p className="text-sm leading-6 text-slate-300">
-          Market orders do not set a limit price.
+      <p className="execution-muted">
+        {orderType === "market" ? "Unfilled market shares are canceled." : "Unfilled limit shares stay open."}
+      </p>
+      <Button data-testid="order-preview" aria-label="Preview order" type="submit"
+        variant={showConfirm || outcomeUnknown ? "quiet" : "primary"}
+        busy={previewPending} disabled={financialLocked}>
+        {previewPending ? "Previewing…" : "Preview order"}
+      </Button>
+      {previewError && <State kind="error" title={previewError} role="alert" />}
+      {outcomeUnknown && (
+        <State kind="unavailable" title="The outcome of this order is unknown."
+          detail="Retry the same order to check its outcome using the original submission." />
+      )}
+      {successMessage && <p role="status">{successMessage}</p>}
+      {confirmError && (
+        <p className="execution-error" role="alert">
+          {confirmError} {!outcomeUnknown && "Preview the order again before confirming."}
         </p>
       )}
-
-      <p className="text-sm leading-6 text-slate-300">
-        Paper orders fill at matched order prices. Cached quotes can be delayed.{" "}
-        {orderType === "market"
-          ? "Unfilled market quantity is canceled."
-          : "Unfilled limit quantity rests."}
-      </p>
-
-      {previewError ? (
-        <p className="text-sm leading-6 text-rose-200" id="order-preview-error" role="alert">
-          {previewError}
-        </p>
-      ) : null}
-
-      {preview ? (
-        <div className="border-t border-slate-800 pt-5">
-          <h3 className="text-base font-semibold tracking-tight text-slate-100">Order preview</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-100">{capturedIntentSummary(preview)}</p>
-          <div className="mt-1 space-y-2">
-            {successMessage ? (
-              <>
-                <p className="text-sm leading-6 font-medium text-emerald-300" role="status">
-                  {successMessage}
-                </p>
-                <p className="text-sm leading-6 text-slate-300">
-                  The figures below are the earlier preview, not an execution report.
-                </p>
-              </>
-            ) : null}
-            {outcomeUnknown ? (
-              <p className="text-sm leading-6 text-slate-100" id="order-unknown-outcome" role="status">
-                The outcome of this order is unknown. It is not marked failed or filled. Retry the
-                same order to reuse this attempt. The ticket stays locked until it resolves.
-              </p>
-            ) : null}
-            {confirmError ? (
-              <p className="text-sm leading-6 text-rose-200" id="order-confirm-error" role="alert">
-                {confirmError} Adjust the ticket and preview the order again before confirming.
-              </p>
-            ) : null}
-            {!successMessage && !outcomeUnknown && !confirmError && !confirmPending && preview.status === "eligible" && showConfirm ? (
-              <p className="text-sm leading-6 font-medium text-emerald-300" role="status">
-                Preview ready
-              </p>
-            ) : null}
-            {!successMessage && !outcomeUnknown && preview.status !== "eligible" ? (
-              <>
-                <p className="text-sm leading-6 text-rose-200" role="status">
-                  {preview.reason}
-                </p>
-                <p className="text-sm leading-6 text-slate-300">
-                  This preview cannot be confirmed. Adjust the ticket and preview again.
-                </p>
-              </>
-            ) : null}
-            {!successMessage &&
-            !outcomeUnknown &&
-            !confirmError &&
-            preview.status === "eligible" &&
-            !showConfirm ? (
-              <p className="text-sm leading-6 text-slate-300" role="status">
-                This preview can no longer be confirmed. Preview the order again.
-              </p>
-            ) : null}
-          </div>
-
-          <dl className="mt-3 divide-y divide-slate-800 border-t border-slate-800">
-            <PreviewFact label="Buying power" mono value={displayMoney(preview.buying_power)} />
-            <PreviewFact
-              label="Shares available to sell"
-              mono
-              value={displayDecimal(preview.sell_available)}
-            />
-            <PreviewFact
-              detail="Cash set aside for this order. This is not the estimated fill spend."
-              label="Initial reservation"
-              mono
-              value={displayReservation(preview)}
-            />
-            <PreviewFact
-              label="Estimated fill quantity"
-              mono
-              value={displayDecimal(preview.estimated_fill_quantity)}
-            />
-            <PreviewFact
-              label="Estimated fill notional"
-              mono
-              value={displayMoney(preview.estimated_fill_notional)}
-            />
-            <PreviewFact
-              label="Unfilled quantity"
-              mono
-              value={displayDecimal(preview.unfilled_quantity)}
-            />
-            <PreviewFact label="Account snapshot" value={formatDateTime(preview.read_at)} />
-            <PreviewFact label="Quote observed" value={quoteObserved} />
-          </dl>
-          <p className="mt-3 text-sm leading-6 text-slate-300">
-            These estimates are not binding. The server rechecks the order when you confirm. Quote
-            observed is not a live execution price.
-          </p>
-        </div>
-      ) : null}
-
-      {showStepUp ? (
-        <label className="block min-w-0">
-          <span className={labelClass}>Authenticator code</span>
-          <input
-            aria-describedby={
-              fieldErrors.stepUp ? "order-step-up-error" : "order-step-up-help"
-            }
-            aria-invalid={fieldErrors.stepUp ? true : undefined}
-            aria-label="Authenticator code"
-            autoComplete="one-time-code"
-            className={`${inputClass} font-mono`}
-            disabled={confirmPending}
-            id="order-step-up"
-            inputMode="numeric"
-            maxLength={6}
-            onChange={(event) => updateStepUpCode(event.target.value)}
-            spellCheck={false}
-            type="text"
-            value={stepUpCode}
-          />
-          {fieldErrors.stepUp ? (
-            <p className="mt-1.5 text-sm leading-6 text-rose-200" id="order-step-up-error" role="alert">
-              {fieldErrors.stepUp}
-            </p>
+      {preview && !outcomeUnknown && !successMessage && (
+        <section data-testid="order-preview-result" aria-label="Order preview" className="execution-preview">
+          <h3>Order preview</h3>
+          <p>{capturedIntentSummary(preview)}</p>
+          {preview.status === "eligible" ? (
+            !confirmError && <p role="status">{showConfirm ? "Preview ready" : "Preview the order again to confirm."}</p>
           ) : (
-            <p className="mt-1.5 text-sm leading-6 text-slate-300" id="order-step-up-help">
-              Enter the current six-digit code. It is sent only when you confirm. The server decides
-              whether that code is accepted.
+            <p className="execution-error" role="status">
+              {readableReason(preview.reason ?? "Preview unavailable.", preview.quote_observed_at)}
             </p>
           )}
-        </label>
-      ) : null}
-
-      <div className="flex flex-col gap-2">
-        <button
-          aria-label="Preview order"
-          className={
-            showConfirm || outcomeUnknown
-              ? "min-h-11 w-full rounded-xl border border-slate-400 bg-slate-900 text-sm font-semibold text-slate-100 hover:border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
-              : "primary-action min-h-11 w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
-          }
-          disabled={previewPending || confirmPending || outcomeUnknown}
-          type="submit"
-        >
-          {previewPending ? "Previewing…" : "Preview order"}
+          <dl className="execution-facts">
+            <PreviewFact label="Buying power" value={displayMoney(preview.buying_power)} />
+            <PreviewFact label="Shares available to sell" value={displayDecimal(preview.sell_available)} />
+            {preview.side === "buy" ? (
+              <PreviewFact label="Initial reservation" value={displayMoney(preview.initial_reservation)} />
+            ) : preview.order_type === "limit" && (
+              <PreviewFact label="Estimated reserved shares" value={displayDecimal(preview.unfilled_quantity)}
+                detail="For the portion estimated to remain open" />
+            )}
+            <PreviewFact label="Estimated fill quantity" value={displayDecimal(preview.estimated_fill_quantity)} />
+            <PreviewFact label="Estimated fill notional" value={displayMoney(preview.estimated_fill_notional)} />
+            <PreviewFact label="Unfilled quantity" value={displayDecimal(preview.unfilled_quantity)} />
+            <PreviewFact label="Quote observed" value={formatUtcDateTime(preview.quote_observed_at) ?? "Unavailable"} />
+          </dl>
+          {!!preview.estimated_fills?.length && (
+            <ul aria-label="Estimated executions">
+              {preview.estimated_fills.map((fill, index) => (
+                <li key={index}>
+                  {formatExactDecimal(fill.quantity)} shares at {formatExactMoney(fill.execution_price)}{" "}
+                  ({fill.counterparty === "simulated"
+                    ? `${simulatedLiquidityLabel(fill.simulated_quote_date)} · ${fill.simulated_quote_source ?? "Provider unavailable"}`
+                    : "Opposing paper order"})
+                </li>
+              ))}
+            </ul>
+          )}
+          {preview.remainder_reason && <p>{preview.remainder_reason}</p>}
+          {preview.status === "eligible" && <p className="execution-muted">Confirmation rechecks the order. Actual fills appear on the receipt.</p>}
+        </section>
+      )}
+      {owner && impactMessage && !outcomeUnknown && !successMessage && (
+        <section data-testid="order-impact" aria-label="Estimated portfolio impact" className="execution-preview">
+          <h3>Estimated portfolio impact</h3>
+          {impact ? (
+            <>
+              <dl className="execution-facts">
+                <PreviewFact label="Cash (USD)" value={impactRange(impact.before.cash_balance, impact.after.cash_balance)} />
+                <PreviewFact label="Position weight (%)" value={impactRange(impact.before.symbol_weight_pct, impact.after.symbol_weight_pct)} />
+              </dl>
+              <p className="execution-muted">
+                Assumes all {formatExactDecimal(impact.quantity)} shares execute at {formatExactMoney(impact.reference_price)}.
+                {impact.status === "incomplete" && " Some marks needed for position weights are unavailable."}
+              </p>
+              {impact.warnings.includes("insufficient_buying_power") && <p>Scenario exceeds available cash.</p>}
+              {impact.warnings.includes("insufficient_shares") && <p>Scenario exceeds shares held.</p>}
+            </>
+          ) : <p role="status">{impactMessage}</p>}
+        </section>
+      )}
+      {showStepUp && (
+        <Field id="order-step-up" label="Authenticator code" error={fieldErrors.stepUp}
+          hint={fieldErrors.stepUp ? undefined : "Enter the current six-digit code."}>
+          <input ref={stepUpField} autoComplete="one-time-code" className="execution-number" disabled={confirmPending}
+            inputMode="numeric" maxLength={6} onChange={(event) => updateStepUpCode(event.target.value)}
+            spellCheck={false} type="text" value={stepUpCode} />
+        </Field>
+      )}
+      {outcomeUnknown && (
+        <button ref={retryButton} className="nk-button" data-variant="primary" type="button" disabled={confirmPending}
+          aria-busy={confirmPending} aria-label="Retry same order" onClick={() => { void submitConfirmation(true); }}>
+          {confirmPending ? "Retrying…" : "Retry same order"}
         </button>
-        {outcomeUnknown ? (
-          <button
-            aria-label="Retry same order"
-            className={[
-              "primary-action min-h-11 w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-50",
-              side === "sell"
-                ? "!bg-rose-400 !text-slate-950 hover:!bg-rose-300 focus-visible:!outline-rose-300"
-                : "",
-            ].join(" ")}
-            disabled={confirmPending}
-            onClick={() => {
-              void submitConfirmation(true);
-            }}
-            type="button"
-          >
-            {confirmPending ? "Retrying…" : "Retry same order"}
-          </button>
-        ) : null}
-        {showConfirm ? (
-          <button
-            aria-label="Confirm paper order"
-            className={[
-              "primary-action min-h-11 w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-50",
-              side === "sell"
-                ? "!bg-rose-400 !text-slate-950 hover:!bg-rose-300 focus-visible:!outline-rose-300"
-                : "",
-            ].join(" ")}
-            disabled={confirmPending}
-            onClick={() => {
-              void submitConfirmation(false);
-            }}
-            type="button"
-          >
-            {confirmPending ? "Confirming…" : "Confirm paper order"}
-          </button>
-        ) : null}
-      </div>
+      )}
+      {showConfirm && (
+        <Button variant="primary" data-testid="order-confirm" aria-label="Confirm paper order" busy={confirmPending}
+          onClick={() => { void submitConfirmation(false); }}>
+          {confirmPending ? "Confirming…" : "Confirm paper order"}
+        </Button>
+      )}
     </form>
   );
+}
+
+function impactRange(before: string | null, after: string | null) {
+  return `${displayDecimal(before)} → ${displayDecimal(after)}`;
 }

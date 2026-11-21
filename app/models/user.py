@@ -1,8 +1,11 @@
-from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Numeric, func, text
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, Integer, JSON, Numeric, String, and_, func, null, text
+from sqlalchemy.ext.hybrid import hybrid_property
 from app.core.database import Base
 
 
 ROLES = ("trader", "analyst", "compliance_officer", "admin", "auditor")
+# The registration schema accepts only email addresses. Reserve a non-email identity.
+LIQUIDITY_PROVIDER_IDENTITY = "sentinel:simulated-liquidity"
 
 
 class User(Base):
@@ -10,6 +13,9 @@ class User(Base):
     __table_args__ = (
         CheckConstraint("cash_balance >= 0", name="ck_users_cash_nonnegative"),
         CheckConstraint("role IN ('trader', 'analyst', 'compliance_officer', 'admin', 'auditor')", name="ck_users_role_valid"),
+        CheckConstraint("demo_seed IS NULL OR role = 'trader'", name="ck_users_demo_trader"),
+        CheckConstraint("demo_archived_at IS NULL OR demo_seed IS NOT NULL", name="ck_users_demo_archive"),
+        Index("ix_users_demo_created_at", "created_at", postgresql_where=text("demo_seed IS NOT NULL")),
     )
 
     id = Column(Integer, primary_key=True)
@@ -19,3 +25,25 @@ class User(Base):
     role = Column(String(24), nullable=False, server_default=text("'trader'"))
     cash_balance = Column(Numeric(18, 2), nullable=False, default=100000)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    demo_seed = Column(JSON(none_as_null=True), nullable=True)
+    demo_archived_at = Column(DateTime, nullable=True, server_default=null())
+
+    @hybrid_property
+    def is_demo(self) -> bool:
+        return not self.is_system and self.demo_seed is not None
+
+    @is_demo.expression
+    def is_demo(cls):
+        return and_(~cls.is_system, cls.demo_seed.is_not(None))
+
+    @property
+    def display_name(self) -> str | None:
+        return self.demo_seed["display_name"] if self.is_demo else None
+
+    @property
+    def demo_seed_mode(self) -> str | None:
+        return self.demo_seed["mode"] if self.is_demo else None
+
+    @hybrid_property
+    def is_system(self):
+        return self.email == LIQUIDITY_PROVIDER_IDENTITY

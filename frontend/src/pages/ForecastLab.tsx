@@ -1,7 +1,7 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { fetchDailyHistory } from "../api/history";
+import { fetchCachedSeries, fetchDailyHistory } from "../api/history";
 import {
   cancelForecastJob,
   createForecastJob,
@@ -12,25 +12,13 @@ import {
   type CreateForecastJobBody,
 } from "../api/forecasts";
 import { ForecastChart } from "../components/ForecastChart";
-import { PageHeader } from "../components/PageHeader";
-import {
-  DashboardCard,
-  EmptyState,
-  SkeletonBlock,
-} from "../features/dashboard/components";
-import type { ForecastEvaluation, ForecastJob, ForecastResult } from "../types/schemas";
+import { keys } from "../night/api";
+import { Button, Field, Page, Panel, RestInstrument, State } from "../night/inner";
+import { DeskAccount, EmptyState, LoadingRows, QueryError, RefreshButton } from "../night/features/desks/DeskStates";
+import { ForecastWindow } from "../night/features/desks/ForecastWindow";
+import "../night/features/desks/forecast.css";
+import type { ForecastEvaluation, ForecastJob, ForecastModel, ForecastResult } from "../types/schemas";
 import { formatDateTime } from "../utils/format";
-
-const pageDescription =
-  "Preview model-generated price paths from cached history. This is not a prediction and places no trades.";
-
-const statusTone: Record<ForecastJob["status"], string> = {
-  queued: "border-amber-400/40 bg-amber-400/10 text-amber-300",
-  running: "border-sky-400/30 bg-sky-400/10 text-sky-300",
-  completed: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
-  failed: "border-rose-400/40 bg-rose-400/10 text-rose-300",
-  cancelled: "border-rose-400/40 bg-rose-400/10 text-rose-300",
-};
 
 function requestErrorMessage(error: unknown, fallback: string) {
   return isAxiosError(error)
@@ -38,222 +26,70 @@ function requestErrorMessage(error: unknown, fallback: string) {
     : fallback;
 }
 
-function RefreshButton({ onClick, label = "Refresh" }: { onClick: () => void; label?: string }) {
-  return (
-    <button
-      className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100"
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
-  );
-}
-
-function QueryError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div
-      className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200"
-      role="alert"
-    >
-      <p>{message}</p>
-      <button
-        className="mt-3 rounded-md border border-rose-400/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
-        onClick={onRetry}
-        type="button"
-      >
-        Retry
-      </button>
-    </div>
-  );
-}
-
-function LoadingRows() {
-  return (
-    <div className="space-y-3">
-      <SkeletonBlock className="h-14" />
-      <SkeletonBlock className="h-14" />
-      <SkeletonBlock className="h-14" />
-    </div>
-  );
-}
-
-function CreateForecastJobCard() {
+function CreateForecastJobCard({ owner, model }: { owner: number; model?: ForecastModel }) {
   const queryClient = useQueryClient();
   const [symbol, setSymbol] = useState("");
   const [provider, setProvider] = useState("");
-  const [adjustmentType, setAdjustmentType] = useState("");
+  const [basis, setBasis] = useState("");
   const [lookback, setLookback] = useState("");
   const [horizon, setHorizon] = useState("");
   const [sampleCount, setSampleCount] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [queuedSymbol, setQueuedSymbol] = useState<string | null>(null);
-  const createMutation = useMutation({
+  const catalog = useQuery({
+    queryKey: keys.market("data-status"), queryFn: fetchCachedSeries, retry: false,
+  });
+  const series = (catalog.data?.canonical_history.series ?? []).filter(row =>
+    row.provider && (row.adjustment_type === "raw" || row.adjustment_type === "split_adjusted") && row.row_count !== 0);
+  const providers = [...new Set(series.map(row => row.provider))];
+  const selectedProvider = providers.includes(provider) ? provider : providers[0] ?? "";
+  const adjustments = [...new Set(series.filter(row => row.provider === selectedProvider).map(row => row.adjustment_type))];
+  const selectedBasis = adjustments.includes(basis) ? basis : adjustments[0] ?? "";
+  const canQueue = Boolean(model && selectedProvider && selectedBasis && !catalog.isError);
+  const mutation = useMutation({
     mutationFn: (body: CreateForecastJobBody) => createForecastJob(body),
-    onSuccess: async (job) => {
-      setErrorMessage(null);
-      setQueuedSymbol(job.symbol);
-      setSymbol("");
-      setProvider("");
-      setAdjustmentType("");
-      setLookback("");
-      setHorizon("");
-      setSampleCount("");
-      await queryClient.invalidateQueries({ queryKey: ["forecast-jobs"] });
-    },
-    onError: (error) => {
-      setQueuedSymbol(null);
-      setErrorMessage(requestErrorMessage(error, "Forecast job could not be queued."));
+    onSuccess: async () => {
+      setSymbol(""); setLookback(""); setHorizon(""); setSampleCount("");
+      await queryClient.invalidateQueries({ queryKey: keys.account(owner, "forecasts", "jobs") });
     },
   });
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmedSymbol = symbol.trim();
-    const trimmedProvider = provider.trim();
-    const trimmedAdjustment = adjustmentType.trim();
-    const lookbackText = lookback.trim();
-    const horizonText = horizon.trim();
-    const sampleCountText = sampleCount.trim();
-    if (
-      trimmedSymbol.length === 0 ||
-      trimmedProvider.length === 0 ||
-      trimmedAdjustment.length === 0 ||
-      lookbackText.length === 0 ||
-      horizonText.length === 0 ||
-      sampleCountText.length === 0
-    ) {
-      return;
-    }
-    setErrorMessage(null);
-    setQueuedSymbol(null);
-    createMutation.mutate({
-      symbol: trimmedSymbol,
-      provider: trimmedProvider,
-      adjustment_type: trimmedAdjustment,
-      lookback: Number(lookbackText),
-      horizon: Number(horizonText),
-      sample_count: Number(sampleCountText),
-    });
+    if (!canQueue || !symbol.trim() || mutation.isPending || !event.currentTarget.checkValidity()) return;
+    mutation.mutate({ symbol: symbol.trim(), provider: selectedProvider, adjustment_type: selectedBasis,
+      lookback: Number(lookback), horizon: Number(horizon), sample_count: Number(sampleCount) });
   }
 
-  return (
-    <DashboardCard title="Queue a forecast job">
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Symbol
-          </span>
-          <input
-            aria-label="Symbol"
-            className="field-control font-mono"
-            onChange={(event) => setSymbol(event.target.value)}
-            required
-            type="text"
-            value={symbol}
-          />
-        </label>
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Provider
-          </span>
-          <input
-            aria-label="Provider"
-            className="field-control font-mono"
-            onChange={(event) => setProvider(event.target.value)}
-            required
-            type="text"
-            value={provider}
-          />
-        </label>
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Adjustment type
-          </span>
-          <input
-            aria-label="Adjustment type"
-            className="field-control font-mono"
-            onChange={(event) => setAdjustmentType(event.target.value)}
-            required
-            type="text"
-            value={adjustmentType}
-          />
-        </label>
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Lookback
-          </span>
-          <input
-            aria-label="Lookback"
-            className="field-control font-mono"
-            min={1}
-            onChange={(event) => setLookback(event.target.value)}
-            required
-            step={1}
-            type="number"
-            value={lookback}
-          />
-        </label>
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Horizon
-          </span>
-          <input
-            aria-label="Horizon"
-            className="field-control font-mono"
-            min={1}
-            onChange={(event) => setHorizon(event.target.value)}
-            required
-            step={1}
-            type="number"
-            value={horizon}
-          />
-        </label>
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Sample count
-          </span>
-          <input
-            aria-label="Sample count"
-            className="field-control font-mono"
-            min={1}
-            onChange={(event) => setSampleCount(event.target.value)}
-            required
-            step={1}
-            type="number"
-            value={sampleCount}
-          />
-        </label>
-        <p className="text-xs text-slate-500">
-          This queues one generated path from cached history. It does not place a trade. The symbol
-          must already be in this app's market list.
-        </p>
-        <button className="primary-action" disabled={createMutation.isPending} type="submit">
-          {createMutation.isPending ? "Queuing..." : "Queue job"}
-        </button>
-      </form>
-      {errorMessage ? (
-        <div
-          className="mt-4 rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200"
-          role="alert"
-        >
-          {errorMessage}
-        </div>
-      ) : null}
-      {queuedSymbol ? (
-        <p className="mt-4 text-sm text-slate-300" role="status">
-          Forecast job queued for {queuedSymbol}.
-        </p>
-      ) : null}
-    </DashboardCard>
-  );
+  return <Panel title="Queue a forecast job" className="forecast-request">
+    {!model && <State kind="unavailable" title="New runs unavailable" detail="An enabled server model is required to queue a new run from this desk." />}
+    {model && catalog.isError && <QueryError message="Stored series could not be loaded." onRetry={catalog.refetch} />}
+    {model && catalog.isSuccess && !series.length && <State kind="empty" title="No stored series available for a run." />}
+    <form onSubmit={submit}>
+      <fieldset disabled={!canQueue || mutation.isPending} className="forecast-inputs" aria-label="Forecast parameters">
+        <Field id="forecast-symbol" label="Symbol"><input required maxLength={20} value={symbol} onChange={e => setSymbol(e.target.value)} /></Field>
+        <Field id="forecast-provider" label="Provider"><select value={selectedProvider} onChange={e => setProvider(e.target.value)}>
+          {!providers.length && <option value="">Unavailable</option>}{providers.map(value => <option key={value}>{value}</option>)}
+        </select></Field>
+        <Field id="forecast-basis" label="Adjustment type"><select value={selectedBasis} onChange={e => setBasis(e.target.value)}>
+          {!adjustments.length && <option value="">Unavailable</option>}{adjustments.map(value => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}
+        </select></Field>
+        <Field id="forecast-lookback" label="Lookback" hint="Observed sessions"><input required type="number" min={1} max={model?.max_lookback} step={1} value={lookback} onChange={e => setLookback(e.target.value)} /></Field>
+        <Field id="forecast-horizon" label="Horizon" hint="Generated sessions"><input required type="number" min={1} max={model?.max_horizon} step={1} value={horizon} onChange={e => setHorizon(e.target.value)} /></Field>
+        <Field id="forecast-samples" label="Sample count"><input required type="number" min={1} max={model?.max_sample_count} step={1} value={sampleCount} onChange={e => setSampleCount(e.target.value)} /></Field>
+      </fieldset>
+      <Button type="submit" variant="primary" disabled={!canQueue} busy={mutation.isPending}>{mutation.isPending ? "Queuing…" : "Queue job"}</Button>
+    </form>
+    {mutation.isError && <p className="desk-alert" role="alert">{requestErrorMessage(mutation.error, "Forecast job could not be queued.")}</p>}
+    {mutation.data && <p className="desk-notice" role="status">Forecast job queued for {mutation.data.symbol}.</p>}
+  </Panel>;
 }
 
 function ForecastJobRow({
   job,
+  owner,
   onViewForecast,
 }: {
   job: ForecastJob;
+  owner: number;
   onViewForecast: (jobId: number) => void;
 }) {
   const queryClient = useQueryClient();
@@ -262,7 +98,7 @@ function ForecastJobRow({
     mutationFn: () => cancelForecastJob(job.id),
     onSuccess: async () => {
       setErrorMessage(null);
-      await queryClient.invalidateQueries({ queryKey: ["forecast-jobs"] });
+      await queryClient.invalidateQueries({ queryKey: keys.account(owner, "forecasts", "jobs") });
     },
     onError: (error) => {
       setErrorMessage(requestErrorMessage(error, "Forecast job could not be cancelled."));
@@ -272,40 +108,38 @@ function ForecastJobRow({
   let action: ReactNode = null;
   if (job.status === "queued") {
     action = (
-      <button
-        className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100 disabled:opacity-50"
+      <Button
         disabled={cancelMutation.isPending}
         onClick={() => cancelMutation.mutate()}
         type="button"
       >
         Cancel
-      </button>
+      </Button>
     );
   } else if (job.status === "completed") {
     action = (
-      <button
-        className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100"
+      <Button
         onClick={() => onViewForecast(job.id)}
         type="button"
       >
         View forecast
-      </button>
+      </Button>
     );
   }
 
   return (
-    <li className="rounded border border-slate-800 bg-slate-900/60 p-3">
+    <li className="desk-record">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-sm font-semibold text-slate-100">{job.symbol}</span>
-            <span className={["risk-chip", statusTone[job.status]].join(" ")}>{job.status}</span>
+            <span className="desk-status" data-status={job.status}>{job.status}</span>
           </div>
           <div className="mt-1 text-xs text-slate-500">
             {job.provider} · {job.adjustment_type} · lookback {job.lookback} · horizon {job.horizon}{" "}
             · samples {job.sample_count}
           </div>
-          <div className="mt-1 text-xs text-slate-500">{formatDateTime(job.created_at)}</div>
+          <div className="mt-1 desk-meta">Job #{job.id} · Updated {formatDateTime(job.updated_at)}</div>
         </div>
         {action}
       </div>
@@ -315,10 +149,10 @@ function ForecastJobRow({
   );
 }
 
-function ForecastJobsCard({ onViewForecast }: { onViewForecast: (jobId: number) => void }) {
+function ForecastJobsCard({ owner, onViewForecast }: { owner: number; onViewForecast: (jobId: number) => void }) {
   const jobsQuery = useQuery({
-    queryKey: ["forecast-jobs"],
-    queryFn: listForecastJobs,
+    queryKey: keys.account(owner, "forecasts", "jobs"),
+    queryFn: listForecastJobs, retry: false,
   });
 
   let body: ReactNode;
@@ -339,15 +173,15 @@ function ForecastJobsCard({ onViewForecast }: { onViewForecast: (jobId: number) 
     body = (
       <ul className="space-y-3">
         {jobsQuery.data.jobs.map((job) => (
-          <ForecastJobRow job={job} key={job.id} onViewForecast={onViewForecast} />
+          <ForecastJobRow owner={owner} job={job} key={job.id} onViewForecast={onViewForecast} />
         ))}
       </ul>
     );
   }
 
   return (
-    <DashboardCard
-      action={
+    <Panel
+      actions={
         jobsQuery.isError ? undefined : (
           <RefreshButton
             onClick={() => {
@@ -359,29 +193,22 @@ function ForecastJobsCard({ onViewForecast }: { onViewForecast: (jobId: number) 
       title="Forecast jobs"
     >
       {body}
-    </DashboardCard>
+    </Panel>
   );
 }
 
 function ForecastHistoryChart({ result }: { result: ForecastResult }) {
   const historyQuery = useQuery({
-    queryKey: ["forecast-history", result.symbol, result.provider, result.adjustment_type],
+    queryKey: keys.history(result.symbol, result.provider, result.adjustment_type, "2y"),
     queryFn: () =>
-      fetchDailyHistory(result.symbol, result.provider, result.adjustment_type, "2y"),
+      fetchDailyHistory(result.symbol, result.provider, result.adjustment_type, "2y"), retry: false,
   });
 
-  if (historyQuery.isPending) {
-    return <LoadingRows />;
-  }
-  if (historyQuery.isError) {
-    return (
-      <QueryError
-        message={requestErrorMessage(historyQuery.error, "Observed history could not be loaded.")}
-        onRetry={() => {
-          void historyQuery.refetch();
-        }}
-      />
-    );
+  if (!historyQuery.data) {
+    return <>
+      {historyQuery.isPending ? <LoadingRows /> : <QueryError message={requestErrorMessage(historyQuery.error, "Observed history could not be loaded.")} onRetry={historyQuery.refetch} />}
+      {historyQuery.isError && <ForecastChart bars={[]} forecast={result} />}
+    </>;
   }
 
   const history = historyQuery.data;
@@ -393,17 +220,19 @@ function ForecastHistoryChart({ result }: { result: ForecastResult }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-slate-500">
-        {freshness} · Read {formatDateTime(history.read_at)}
+        {result.symbol} · {result.provider} · {result.adjustment_type.replaceAll("_", " ")} · {freshness} · Read {formatDateTime(history.read_at)}
       </p>
-      <ForecastChart bars={history.bars} forecast={result} />
+      <ForecastChart bars={history.symbol === result.symbol && history.provider === result.provider && history.adjustment_type === result.adjustment_type ? history.bars : []} forecast={result} />
     </div>
   );
 }
 
-function ForecastChartCard({ jobId, onClose }: { jobId: number; onClose: () => void }) {
+function ForecastChartCard({ owner, jobId, onClose }: { owner: number; jobId: number; onClose: () => void }) {
+  const region = useRef<HTMLDivElement>(null);
+  useEffect(() => { region.current?.focus(); }, [jobId]);
   const resultsQuery = useQuery({
-    queryKey: ["forecast-results"],
-    queryFn: listForecastResults,
+    queryKey: keys.account(owner, "forecasts", "results"),
+    queryFn: listForecastResults, retry: false,
   });
   const result = resultsQuery.data?.results.find((item) => item.job_id === jobId) ?? null;
 
@@ -438,111 +267,40 @@ function ForecastChartCard({ jobId, onClose }: { jobId: number; onClose: () => v
   }
 
   return (
-    <DashboardCard
-      action={
-        <button
-          className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100"
+    <Panel
+      actions={
+        <Button
           onClick={onClose}
           type="button"
         >
           Close
-        </button>
+        </Button>
       }
       title="Forecast chart"
     >
-      {body}
-    </DashboardCard>
-  );
-}
-
-function ForecastModelsCard() {
-  const modelsQuery = useQuery({
-    queryKey: ["forecast-models"],
-    queryFn: listForecastModels,
-  });
-
-  let body: ReactNode;
-  if (modelsQuery.isPending) {
-    body = <LoadingRows />;
-  } else if (modelsQuery.isError) {
-    body = (
-      <QueryError
-        message={requestErrorMessage(modelsQuery.error, "Forecast models could not be loaded.")}
-        onRetry={() => {
-          void modelsQuery.refetch();
-        }}
-      />
-    );
-  } else if (modelsQuery.data.models.length === 0) {
-    body = <EmptyState message="No forecast model is configured." />;
-  } else {
-    body = (
-      <ul className="space-y-3">
-        {modelsQuery.data.models.map((model) => (
-          <li className="rounded border border-slate-800 bg-slate-900/60 p-3" key={model.id}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="break-words font-mono text-sm font-semibold text-slate-100">
-                {model.model_name}
-              </span>
-              <span
-                className={[
-                  "risk-chip",
-                  model.enabled ? statusTone.completed : statusTone.failed,
-                ].join(" ")}
-              >
-                {model.enabled ? "enabled" : "disabled"}
-              </span>
-            </div>
-            <p className="mt-3 text-sm text-slate-300">Max lookback {model.max_lookback}</p>
-            <p className="mt-1 text-sm text-slate-300">Max horizon {model.max_horizon}</p>
-            <p className="mt-1 text-sm text-slate-300">Max sample count {model.max_sample_count}</p>
-            {model.enabled ? null : (
-              <p className="mt-3 text-sm text-slate-300">
-                This model is disabled, so a queued forecast cannot run until it is enabled on the
-                server.
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  return (
-    <DashboardCard
-      action={
-        modelsQuery.isError ? undefined : (
-          <RefreshButton
-            onClick={() => {
-              void modelsQuery.refetch();
-            }}
-          />
-        )
-      }
-      title="Forecast model"
-    >
-      {body}
-    </DashboardCard>
+      <div className="desk-section" ref={region} tabIndex={-1} aria-label="Selected forecast">{body}</div>
+    </Panel>
   );
 }
 
 function EvaluationRow({ evaluation }: { evaluation: ForecastEvaluation }) {
   return (
-    <li className="rounded border border-slate-800 bg-slate-900/60 p-3">
+    <li className="desk-record">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-semibold text-slate-100">{evaluation.symbol}</span>
         <span className="text-xs text-slate-500">horizon {evaluation.horizon}</span>
       </div>
       <p className="mt-2 text-sm text-slate-300">
-        Model MAE {evaluation.model_mae} · directional accuracy {evaluation.model_directional_accuracy}
+        Model MAE {evaluation.model_mae} · directional accuracy {(evaluation.model_directional_accuracy * 100).toFixed(1)}%
       </p>
       <p className="mt-1 text-sm text-slate-300">
         {evaluation.baseline_type} baseline MAE {evaluation.baseline_mae} · directional accuracy{" "}
-        {evaluation.baseline_directional_accuracy}
+        {(evaluation.baseline_directional_accuracy * 100).toFixed(1)}%
       </p>
       <p className="mt-2 text-xs text-slate-500">
         {evaluation.weights_exercised ? "Weights exercised" : "Weights not exercised"}
       </p>
+      <p className="desk-meta">{evaluation.window_count} windows · {evaluation.provider} · {evaluation.adjustment_type.replaceAll("_", " ")} · {formatDateTime(evaluation.created_at)}</p>
       {evaluation.notes ? (
         <p className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-500">
           {evaluation.notes}
@@ -552,10 +310,10 @@ function EvaluationRow({ evaluation }: { evaluation: ForecastEvaluation }) {
   );
 }
 
-function ForecastEvaluationsCard() {
+function ForecastEvaluationsCard({ owner }: { owner: number }) {
   const evaluationsQuery = useQuery({
-    queryKey: ["forecast-evaluations"],
-    queryFn: listForecastEvaluations,
+    queryKey: keys.account(owner, "forecasts", "evaluations"),
+    queryFn: listForecastEvaluations, retry: false,
   });
 
   let body: ReactNode;
@@ -588,8 +346,8 @@ function ForecastEvaluationsCard() {
   }
 
   return (
-    <DashboardCard
-      action={
+    <Panel
+      actions={
         evaluationsQuery.isError ? undefined : (
           <RefreshButton
             onClick={() => {
@@ -601,27 +359,36 @@ function ForecastEvaluationsCard() {
       title="Forecast evaluations"
     >
       {body}
-    </DashboardCard>
+    </Panel>
   );
 }
 
-export default function ForecastLab() {
+function ForecastDesk({ owner }: { owner: number }) {
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const models = useQuery({ queryKey: keys.account(owner, "forecasts", "models"), queryFn: listForecastModels, retry: false });
+  const activeModel = models.data?.models.find(model => model.enabled);
+  return <Page className="desk-page forecast-desk" eyebrow="Experimental" title="Forecast Lab"
+    description="Inspect model availability, generated price paths and evaluations against a baseline.">
+    {selectedJobId !== null && <Page.Full><ForecastChartCard owner={owner} jobId={selectedJobId} onClose={() => { setSelectedJobId(null); opener.current?.focus(); }} /></Page.Full>}
+    <Page.Main className="desk-stack">
+      <Panel title="Forecast model" actions={<RefreshButton onClick={models.refetch} />}>
+        {models.isPending ? <RestInstrument label="Session window" status={{kind:"loading",title:"Reading model limits…"}}/> :
+          models.isError ? <RestInstrument label="Session window" status={{kind:"error",title:"Forecast models could not be loaded.",action:<RefreshButton label="Retry" onClick={models.refetch}/>}}/> :
+          <ForecastWindow models={models.data.models}/>}
+      </Panel>
+      <ForecastEvaluationsCard owner={owner} />
+    </Page.Main>
+    <Page.Aside className="desk-stack">
+      {models.isPending ? <LoadingRows /> : <CreateForecastJobCard owner={owner} model={models.isError ? undefined : activeModel} />}
+      <ForecastJobsCard owner={owner} onViewForecast={id => {
+        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setSelectedJobId(id);
+      }} />
+    </Page.Aside>
+  </Page>;
+}
 
-  return (
-    <div className="min-w-0 space-y-6">
-      <PageHeader badge="Experimental" description={pageDescription} title="Forecast Lab" />
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <CreateForecastJobCard />
-        <ForecastJobsCard onViewForecast={setSelectedJobId} />
-        {selectedJobId != null ? (
-          <div className="min-w-0 xl:col-span-2">
-            <ForecastChartCard jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
-          </div>
-        ) : null}
-        <ForecastModelsCard />
-        <ForecastEvaluationsCard />
-      </div>
-    </div>
-  );
+export default function ForecastLab() {
+  return <DeskAccount label="Session window">{owner => <ForecastDesk key={owner} owner={owner} />}</DeskAccount>;
 }

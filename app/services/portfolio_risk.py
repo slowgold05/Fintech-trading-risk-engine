@@ -44,7 +44,7 @@ to 100.0000. This is contribution to variance, not volatility.
 """
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Context, Decimal, localcontext
 from itertools import combinations
 
@@ -53,7 +53,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.read_snapshot import SnapshotClockError, consistent_read, snapshot_clock
-from app.models.market_bar_daily import MarketBarDaily
+from app.models.user import User
+from app.services.demo_market_history import demo_daily_closes, seed_price_series
+from app.services.history_series import read_analytics_closes
 from app.services.performance_service import _performance, require_performance_range
 from app.services.portfolio_allocation import allocation_from_portfolio
 from app.services.portfolio_valuation import _value_portfolio
@@ -252,29 +254,16 @@ def _historical_var_and_es(returns: list[Decimal]) -> dict[str, str | None]:
 def _single_provider_closes(
     db: Session, symbols: list[str], start: date, end: date
 ) -> dict[str, dict[date, Decimal]]:
-    """One close per (symbol, date) where exactly one raw provider row exists.
-
-    Same ambiguity rule performance_service.py's _account_value already
-    enforces elsewhere in this codebase, reproduced here rather than
-    imported, since that function is private to its own module.
-    """
+    """Use the chosen series and skip ambiguous legacy raw dates."""
     result: dict[str, dict[date, Decimal]] = {symbol: {} for symbol in symbols}
     if not symbols:
         return result
-    rows = db.execute(
-        select(MarketBarDaily.symbol, MarketBarDaily.session_date, MarketBarDaily.close).where(
-            MarketBarDaily.symbol.in_(symbols),
-            MarketBarDaily.adjustment_type == "raw",
-            MarketBarDaily.session_date >= start,
-            MarketBarDaily.session_date <= end,
-        )
-    ).all()
-    grouped: dict[tuple[str, date], list[Decimal]] = defaultdict(list)
-    for row in rows:
-        grouped[(row.symbol, row.session_date)].append(Decimal(str(row.close)))
-    for (symbol, day), values in grouped.items():
-        if len(values) == 1:
-            result[symbol][day] = values[0]
+    selected, _adjusted_sources = read_analytics_closes(db, symbols, start, end)
+    for symbol, rows in selected.items():
+        grouped = defaultdict(list)
+        for day, close in rows:
+            grouped[day].append(close)
+        result[symbol] = {day: values[0] for day, values in grouped.items() if len(values) == 1}
     return result
 
 
@@ -381,18 +370,14 @@ def _pairwise_correlation(
 
 
 def _held_correlations(
-    db: Session, portfolio: dict, requested_start: date, requested_end: date
+    db: Session, portfolio: dict, start: date, end: date,
+    demo_closes: dict[str, dict[date, Decimal]] | None = None,
 ) -> list[dict] | None:
     """One entry per held pair, or null when fewer than two symbols are held."""
     held_symbols = sorted({position["symbol"] for position in portfolio["positions"]})
     if len(held_symbols) < 2:
         return None
-    closes_by_symbol = _single_provider_closes(
-        db,
-        held_symbols,
-        requested_start,
-        requested_end,
-    )
+    closes_by_symbol = demo_closes if demo_closes is not None else _single_provider_closes(db, held_symbols, start, end)
     correlations = []
     # `held_symbols` is sorted, so combinations already emits each pair in
     # ascending order. The sort below keeps that contract order explicit.
@@ -483,7 +468,8 @@ def _stress_scenarios(allocation: dict) -> list[dict] | None:
 
 
 def _risk_contributions(
-    db: Session, allocation: dict, start: date, end: date
+    db: Session, allocation: dict, start: date, end: date,
+    demo_closes: dict[str, dict[date, Decimal]] | None = None,
 ) -> list[dict] | None:
     """Variance decomposition of the portfolio's held, priced securities.
 
@@ -506,7 +492,7 @@ def _risk_contributions(
         return None
     symbols = [item["symbol"] for item in held]
     weights = {item["symbol"]: Decimal(item["weight_pct"]) / 100 for item in held}
-    closes_by_symbol = _single_provider_closes(db, symbols, start, end)
+    closes_by_symbol = demo_closes if demo_closes is not None else _single_provider_closes(db, symbols, start, end)
 
     covariance: dict[tuple[str, str], Decimal] = {}
     for symbol_a in symbols:
@@ -588,7 +574,7 @@ def build_risk_metrics_response(db: Session, user_id: int, email: str, range_tok
             db, user_id, email, range_token, clock=clock, portfolio=portfolio,
         )
         allocation = allocation_from_portfolio(db, portfolio)
-        return _metrics_from_snapshot(db, performance, portfolio, allocation)
+        return _metrics_from_snapshot(db, performance, portfolio, allocation, clock)
 
 
 def _metrics_from_snapshot(
@@ -596,6 +582,7 @@ def _metrics_from_snapshot(
     performance: dict,
     portfolio: dict,
     allocation: dict,
+    clock: datetime,
 ) -> dict:
     available = [point for point in performance["series"] if point["status"] == "available"]
     paired_twr, paired_benchmark = _beta_indexes(performance["series"])
@@ -614,18 +601,29 @@ def _metrics_from_snapshot(
     tail = _historical_var_and_es(returns)
     requested_start = date.fromisoformat(performance["requested_start"])
     requested_end = date.fromisoformat(performance["requested_end"])
-    correlations = _held_correlations(db, portfolio, requested_start, requested_end)
+    demo_closes = None
+    if performance["user"].get("is_demo"):
+        symbols = {position["symbol"] for position in portfolio["positions"]}
+        seed = db.scalar(select(User.demo_seed).where(User.id == performance["user"]["id"]))
+        histories = demo_daily_closes(
+            db, symbols, requested_start, requested_end, pinned=seed_price_series(seed), clock=clock,
+        )
+        demo_closes = {symbol: histories[symbol][1] if symbol in histories else {} for symbol in symbols}
+    correlations = _held_correlations(db, portfolio, requested_start, requested_end, demo_closes)
     stress_scenarios = _stress_scenarios(allocation)
     risk_contributions = _risk_contributions(
-        db, allocation, requested_start, requested_end
+        db, allocation, requested_start, requested_end, demo_closes
     )
     return {
         "user": performance["user"],
+        **({"demo_price_series": performance["demo_price_series"]} if demo_closes is not None else {}),
         "range": performance["range"],
         "requested_start": performance["requested_start"],
         "requested_end": performance["requested_end"],
         "read_at": performance["read_at"],
         "status": performance["status"],
+        **({"split_adjusted_history_sources": performance["split_adjusted_history_sources"]}
+           if "split_adjusted_history_sources" in performance else {}),
         "observed_periods": observed_periods,
         "return_count": return_count,
         "historical_volatility_pct": historical_volatility_pct,

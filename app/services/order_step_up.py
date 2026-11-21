@@ -11,12 +11,10 @@ from app.services.mfa import confirmed_factor, consume_totp
 from app.services.trade_execution import notional_amount
 
 
-def order_notional(db: Session, payload: OrderCreate) -> Decimal:
+def order_notional(payload: OrderCreate, quote: MarketQuoteCache) -> Decimal:
     if payload.order_type == "limit" and payload.limit_price is not None:
         return notional_amount(payload.quantity, payload.limit_price)
-    quote = db.get(MarketQuoteCache, payload.symbol)
-    price = quote.price if quote is not None else Decimal("0")
-    return notional_amount(payload.quantity, price * Decimal("1.20"))
+    return notional_amount(payload.quantity, quote.price * Decimal("1.20"))
 
 
 def require_notional_step_up(db: Session, user: User, notional: Decimal, code: str | None) -> None:

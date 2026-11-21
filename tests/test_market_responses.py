@@ -1,5 +1,6 @@
 import pytest
 
+from app.core.config import settings
 from app.routers.market import _format_mover, _score_company_research
 
 
@@ -17,6 +18,7 @@ def test_missing_mover_numbers_are_not_real_zeros(missing):
 
 
 def test_public_movers_keep_real_zero_and_exact_integer_volume(client, monkeypatch):
+    monkeypatch.setattr(settings, "alpha_vantage_api_key", "test-key")
     monkeypatch.setattr("app.routers.market.get_top_gainers_losers", lambda: {"most_actively_traded": [
         {"ticker": "ZERO", "price": "10", "change_amount": "0", "change_percentage": "0%", "volume": "0"},
         {"ticker": "BIG", "price": "12", "volume": "9007199254740993"},

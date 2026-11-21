@@ -25,12 +25,14 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM fintech_app")
             cursor.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO fintech_app")
             cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fintech_app")
+            # Table grants include simulated execution provenance on orders and trades.
+            # Issuance uses the existing holdings, lots, cash balance and ledger grants.
             cursor.execute("GRANT INSERT, UPDATE, DELETE ON assets, holdings, lots, "
                            "market_fundamentals_cache, market_quote_cache, market_reference_cache, market_symbols, orders, "
                            "price_history, price_history_daily, market_bars_daily, refresh_tokens, risk_alerts, "
                            "risk_assessments, trades TO fintech_app")
             cursor.execute("GRANT INSERT ON ledger_entries TO fintech_app")
-            cursor.execute("GRANT INSERT (email, password_hash, cash_balance, full_name) ON users TO fintech_app")
+            cursor.execute("GRANT INSERT (email, password_hash, cash_balance, full_name, demo_seed) ON users TO fintech_app")
             cursor.execute("GRANT UPDATE (cash_balance, full_name) ON users TO fintech_app")
             cursor.execute("GRANT INSERT, UPDATE ON order_requests TO fintech_app")
             cursor.execute("GRANT INSERT (target_user_id, old_role, old_change_id, new_role, reason, requested_by_user_id) "
@@ -86,14 +88,13 @@ def configure(database_url: str, app_password: str) -> None:
             cursor.execute(
                 "GRANT UPDATE (cik, payload, fetched_at) ON market_filings_cache TO fintech_app"
             )
-            # News helper inserts a row (Python source default finnhub is
-            # emitted) and later refreshes payload and fetched_at only.
+            # News refresh can switch between Finnhub and Yahoo RSS.
             cursor.execute(
                 "GRANT INSERT (symbol, payload, source, fetched_at) "
                 "ON market_news_cache TO fintech_app"
             )
             cursor.execute(
-                "GRANT UPDATE (payload, fetched_at) ON market_news_cache TO fintech_app"
+                "GRANT UPDATE (payload, source, fetched_at) ON market_news_cache TO fintech_app"
             )
             # Research and forecast writers. SQLAlchemy INSERT lists every mapped
             # column without a server default, including nullable columns left as
@@ -136,6 +137,36 @@ def configure(database_url: str, app_password: str) -> None:
                 "baseline_directional_accuracy, weights_exercised, notes) "
                 "ON forecast_evaluations TO fintech_app"
             )
+
+            cursor.execute("SELECT to_regclass(%s)", ("public.night_alerts",))
+            if cursor.fetchone()[0] is not None:
+                cursor.execute("GRANT DELETE ON night_alerts TO fintech_app")
+                cursor.execute("GRANT INSERT (user_id, symbol, direction, target) ON night_alerts TO fintech_app")
+                cursor.execute(
+                    "GRANT UPDATE (last_date, last_close, last_provider, last_observed_at, triggered_at) "
+                    "ON night_alerts TO fintech_app"
+                )
+
+            cursor.execute("SELECT to_regclass(%s)", ("public.night_journal_entries",))
+            if cursor.fetchone()[0] is not None:
+                cursor.execute("GRANT DELETE ON night_journal_entries TO fintech_app")
+                cursor.execute("GRANT INSERT (user_id, order_id, note, tags) ON night_journal_entries TO fintech_app")
+                cursor.execute("GRANT UPDATE (note, tags, updated_at) ON night_journal_entries TO fintech_app")
+
+            cursor.execute("SELECT to_regclass(%s)", ("public.night_leaderboard_entries",))
+            if cursor.fetchone()[0] is not None:
+                cursor.execute("GRANT DELETE ON night_leaderboard_entries TO fintech_app")
+                cursor.execute("GRANT INSERT (user_id, alias) ON night_leaderboard_entries TO fintech_app")
+                cursor.execute("GRANT UPDATE (alias) ON night_leaderboard_entries TO fintech_app")
+
+            cursor.execute("SELECT to_regclass(%s)", ("public.night_holding_notes",))
+            if cursor.fetchone()[0] is not None:
+                cursor.execute("GRANT SELECT, INSERT, DELETE ON night_holding_notes TO fintech_app")
+                cursor.execute("GRANT UPDATE (text, updated_at) ON night_holding_notes TO fintech_app")
+
+            cursor.execute("SELECT to_regclass(%s)", ("public.night_inbox_reads",))
+            if cursor.fetchone()[0] is not None:
+                cursor.execute("GRANT SELECT, INSERT ON night_inbox_reads TO fintech_app")
 
 
 def main() -> None:

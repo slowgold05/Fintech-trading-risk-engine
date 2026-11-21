@@ -12,11 +12,11 @@ import pytest
 pytest.importorskip("selenium")
 
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import Select
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 import test_p0b_acceptance as h
+import test_p3a_history as p3a
 import test_p3b_ticket as t
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_symbol import MarketSymbol
@@ -29,7 +29,7 @@ SYMBOL = "P3INDUI"
 MISSING = "P3INDMISSING"
 PROVIDER = "fixture-indicators-ui"
 ARTIFACTS = h.REPO_ROOT / ".local-tools" / "p3a-indicators-ui"
-SECTION = "section[aria-labelledby='daily-price-history-title']"
+SECTION = p3a.SECTION
 OFFSETS = (0, 2, 5, 10, 18, 25)
 CLOSES = (Decimal("1"), Decimal("4"), Decimal("2"), Decimal("8"), Decimal("3"), Decimal("9"))
 SMA3 = ["Warm-up", "Warm-up", "2.333333", "4.666667", "4.333333", "6.666667"]
@@ -124,8 +124,9 @@ def _fill(driver, symbol: str, indicator: str, period: str | None) -> None:
     field = _section(driver).find_element(By.ID, "daily-history-symbol")
     field.clear()
     field.send_keys(symbol)
-    Select(_section(driver).find_element(By.ID, "daily-history-series")).select_by_value(SERIES)
-    Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value(indicator)
+    provider, adjustment = json.loads(SERIES)
+    h._choose_option(driver, "daily-history-series", f"{provider} · {adjustment}")
+    h._choose_option(driver, "daily-history-indicator", "None" if indicator == "none" else indicator.upper())
     if period is not None:
         box = _section(driver).find_element(By.ID, "daily-history-period")
         box.clear()
@@ -137,7 +138,7 @@ def _view(driver) -> None:
 
 
 def _chart(driver):
-    box = _section(driver).find_element(By.CSS_SELECTOR, "div.h-80")
+    box = _section(driver).find_element(By.CSS_SELECTOR, "[data-testid='daily-history-chart']")
     if not box.is_displayed() or not box.find_elements(By.TAG_NAME, "canvas"):
         return False
     if "Daily price chart unavailable" in _section(driver).text:
@@ -146,18 +147,16 @@ def _chart(driver):
 
 
 def _open_prices(driver) -> None:
-    summary = _section(driver).find_element(By.TAG_NAME, "summary")
-    if not summary.find_element(By.XPATH, "..").get_attribute("open"):
-        h._click(driver, summary)
+    p3a._open_prices(driver)
 
 
 def _indicator_cells(driver) -> list[str]:
-    table = _section(driver).find_element(By.CSS_SELECTOR, "details table")
+    table = p3a._prices_table(driver)
     return [row.find_elements(By.TAG_NAME, "td")[-1].text.strip() for row in table.find_elements(By.CSS_SELECTOR, "tbody tr")]
 
 
 def _headers(driver) -> list[str]:
-    return [(node.get_attribute("textContent") or "").strip() for node in _section(driver).find_elements(By.CSS_SELECTOR, "details table thead th")]
+    return [(node.get_attribute("textContent") or "").strip() for node in p3a._prices_table(driver).find_elements(By.CSS_SELECTOR, "thead th")]
 
 
 def _wait_prices(driver, expected: list[str], header: str) -> None:
@@ -177,8 +176,8 @@ def test_indicator_overlay_ui(disposable_api) -> None:
     try:
         t._css_viewport(driver, 1280, 800, False)
         driver.get(disposable_api.web_url + "/market")
-        h._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "#daily-history-series option[value]:not([value=''])"))
-        assert _section(driver).find_element(By.ID, "daily-history-indicator").get_attribute("value") == "none"
+        p3a._ready_history(driver)
+        assert h._select_label(driver, "daily-history-indicator") == "None"
         assert not _section(driver).find_elements(By.ID, "daily-history-period")
         _install_tracker(driver)
         quiet = _starts(driver)
@@ -202,9 +201,9 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         first = _starts(driver)
         assert first["indicators"] == quiet["indicators"] + 1 and first["history"] == quiet["history"]
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "sma-desktop.png")
-        t._shot(driver, _section(driver).find_element(By.CSS_SELECTOR, "details .table-shell"), ARTIFACTS / "sma-table.png")
+        t._shot(driver, p3a._prices_table(driver).find_element(By.XPATH, ".."), ARTIFACTS / "sma-table.png")
 
-        Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value("ema")
+        h._choose_option(driver, "daily-history-indicator", "EMA")
         _frames(driver)
         assert _starts(driver) == first and _indicator_cells(driver) == SMA3
 
@@ -224,7 +223,7 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         assert h._wait(driver).until(_chart)
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "insufficient.png")
 
-        Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value("sma")
+        h._choose_option(driver, "daily-history-indicator", "SMA")
         period = _section(driver).find_element(By.ID, "daily-history-period")
         period.clear()
         period.send_keys("3")
@@ -236,11 +235,12 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         assert back["history"] == held["history"] and back["indicators"] >= held["indicators"]
 
         t._css_viewport(driver, 390, 844, True)
+        p3a._open_history(driver)
         h._wait(driver).until(_chart)
         assert driver.execute_script(
             """
             const root = document.documentElement, main = document.querySelector('main');
-            const chart = document.querySelector("section[aria-labelledby='daily-price-history-title'] div.h-80");
+            const chart = document.querySelector("[data-testid='daily-history-chart']");
             const box = chart.getBoundingClientRect();
             return root.scrollWidth <= root.clientWidth && main.scrollWidth <= main.clientWidth
               && box.width > 0 && box.right <= window.innerWidth + 1;
@@ -251,7 +251,7 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "sma-mobile.png")
         t._css_viewport(driver, 1280, 800, False)
 
-        Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value("none")
+        h._choose_option(driver, "daily-history-indicator", "None")
         _frames(driver)
         none_draft = _starts(driver)
         assert none_draft == back and _indicator_cells(driver) == SMA3
@@ -263,7 +263,7 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         after_none = _starts(driver)
         assert after_none["history"] == none_draft["history"] + 1 and after_none["indicators"] == none_draft["indicators"]
 
-        Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value("rsi")
+        h._choose_option(driver, "daily-history-indicator", "RSI")
         period = _section(driver).find_element(By.ID, "daily-history-period")
         period.clear()
         period.send_keys("3")
@@ -275,17 +275,20 @@ def test_indicator_overlay_ui(disposable_api) -> None:
         assert "Warm-up: the first 3 observed stored closes have no indicator value." in _section(driver).text
         t._shot(driver, h._wait(driver).until(_chart), ARTIFACTS / "rsi-desktop.png")
 
-        Select(_section(driver).find_element(By.ID, "daily-history-indicator")).select_by_value("macd")
-        assert _section(driver).find_element(
+        h._choose_option(driver, "daily-history-indicator", "MACD")
+        label = _section(driver).find_element(
             By.XPATH, ".//label[@for='daily-history-period']",
-        ).text == "Signal period"
+        )
+        assert label.get_attribute("textContent").strip() == "Signal period"
         macd_draft = _starts(driver)
         _view(driver)
         # Only 6 bars are seeded, far short of MACD's fixed 26-close slow period, so this
         # exercises the insufficient path: confirms the UI accepts "macd" end to end, with no
         # crash, rather than a fully-warmed-up value (that needs a much longer series).
         h._wait(driver).until(lambda current: _starts(current)["indicators"] > macd_draft["indicators"])
-        assert "Some of the earliest sessions have no MACD value yet" in _section(driver).text
+        h._wait(driver).until(
+            lambda current: "Some of the earliest sessions have no MACD value yet" in _section(current).text,
+        )
         _open_prices(driver)
         h._wait(driver).until(lambda current: _headers(current)[-1] == "MACD (3)")
         assert _indicator_cells(driver) == ["Warm-up"] * 6

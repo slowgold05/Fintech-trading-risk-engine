@@ -1,7 +1,8 @@
 from fastapi import HTTPException
 from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,7 +14,10 @@ from app.models.order import Order
 from app.models.holding import Holding
 from app.models.user import User
 from app.models.trading_halt import TradingHaltState, TradingHaltEvent
+from app.services.history_series import read_history_quotes
 from app.services.market_cache_service import _as_naive_utc, _freshness
+
+_NEW_YORK = ZoneInfo("America/New_York")
 
 
 def trading_halt_reason(state: TradingHaltState | None) -> str | None:
@@ -22,10 +26,13 @@ def trading_halt_reason(state: TradingHaltState | None) -> str | None:
     return None
 
 
+def lock_trading_halt_state(db: Session) -> TradingHaltState | None:
+    return db.execute(select(TradingHaltState).where(TradingHaltState.id == 1)
+                      .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+
+
 def require_trading_open(db: Session) -> None:
-    state = db.execute(select(TradingHaltState).where(TradingHaltState.id == 1)
-                       .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
-    reason = trading_halt_reason(state)
+    reason = trading_halt_reason(lock_trading_halt_state(db))
     if reason is not None:
         raise HTTPException(status_code=503, detail=reason)
 
@@ -70,8 +77,34 @@ def _price_band_problem(
     return None
 
 
-def require_price_in_band(db: Session, symbol: str, price: Decimal | None, *, now: datetime | None = None) -> None:
-    problem = _price_band_problem(db.get(MarketQuoteCache, symbol), price, now=now)
+def order_reference_quote(db: Session, symbol: str, *, now: datetime | None = None) -> MarketQuoteCache | None:
+    cached = db.get(MarketQuoteCache, symbol, populate_existing=True)
+    return _with_history_reference(db, symbol, cached, now)
+
+
+def _with_history_reference(
+    db: Session, symbol: str, cached: MarketQuoteCache | None, now: datetime | None,
+) -> MarketQuoteCache | None:
+    if not settings.simulated_liquidity_enabled or _price_band_problem(cached, None, now=now) is None:
+        return cached
+    clock = (datetime.now(timezone.utc) if now is None
+             else _as_naive_utc(now).replace(tzinfo=timezone.utc))
+    history = read_history_quotes(
+        db, {symbol}, clock=clock,
+        start=clock.date() - timedelta(days=7),
+        end=clock.astimezone(_NEW_YORK).date() - timedelta(days=1),
+        raw_only=True,
+    ).get(symbol)
+    if history is None:
+        return cached
+    return MarketQuoteCache(
+        symbol=symbol, price=history.price, source=history.source,
+        quote_at=history.quote_at, fetched_at=_as_naive_utc(history.fetched_at),
+    )
+
+
+def require_price_in_band(quote: MarketQuoteCache | None, price: Decimal | None) -> None:
+    problem = _price_band_problem(quote, price)
     if problem:
         raise HTTPException(status_code=503 if problem.startswith("Usable") else 400, detail=problem)
 
@@ -86,7 +119,7 @@ def check_open_order_price_bands(db: Session) -> dict:
     violations = [
         {"order_id": order.id, "symbol": symbol, "reason": problem}
         for order, symbol, quote in rows
-        if (problem := _price_band_problem(quote, order.limit_price))
+        if (problem := _price_band_problem(_with_history_reference(db, symbol, quote, None), order.limit_price))
     ]
     return {"checked": len(rows), "violation_count": len(violations), "examples": violations[:20]}
 

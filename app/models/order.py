@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, func
 
 from app.core.database import Base
 
@@ -24,3 +24,7 @@ class Order(Base):
     status = Column(String(10), nullable=False, default="open")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     canceled_at = Column(DateTime, nullable=True)
+    simulated_quote_at = Column(DateTime, nullable=True)
+    simulated_quote_source = Column(String(32), nullable=True)
+    simulated_quote_date = Column(Date, nullable=True)
+    remainder_reason = Column(String(255), nullable=True)

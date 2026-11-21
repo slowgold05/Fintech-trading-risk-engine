@@ -1,0 +1,37 @@
+.research-desk .research-sources { display: grid; gap: var(--pad); margin-top: var(--gap); }
+.research-desk .research-sources h3,.research-desk .report-field dt { color: var(--muted); font: var(--label)/1.5 var(--font-mono); }
+.research-desk .report-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(225px,100%),1fr)); gap: var(--gap); }
+.research-desk .report-field { padding-block: 8px; border-top: 1px solid var(--line); }
+.research-desk .report-field dd { white-space: pre-wrap; }
+.research-desk summary { min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--accent); }
+
+.research-desk .nk-layout {grid-template-columns:minmax(0,2.2fr) minmax(280px,1fr);align-items:start}
+.research-desk .research-context header {align-items:end;flex-wrap:wrap}
+.research-context .desk-inline-form {max-width:280px;gap:6px}
+.research-context .nk-field {min-width:74px}
+.research-context .nk-field label {font:11px var(--font-mono)}
+.research-readings {display:grid;grid-template-columns:1.2fr 1fr 1fr;align-items:baseline;border-block:1px solid var(--line);margin-block:14px;background:var(--inner-paper)}
+.research-readings .nk-stat {padding:8px 12px}
+.research-readings .nk-stat strong {font-size:clamp(19px,2.1vw,32px)}
+.research-basis {display:flex;justify-content:space-between;align-items:baseline;gap:5px 12px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);color:var(--muted);font:11px/1.6 var(--font-mono)}
+@media(max-width:767px){
+  .research-desk .nk-layout {grid-template-columns:minmax(0,1fr)}
+  .research-context header {display:grid;gap:6px}
+  .research-context .nk-field label {position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
+  .research-readings .nk-stat {padding:6px}
+  .research-readings .nk-stat span {font-size:11px}
+  .research-desk .nk-page-head {flex-wrap:wrap;gap:6px}
+}
+.research-desk .nk-button[data-variant=primary] {background:var(--ink);color:var(--bg);border-color:var(--ink)}
+@media(max-width:767px){
+ .research-desk .nk-panel {padding:10px}
+ .research-context > header {display:flex;flex-wrap:wrap}
+ .research-context .desk-inline-form {flex:1}
+ .research-context .desk-inline-form input {width:100%;font-size:16px}
+ .research-context .desk-inline-form button {white-space:nowrap}
+ .research-readings {margin:6px 0 9px}
+}
+@media(max-width:767px){
+ .research-desk .research-context>header {display:grid;grid-template-columns:minmax(0,1fr);gap:7px}
+ .research-context header .desk-inline-form {display:grid;grid-template-columns:minmax(0,1fr) auto;max-width:none}
+}

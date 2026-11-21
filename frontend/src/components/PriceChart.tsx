@@ -1,4 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { CompanyProfile } from "./CompanyProfile";
+import { RestInstrument } from "../night/inner/SeriesInstrument";
+import { useLook } from "../night/looks/preferences";
 import type { IChartApi, MouseEventParams, Time } from "lightweight-charts";
 import type { HistoryBar, HistoryCoverageStatus } from "../api/history";
 import type { IndicatorOverlay } from "./historyData";
@@ -45,6 +48,7 @@ export function PriceChart({
   seriesLabel,
   sma20,
   sma50,
+  instrument = false,
 }: {
   symbol: string;
   bars: readonly HistoryBar[];
@@ -54,10 +58,12 @@ export function PriceChart({
   seriesLabel?: string;
   sma20?: IndicatorOverlay;
   sma50?: IndicatorOverlay;
+  instrument?: boolean;
 }) {
   const summaryId = useId();
   const [range, setRange] = useState<ChartRange>("1Y");
-  const [chartType, setChartType] = useState<ChartType>("line");
+  const { prefs } = useLook();
+  const [chartType, setChartType] = useState<ChartType | "profile">(instrument ? "profile" : "line");
   const [failed, setFailed] = useState(false);
   const [hover, setHover] = useState<Hover | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -72,7 +78,7 @@ export function PriceChart({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || series.plotted.length === 0) return undefined;
+    if (!container || chartType === "profile" || series.plotted.length === 0) return undefined;
     let cancelled = false;
     let chart: IChartApi | null = null;
     let created: IChartApi | null = null;
@@ -100,10 +106,10 @@ export function PriceChart({
             autoSize: true,
             height: 320,
             layout: {
-              background: { type: charts.ColorType.Solid, color: "#1B1F22" },
+              background: { type: charts.ColorType.Solid, color: prefs.look==="dial" ? "#111310" : "#141617" },
               textColor: "#C6CFCA",
               attributionLogo: true,
-              fontFamily: "ui-sans-serif, system-ui, sans-serif",
+              fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-mono") || "monospace",
             },
             grid: {
               vertLines: { color: "#343B3F" },
@@ -114,17 +120,17 @@ export function PriceChart({
             ...(charts.CrosshairMode ? { crosshair: { mode: charts.CrosshairMode.Normal } } : {}),
           });
           const candles = created.addSeries(charts.CandlestickSeries, {
-            upColor: "#67DEAA",
-            downColor: "#F07A78",
+            upColor: "#d7d8ce",
+            downColor: "#565b59",
             borderVisible: false,
-            wickUpColor: "#67DEAA",
-            wickDownColor: "#F07A78",
+            wickUpColor: "#e1e3d9",
+            wickDownColor: "#a6aaa2",
             priceLineVisible: false,
           });
           const line = created.addSeries(charts.AreaSeries, {
-            lineColor: "#20B981",
-            topColor: "rgba(32, 185, 129, 0.35)",
-            bottomColor: "rgba(32, 185, 129, 0.02)",
+            lineColor: prefs.look==="terrain" ? "#ecba85" : "#d6d8cb",
+            topColor: "rgba(146, 149, 139, 0.35)",
+            bottomColor: "rgba(146, 149, 139, 0.02)",
             lineWidth: 2,
             priceLineVisible: false,
             lastValueVisible: true,
@@ -143,19 +149,22 @@ export function PriceChart({
           );
           if (sma20?.status === "partial") {
             const sma20Series = created.addSeries(charts.LineSeries, {
-              color: "#fbbf24", lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+              color: "#babdb4", lineStyle: 2, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
             });
             sma20Series.setData(overlayPoints(sma20));
           }
           if (sma50?.status === "partial") {
             const sma50Series = created.addSeries(charts.LineSeries, {
-              color: "#c4b5fd", lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+              color: "#91978e", lineStyle: 1, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
             });
             sma50Series.setData(overlayPoints(sma50));
           }
           candles.setData(series.candles);
           line.setData(series.line);
-          volume.setData(series.volume);
+          volume.setData(series.volume.map(point=>{
+            const bar=barsByTime.get(point.time);
+            return bar && "value" in point ? {...point,color:bar.close>=bar.open ? "#92978f" : "#4f5550"} : point;
+          }));
           candles.applyOptions({ visible: !lineMode });
           line.applyOptions({ visible: lineMode });
           created.timeScale().fitContent();
@@ -183,26 +192,26 @@ export function PriceChart({
       chart?.unsubscribeCrosshairMove(onCrosshair);
       chart?.remove();
     };
-  }, [chartType, plottedByTime, series, sma20, sma50]);
+  }, [chartType, plottedByTime, series, sma20, sma50, prefs.look]);
 
   const hovered = hover ? plottedByTime.get(hover.time) : undefined;
 
   return (
     <section aria-labelledby="price-chart-title" className="min-w-0 rounded-2xl border border-line bg-surface p-4 sm:p-6">
-      <div className="flex flex-col gap-4">
+      <div className="price-controls flex flex-col gap-4">
         <div>
           <h2 className="text-lg leading-7 font-semibold text-ink" id="price-chart-title">
             Price
           </h2>
-          <p
-            className="mt-1 text-sm leading-6 text-copy"
-            id={summaryId}
-            role={series.plotted.length === 0 ? "status" : undefined}
-          >
-            {summary}
-          </p>
-          {seriesLabel ? <p className="mt-1 text-sm leading-6 text-muted">{seriesLabel}</p> : null}
         </div>
+        {instrument && <div className="price-mobile-controls">
+          <select aria-label="Price history range" value={range} onChange={e=>{setRange(e.target.value as ChartRange);setHover(null);}}>
+            {CHART_RANGES.map(r=><option key={r} value={r}>{rangeLabel(r)}</option>)}
+          </select>
+          <select aria-label="Price chart type" value={chartType} onChange={e=>setChartType(e.target.value as ChartType|"profile")}>
+            <option value="profile">{prefs.look==="terrain" ? "Relief":"Dial"}</option><option value="line">Line</option><option value="candlestick">Candlestick</option>
+          </select>
+        </div>}
         <div className="flex flex-wrap gap-2" role="group" aria-label="Chart range">
           {CHART_RANGES.map((item) => (
             <button
@@ -221,6 +230,8 @@ export function PriceChart({
           ))}
         </div>
         <div className="flex flex-wrap gap-2" role="group" aria-label="Chart type">
+          {instrument && <button className={controlClass(chartType === "profile")} aria-pressed={chartType==="profile"}
+            onClick={()=>setChartType("profile")} type="button">{prefs.look==="terrain" ? "Relief" : "Dial"}</button>}
           <button
             aria-pressed={chartType === "line"}
             className={controlClass(chartType === "line")}
@@ -238,16 +249,17 @@ export function PriceChart({
             Candlestick
           </button>
         </div>
-        {(sma20?.status === "partial" || sma50?.status === "partial") ? (
+        {chartType !== "profile" && (sma20?.status === "partial" || sma50?.status === "partial") ? (
           <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-muted">
-            <span className="text-brand-300">{symbol} close</span>
-            {sma20?.status === "partial" ? <span className="text-amber-300">SMA 20</span> : null}
-            {sma50?.status === "partial" ? <span className="text-violet-300">SMA 50</span> : null}
+            <span className="text-ink">{symbol} close</span>
+            {sma20?.status === "partial" ? <span className="text-copy">SMA 20</span> : null}
+            {sma50?.status === "partial" ? <span className="text-muted">SMA 50</span> : null}
             <span>Volume</span>
           </p>
         ) : null}
       </div>
-      {series.plotted.length === 0 ? null : (
+      {series.plotted.length === 0 ? (instrument && <RestInstrument label={symbol+" close"} status={{kind:"empty",title:"Stored daily bars fill this window."}}/>) :
+        chartType === "profile" ? <CompanyProfile line={series.line} bars={plottedByTime} symbol={symbol} sma20={sma20} sma50={sma50}/> : (
         <>
           {failed ? (
             <p className="mt-6 text-sm leading-6 text-copy" role="status">
@@ -285,6 +297,16 @@ export function PriceChart({
           </div>
         </>
       )}
+      <div className="price-context">
+          <p
+            className="mt-1 text-sm leading-6 text-copy"
+            id={summaryId}
+            role={series.plotted.length === 0 ? "status" : undefined}
+          >
+            {summary}
+          </p>
+          {seriesLabel ? <p className="mt-1 text-sm leading-6 text-muted">{seriesLabel}</p> : null}
+      </div>
       {series.plotted.length > 0 ? <div className="mt-4 max-h-60 max-w-full overflow-auto">
         <table aria-labelledby={summaryId} className="w-full min-w-[36rem] text-left text-[13px] leading-5 tabular-nums text-ink">
           <thead className="bg-raised text-muted">
