@@ -488,22 +488,17 @@ def _order_summary(driver: webdriver.Chrome) -> list[dict]:
 
 
 def _money_after(driver: webdriver.Chrome, label: str) -> str:
-    return driver.execute_script(
-        """
-        const label = arguments[0];
-        const ownText = (node) => Array.from(node.childNodes)
-          .filter((child) => child.nodeType === Node.TEXT_NODE)
-          .map((child) => child.textContent)
-          .join("")
-          .trim();
-        const nodes = Array.from(document.querySelectorAll("div"));
-        const match = nodes.find((node) => ownText(node) === label);
-        if (!match) { return ""; }
-        const next = match.nextElementSibling;
-        return next ? next.textContent.trim() : "";
-        """,
-        label,
+    values = driver.find_elements(
+        By.XPATH,
+        "//main//div[contains(concat(' ', normalize-space(@class), ' '), ' nk-stat ')]"
+        f"/span[normalize-space(.)='{label}']/following-sibling::strong[1]"
+        " | //main//h2[normalize-space(.)='Portfolio Value']/ancestor::section[1]"
+        f"//div[normalize-space(.)='{label}']/following-sibling::div[1]",
     )
+    try:
+        return next((value.text.strip() for value in values if value.is_displayed()), "")
+    except StaleElementReferenceException:
+        return ""
 
 
 def _click(driver: webdriver.Chrome, element) -> None:
@@ -988,8 +983,10 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         _wait(driver).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-testid='night-activity']")))
         _wait(driver).until(EC.visibility_of_element_located((By.XPATH, "//h2[normalize-space()='Paper order ticket']")))
         driver.save_screenshot(str(ticket_dir / "ticket-initial-desktop.png"))
-        driver.set_window_size(390, 844)
-        _wait(driver).until(lambda current: _viewport(current)["width"] <= 390 and current.execute_script("""
+        driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True,
+        })
+        _wait(driver).until(lambda current: _viewport(current)["width"] == 390 and current.execute_script("""
             const input = document.querySelector("input[aria-label='Trade symbol']");
             if (!input) { return false; }
             const limit = () => Array.from(document.querySelectorAll("header, [class*='sticky']")).reduce((max, node) => {
@@ -1010,7 +1007,7 @@ def test_local_designated_trader_journey(disposable_api: _DisposableApi) -> None
         widths = driver.execute_script("const root=document.documentElement,body=document.body,main=document.querySelector('main');return body&&main?{rootScroll:root.scrollWidth,rootClient:root.clientWidth,bodyScroll:body.scrollWidth,bodyClient:body.clientWidth,mainScroll:main.scrollWidth,mainClient:main.clientWidth}:null;")
         driver.save_screenshot(str(ticket_dir / "ticket-initial-mobile.png"))
         assert isinstance(widths, dict) and widths["rootScroll"] <= widths["rootClient"] and widths["bodyScroll"] <= widths["bodyClient"] and widths["mainScroll"] <= widths["mainClient"], widths
-        driver.set_window_size(*VIEWPORT)
+        driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
         driver.execute_script("window.scrollTo({top:0,left:0,behavior:'instant'});")
         _wait(driver).until(lambda current: _viewport(current)["width"] >= 1200 and EC.element_to_be_clickable((By.CSS_SELECTOR, "input[aria-label='Trade symbol']"))(current))
         _install_order_hook(driver, disposable_api.api_url)
@@ -1375,20 +1372,30 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
     from decimal import Decimal
     from uuid import uuid4
 
-    from sqlalchemy import select
     from sqlalchemy.orm import Session
 
+    from app.core.security import hash_password
     from app.models.asset import Asset
     from app.models.holding import Holding
     from app.models.market_quote_cache import MarketQuoteCache
     from app.models.market_symbol import MarketSymbol
     from app.models.user import User
+    from app.services.exchange_calendar import expected_session_dates
+    from app.services.ledger_service import ensure_opening
 
     symbols = [f"P1A{uuid4().hex[:8].upper()}" for _ in range(2)]
-    observed = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+    now = datetime.now(timezone.utc)
+    observed = now.replace(tzinfo=None) - timedelta(hours=1)
+    today = now.date()
+    # The first-close assertion needs one priced session even on weekends and holidays.
+    opening_session = expected_session_dates(today - timedelta(days=14), today)[-1]
+    email, password = f"p1a-{uuid4().hex}@example.com", os.environ["P0B_TRADER_PASSWORD"]
     with Session(disposable_api.engine) as db:
-        user = db.execute(select(User).where(User.email == disposable_api.email)).scalar_one()
+        user = User(email=email, password_hash=hash_password(password))
+        db.add(user)
+        db.flush()
         assert user.cash_balance == Decimal("100000.00")
+        ensure_opening(db, user, effective_on=opening_session)
         for symbol in symbols:
             asset = Asset(symbol=symbol, asset_type="stock", name="P1-A browser fixture")
             db.add_all([asset, MarketSymbol(symbol=symbol, company_name="Fixture", exchange="NASDAQ")])
@@ -1399,7 +1406,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
 
     driver = _driver()
     try:
-        _sign_in(driver, disposable_api.web_url, disposable_api.email, os.environ["P0B_TRADER_PASSWORD"])
+        _sign_in(driver, disposable_api.web_url, email, password)
         _wait(driver).until(lambda current: "Valuation incomplete" in current.find_element(By.TAG_NAME, "body").text)
         value_card = driver.find_element(By.XPATH, "//h2[normalize-space()='Portfolio Value']/ancestor::section[1]")
         value_text = " ".join(value_card.text.split())
@@ -1411,7 +1418,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         assert not value_card.find_elements(By.CSS_SELECTOR, "svg[aria-label='Intraday portfolio value chart']")
         assert _money_after(driver, "Cash") == "$100,000"
         assert _money_after(driver, "Buying power") == "$100,000"
-        assert driver.find_element(By.CSS_SELECTOR, "[data-testid='today-total-pnl']").text == "Unavailable"
+        assert driver.find_element(By.CSS_SELECTOR, "[data-testid='today-total-pnl'] > strong").text == "Unavailable"
         for symbol in symbols:
             row = driver.find_element(By.XPATH, f"//tr[.//*[normalize-space()='{symbol}']]")
             row_text = " ".join(row.text.split())
@@ -1427,7 +1434,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         driver.get(disposable_api.web_url + "/portfolio")
         _wait(driver).until(lambda current: "Valuation incomplete" in current.find_element(By.TAG_NAME, "body").text)
         assert "Unavailable" in _money_after(driver, "Account value")
-        assert driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text == "Unavailable"
+        assert driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl'] > strong").text == "Unavailable"
         allocation = driver.find_element(By.XPATH, "//summary[normalize-space()='Allocation & P&L detail']")
         _click(driver, allocation)
         exposure = driver.find_element(By.XPATH, "//h2[normalize-space()='Exposure by asset']/ancestor::section[1]")
@@ -1442,7 +1449,7 @@ def test_cached_portfolio_incomplete_and_complete(disposable_api: _DisposableApi
         driver.refresh()
         _wait(driver).until(lambda current: _money_after(current, "Account value") == "$100,200.00")
         assert "Valuation incomplete" not in driver.find_element(By.TAG_NAME, "body").text
-        assert "$0.00" in driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl']").text
+        assert "$0.00" in driver.find_element(By.CSS_SELECTOR, "[data-testid='portfolio-total-pnl'] > strong").text
         driver.get(disposable_api.web_url + "/dashboard")
         _wait(driver).until(lambda current: "$100,200" in current.find_element(By.TAG_NAME, "body").text)
         closing = driver.find_element(By.CSS_SELECTOR, "[data-testid='today-closes']")
@@ -1641,8 +1648,8 @@ def test_public_cached_quotes_without_reference_fill(disposable_api: _Disposable
         _wait(driver).until(lambda current: _viewport(current)["width"] == 1280)
         _reveal_market_tool(driver, "#company-research")
         field = _wait(driver).until(EC.visibility_of_element_located((By.ID, "research-symbol")))
-        field.clear()
-        field.send_keys("P1NOFACTS")
+        select_all = Keys.COMMAND if driver.capabilities.get("platformName") == "mac" else Keys.CONTROL
+        field.send_keys(select_all, "a", Keys.NULL, "P1NOFACTS")
         _click(driver, driver.find_element(By.XPATH, "//button[normalize-space()='Research']"))
         _wait(driver).until(lambda current: "P1NOFACTS" in current.find_element(By.TAG_NAME, "body").text)
         _wait(driver).until(lambda current: "research assessment unavailable" in current.find_element(By.TAG_NAME, "body").text.lower())
