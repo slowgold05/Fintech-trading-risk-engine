@@ -201,7 +201,7 @@ def _upsert_bars(db, rows):
             )
         ),
     ).returning(MarketBarDaily.session_date)
-    return len(db.scalars(command).all())
+    return sum(1 for _ in db.scalars(command))
 
 
 def _store_latest_quote(db, bar):
