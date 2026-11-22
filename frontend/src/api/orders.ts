@@ -1,8 +1,10 @@
 import { apiClient } from "./client";
 import type { CreateOrderPayload, OrderResponse } from "../types/schemas";
 
+export const ORDER_ACTIVITY_LIMIT = 50;
+
 export async function fetchOrders(): Promise<{ orders: OrderResponse[] }> {
-  const response = await apiClient.get<{ orders: OrderResponse[] }>("/orders/");
+  const response = await apiClient.get<{ orders: OrderResponse[] }>("/orders/", { params: { limit: ORDER_ACTIVITY_LIMIT } });
   return response.data;
 }
 

@@ -1,0 +1,828 @@
+
+:where(html[data-look="terrain"]) .touch-dock {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  :where(html[data-look="terrain"]) .market-desk {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+  :where(html[data-look="terrain"]) .market-header {
+    position: relative;
+    padding-top: env(safe-area-inset-top);
+  }
+  :where(html[data-look="terrain"]) .market-header.scrolled,
+  :where(html[data-look="terrain"]) .market-header.scrolled .header-inner {
+    transform: none;
+  }
+  :where(html[data-look="terrain"]) .market-main {
+    overflow: visible;
+  }
+  :where(html[data-look="terrain"]) .market-desk :is(button, input, summary, a, [role="combobox"], [role="option"]) {
+    min-height: 44px;
+  }
+  :where(html[data-look="terrain"]) .market-desk :is(button, input, a) {
+    min-width: 44px;
+  }
+  :where(html[data-look="terrain"]) .market-desk :is(input, select) {
+    font-size: 16px;
+  }
+  :where(html[data-look="terrain"]) .market-desk :is(h2, [id], details) {
+    scroll-margin-top: calc(94px + env(safe-area-inset-top));
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-strip {
+    position: sticky;
+    top: env(safe-area-inset-top);
+    z-index: 8;
+    background: #141518;
+  }
+  :where(html[data-look="terrain"]) .touch-dock {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 16;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: #151619;
+    border-top: 1px solid #494a4d;
+    padding: 0 max(12px, env(safe-area-inset-right)) env(safe-area-inset-bottom)
+      max(12px, env(safe-area-inset-left));
+  }
+  :where(html[data-look="terrain"]) .touch-dock a {
+    display: flex;
+    position: relative;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 52px;
+    color: #adaeb2;
+    font: 10px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .touch-dock a[aria-current] {
+    color: #f4c699;
+    background: linear-gradient(#30282088, transparent);
+  }
+  :where(html[data-look="terrain"]) .touch-dock a[aria-current]::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    height: 2px;
+    width: 24px;
+    background: #eeb681;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  :where(html[data-look="terrain"]) .instrument-fold {
+    border: 1px solid var(--desk-line);
+    border-radius: 4px;
+    background: #17181b;
+  }
+  :where(html[data-look="terrain"]) .market-main > .instrument-fold,
+  :where(html[data-look="terrain"]) .market-tools {
+    margin-top: 10px;
+  }
+  :where(html[data-look="terrain"]) .instrument-fold summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    gap: 12px;
+    cursor: pointer;
+  }
+  :where(html[data-look="terrain"]) .instrument-fold summary::marker,
+  :where(html[data-look="terrain"]) .instrument-fold summary::-webkit-details-marker {
+    display: none;
+    content: "";
+  }
+  :where(html[data-look="terrain"]) .instrument-fold summary b {
+    display: block;
+    font: 550 17px var(--desk-display);
+    letter-spacing: -0.03em;
+  }
+  :where(html[data-look="terrain"]) .instrument-fold summary small {
+    display: block;
+    color: var(--desk-muted);
+    font-size: 12px;
+  }
+  :where(html[data-look="terrain"]) .instrument-fold[open] > summary svg {
+    transform: rotate(180deg);
+  }
+  :where(html[data-look="terrain"]) .instrument-fold > .metric-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  :where(html[data-look="terrain"]) .instrument-fold > .desk-card,
+  :where(html[data-look="terrain"]) .instrument-fold > .pulse-panel {
+    margin: 0;
+  }
+  :where(html[data-look="terrain"]) .market-tools {
+    grid-template-columns: 1fr;
+  }
+  :where(html[data-look="terrain"]) .market-desk .sector-ledger li {
+    min-height: 44px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .sector-ledger li button,
+  :where(html[data-look="terrain"]) .market-desk .news-region a,
+  :where(html[data-look="terrain"]) .market-desk .footer-inner a {
+    display: inline-flex;
+    align-items: center;
+  }
+  :where(html[data-look="terrain"]) .market-desk .desk-segmented {
+    touch-action: pan-y pinch-zoom;
+  }
+  :where(html[data-look="terrain"]) .terrain-method summary {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  :where(html[data-look="terrain"]) .market-desk .wire-grid > .pending-instrument,
+  :where(html[data-look="terrain"]) .instrument-wall > .pending-instrument {
+    min-height: 270px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .market-tools .history-tool > summary {
+    min-height: 58px;
+  }
+}
+
+@media (min-width: 681px) and (max-width: 860px) {
+  :where(html[data-look="terrain"]) .instrument-wall {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: start;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall .terrain-panel {
+    grid-column: 1/-1;
+    min-height: 420px;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall > .movers-panel,
+  :where(html[data-look="terrain"]) .instrument-wall > .pending-instrument {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall > .instrument-fold {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  :where(html[data-look="terrain"]) .wire-grid {
+    grid-template-columns: 1.35fr 1fr;
+  }
+  :where(html[data-look="terrain"]) .wire-grid > .news-panel {
+    grid-column: auto;
+  }
+  :where(html[data-look="terrain"]) .instrument-fold .metric-column {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  :where(html[data-look="terrain"]) .market-desk .market-main {
+    padding-inline: 10px;
+  }
+  :where(html[data-look="terrain"]) .market-mast {
+    padding: 16px 4px 12px;
+    grid-template-columns: 1fr auto;
+  }
+  :where(html[data-look="terrain"]) .market-mast h1 {
+    font-size: clamp(26px, 7.4vw, 34px);
+  }
+  :where(html[data-look="terrain"]) .mast-label,
+  :where(html[data-look="terrain"]) .session-label {
+    font-size: 8px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .session-verdict {
+    grid-column: 1/-1;
+    gap: 7px;
+    margin-top: 2px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .session-verdict b {
+    font-size: 13px;
+  }
+  :where(html[data-look="terrain"]) .mast-date {
+    grid-row: 1;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: 0;
+    margin-bottom: 10px;
+    overflow: visible;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    gap: 3px;
+    padding: 8px 8px 6px;
+    min-height: 76px;
+    border-top: 0;
+  }
+  :where(html[data-look="terrain"]) .index-tile:nth-child(2) {
+    border-left: 0;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-name b {
+    padding: 0;
+    color: #c8c8c8;
+    background: transparent;
+    font-size: 10px;
+  }
+  :where(html[data-look="terrain"]) .index-name span {
+    display: none;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-tile strong {
+    font-size: clamp(15px, 4.5vw, 20px);
+    white-space: nowrap;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-trace {
+    position: static;
+    width: 100%;
+    height: 15px;
+  }
+  :where(html[data-look="terrain"]) .index-tile .desk-tooltip {
+    top: 100%;
+  }
+  :where(html[data-look="terrain"]) .market-desk .account-link {
+    display: flex;
+    align-items: center;
+  }
+  :where(html[data-look="terrain"]) .header-inner {
+    height: 50px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .terrain-head {
+    padding: 10px 12px;
+    gap: 3px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .terrain-head h2 {
+    font-size: clamp(18px, 5.2vw, 23px);
+  }
+  :where(html[data-look="terrain"]) .market-desk .terrain-head .desk-segmented button {
+    min-width: 44px;
+    padding-inline: 3px;
+    font-size: 10px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .plot-tag {
+    top: 0;
+    left: 10px;
+    font-size: 9px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .terrain-viewport {
+    min-height: 270px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .terrain-footer {
+    font-size: 10px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .movers-panel {
+    padding: 14px 12px;
+  }
+}
+
+@media (max-width: 680px) {
+  :where(html[data-look="terrain"]) .phone-relief {
+    flex: 1;
+    min-width: 0;
+    padding-top: 39px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .plot-count {
+    top: 16px;
+    bottom: auto;
+    right: 12px;
+    font: 9px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .profile-readout {
+    margin: 0 12px;
+    padding: 6px 0 1px;
+    border-top: 1px solid #353538;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    color: #d5ccc2;
+  }
+  :where(html[data-look="terrain"]) .profile-readout small {
+    color: #c5a383;
+    font: 9px var(--desk-mono);
+    letter-spacing: 0.1em;
+  }
+  :where(html[data-look="terrain"]) .profile-readout strong {
+    grid-column: 1;
+    grid-row: 2;
+    color: #f0c395;
+    font: 530 29px/1.12 var(--desk-display);
+    letter-spacing: -0.045em;
+  }
+  :where(html[data-look="terrain"]) .profile-readout span,
+  :where(html[data-look="terrain"]) .profile-readout b {
+    grid-column: 2;
+    justify-self: end;
+    font: 10px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .profile-readout b {
+    color: var(--desk-muted);
+  }
+  :where(html[data-look="terrain"]) .market-desk .profile-viewport {
+    min-height: 0;
+    height: 205px;
+  }
+  :where(html[data-look="terrain"]) .profile-marker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+  }
+  :where(html[data-look="terrain"]) .profile-marker i {
+    display: block;
+    width: 7px;
+    height: 7px;
+    margin: -3.5px;
+    background: #ffe3c3;
+    border: 1px solid #cfa275;
+    border-radius: 50%;
+    box-shadow:
+      0 0 0 3px #a97d5755,
+      0 0 12px #d59d64aa;
+  }
+  :where(html[data-look="terrain"]) .profile-axis {
+    position: static;
+    width: auto;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px 4px;
+    color: #a8a9aa;
+    font: 9px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .profile-axis i {
+    flex: 1;
+    height: 4px;
+    border-top: 1px solid #494a4c;
+    background: repeating-linear-gradient(90deg, #656566 0 1px, transparent 1px 12px);
+  }
+  :where(html[data-look="terrain"]) .fund-carousel {
+    overflow: clip;
+    position: relative;
+    background: #171719;
+    border-top: 1px solid #353437;
+  }
+  :where(html[data-look="terrain"]) .fund-track {
+    display: flex;
+    padding-left: 33.333333%;
+    width: 100%;
+    touch-action: pan-y pinch-zoom;
+    user-select: none;
+  }
+  :where(html[data-look="terrain"]) .market-desk .fund-track button {
+    flex: 0 0 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 1px;
+    border-right: 1px solid #39393a;
+    border-radius: 0;
+    font-size: 11px;
+    color: #b2b3b5;
+    touch-action: pan-y pinch-zoom;
+  }
+  :where(html[data-look="terrain"]) .fund-track button b {
+    font: 500 11px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .fund-track button[aria-pressed="true"] {
+    background: #322a23;
+    color: #f5d2ad;
+    box-shadow: inset 0 2px #d3a377;
+  }
+  :where(html[data-look="terrain"]) .market-desk .instrument-fold > summary::after {
+    content: none;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-trace svg > circle,
+  :where(html[data-look="terrain"]) .market-desk .session-label i {
+    animation: none;
+  }
+}
+@media (max-width: 680px) and (prefers-reduced-motion: no-preference) {
+  :where(html[data-look="terrain"]) .profile-viewport:not([data-paused]) .profile-marker i {
+    animation: signal-pulse 4.8s ease-in-out infinite;
+  }
+}
+
+@media (max-width: 860px) {
+  :where(html[data-look="terrain"]) .market-desk .desk-segmented button {
+    min-height: 44px;
+    touch-action: pan-y pinch-zoom;
+  }
+  :where(html[data-look="terrain"]) .market-desk .instrument-fold > summary::after {
+    content: none;
+  }
+  :where(html[data-look="terrain"]) .sheet-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 12px;
+    border: 1px solid #45464a;
+    border-radius: 4px;
+    background: #232428;
+    color: #e0dedc;
+    font: 11px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .market-desk .sheet-trigger.plot-tag {
+    border: 0;
+    padding: 0;
+    min-height: 44px;
+    color: #c8c9ca;
+    font-size: 9px;
+  }
+  :where(html[data-look="terrain"]) .touch-sheet[open] {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    color: var(--desk-ink);
+  }
+  :where(html[data-look="terrain"]) .touch-sheet::backdrop {
+    background: transparent;
+  }
+  :where(html[data-look="terrain"]) .sheet-shade {
+    position: absolute;
+    inset: 0;
+    background: #050609bb;
+  }
+  :where(html[data-look="terrain"]) .sheet-panel {
+    position: relative;
+    width: min(100%, 560px);
+    max-height: 82dvh;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: env(safe-area-inset-bottom);
+    border: 1px solid #525155;
+    border-bottom: 0;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(140deg, #242427, #191a1d 60%);
+    box-shadow: 0 -6px 26px #0006;
+  }
+  :where(html[data-look="terrain"]) .sheet-handle {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 19px 14px 4px 18px;
+    touch-action: none;
+    user-select: none;
+    border-bottom: 1px solid #3c3d40;
+  }
+  :where(html[data-look="terrain"]) .sheet-handle i {
+    position: absolute;
+    width: 32px;
+    height: 3px;
+    border-radius: 3px;
+    background: #737477;
+    top: 8px;
+    left: calc(50% - 16px);
+  }
+  :where(html[data-look="terrain"]) .sheet-handle button {
+    display: grid;
+    place-items: center;
+  }
+  :where(html[data-look="terrain"]) .sheet-body {
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 4px 10px 12px;
+    scrollbar-color: #626467 #17181a;
+  }
+  :where(html[data-look="terrain"]) .sheet-options button,
+  :where(html[data-look="terrain"]) .sheet-links a {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    padding: 0 12px;
+    min-height: 48px;
+    border-bottom: 1px solid #353639;
+    font: 14px var(--desk-display);
+  }
+  :where(html[data-look="terrain"]) .sheet-options button[aria-selected="true"] {
+    color: #f4c79d;
+    background: #302820;
+  }
+  :where(html[data-look="terrain"]) .market-desk .chart-notices a {
+    display: inline-flex;
+    align-items: center;
+  }
+  :where(html[data-look="terrain"]) .market-desk .movers-panel .desk-table a {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+@media (min-width: 681px) and (max-width: 860px) {
+  :where(html[data-look="terrain"]) .instrument-wall > .metric-column {
+    grid-column: 2;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall > .metric-column .instrument-head {
+    gap: 4px;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall > .metric-column .instrument-head h2 {
+    font-size: 15px;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall > .instrument-fold {
+    grid-column: 1/-1;
+    grid-row: 3;
+  }
+  :where(html[data-look="terrain"]) .instrument-wall > .metric-column :is(.breadth-meter, .range-meter) {
+    padding: 10px;
+  }
+}
+@media (max-width: 680px) {
+  :where(html[data-look="terrain"]) .phone-relief .profile-readout {
+    padding-top: 7px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .terrain-footer {
+    display: none;
+  }
+  :where(html[data-look="terrain"]) .terrain-method summary small {
+    order: 3;
+    margin-left: auto;
+    color: #abadb1;
+    font: 9px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .market-desk .movers-scroll .desk-table {
+    display: block;
+  }
+  :where(html[data-look="terrain"]) .movers-scroll .desk-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  :where(html[data-look="terrain"]) .movers-scroll .desk-table tbody {
+    display: block;
+  }
+  :where(html[data-look="terrain"]) .movers-scroll .desk-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(50px, 1fr) 52px minmax(74px, auto);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 0 7px;
+    border-bottom: 1px solid #353639;
+    padding: 6px 1px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .movers-scroll .desk-table :is(td, th) {
+    border: 0;
+    padding: 0;
+  }
+  :where(html[data-look="terrain"]) .movers-scroll .desk-table th {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    text-align: left;
+    align-self: start;
+    font-size: 15px;
+  }
+  :where(html[data-look="terrain"]) .movers-scroll .desk-table .mover-volume {
+    grid-column: 1;
+    grid-row: 2;
+    text-align: left;
+    font: 10px var(--desk-mono);
+    color: #b1b2b4;
+    pointer-events: none;
+  }
+  :where(html[data-look="terrain"]) .mover-volume::before {
+    content: "Vol ";
+    color: #959698;
+  }
+  :where(html[data-look="terrain"]) .market-desk .movers-scroll .desk-table th a {
+    align-items: start;
+    padding-top: 2px;
+  }
+  :where(html[data-look="terrain"]) .mover-price {
+    grid-row: 1;
+    grid-column: 3;
+    font-size: 15px;
+  }
+  :where(html[data-look="terrain"]) .mover-change {
+    grid-row: 2;
+    grid-column: 3;
+  }
+  :where(html[data-look="terrain"]) .mover-trace {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 860px) {
+  :where(html[data-look="terrain"]) .market-desk .instrument-fold:not(.history-tool) > summary::after {
+    display: none;
+  }
+  :where(html[data-look="terrain"]) .tools-anchor {
+    display: block;
+    height: 0;
+  }
+  :where(html[data-look="terrain"]) .quote-detail-link {
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 6px;
+    color: #f1c291;
+    text-decoration: underline;
+  }
+  :where(html[data-look="terrain"]) .market-desk .touch-sheet .sheet-options button {
+    min-height: 48px;
+  }
+}
+@media (max-width: 680px) {
+  :where(html[data-look="terrain"]) .market-mast {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  :where(html[data-look="terrain"]) .market-mast h1 {
+    font-size: clamp(29px, 8.9vw, 40px);
+    letter-spacing: -0.06em;
+  }
+  :where(html[data-look="terrain"]) .market-desk .session-verdict b {
+    color: #d1d2d3;
+    font: 10px var(--desk-mono);
+  }
+  :where(html[data-look="terrain"]) .market-desk .session-verdict small {
+    font-size: 10px;
+    color: #a5a6a8;
+  }
+  :where(html[data-look="terrain"]) .market-desk .mast-date > span {
+    font-size: 9px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .heat-foot {
+    flex-wrap: wrap;
+  }
+  :where(html[data-look="terrain"]) .market-tools .session-price-table,
+  :where(html[data-look="terrain"]) .market-tools .session-price-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  :where(html[data-look="terrain"]) .market-tools .session-price-table thead {
+    position: absolute;
+    clip-path: inset(50%);
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+  :where(html[data-look="terrain"]) .market-tools .session-price-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 8px;
+    gap: 6px 4px;
+  }
+  :where(html[data-look="terrain"]) .market-tools .session-price-table tbody th {
+    grid-column: 1/-1;
+    text-align: left;
+  }
+  :where(html[data-look="terrain"]) .market-tools .session-price-table td {
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  :where(html[data-look="terrain"]) .market-tools .session-price-table td::before {
+    content: attr(data-field);
+    display: block;
+    color: #adaeb0;
+    font: 10px var(--desk-display);
+  }
+}
+@media (min-width: 681px) and (max-width: 860px) {
+  :where(html[data-look="terrain"]) .market-header .top-links {
+    display: none;
+  }
+  :where(html[data-look="terrain"]) .market-header .header-search {
+    flex: 1;
+    max-width: 290px;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  :where(html[data-look="terrain"]) .market-mast .mast-label {
+    white-space: nowrap;
+    font-size: 8px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-name {
+    width: 100%;
+    gap: 3px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-name span {
+    display: block;
+    font: 8px var(--desk-display);
+    color: #adafb3;
+    white-space: nowrap;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-name b {
+    font-size: 9px;
+  }
+  :where(html[data-look="terrain"]) .profile-readout {
+    position: sticky;
+    top: calc(80px + env(safe-area-inset-top));
+    z-index: 2;
+    background: #101115;
+  }
+  :where(html[data-look="terrain"]) .profile-marker[data-inspecting="true"] {
+    border-left: 1px dashed #d9ac7d88;
+  }
+  :where(html[data-look="terrain"]) .market-desk :is(.symbol-search, .research-search) {
+    min-height: 46px;
+  }
+  :where(html[data-look="terrain"]) .market-desk :is(.symbol-search, .research-search, .history-console) input {
+    font-size: 16px;
+  }
+  :where(html[data-look="terrain"]) .market-desk :is(#trending-movers, #volatility-terrain) {
+    scroll-margin-top: calc(116px + env(safe-area-inset-top));
+  }
+  :where(html[data-look="terrain"]) .market-tools .sheet-trigger {
+    width: 100%;
+  }
+}
+
+:where(html[data-look="terrain"]) .touch-data-note {
+  display: none;
+}
+@media (max-width: 860px) {
+  :where(html[data-look="terrain"]) .touch-data-note {
+    display: inline;
+  }
+}
+
+@media (max-width: 680px) {
+  /* Reserve the four-ridge instrument while its API histories and renderer arrive. */
+  :where(html[data-look="terrain"]) .market-mast:has(+ .index-strip > .desk-skeleton) {
+    min-height: 108px;
+  }
+  :where(html[data-look="terrain"]) .market-desk .index-strip:has(> .desk-skeleton) {
+    min-height: 80px;
+  }
+  :where(html[data-look="terrain"]) .terrain-panel .plot-inset:has(.surface-skeleton) {
+    min-height: 364px;
+  }
+}
+
+@media (max-width: 680px) {
+  :where(html[data-look="terrain"]) .instrument-wall > .pending-instrument#trending-movers {
+    min-height: 332px;
+  }
+}
+
+@media(max-width:860px) {
+  :where(html[data-look="terrain"]) html:has(.touch-dock) { scroll-padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+  :where(html[data-look="terrain"]) .instrument-fold summary > span:first-child, :where(html[data-look="terrain"]) .history-tool summary > span:first-of-type { flex: 1; min-width: 0; }
+  :where(html[data-look="terrain"]) .instrument-fold summary > .fold-preview, :where(html[data-look="terrain"]) .history-tool > summary > .fold-preview {
+    flex: none; display: grid; align-content: center; justify-items: end; gap: 1px;
+    margin-left: auto; line-height: 1.15;
+  }
+  :where(html[data-look="terrain"]) .fold-preview em { color: #d8d8d4; font: 500 13px var(--desk-mono); }
+  :where(html[data-look="terrain"]) .market-desk summary .fold-preview small { color: #abadb0; font: 9px var(--desk-mono); }
+  :where(html[data-look="terrain"]) .instrument-fold summary .pulse-preview { display: flex; align-items: start; height: 32px; padding-top: 14px; }
+  :where(html[data-look="terrain"]) .pulse-preview i { width: 6px; background: var(--desk-gain); transform: translateY(-100%); }
+  :where(html[data-look="terrain"]) .pulse-preview i[data-down=true] { transform: none; background: var(--desk-loss); }
+  :where(html[data-look="terrain"]) .access-preview i { width: 14px; height: 10px; border: 1px solid #a6a8ab; position: relative; border-radius: 2px; margin: 6px 3px 3px; }
+  :where(html[data-look="terrain"]) .access-preview i::before { content:""; position:absolute; left:2px; right:2px; height:6px; top:-7px; border:1px solid #a6a8ab; border-radius:5px 5px 0 0; }
+  :where(html[data-look="terrain"]) .market-desk .market-tools .history-tool > summary { padding: 10px 14px; gap: 12px; }
+  :where(html[data-look="terrain"]) .market-tools .history-tool > summary > svg:first-child { display: none; }
+  :where(html[data-look="terrain"]) .market-tools .history-tool > summary small { max-width: 27ch; }
+  :where(html[data-look="terrain"]) .market-footer .footer-inner { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 5px 12px; align-items:center; }
+  :where(html[data-look="terrain"]) .footer-inner .wordmark { grid-column: 1; }
+  :where(html[data-look="terrain"]) .footer-inner p { grid-column: 1; }
+  :where(html[data-look="terrain"]) .footer-inner a { grid-column: 2; grid-row: 1/span 2; }
+  :where(html[data-look="terrain"]) .footer-credits { border-top: 1px solid var(--desk-line); margin-top: 12px; }
+  :where(html[data-look="terrain"]) .footer-credits > summary { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  :where(html[data-look="terrain"]) .footer-credits summary small { margin-left: auto; font: 10px var(--desk-mono); color: var(--desk-muted); }
+  :where(html[data-look="terrain"]) .footer-credits .chart-notices { margin: 0; }
+  :where(html[data-look="terrain"]) .footer-credits .chart-notices p:last-child { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+}
+@media(max-width:680px) {
+  :where(html[data-look="terrain"]) .market-mast { padding-block: 12px 8px; }
+  :where(html[data-look="terrain"]) .market-desk .profile-viewport { height: clamp(165px,22svh,205px); }
+}
+
+@media (max-width:680px) {
+  :where(html[data-look="terrain"]) .market-desk .market-header .header-search { position:relative; inset:auto; display:block; flex:1; min-width:0; margin:0; width:auto; }
+  :where(html[data-look="terrain"]) .market-desk .header-inner .brand-link { flex:0 0 24px; min-width:0; padding:0; }
+  :where(html[data-look="terrain"]) .market-desk .header-inner .wordmark>span,:where(html[data-look="terrain"]) .market-desk .mobile-search { display:none; }
+  :where(html[data-look="terrain"]) .market-desk .header-inner .symbol-search { padding-left:4px; }
+  :where(html[data-look="terrain"]) .market-desk .header-inner .symbol-search input { width:0; flex:1; min-width:0; }
+  :where(html[data-look="terrain"]) .market-desk .header-inner .symbol-results { position:absolute; left:-28px; right:auto; width:min(340px,90vw); }
+  :where(html[data-look="terrain"]) .market-desk .header-inner .symbol-search>svg { display:none; }
+}
+
+@media (max-width: 767px) {
+  :where(html[data-look="terrain"]) .market-desk .header-inner .brand-link { min-width:44px; justify-content:center; }
+}

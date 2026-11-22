@@ -1,0 +1,44 @@
+.portfolio-review { min-width: 0; }
+.portfolio-review .nk-slot { min-width: 0; display: grid; align-content: start; gap: var(--gap); }
+.portfolio-review .review-controls, .portfolio-review .review-controls label { display:flex; flex-wrap:wrap; align-items:center; gap: .65rem; }
+.portfolio-review select {
+  appearance:none; height:44px; padding:0 1.9rem 0 .7rem; color:var(--ink); background-color:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius);
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%);
+  background-position:calc(100% - 13px) center,calc(100% - 8px) center; background-size:5px 5px; background-repeat:no-repeat;
+}
+.portfolio-review .review-metrics { display:grid; gap:var(--gap); grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr)); }
+.portfolio-review p { margin-block:.5rem; color:var(--muted); }
+.portfolio-review strong, .portfolio-review b { color:var(--ink); }
+.portfolio-review .review-inspect,.portfolio-review .review-ledger div {display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+.portfolio-review .review-inspect {border-top:1px solid var(--line);padding-top:8px;color:var(--muted);font:12px var(--font-mono);}
+.portfolio-review dd {font-family:var(--font-mono);}
+.portfolio-review .nk-page-head h1 {font-size:clamp(32px,3.5vw,54px);line-height:1;letter-spacing:-.065em;}
+.portfolio-review .review-back {display:inline-flex;min-height:44px;align-items:center;letter-spacing:.05em;text-transform:uppercase;}
+.portfolio-review .review-chart h2 {font-size:clamp(20px,2vw,28px);letter-spacing:-.05em;}
+.portfolio-review .nk-panel header p {font-size:12px;margin:0;}
+.portfolio-review .review-chart > input {width:100%;min-height:44px;}
+.portfolio-review .review-controls label {flex-direction:column;align-items:start;gap:2px;color:var(--muted);font:11px var(--font-mono);}
+.portfolio-review .nk-scroll th,.portfolio-review .nk-scroll td {white-space:normal;}
+.portfolio-review .review-ledger div { border-bottom:1px solid var(--line); padding:.42rem 0; }
+.portfolio-review .review-method { background:var(--surface); border:1px solid var(--line); padding:0 var(--pad); border-radius:var(--radius); }
+.portfolio-review summary { color:var(--accent); cursor:pointer; padding:.7rem 0; min-height:44px; }
+.portfolio-review details ul { padding-inline-start:1.2rem; list-style:disc; }
+.portfolio-review :is(select,summary,input,a):focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+@media (min-width:900px) {
+  .portfolio-review .nk-layout {grid-template-columns:minmax(0,2.1fr) minmax(260px,1fr);align-items:start;}
+  :root[data-look=dial] .portfolio-review .nk-layout {grid-template-columns:minmax(0,1.75fr) minmax(290px,1fr);gap:8px;}
+}
+@media(max-width:767px) {
+  .portfolio-review .nk-page-head {flex-wrap:nowrap;align-items:end;}
+  .portfolio-review .review-metrics {grid-template-columns:repeat(3,minmax(0,1fr));gap:0;}
+  .portfolio-review .review-metrics .nk-stat {padding:6px;}
+  .portfolio-review .review-metrics .nk-stat strong {font-size:18px;}
+}
+
+.review-window {display:inline-block;margin-left:.65em;font-family:var(--font-mono);font-size:11px;}
+@media(max-width:767px) {
+  .portfolio-review .review-window {display:block;margin:2px 0 0;}
+  .portfolio-review .series-terrain .ins-readings {display:grid;grid-template-columns:auto auto auto;gap:6px;}
+  .portfolio-review .ins-readings small {white-space:nowrap;}
+}

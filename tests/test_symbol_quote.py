@@ -5,6 +5,7 @@ from datetime import datetime
 import pytest
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.services.symbol_quote import read_symbol_quote
@@ -21,6 +22,7 @@ QUOTE_KEYS = {
     "volume",
     "source",
     "as_of",
+    "session_date",
 }
 
 
@@ -81,6 +83,7 @@ def test_sp500_quote_comes_from_the_cache(client, db_session):
         "volume": 1234567,
         "source": "massive",
         "as_of": "2026-11-13T21:00:00Z",
+        "session_date": "2026-11-13",
     }
 
 
@@ -99,6 +102,7 @@ def test_known_symbol_without_a_cache_row_returns_null_quote_fields(client, db_s
     assert body["volume"] is None
     assert body["source"] is None
     assert body["as_of"] is None
+    assert body["session_date"] is None
 
 
 @pytest.mark.parametrize("symbol", ["SPY", "QQQ", "DIA", "IWM"])
@@ -196,6 +200,7 @@ def test_heatmap_movers_and_research_flag_only_symbols_the_quote_endpoint_serves
         "OUTX": False,
     }
 
+    monkeypatch.setattr(settings, "alpha_vantage_api_key", "test-key")
     monkeypatch.setattr("app.routers.market.get_top_gainers_losers", lambda: {
         "top_gainers": [{"ticker": "AAPL", "price": "10"}, {"ticker": "OUTX", "price": "10"}],
         "top_losers": [{"ticker": "MSFT", "price": "10"}],
@@ -221,6 +226,7 @@ def test_movers_stay_unlinked_when_the_provider_fails(client, monkeypatch):
     def unavailable():
         raise ValueError("Fixture has no movers")
 
+    monkeypatch.setattr(settings, "alpha_vantage_api_key", "test-key")
     monkeypatch.setattr("app.routers.market.get_top_gainers_losers", unavailable)
 
     body = client.get("/market/trending").json()

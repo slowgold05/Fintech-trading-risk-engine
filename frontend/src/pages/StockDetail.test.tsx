@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryBar, HistoryResponse } from "../api/history";
 import type { SymbolQuoteResponse } from "../types/schemas";
 import { AuthContext } from "../context/authState";
+import type { Feature } from "../night/registry";
 import { StockDetail } from "./StockDetail";
 
 const marketApi = vi.hoisted(() => ({
@@ -16,6 +17,12 @@ const historyApi = vi.hoisted(() => ({ fetchDailyHistory: vi.fn() }));
 const researchApi = vi.hoisted(() => ({ fetchResearchNews: vi.fn() }));
 const indicatorApi = vi.hoisted(() => ({ fetchDailyIndicators: vi.fn() }));
 
+const slots = vi.hoisted(() => ({ features: [] as Feature[] }));
+vi.mock("../night/registry", async (original) => ({
+  ...await original<typeof import("../night/registry")>(),
+  features: slots.features,
+}));
+vi.mock("../api/auth", () => ({ fetchMe: async () => ({ id: 1, role: "trader" }) }));
 vi.mock("../api/market", () => marketApi);
 vi.mock("../api/history", () => historyApi);
 vi.mock("../api/research", () => researchApi);
@@ -88,6 +95,7 @@ const quote: SymbolQuoteResponse = {
   volume: 1000,
   source: "massive",
   as_of: "2026-11-13T21:00:00Z",
+  session_date: "2026-11-13",
 };
 
 function httpError(status: number, detail: string) {
@@ -151,6 +159,7 @@ describe("stock detail", () => {
 
   afterEach(() => {
     cleanup();
+    slots.features.length = 0;
     vi.clearAllMocks();
   });
 
@@ -164,15 +173,15 @@ describe("stock detail", () => {
 
     resolveQuote(quote);
     expect(await screen.findByRole("heading", { name: "AAPL" })).toBeInTheDocument();
-    expect(screen.getByText("Cached end-of-day data")).toBeInTheDocument();
+    expect(screen.getByText(/end-of-day (data|price)/i)).toBeInTheDocument();
     expect(screen.getByText("Apple Inc.")).toBeInTheDocument();
     expect(screen.getByText(/Technology/)).toBeInTheDocument();
     expect(screen.getByText("$190.50")).toBeInTheDocument();
     expect(screen.getByText("Raw last close")).toBeInTheDocument();
     expect(screen.getAllByText("Up +$1.25 (+0.66%)")).toHaveLength(2);
-    expect(screen.getByText("As of 2026-11-13")).toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "split_adjusted", "2y");
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+    expect(screen.getByText("Session date 2026-11-13")).toBeInTheDocument();
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "auto", "split_adjusted", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
 
     expect(await screen.findByText("Massive split-adjusted prices.")).toBeInTheDocument();
     const stats = screen.getByRole("region", { name: "Market metrics" });
@@ -219,17 +228,24 @@ describe("stock detail", () => {
     expect(researchApi.fetchResearchNews).toHaveBeenCalledWith("AAPL");
   });
 
-  it("uses raw Massive bars when split-adjusted history is empty", async () => {
-    historyApi.fetchDailyHistory.mockImplementation(
-      (_symbol: string, _provider: string, adjustment: string) => Promise.resolve({
-        ...history(adjustment === "raw" ? [bar("2026-11-12", "190", "192", "188", "3000")] : []),
-        adjustment_type: adjustment,
-      }),
-    );
+  it("uses the Yahoo series selected by the API for history and indicators", async () => {
+    historyApi.fetchDailyHistory.mockResolvedValue({
+      ...history([{ ...bar("2026-11-12", "190", "192", "188", "3000"), provider: "yahoo" }]),
+      provider: "yahoo",
+    });
     renderDetail();
-    expect(await screen.findByText("Massive raw prices. Split-adjusted bars are not cached.")).toBeInTheDocument();
+    expect(await screen.findByText("Yahoo Finance split-adjusted prices.")).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-12" })).toBeInTheDocument();
-    expect(historyApi.fetchDailyHistory).toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+    expect(indicatorApi.fetchDailyIndicators).toHaveBeenCalledWith("AAPL", "yahoo", "split_adjusted", "1y", "rsi", 14);
+  });
+
+  it("labels raw bars when the API selects a raw series", async () => {
+    historyApi.fetchDailyHistory.mockResolvedValue({
+      ...history([{ ...bar("2026-11-12", "190", "192", "188", "3000"), adjustment_type: "raw" }]),
+      adjustment_type: "raw",
+    });
+    renderDetail();
+    expect(await screen.findByText("Massive raw prices.")).toBeInTheDocument();
     const stats = screen.getByRole("region", { name: "Market metrics" });
     expect(within(stats).getByText("52-week range").parentElement).toHaveTextContent("Raw prices, not split-adjusted");
   });
@@ -242,7 +258,7 @@ describe("stock detail", () => {
     expect(await screen.findByText("Massive split-adjusted prices.")).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "2026-11-12" }).closest("tr")).toHaveTextContent("100.25");
     expect(within(screen.getByRole("region", { name: "Market metrics" })).getByText("Last volume").parentElement).toHaveTextContent("1Y avg 100");
-    expect(historyApi.fetchDailyHistory).not.toHaveBeenCalledWith("AAPL", "massive", "raw", "2y");
+    expect(historyApi.fetchDailyHistory).toHaveBeenCalledTimes(1);
   });
 
   it("calculates labeled one-year volatility and drawdown without older cached prices", async () => {
@@ -266,7 +282,7 @@ describe("stock detail", () => {
   it("shows an empty chart when the cache has no bars", async () => {
     historyApi.fetchDailyHistory.mockResolvedValue(history([], "unavailable"));
     renderDetail();
-    expect(await screen.findByText("No cached daily bars for AAPL in the 1 year range.")).toBeInTheDocument();
+    expect(await screen.findByText("No cached daily bars for AAPL in the requested two years.")).toBeInTheDocument();
     const stats = screen.getByRole("region", { name: "Market metrics" });
     expect(within(stats).getByText("52-week range").parentElement).toHaveTextContent("unavailable");
   });
@@ -306,6 +322,28 @@ describe("stock detail", () => {
     });
     expect(within(stats).getByText("P/E").parentElement).toHaveTextContent("unavailable");
     expect(within(stats).getByText("Profit margin").parentElement).toHaveTextContent("unavailable");
+  });
+
+  it("opens only the registered public events view and preserves the route state", async () => {
+    slots.features.push({
+      id: "events", path: "/market/:symbol", label: "Events", access: "public", slot: "companyEvents",
+      Screen: () => <h2>Company events fixture</h2>,
+    });
+    renderDetail("/market/AAPL?tab=events&range=1m#company");
+    expect(await screen.findByRole("heading", { name: "Company events fixture" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/market/AAPL?range=1m#company");
+    await userEvent.click(screen.getByRole("link", { name: "Overview" }));
+    expect(await screen.findByTestId("company-history")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Company events fixture" })).not.toBeInTheDocument();
+  });
+
+  it("uses actual dated bars for keyboard inspection", async () => {
+    renderDetail();
+    await userEvent.click(await screen.findByText("Inspect a daily bar"));
+    const field = screen.getByLabelText("Exchange session");
+    expect(field).toHaveValue("2026-11-12");
+    await userEvent.selectOptions(field, "2026-11-09");
+    expect(within(field.closest("details")!).getByText("close").parentElement).toHaveTextContent("$180.00");
   });
 
   it("rejects a malformed symbol before calling the API", () => {

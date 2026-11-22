@@ -16,12 +16,14 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.read_snapshot import SnapshotClockError, consistent_read, snapshot_clock
 from app.models.market_bar_daily import MarketBarDaily
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.price_history_daily import PriceHistoryDaily
 from app.services import exchange_calendar
+from app.services.history_series import AUTO, select_history_series
 from app.services.market_cache_service import _freshness
 
 PRICE_QUANTUM = Decimal("0.000001")
@@ -34,7 +36,7 @@ EARLIEST_SUPPORTED_DATE = date(1900, 1, 1)
 SUPPORTED_ADJUSTMENTS = frozenset({"raw", "split_adjusted"})
 FRESHNESS_STATUSES = ("live-ish", "delayed", "cached", "stale")
 QUALITY_STATUSES = ("valid", "flagged", "rejected")
-# Canonical-history ingestion is off. This does not describe quote refresh.
+# Requests do not collect data. Scheduled collection is reported separately.
 COLLECTION = "disabled"
 COVERAGE_STATUS = "not_verified"
 
@@ -197,6 +199,10 @@ def _data_status(db: Session) -> dict:
     return {
         "read_at": _iso_z(clock),
         "collection": COLLECTION,
+        "scheduled_history_provider": (
+            "yahoo" if settings.scheduled_jobs_enabled and settings.scheduled_market_daily_limit
+            and not settings.massive_api_key.strip() else None
+        ),
         "coverage_status": COVERAGE_STATUS,
         "expected_session_count": None,
         "universe": {"active_non_test_symbols": int(universe_count or 0)},
@@ -349,6 +355,9 @@ def _symbol_history(
 
     end = clock.date()
     start = _RANGE_START[range_token](end)
+    if provider == AUTO:
+        selected = select_history_series(db, symbol, start, end, adjustment_type, clock)
+        provider, adjustment_type = selected if selected is not None else (None, None)
     # Inclusive session bounds stay in SQL. The primary key already makes a
     # session unique for this symbol, provider, and adjustment.
     rows = db.execute(

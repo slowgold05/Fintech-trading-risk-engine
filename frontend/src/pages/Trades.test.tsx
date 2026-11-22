@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OrderDetailResponse, OrderFill } from "../api/orderDetails";
@@ -15,12 +16,12 @@ const { fetchOrders, cancelOrder, fetchOrderDetail, fetchTrades, fetchTradeRisk,
   showToast: vi.fn(),
 }));
 
-vi.mock("../api/orders", () => ({ fetchOrders, cancelOrder }));
+vi.mock("../api/orders", () => ({ fetchOrders, cancelOrder, ORDER_ACTIVITY_LIMIT: 50 }));
 vi.mock("../api/orderDetails", async () => {
   const actual = await vi.importActual<typeof import("../api/orderDetails")>("../api/orderDetails");
   return { ...actual, fetchOrderDetail };
 });
-vi.mock("../api/trades", () => ({ fetchTrades }));
+vi.mock("../api/trades", () => ({ fetchTrades, TRADE_ACTIVITY_LIMIT: 20 }));
 vi.mock("../api/risk", () => ({ fetchTradeRisk }));
 vi.mock("../context/useToast", () => ({ useToast: () => ({ showToast, dismissToast: vi.fn(), toasts: [] }) }));
 vi.mock("../components/OrderTicket", () => ({ OrderTicket: () => <div>Order ticket stub</div> }));
@@ -38,7 +39,7 @@ afterEach(() => {
   showToast.mockReset();
 });
 
-function renderTrades() {
+function renderTrades(props?: Parameters<typeof Trades>[0]) {
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -49,7 +50,7 @@ function renderTrades() {
   const invalidate = vi.spyOn(client, "invalidateQueries");
   render(
     <QueryClientProvider client={client}>
-      <Trades />
+      <MemoryRouter><Trades {...props} /></MemoryRouter>
     </QueryClientProvider>,
   );
   return { client, invalidate };
@@ -111,6 +112,8 @@ function fill(patch: Partial<OrderFill> & Pick<OrderFill, "trade_id">): OrderFil
     notional: "1.90",
     realized_pnl: "0.00",
     executed_at: "2026-03-15T13:04:05Z",
+    mode: patch.simulated_quote_date ? "eod_simulated" : "order_book",
+    source: null,
     ...patch,
   };
 }
@@ -214,9 +217,11 @@ describe("Trades order details", () => {
               remaining_quantity: "123456788.613456",
               canceled_at: "2026-11-06T17:08:09Z",
               total_fill_count: 2,
+              simulated_quote_date: "2026-03-14",
+              remainder_reason: "This order reached the simulated share cap for the latest close. The unfilled shares were canceled.",
               fills: [
                 fill({ trade_id: 21, quantity: "0.010000", notional: "1.90", realized_pnl: "-0.01" }),
-                fill({ trade_id: 22, quantity: "0.500000", notional: "95.13", realized_pnl: "0.00", executed_at: "2026-03-15T13:04:06Z" }),
+                fill({ trade_id: 22, quantity: "0.500000", notional: "95.13", realized_pnl: "0.00", executed_at: "2026-03-15T13:04:06Z", simulated_quote_date: "2026-03-14" }),
               ],
             })
           : detail(),
@@ -242,6 +247,8 @@ describe("Trades order details", () => {
     expect(within(region).getByText("0.500000")).toBeInTheDocument();
     expect(within(region).getByText("21")).toBeInTheDocument();
     expect(within(region).getByText("22")).toBeInTheDocument();
+    expect(within(region).getByText("Paper fill at cached close · 2026-03-14 · Provider unavailable · raw close")).toBeInTheDocument();
+    expect(within(region).getByText(/reached the simulated share cap/)).toBeInTheDocument();
     expect(region.textContent).toMatch(/UTC/);
     expect(region.textContent).toMatch(/13:04:05/);
     expect(within(region).getByText(/2 recorded fills/)).toBeInTheDocument();
@@ -523,6 +530,29 @@ describe("orders list states", () => {
     expect(screen.getByRole("button", { name: "Details for MSFT order 8" })).toBeInTheDocument();
   });
 
+  it("keeps a deep-linked receipt when the recent orders list fails", async () => {
+    fetchTrades.mockResolvedValue({ trades: [] });
+    fetchOrders.mockRejectedValue(new Error("list unavailable"));
+    fetchOrderDetail.mockResolvedValue(detail({ order_id: 81 }));
+    renderTrades({ owner: 5, receiptId: 81 });
+    expect(await screen.findByTestId("order-receipt")).toHaveAttribute("data-order-id", "81");
+    expect(screen.getByText("Orders could not be loaded.")).toBeInTheDocument();
+  });
+
+  it("filters both lists by ticker within the loaded scope", async () => {
+    fetchTrades.mockResolvedValue({ trades: [trade(), trade({ id: 46, symbol: "MSFT" })] });
+    fetchOrders.mockResolvedValue({ orders: [order(), order({ id: 8, symbol: "MSFT" })] });
+    renderTrades();
+    await screen.findByRole("button", { name: "Details for MSFT order 8" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter by ticker" }), { target: { value: "msft" } });
+    expect(screen.queryByRole("button", { name: "Details for AAPL order 7" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Risk for AAPL trade 45" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Risk for MSFT trade 46" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filter" }));
+    expect(screen.getByRole("button", { name: "Details for AAPL order 7" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Risk for AAPL trade 45" })).toBeInTheDocument();
+  });
+
   it("disables detail Retry while the refetch is in flight", async () => {
     fetchTrades.mockResolvedValue({ trades: [] });
     fetchOrders.mockResolvedValue({ orders: [order()] });
@@ -618,4 +648,18 @@ describe("trade risk detail", () => {
     expect(await screen.findByText("CONCENTRATION_LIMIT")).toBeInTheDocument();
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
   });
+});
+
+it("nets executions on their UTC date and recomputes the flow for the active ticker", async () => {
+  fetchOrders.mockResolvedValue({ orders: [] });
+  fetchTrades.mockResolvedValue({ trades: [
+    trade({ executed_at: "2026-11-12T20:15:00-05:00", quantity: 2, price_at_execution: 100, notional: 200 }),
+    trade({ id: 46, symbol: "MSFT", side: "sell", executed_at: "2026-11-13T01:20:00", quantity: 1, price_at_execution: 70, notional: 70 }),
+  ] });
+  renderTrades({open:false});
+  const flow = (await screen.findByRole("heading",{name:"Execution flow"})).closest("section")!;
+  await waitFor(() => expect(flow.querySelector(".ins-readings")).toHaveTextContent("$130"));
+  expect(within(flow).getByText("$200.00")).toBeVisible();
+  fireEvent.change(screen.getByRole("textbox",{name:"Filter by ticker"}),{target:{value:"MSFT"}});
+  expect(flow.querySelector(".ins-readings")).toHaveTextContent("-$70");
 });

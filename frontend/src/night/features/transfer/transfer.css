@@ -1,0 +1,149 @@
+.transfer-page .nk-layout-analysis {
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  align-items: start;
+}
+
+.transfer-fields {
+  display: grid;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.transfer-fields > button,
+.transfer-review > button {
+  justify-self: start;
+}
+
+.transfer-fields :is(select, input) {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.transfer-fields select {
+  grid-area: 2 / 1;
+  appearance: none;
+  min-height: 44px;
+  padding-inline-end: 34px;
+}
+
+.transfer-fields .nk-field:has(> select)::after {
+  content: "";
+  grid-area: 2 / 1;
+  place-self: center end;
+  margin-inline-end: 15px;
+  width: 7px;
+  height: 7px;
+  border-block-end: 1px solid var(--muted);
+  border-inline-end: 1px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  pointer-events: none;
+}
+
+.transfer-fields input[aria-invalid="true"] {
+  border-color: var(--down);
+}
+
+.transfer-fields input::file-selector-button {
+  min-height: 28px;
+  margin-inline-end: 8px;
+  padding-inline: 8px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.transfer-review {
+  display: grid;
+  gap: var(--gap);
+  margin-top: calc(1.5 * var(--pad));
+}
+
+.transfer-review :is(th, td) {
+  overflow-wrap: anywhere;
+}
+
+.transfer-review :is(th, td):first-child {
+  width: 80px;
+  font-variant-numeric: tabular-nums;
+}
+
+.transfer-review td:last-child {
+  width: 44%;
+}
+
+.transfer-page :is(.transfer-summary, .transfer-export-block) h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.transfer-summary h3 {
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 4px;
+}
+
+.transfer-summary h3 span,
+.transfer-meta {
+  color: var(--muted);
+}
+
+.transfer-page [role="alert"] {
+  color: var(--down);
+}
+
+.transfer-error {
+  margin-top: var(--gap);
+}
+
+.transfer-export-block {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.transfer-export-block + .transfer-export-block {
+  margin-top: calc(1.5 * var(--pad));
+}
+
+.transfer-export-block > button {
+  margin-top: 4px;
+}
+
+@media (max-width: 767px) {
+  .transfer-page .nk-layout-analysis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .transfer-fields :is(select, input) {
+    font-size: 16px;
+  }
+}
+
+
+.transfer-counts,.transfer-files {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.transfer-counts {grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid var(--line);margin-bottom:12px;background:var(--inner-paper)}
+.transfer-counts .nk-stat strong {font-size:clamp(20px,2.6vw,36px)}
+.transfer-files {margin-top:12px;gap:var(--pad);padding-top:12px}
+.transfer-files>.transfer-export-block {align-content:start}
+.transfer-files>.transfer-export-block+.transfer-export-block {margin-top:0;border-left:1px solid var(--line);padding-left:var(--pad)}
+.transfer-page .share-instrument {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(200px,1fr);align-items:center;gap:var(--gap);padding:8px 0}
+.transfer-page .share-graphic {height:clamp(170px,18vw,244px)}
+.transfer-page .ins-rank {min-height:44px;text-transform:capitalize}
+.transfer-page .transfer-meta {font:11px/1.6 var(--font-mono)}
+@media(max-width:767px){
+ .transfer-page .share-instrument,.transfer-files {grid-template-columns:minmax(0,1fr)}
+ .transfer-page .share-graphic {height:160px}
+ [data-look=dial] .transfer-page .share-graphic {height:184px}
+ .transfer-files>.transfer-export-block+.transfer-export-block {border-left:0;border-top:1px solid var(--line);padding:12px 0 0}
+ .transfer-counts .nk-stat {padding:6px 8px}
+}
+.transfer-dist-title {font-weight:600}
+.transfer-page .ins-rank {text-transform:none}
+@media(max-width:767px){
+ .transfer-page .share-instrument {grid-template-columns:minmax(110px,.8fr) minmax(0,1fr);gap:8px}
+ .transfer-page .ins-rank {grid-template-columns:minmax(0,1fr) 14% auto;gap:5px}
+ .transfer-page .share-graphic {height:auto}
+}

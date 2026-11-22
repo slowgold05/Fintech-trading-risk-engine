@@ -1,0 +1,48 @@
+.participation-page .nk-page-head select { max-width:210px; }
+.breadth-plate { display:grid; grid-template-columns:minmax(0,2.8fr) minmax(125px,1fr); align-items:center; gap:12px; padding:12px; border-block:1px solid var(--line); background:#101211; }
+.breadth-graphic { display:block; width:100%; }
+.breadth-graphic g[data-direction] { cursor:pointer; }
+.breadth-face { fill:#b8bcb3; }
+.breadth-edge { fill:#565c57; }
+[data-direction="1"] .breadth-face { fill:#777d77; }
+[data-direction="2"] .breadth-face { fill:#e1e1d9; }
+[data-active=true] .breadth-face { fill:#bbb6a8; }
+[data-active=true] .breadth-edge { fill:#6f6b61; }
+.breadth-terrain-bed { fill:none; stroke:#3f4540; stroke-width:.7; }
+.breadth-terrain-bed path:first-child { fill:#191c1a; }
+.breadth-dial-case { fill:#171a16; stroke:#60675b; }
+.breadth-dial-count { fill:var(--ink); font:500 33px var(--font-mono); letter-spacing:-.06em; }
+.breadth-dial-caption { fill:var(--muted); font:10px var(--font-mono); text-transform:uppercase; }
+.breadth-focus { border-left:1px solid var(--line); padding-left:16px; }
+.breadth-focus strong { display:block; font:500 clamp(36px,4.4vw,66px)/1.1 var(--font-mono); letter-spacing:-.085em; }
+.breadth-focus span,.breadth-focus p { font:12px/1.55 var(--font-ui); color:var(--muted); }
+.breadth-focus p { margin-top:12px; }
+[data-look=dial] .breadth-graphic { max-height:292px; }
+.breadth-register .ins-rank { min-height:44px; grid-template-columns:minmax(80px,.7fr) minmax(30px,1.5fr) auto; gap:14px; }
+.breadth-register .ins-rank span:first-child { font-weight:550; }
+.breadth-register .ins-rank b { display:grid; grid-template-columns:4em 5.5em; gap:8px; }
+.breadth-register .ins-rank b span+span { color:var(--muted); }
+.breadth-extremes { display:grid; grid-template-columns:1fr 1fr; gap:clamp(14px,3vw,44px); margin-top:12px; }
+.breadth-extremes h3 { margin-bottom:4px; font-size:14px; font-weight:600; }
+.breadth-extremes section > div { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px solid var(--line); font:13px var(--font-mono); }
+.stock-observations { border-top:1px solid var(--line); margin-top:8px; }
+.participation-page .sector-select { min-height:44px; color:var(--ink); text-decoration:underline; text-underline-offset:4px; }
+@media(max-width:767px) {
+  .participation-page .nk-page-head { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; }
+  .participation-page .nk-page-head h1 { font-size:30px; }
+  .participation-page .nk-page-head select { max-width:140px; }
+  .breadth-plate { display:flex; flex-direction:column; gap:0; padding:6px; }
+  .breadth-focus { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:center; gap:4px 6px; padding:4px; border:0; }
+  .breadth-focus small { order:1; }
+  .breadth-focus span { order:2; }
+  .breadth-focus strong { font-size:23px; }
+  .breadth-focus p { width:100%; text-align:center; margin:0; font-size:11px; }
+  [data-look=dial] .breadth-graphic { max-height:236px; }
+  .breadth-register .ins-rank { gap:8px; }
+  .breadth-register .ins-rank b { grid-template-columns:3.2em 4.3em; gap:4px; }
+}
+
+.breadth-focus p { order:3; }
+.participation-page .market-band { gap:4px; }
+.participation-page .market-band .nk-stat { padding-inline:8px; }
+.participation-page .market-band strong { font-size:clamp(20px,1.82vw,27px); }

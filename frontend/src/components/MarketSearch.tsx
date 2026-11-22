@@ -1,80 +1,77 @@
-import { type FormEvent, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { fetchMarketUniverse } from "../api/market";
-import type { MarketUniverseItem } from "../types/schemas";
+import { lazy, Suspense, type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { MagnifyingGlass, ArrowRight } from "@phosphor-icons/react";
+import "./MarketSearch.css";
 
-const OUTSIDE_LABEL = "Outside S&P 500";
+const MarketSearchResults = lazy(() => import("./MarketSearchResults").then(module => ({ default: module.MarketSearchResults })));
 
-function outsideLabel(item: MarketUniverseItem): string | null {
-  if (item.in_featured_universe) return null;
-  return item.universe_label || OUTSIDE_LABEL;
-}
-
-export function MarketSearch() {
+export function MarketSearch({ compact = false, id }: { compact?: boolean; id?: string } = {}) {
   const [draft, setDraft] = useState("");
   const [submitted, setSubmitted] = useState("");
+  const form = useRef<HTMLFormElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const nextLookup = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const uniqueId = useId();
+  const inputId = id ?? (compact ? "market-symbol-search" : uniqueId);
   const term = submitted.trim();
-  const results = useQuery({
-    queryKey: ["market", "universe", term],
-    queryFn: () => fetchMarketUniverse(term),
-    enabled: term.length > 0,
-    retry: false,
-  });
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitted(draft);
+  useEffect(() => () => clearTimeout(nextLookup.current), []);
+  function closeResults() {
+    clearTimeout(nextLookup.current);
+    setSubmitted("");
   }
 
+  useEffect(() => {
+    if (!term && !draft) return;
+    function dismiss(e: PointerEvent) {
+      if (e.target instanceof Node && !form.current?.contains(e.target)) closeResults();
+    }
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [term, draft]);
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    clearTimeout(nextLookup.current);
+    setSubmitted(draft);
+  }
   return (
-    <form className="mt-6 max-w-xl" onSubmit={handleSubmit}>
-      <label className="text-xs font-semibold text-slate-300" htmlFor="market-symbol-search">
+    <form
+      ref={form}
+      className="symbol-search market-search"
+      role="search"
+      onSubmit={handleSubmit}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && (draft || term)) {
+          if (!form.current?.closest("dialog") && term) e.stopPropagation();
+          closeResults();
+          input.current?.focus();
+        }
+      }}
+    >
+      <label className="sr-only" htmlFor={inputId}>
         Search symbols
       </label>
-      <div className="mt-2 flex min-w-0 gap-2">
-        <input
-          className="field-control mt-0 min-w-0 flex-1"
-          id="market-symbol-search"
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Ticker"
-          value={draft}
-        />
-        <button
-          className="min-h-11 shrink-0 rounded-md bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/70 active:translate-y-px"
-          type="submit"
-        >
-          Search
-        </button>
-      </div>
-      {term.length > 0 && results.data ? (
-        <ul aria-label="Search results" className="mt-3 space-y-2">
-          {results.data.items.length === 0 ? (
-            <li className="text-sm text-slate-400">No symbols matched.</li>
-          ) : results.data.items.map((item) => {
-            const label = outsideLabel(item);
-            return (
-              <li className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-slate-200" key={item.symbol}>
-                <Link
-                  className="font-mono font-semibold text-slate-50 underline decoration-slate-600 underline-offset-4 hover:text-emerald-200 hover:decoration-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
-                  to={`/market/${encodeURIComponent(item.symbol)}`}
-                >
-                  {item.symbol}
-                </Link>
-                <span className="min-w-0 truncate text-slate-400">{item.company_name}</span>
-                {label ? (
-                  <span className="status-badge border-amber-400/40 bg-amber-400/10 text-amber-200">
-                    {label}
-                  </span>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      {term.length > 0 && results.isError ? (
-        <p className="mt-3 text-sm text-rose-200" role="alert">Symbol search is unavailable.</p>
-      ) : null}
+      <MagnifyingGlass aria-hidden="true" size={17} />
+      <input
+        ref={input}
+        id={inputId} data-testid="market-search"
+        value={draft}
+        maxLength={50}
+        onChange={(event) => {
+          const value = event.target.value;
+          setDraft(value);
+          closeResults();
+          if (value.trim()) nextLookup.current = setTimeout(() => setSubmitted(value), 220);
+        }}
+        placeholder={compact ? "Symbol / company" : "Search company or ticker"}
+        autoComplete="off"
+      />
+      <button type="submit" aria-label="Search">
+        <ArrowRight size={15} />
+      </button>
+      {term && (
+        <Suspense fallback={<div className="symbol-results"><p role="status">Searching symbols…</p></div>}>
+          <MarketSearchResults term={term} onClose={() => { closeResults(); input.current?.focus(); }} />
+        </Suspense>
+      )}
     </form>
   );
 }

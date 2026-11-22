@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_symbol import MarketSymbol
 from app.models.mfa import LoginEvent
@@ -63,9 +64,9 @@ def _refresh_replay(client) -> dict:
     email = "tabletop-refresh@example.com"
     assert client.post("/auth/register", json={"email": email, "password": "password123"}).status_code == 200
     assert client.post("/auth/login", data={"username": email, "password": "password123"}).status_code == 200
-    first = client.cookies.get("refresh_token")
+    first = client.cookies.get(settings.refresh_cookie_name)
     assert client.post("/auth/refresh").status_code == 200
-    client.cookies.set("refresh_token", first)
+    client.cookies.set(settings.refresh_cookie_name, first)
     replay = client.post("/auth/refresh")
     return _result("refresh-replay", "Reused refresh token", "T1550.004", replay.status_code == 401,
                    "A refresh token is revoked when it is rotated. The old cookie is rejected.")

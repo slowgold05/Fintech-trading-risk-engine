@@ -18,6 +18,7 @@ import {
   writePersistedOrderAttempt,
   type PersistedOrderAttempt,
 } from "../utils/orderAttemptStorage";
+import type { OrderResponse } from "../types/schemas";
 import { OrderTicket } from "./OrderTicket";
 
 const { createOrder, previewOrder, showToast, toast } = vi.hoisted(() => {
@@ -284,6 +285,33 @@ describe("OrderTicket", () => {
     expect(screen.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
   });
 
+  it("shows the simulated price, session date and reason for the remainder, then pins the quoted session", async () => {
+    open();
+    draft();
+    const remainder = "This order reached the simulated share cap for the latest close.";
+    previewOrder.mockResolvedValueOnce(validPreview({
+      estimated_fill_quantity: "0.500000",
+      estimated_fill_notional: "50.00",
+      unfilled_quantity: "0.500000",
+      estimated_fills: [{
+        counterparty: "simulated", quantity: "0.500000", execution_price: "100.000000",
+        simulated_quote_date: "2026-11-06",
+      }],
+      remainder_reason: remainder,
+    }));
+    clickButton("Preview order");
+    expect(await screen.findByText(/0.500000 shares at \$100.000000/)).toHaveTextContent(
+      "Simulated liquidity at the latest end-of-day close, 2026-11-06",
+    );
+    expect(screen.getByText(remainder)).toBeInTheDocument();
+
+    createOrder.mockResolvedValueOnce(placedOrder());
+    clickButton("Confirm paper order");
+    await waitFor(() => expect(createOrder.mock.calls[0]?.[0]).toMatchObject({
+      expected_quote_observed_at: "2026-11-06T15:00:00Z",
+    }));
+  });
+
   it("confirms captured strings with a UUID key and refreshes orders, trades, portfolio, and risk", async () => {
     const invalidate = open();
     draft();
@@ -299,6 +327,7 @@ describe("OrderTicket", () => {
     const submitted = createOrder.mock.calls[0][0];
     const previewed = previewOrder.mock.calls[0][0];
     expect(submitted).toEqual({
+      expected_quote_observed_at: "2026-11-06T15:00:00Z",
       symbol: "AAPL",
       side: "buy",
       order_type: "limit",
@@ -312,6 +341,7 @@ describe("OrderTicket", () => {
     expect(typeof submitted.limit_price).toBe("string");
     expect(submitted).not.toHaveProperty("stepUpCode");
     expect(Object.keys(submitted).sort()).toEqual([
+      "expected_quote_observed_at",
       "idempotencyKey",
       "limit_price",
       "order_type",
@@ -405,7 +435,7 @@ describe("OrderTicket", () => {
       order_type: "market",
       quantity: "1.000000",
     });
-    expect(screen.getAllByText(leafText(/Unfilled market quantity is canceled\./)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(leafText(/Unfilled market shares are canceled\./)).length).toBeGreaterThan(0);
     expect(createOrder).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText(leafText("Preview ready"))).toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "Order preview" })).toBeInTheDocument();
@@ -629,6 +659,7 @@ describe("OrderTicket", () => {
     const submitted = createOrder.mock.calls[0][0];
     expect(submitted.stepUpCode).toBe("123456");
     expect(Object.keys(submitted).sort()).toEqual([
+      "expected_quote_observed_at",
       "idempotencyKey",
       "limit_price",
       "order_type",
@@ -741,7 +772,7 @@ describe("OrderTicket", () => {
     await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2));
     expect(createOrder.mock.calls[1][0]).toEqual(first);
     expect(screen.getByText(leafText(/The outcome of this order is unknown/))).toBeInTheDocument();
-    expect(screen.queryByText(leafText("Too many order attempts"))).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Too many order attempts");
     for (const label of ["Trade symbol", "Trade quantity", "Limit price", "Order type"]) {
       expect(screen.getByLabelText(label)).toBeDisabled();
     }
@@ -851,7 +882,7 @@ describe("OrderTicket", () => {
     });
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry same order" })).toBeEnabled());
     expect(screen.getByLabelText("Trade symbol")).toHaveValue("AAPL");
-    expect(screen.getByRole("heading", { name: "Order preview" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Order preview" })).not.toBeInTheDocument();
     ticket.navigate("?symbol=IBM");
     expect(screen.getByLabelText("Trade symbol")).toHaveValue("AAPL");
     expect(screen.getByRole("button", { name: "Retry same order" })).toBeEnabled();
@@ -860,6 +891,41 @@ describe("OrderTicket", () => {
     clickButton("Retry same order");
     await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2));
     expect(createOrder.mock.calls[1][0]).toEqual(first);
+  });
+
+  it("keeps the exact attempt if the ticket reloads before the response arrives", async () => {
+    const ticket = open();
+    draft();
+    await previewDraft();
+    const pending = deferred<OrderResponse>();
+    createOrder.mockImplementationOnce(() => pending.promise);
+    clickButton("Confirm paper order");
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(1));
+    const first = createOrder.mock.calls[0][0];
+
+    ticket.unmount();
+    open();
+    expect(createOrder).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("order-preview-result")).not.toBeInTheDocument();
+    createOrder.mockResolvedValueOnce(placedOrder());
+    clickButton("Retry same order");
+    expect(await screen.findByText("Order open.")).toBeInTheDocument();
+    expect(createOrder.mock.calls[1][0]).toEqual(first);
+
+    await act(async () => { pending.resolve(placedOrder()); });
+    expect(readPersistedOrderAttempt()).toBeNull();
+  });
+
+  it("explains a stale confirmation and requires a new preview", async () => {
+    open();
+    draft();
+    await previewDraft();
+    createOrder.mockRejectedValueOnce(httpRejection(503, "Usable reference quote unavailable (SM-PT-02)"));
+    clickButton("Confirm paper order");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The cached quote is stale or unavailable.");
+    expect(screen.queryByRole("button", { name: "Retry same order" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("order-confirm")).not.toBeInTheDocument();
+    expect(readPersistedOrderAttempt()).toBeNull();
   });
 
   it("restores an unknown attempt across unmount and retries with the same key", async () => {
@@ -964,13 +1030,6 @@ function samplePersistedAttempt(): PersistedOrderAttempt {
   const preview = validPreview();
   return {
     attempt: {
-      fingerprint: JSON.stringify({
-        symbol: preview.symbol,
-        side: preview.side,
-        order_type: preview.order_type,
-        quantity: preview.quantity,
-        limit_price: preview.limit_price,
-      }),
       payload: {
         symbol: preview.symbol,
         side: preview.side,
@@ -980,7 +1039,7 @@ function samplePersistedAttempt(): PersistedOrderAttempt {
       },
       key: "sample-persisted-attempt-fixture",
     },
-    preview,
+    stepUpRequired: false,
   };
 }
 
@@ -1009,14 +1068,19 @@ describe("AuthProvider pending-attempt cleanup", () => {
   it("clears a persisted attempt on sign-out", () => {
     writePersistedOrderAttempt(samplePersistedAttempt());
     expect(readPersistedOrderAttempt()).not.toBeNull();
+    const client = new QueryClient();
+    client.setQueryData(["portfolio"], { user: { id: 1 } });
 
     render(
-      <AuthProvider>
-        <SignOutProbe />
-      </AuthProvider>,
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <SignOutProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(readPersistedOrderAttempt()).toBeNull();
+    expect(client.getQueryData(["portfolio"])).toBeUndefined();
   });
 
   it("clears a persisted attempt when the session is unauthorized", async () => {
@@ -1028,9 +1092,11 @@ describe("AuthProvider pending-attempt cleanup", () => {
     expect(readPersistedOrderAttempt()).not.toBeNull();
 
     render(
-      <AuthProvider>
-        <div>child</div>
-      </AuthProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider>
+          <div>child</div>
+        </AuthProvider>
+      </QueryClientProvider>,
     );
     await waitFor(() => expect(onUnauthorized).toEqual(expect.any(Function)));
     act(() => {

@@ -1,0 +1,44 @@
+.organize.alerts-book .nk-layout,:root[data-look=dial] .organize.alerts-book .nk-layout {
+  grid-template-columns:minmax(0,2.15fr) minmax(285px,1fr); }
+.organize.alerts-book .nk-page-head { margin-bottom:var(--pad); }
+.alerts-book .nk-page-head small { text-transform:uppercase; letter-spacing:.09em; }
+.organize.alerts-book .nk-panel { padding:var(--pad); }
+.alerts-book .nk-panel h2 { font-size:clamp(20px,2vw,28px); letter-spacing:-.045em; }
+.organize.alerts-book .organize-form { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; }
+.alerts-book .organize-form>:first-child,.alerts-book .organize-form>.actions { grid-column:1/-1; }
+.alerts-book .threshold-distance select { min-width:0; width:auto; max-width:100%; min-height:44px; }
+.threshold-plate { display:grid; grid-template-columns:minmax(140px,.8fr) minmax(0,1.4fr); align-items:center;
+  gap:8px; padding:18px 14px; background:var(--inner-ground,var(--bg)); border-block:1px solid var(--line); }
+.threshold-value strong { display:block; font:550 clamp(28px,3vw,46px)/1.1 var(--font-ui); letter-spacing:-.06em; margin:6px 0; }
+.threshold-value span,.threshold-facts dt,.threshold-distance footer { color:var(--muted); font-size:12px; }
+.threshold-plate svg { display:block; width:100%; max-height:210px; }
+.threshold-plate svg text { fill:var(--muted); font:11px var(--font-mono); }
+.threshold-facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:12px 0; gap:8px; }
+.threshold-facts dd { font:550 clamp(15px,1.5vw,23px)/1.4 var(--font-mono); text-transform:capitalize; }
+.threshold-distance footer { padding-top:8px; border-top:1px solid var(--line); }
+.threshold-distance footer i { display:inline-block; width:16px; height:8px; margin-right:6px; background:repeating-linear-gradient(125deg,var(--muted) 0 1px,transparent 1px 4px); }
+.alerts-book .record { display:grid; grid-template-columns:minmax(100px,.8fr) minmax(130px,1fr) minmax(220px,2fr) auto; align-items:center; gap:8px 20px; padding-block:8px; }
+.alerts-book .record-head { display:block; }
+.alerts-book .record-head strong { font:var(--label)/1.4 var(--font-mono); color:var(--muted); }
+.alerts-book .record .actions { margin:0; }
+:root[data-look=dial] .organize.alerts-book .nk-layout { grid-template-columns:minmax(0,1.8fr) minmax(285px,1fr); }
+:root[data-look=dial] .threshold-value strong { font-family:var(--font-mono); }
+@media(max-width:849px) {
+  .organize.alerts-book .nk-layout,:root[data-look=dial] .organize.alerts-book .nk-layout { grid-template-columns:minmax(0,1fr); }
+  .threshold-plate { grid-template-columns:minmax(0,1fr); padding:14px 10px 4px; }
+  .threshold-plate svg { max-height:160px; }
+  .alerts-book .record { grid-template-columns:minmax(0,1fr) auto; }
+  .alerts-book .record>p:nth-of-type(2) { grid-column:1; }
+}
+.alerts-book .threshold-distance select {
+  appearance:none; padding-right:30px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-size:5px 5px; background-position:calc(100% - 15px) center,calc(100% - 10px) center; background-repeat:no-repeat;
+}
+.alerts-book .nk-button[data-variant=primary] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+.alerts-book .threshold-facts dd { text-transform:none; }
+.alerts-book .threshold-facts div:last-child dd { text-transform:capitalize; }
+@media(max-width:767px) {
+  .threshold-facts { grid-template-columns:minmax(0,1.2fr) minmax(0,1.13fr) minmax(0,.65fr); }
+  .threshold-facts dd { font-size:13px; }
+}

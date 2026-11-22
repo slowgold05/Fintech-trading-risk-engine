@@ -13,6 +13,19 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.routers import auth, assets, cash, compliance, market, market_history, orders, trades, portfolio, risk, watchlists, research, forecasts
+from app.models.night_alerts import NightAlert
+from app.services.night_inbox_alerts import stored_alert_source
+from app.routers import night_inbox
+from app.routers import night_holding_notes
+from app.routers import night_data_coverage
+from app.routers import night_holding_lots
+from app.routers import night_portfolio_review
+from app.routers import night_leaderboard
+from app.routers import night_transfer
+from app.routers import night_journal
+from app.routers import night_alerts
+from app.routers import night_simulations
+from app.routers import night_market
 
 
 @asynccontextmanager
@@ -109,3 +122,15 @@ app.include_router(cash.router, prefix="/cash", tags=["Cash"])
 app.include_router(watchlists.router, prefix="/watchlists", tags=["Watchlists"])
 app.include_router(research.router, prefix="/research", tags=["Research"])
 app.include_router(forecasts.router, prefix="/forecasts", tags=["Forecasts"])
+app.include_router(night_inbox.build_inbox_router(stored_alert_source(NightAlert.__table__)))
+app.include_router(night_holding_notes.router)
+app.include_router(night_data_coverage.router)
+app.include_router(night_portfolio_review.insights_router)
+app.include_router(night_holding_lots.router)
+app.include_router(night_portfolio_review.review_router)
+app.include_router(night_leaderboard.router, tags=["Leaderboard"])
+app.include_router(night_transfer.router, prefix="/night", tags=["CSV transfer"])
+app.include_router(night_journal.router, tags=["Journal"])
+app.include_router(night_alerts.router, tags=["Alerts"])
+app.include_router(night_simulations.router, tags=["Simulations"])
+app.include_router(night_market.router, tags=["Night market"])

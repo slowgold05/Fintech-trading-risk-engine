@@ -1,9 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-look="terrain">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>getrichyesterday</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e1012" />
+    <script>
+      try {
+        document.documentElement.dataset.look = localStorage.getItem("sentinel.look") === "dial" ? "dial" : "terrain";
+      } catch {}
+    </script>
+    <title>Sentinel Markets</title>
   </head>
   <body>
     <div id="root"></div>

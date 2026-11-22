@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OrderPreviewResponse } from "../api/orderPreview";
 import {
   clearPersistedOrderAttempt,
   readPersistedOrderAttempt,
@@ -9,106 +8,75 @@ import {
 
 const STORAGE_SLOT = "orderTicket.pendingAttempt.v1";
 
-function validPreview(patch: Partial<OrderPreviewResponse> = {}): OrderPreviewResponse {
-  return {
-    symbol: "AAPL",
-    side: "buy",
-    order_type: "limit",
-    quantity: "1.000000",
-    limit_price: "100.000000",
-    read_at: "2026-11-06T15:04:05Z",
-    quote_observed_at: "2026-11-06T15:00:00Z",
-    status: "eligible",
-    reason: null,
-    step_up_required: false,
-    buying_power: "100000.00",
-    sell_available: "0.000000",
-    initial_reservation: "100.00",
-    estimated_fill_quantity: "0.000000",
-    estimated_fill_notional: "0.00",
-    unfilled_quantity: "1.000000",
-    ...patch,
-  };
-}
-
-function validPersisted(patch: Partial<PersistedOrderAttempt> = {}): PersistedOrderAttempt {
-  const preview = validPreview();
+function validPersisted(): PersistedOrderAttempt {
   return {
     attempt: {
-      fingerprint: '{"symbol":"AAPL","side":"buy","order_type":"limit","quantity":"1.000000","limit_price":"100.000000"}',
+      key: "sample-persisted-attempt-fixture",
       payload: {
         symbol: "AAPL",
         side: "buy",
         order_type: "limit",
         quantity: "1.000000",
         limit_price: "100.000000",
+        expected_quote_observed_at: "2026-11-06T15:00:00Z",
       },
-      key: "sample-persisted-attempt-fixture",
     },
-    preview,
-    ...patch,
+    stepUpRequired: true,
   };
 }
 
 describe("orderAttemptStorage", () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-  });
+  beforeEach(() => sessionStorage.clear());
 
   afterEach(() => {
     vi.restoreAllMocks();
     sessionStorage.clear();
   });
 
-  it("round-trips a valid persisted attempt", () => {
+  it("restores the literal request only for its owner", () => {
     const value = validPersisted();
-    writePersistedOrderAttempt(value);
-    expect(readPersistedOrderAttempt()).toEqual(value);
+    writePersistedOrderAttempt(value, 7);
+    expect(readPersistedOrderAttempt(7)).toEqual(value);
+    expect(readPersistedOrderAttempt(8)).toBeNull();
+    expect(readPersistedOrderAttempt()).toBeNull();
+    clearPersistedOrderAttempt(8);
+    expect(readPersistedOrderAttempt(7)).toEqual(value);
   });
 
-  it("returns null after clearPersistedOrderAttempt", () => {
-    writePersistedOrderAttempt(validPersisted());
+  it("recovers the legacy key and strips the saved preview", () => {
+    const value = validPersisted();
+    sessionStorage.setItem(STORAGE_SLOT, JSON.stringify({
+      attempt: value.attempt,
+      preview: { status: "eligible", step_up_required: true, buying_power: "100000.00" },
+    }));
+    expect(readPersistedOrderAttempt(7)).toEqual(value);
+    writePersistedOrderAttempt(value, 7);
+    expect(JSON.parse(sessionStorage.getItem(STORAGE_SLOT) ?? "{}")).toEqual({ ...value, owner: 7 });
+  });
+
+  it("clears scoped state on auth changes", () => {
+    writePersistedOrderAttempt(validPersisted(), 7);
     clearPersistedOrderAttempt();
-    expect(readPersistedOrderAttempt()).toBeNull();
+    expect(readPersistedOrderAttempt(7)).toBeNull();
   });
 
-  it("returns null when nothing was written", () => {
+  it("returns null for missing or invalid persisted values", () => {
     expect(readPersistedOrderAttempt()).toBeNull();
-  });
-
-  it("returns null for non-JSON garbage without throwing", () => {
     sessionStorage.setItem(STORAGE_SLOT, "not json");
     expect(readPersistedOrderAttempt()).toBeNull();
-  });
-
-  it("returns null for valid JSON missing required fields", () => {
-    sessionStorage.setItem(STORAGE_SLOT, JSON.stringify({ preview: validPreview() }));
-    expect(readPersistedOrderAttempt()).toBeNull();
-  });
-
-  it("returns null for an invalid side enum", () => {
+    sessionStorage.setItem(STORAGE_SLOT, JSON.stringify({ stepUpRequired: false, owner: 7 }));
+    expect(readPersistedOrderAttempt(7)).toBeNull();
     const value = validPersisted();
-    sessionStorage.setItem(
-      STORAGE_SLOT,
-      JSON.stringify({
-        ...value,
-        attempt: { ...value.attempt, payload: { ...value.attempt.payload, side: "both" } },
-      }),
-    );
-    expect(readPersistedOrderAttempt()).toBeNull();
+    sessionStorage.setItem(STORAGE_SLOT, JSON.stringify({
+      ...value, owner: 7, attempt: { ...value.attempt, payload: { ...value.attempt.payload, side: "both" } },
+    }));
+    expect(readPersistedOrderAttempt(7)).toBeNull();
   });
 
-  it("returns null when sessionStorage.getItem throws", () => {
-    vi.spyOn(sessionStorage, "getItem").mockImplementation(() => {
-      throw new Error("quota");
-    });
+  it("tolerates unavailable session storage", () => {
+    vi.spyOn(sessionStorage, "getItem").mockImplementation(() => { throw new Error("quota"); });
+    vi.spyOn(sessionStorage, "setItem").mockImplementation(() => { throw new Error("quota"); });
     expect(readPersistedOrderAttempt()).toBeNull();
-  });
-
-  it("does not throw when sessionStorage.setItem throws", () => {
-    vi.spyOn(sessionStorage, "setItem").mockImplementation(() => {
-      throw new Error("quota");
-    });
     expect(() => writePersistedOrderAttempt(validPersisted())).not.toThrow();
   });
 });

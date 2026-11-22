@@ -15,7 +15,9 @@ function respond(data: unknown) {
   vi.mocked(apiClient.get).mockResolvedValueOnce({ data } as Awaited<ReturnType<typeof apiClient.get>>);
 }
 
-function fill(overrides: Partial<OrderFill> = {}): OrderFill {
+type WireFill = Omit<OrderFill, "mode" | "source"> & Partial<Pick<OrderFill, "mode" | "source">>;
+
+function fill(overrides: Partial<WireFill> = {}): WireFill {
   return {
     trade_id: 8,
     quantity: "1.250000",
@@ -145,6 +147,8 @@ describe("fetchOrderDetail", () => {
     expect(result.filled_quantity).toBe("123456789012.345677");
     expect(result.limit_price).toBe("999999999999.999999");
     expect(result.fills[0]).toEqual({
+      mode: "order_book",
+      source: null,
       trade_id: 8,
       quantity: "123456789012.345677",
       execution_price: "1.000000",
@@ -152,6 +156,31 @@ describe("fetchOrderDetail", () => {
       realized_pnl: "-1234567890123456.78",
       executed_at: "2026-11-06T15:04:05.500000Z",
     });
+  });
+
+  it("normalizes receipt reserves when the server provides only legacy order fields", async () => {
+    respond(detail({ quantity: "1.000000", remaining_quantity: "1.000000", limit_price: "10.005000" }));
+    expect((await fetchOrderDetail(42)).reservation).toEqual({ amount: "10.01", unit: "USD" });
+
+    respond(detail({ side: "sell" }));
+    expect((await fetchOrderDetail(42)).reservation).toEqual({ amount: "2.000000", unit: "shares" });
+
+    respond(detail({ side: "sell", status: "canceled", canceled_at: CREATED }));
+    expect((await fetchOrderDetail(42)).reservation).toEqual({ amount: "0.000000", unit: "shares" });
+  });
+
+  it("normalizes persisted close provenance and leaves an unknown provider unavailable", async () => {
+    for (const provider of ["yahoo", undefined]) {
+      respond(detail({
+        total_fill_count: 1, filled_quantity: "1.250000", remaining_quantity: "0.750000",
+        fills: [fill({ simulated_quote_date: "2026-11-05", simulated_quote_source: provider })],
+      }));
+      const [execution] = (await fetchOrderDetail(42)).fills;
+      expect(execution.mode).toBe("eod_simulated");
+      expect(execution.source).toEqual(provider ? {
+        provider, basis: "raw", session_date: "2026-11-05", observed_at: null, coverage: "available",
+      } : null);
+    }
   });
 
   it("rejects malformed identity, decimals, status, time, and page metadata", async () => {

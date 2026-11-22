@@ -59,25 +59,11 @@ export function getUnrealizedPnlPercent(portfolio?: PortfolioResponse): number |
   return portfolio.summary.total_unrealized_pnl_pct;
 }
 
-function positionRisk(changePercent: number | null): Position["risk"] {
-  if (changePercent == null) {
-    return null;
-  }
-  const magnitude = Math.abs(changePercent);
-  if (magnitude >= 10) {
-    return "High";
-  }
-  if (magnitude >= 3) {
-    return "Medium";
-  }
-  return "Low";
-}
-
 export function mapPortfolioPositions(
   portfolio?: PortfolioResponse,
 ): Position[] {
   const complete = isComplete(portfolio);
-  const totalValue = complete ? portfolio.summary.total_portfolio_value : null;
+  const totalValue = complete ? portfolio.summary.total_account_value : null;
 
   return (
     portfolio?.positions.map((position) => {
@@ -86,9 +72,7 @@ export function mapPortfolioPositions(
       const weight =
         !complete || marketValue == null || totalValue == null
           ? null
-          : totalValue > 0
-            ? (marketValue / totalValue) * 100
-            : 0;
+          : totalValue > 0 ? (marketValue / totalValue) * 100 : null;
       return {
         symbol: position.symbol,
         name: position.asset_type.toUpperCase(),
@@ -97,7 +81,7 @@ export function mapPortfolioPositions(
         weight,
         pnl: position.unrealized_pnl,
         changePercent,
-        risk: complete ? positionRisk(changePercent) : null,
+        risk: null,
         unavailableReason:
           position.price_status === "unavailable"
             ? valuationReasonLabel(position.unavailable_reason)

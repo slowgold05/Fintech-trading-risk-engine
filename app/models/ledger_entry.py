@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String
 
 from app.core.database import Base
 
@@ -16,5 +16,6 @@ class LedgerEntry(Base):
     unit = Column(String(32), nullable=False)
     amount = Column(Numeric(24, 6), nullable=False)
     created_at = Column(DateTime, nullable=False)
+    effective_on = Column(Date, nullable=True)
     previous_hash = Column(String(64), nullable=False)
     entry_hash = Column(String(64), nullable=False)

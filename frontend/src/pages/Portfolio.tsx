@@ -1,4 +1,6 @@
+import { CloseInsights } from "../night/features/portfolio-review/CloseInsights";
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { fetchMe, setLegalName } from "../api/auth";
@@ -8,8 +10,13 @@ import { fetchAttribution } from "../api/attribution";
 import { fetchPortfolio } from "../api/portfolio";
 import { fetchRiskMetrics } from "../api/riskMetrics";
 import { useToast } from "../context/useToast";
-import { AllocationRing } from "../components/AllocationRing";
-import { PageHeader } from "../components/PageHeader";
+import { Button, RestInstrument, ShareInstrument, Stat } from "../night/inner";
+import { Performance } from "../night/features/portfolio/Performance";
+import { Allocation } from "../night/features/portfolio/Allocation";
+import { accountWeight, allocationParts, hasMark, numeric } from "../night/features/portfolio/valuation";
+import "../night/features/portfolio/portfolio.css";
+import { saveDraft } from "../night/shell/ticketDraft";
+import { keys, refreshExecution } from "../night/api";
 import {
   DashboardCard,
   EmptyState,
@@ -19,7 +26,7 @@ import {
 import { valuationReasonLabel } from "../features/dashboard/adapters";
 import {
   formatCurrency,
-  formatDateTime,
+  formatUtcDateTime,
   formatPercent,
   formatQuantity,
   formatSignedPercent,
@@ -37,17 +44,6 @@ import { previewTradeImpact } from "../api/tradeImpact";
 import type { TradeImpactRequestBody, TradeImpactResponse } from "../types/schemas";
 import { previewRiskScenarios } from "../api/riskScenarios";
 import type { RiskScenarioShock, RiskScenariosResponse } from "../types/schemas";
-
-function getExposurePercent(positionValue: number | null, totalValue: number | null) {
-  if (positionValue == null || totalValue == null) {
-    return null;
-  }
-  if (totalValue <= 0) {
-    return 0;
-  }
-
-  return (positionValue / totalValue) * 100;
-}
 
 function getAssetExposure(positions: PortfolioPositionResponse[]) {
   if (positions.some((position) => position.position_value == null)) {
@@ -90,7 +86,7 @@ function CashPanel() {
       setAmount("");
       setCode("");
       showToast("success", `${result.kind} recorded.`);
-      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      void refreshExecution(queryClient, me.data?.id);
     },
     onError: (error) => showToast("error", isAxiosError(error) ? String(error.response?.data?.detail ?? "Cash movement was not recorded.") : "Cash movement was not recorded."),
   });
@@ -160,121 +156,78 @@ function CashPanel() {
 }
 
 export function Portfolio() {
+  const identity = useQuery({ queryKey: keys.me, queryFn: fetchMe, retry: false });
+  if (identity.isError || (!identity.isPending && !identity.data?.id)) {
+    return <RestInstrument status={{kind:"error",title:"Account unavailable",action:<Button onClick={() => void identity.refetch()}>Retry account</Button>}} />;
+  }
+  if (identity.isPending) return <RestInstrument status={{kind:"loading",title:"Loading account…"}} />;
+  return <AccountPortfolio key={identity.data.id} owner={identity.data.id} canTrade={identity.data.role === "trader"} />;
+}
+
+function AccountPortfolio({ owner, canTrade }: { owner: number; canTrade: boolean }) {
   const portfolioQuery = useQuery({
-    queryKey: ["portfolio"],
+    queryKey: keys.account(owner, "portfolio"),
     queryFn: fetchPortfolio,
+    retry: false,
   });
   const allocationQuery = useQuery({
-    queryKey: ["portfolio", "allocation"],
+    queryKey: keys.account(owner, "allocation"), retry: false,
     queryFn: fetchAllocation,
   });
   const attributionQuery = useQuery({
-    queryKey: ["portfolio", "attribution"],
+    queryKey: keys.account(owner, "attribution"), retry: false,
     queryFn: fetchAttribution,
   });
   const [riskMetricsRange, setRiskMetricsRange] = useState<"1y" | "2y">("1y");
   const riskMetricsQuery = useQuery({
-    queryKey: ["portfolio", "risk-metrics", riskMetricsRange],
+    queryKey: keys.account(owner, "risk", "metrics", riskMetricsRange), retry: false,
     queryFn: () => fetchRiskMetrics(riskMetricsRange),
   });
 
+  if (portfolioQuery.isError) return <RestInstrument status={{kind:"error",title:"Portfolio could not be loaded",action:<Button onClick={() => void portfolioQuery.refetch()}>Retry portfolio</Button>}} />;
   const portfolio = portfolioQuery.data;
   const summary = portfolio?.summary;
   const positions = portfolio?.positions ?? [];
-  const valuationIncomplete = portfolio?.valuation_status === "incomplete";
-  const positionsValue = valuationIncomplete ? null : (summary?.total_portfolio_value ?? null);
-  const totalValue = valuationIncomplete ? null : (summary?.total_account_value ?? null);
-  const cashBalance = summary?.cash_balance ?? null;
+  const valuationIncomplete = portfolio?.valuation_status === "incomplete" || positions.some(position => !hasMark(position));
+  const totalValue = valuationIncomplete ? null : numeric(summary?.total_account_value);
+  const cashBalance = numeric(summary?.cash_balance);
+  const buyingPower = numeric(summary?.buying_power);
+  const reserved = cashBalance !== null && buyingPower !== null ? cashBalance - buyingPower : null;
+  const realizedBySymbol = new Map(attributionQuery.isError ? [] : attributionQuery.data?.securities.map(row => [row.symbol, numeric(row.realized_pnl)]));
   const totalPnl = valuationIncomplete
     ? null
     : (summary?.total_pnl ?? null);
   const assetExposure = valuationIncomplete ? null : getAssetExposure(positions);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        badge="Portfolio"
-        title="Holdings &amp; Valuation"
-        description="Open positions, FIFO P&amp;L, cost basis, and exposure breakdown by asset class."
-      />
-
-      {portfolioQuery.isError ? (
-        <div className="rounded-md border border-rose-500/30 bg-rose-950/50 px-4 py-4 text-sm text-rose-200">
-          Portfolio data could not be loaded. Check the API server and
-          authentication state.
-        </div>
-      ) : null}
-
+    <div className="night-portfolio space-y-6">
+      <header className="nk-page-head"><div><small>Paper account</small><h1>Portfolio</h1></div>
+        <div className="portfolio-actions">{canTrade && <a data-testid="order-open" href="/trades?ticket=1" className="nk-button">Open order ticket</a>}
+          <details className="portfolio-more"><summary>Account tools</summary><div><Link className="nk-button" to={"/portfolio/review?returnTo=" + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}>Portfolio review</Link>
+          {portfolio?.user?.is_demo && <Link className="nk-button" to="/account">Reset demo from Account</Link>}</div></details></div>
+      </header>
       {valuationIncomplete && portfolio ? (
         <p className="rounded-md border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-slate-200">
           Valuation incomplete
-          {portfolio.unavailable_symbols.length > 0
+          {portfolio.unavailable_symbols?.length > 0
             ? `: ${portfolio.unavailable_symbols.join(", ")}`
             : ""}
         </p>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {portfolioQuery.isLoading ? (
-          [0, 1, 2, 3].map((item) => (
-            <div className="metric-tile" key={item}>
-              <SkeletonBlock className="h-4 w-24" />
-              <SkeletonBlock className="mt-3 h-5 w-32" />
-            </div>
-          ))
-        ) : (
-          <>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Portfolio value
-              </div>
-              <div className="mt-1 font-mono text-lg font-semibold text-slate-50">
-                {totalValue == null ? (
-                  <span className="text-slate-400">Unavailable</span>
-                ) : (
-                  formatCurrency(totalValue, false)
-                )}
-              </div>
-            </div>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Cash
-              </div>
-              <div className="mt-1 font-mono text-lg font-semibold text-slate-50">
-                {cashBalance == null ? (
-                  <span className="text-slate-400">Unavailable</span>
-                ) : (
-                  formatCurrency(cashBalance, false)
-                )}
-              </div>
-            </div>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Total P&L
-              </div>
-              <div className="mt-1 text-sm">
-                {totalPnl == null ? (
-                  <span className="text-slate-400">Unavailable</span>
-                ) : (
-                  <PnlValue value={totalPnl} />
-                )}
-              </div>
-            </div>
-            <div className="metric-tile">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Holdings
-              </div>
-              <div className="mt-1 font-mono text-sm text-slate-200">
-                {positions.length}
-              </div>
-            </div>
-          </>
-        )}
+      <div className="portfolio-overview">
+      <Performance owner={owner} />
+      <div className="portfolio-values">
+        <Stat label="Account value" value={portfolioQuery.isLoading ? "Loading" : totalValue == null ? null : formatCurrency(totalValue)}/>
+        <Stat label="Cash" value={portfolioQuery.isLoading ? "Loading" : cashBalance == null ? null : formatCurrency(cashBalance)}/>
+        <Stat label="Total P&L" data-testid="portfolio-total-pnl" value={portfolioQuery.isLoading ? "Loading" : totalPnl == null ? null : <PnlValue value={totalPnl}/>}/>
+        <Stat label="Buying power" value={portfolioQuery.isLoading ? "Loading" : buyingPower == null ? null : formatCurrency(buyingPower)}
+          source={reserved === null ? "Cash reserve unavailable" : `${formatCurrency(reserved)} reserved for open buys`}/>
       </div>
-
-      <CashPanel />
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.85fr)]">
+      <Allocation incomplete={valuationIncomplete} data={allocationQuery.data} loading={allocationQuery.isPending} retry={allocationQuery.isError ? () => void allocationQuery.refetch() : undefined} />
+      <CloseInsights owner={owner} surface="portfolio" />
+      </div>
+      <div className="portfolio-detail grid min-w-0 gap-5">
         <DashboardCard
           action={
             <span className="font-mono text-xs text-slate-500">
@@ -296,31 +249,33 @@ export function Portfolio() {
             />
           ) : (
             <div className="table-shell max-h-[640px]">
-              <table className="data-table min-w-[980px]">
+              <table className="holdings-ledger data-table">
                 <thead className="sticky top-0 z-10">
                   <tr>
                     <th className="text-left">Symbol</th>
                     <th className="text-right">Quantity</th>
                     <th className="text-right">Average cost</th>
-                    <th className="text-right">Current price</th>
+                    <th className="text-right">Latest mark</th>
                     <th className="text-right">Market value</th>
                     <th className="text-right">Realized P&L</th>
                     <th className="text-right">Unrealized P&L</th>
-                    <th className="text-right">Exposure %</th>
+                    <th className="text-right">Account weight</th>
                   </tr>
                 </thead>
                 <tbody>
                   {positions.map((position) => {
-                    const exposurePercent = getExposurePercent(
-                      position.position_value,
-                      positionsValue,
+                    const marked = hasMark(position);
+                    const realized = numeric(position.realized_pnl) ?? realizedBySymbol.get(position.symbol);
+                    const exposurePercent = accountWeight(
+                      marked ? position.position_value : null,
+                      totalValue,
                     );
                     const reason = valuationReasonLabel(position.unavailable_reason);
-                    const unrealized = position.unrealized_pnl;
-                    const unrealizedPct = position.unrealized_pnl_pct;
+                    const unrealized = marked ? position.unrealized_pnl : null;
+                    const unrealizedPct = marked ? position.unrealized_pnl_pct : null;
 
                     return (
-                      <tr
+                      <tr data-testid={`holding-${position.symbol}`} id={`holding-${position.symbol}`}
                         className={[
                           "border-l-2",
                           unrealized == null
@@ -331,22 +286,25 @@ export function Portfolio() {
                         ].join(" ")}
                         key={`${position.asset_type}-${position.symbol}`}
                       >
-                        <td>
+                        <td data-label="Symbol">
                           <div className="font-mono text-sm font-semibold text-slate-100">
-                            {position.symbol}
+                            <Link className="holding-ticket" aria-label={`Inspect ${position.symbol} holding`} to={"/portfolio/holdings?" + new URLSearchParams({symbol:position.symbol,returnTo:window.location.pathname + window.location.search + (window.location.hash || "#holding-" + position.symbol)})}>{position.symbol}</Link>
                           </div>
                           <div className="font-mono text-[11px] uppercase text-slate-500">
                             {position.asset_type}
                           </div>
+                          {canTrade && <a className="holding-ticket" aria-label={`Open order ticket for ${position.symbol}`}
+                            href={`/trades?ticket=1&symbol=${encodeURIComponent(position.symbol)}`}
+                            onClick={() => saveDraft(owner, null)}>Trade</a>}
                         </td>
-                        <td className="text-right font-mono tabular-nums">
+                        <td data-label="Quantity" className="text-right font-mono tabular-nums">
                           {formatQuantity(position.quantity)}
                         </td>
-                        <td className="text-right font-mono tabular-nums">
+                        <td data-label="Average cost" className="text-right font-mono tabular-nums">
                           {formatCurrency(position.avg_cost)}
                         </td>
-                        <td className="text-right font-mono tabular-nums">
-                          {position.current_price == null ? (
+                        <td data-label="Latest mark" className="text-right font-mono tabular-nums">
+                          {!marked || position.current_price == null ? (
                             <span className="text-slate-400">
                               Unavailable
                               {reason ? <span className="mt-1 block text-[11px]">{reason}</span> : null}
@@ -354,23 +312,24 @@ export function Portfolio() {
                           ) : (
                             formatCurrency(position.current_price)
                           )}
+                          {position.source && <small className="mark-source">{position.source}</small>}
                           {position.quote_at ? (
                             <div className="mt-1 text-[11px] text-slate-500">
-                              {formatDateTime(position.quote_at)}
+                              Quote observed {formatUtcDateTime(position.quote_at) ?? "Unavailable"}
                             </div>
                           ) : null}
                         </td>
-                        <td className="text-right font-mono tabular-nums">
-                          {position.position_value == null ? (
+                        <td data-label="Market value" className="text-right font-mono tabular-nums">
+                          {!marked || position.position_value == null ? (
                             <span className="text-slate-400">Unavailable</span>
                           ) : (
                             formatCurrency(position.position_value)
                           )}
                         </td>
-                        <td className="text-right font-mono tabular-nums text-slate-500">
-                          --
+                        <td data-label="Realized P&L" className="text-right font-mono tabular-nums text-slate-500">
+                          {realized == null ? "Unavailable" : formatCurrency(realized)}
                         </td>
-                        <td className="text-right">
+                        <td data-label="Unrealized P&L" className="text-right">
                           {unrealized == null ? (
                             <span className="text-slate-400">Unavailable</span>
                           ) : (
@@ -389,7 +348,7 @@ export function Portfolio() {
                             </div>
                           )}
                         </td>
-                        <td className="text-right font-mono tabular-nums">
+                        <td data-label="Account weight" className="text-right font-mono tabular-nums">
                           {exposurePercent == null ? (
                             <span className="text-slate-400">Unavailable</span>
                           ) : (
@@ -415,7 +374,8 @@ export function Portfolio() {
           )}
         </DashboardCard>
 
-        <div className="space-y-5">
+        <details className="account-disclosure">
+          <summary>Allocation &amp; P&amp;L detail</summary><div className="account-breakdowns">
           <DashboardCard title="FIFO P&L">
             {portfolioQuery.isLoading ? (
               <div className="space-y-3">
@@ -442,13 +402,13 @@ export function Portfolio() {
                     Unrealized P&L
                   </div>
                   <div className="mt-1 text-sm">
-                    {summary?.total_unrealized_pnl == null ? (
+                    {valuationIncomplete || summary?.total_unrealized_pnl == null ? (
                       <span className="text-slate-400">Unavailable</span>
                     ) : (
                       <PnlValue value={summary.total_unrealized_pnl} />
                     )}
                   </div>
-                  {summary?.total_unrealized_pnl_pct == null ? (
+                  {valuationIncomplete || summary?.total_unrealized_pnl_pct == null ? (
                     <div className="mt-1 font-mono text-[11px] text-slate-500">Unavailable</div>
                   ) : (
                     <div
@@ -496,9 +456,9 @@ export function Portfolio() {
             ) : (
               <div className="space-y-3">
                 {assetExposure.map((item) => {
-                  const exposurePercent = getExposurePercent(
+                  const exposurePercent = accountWeight(
                     item.value,
-                    positionsValue,
+                    totalValue,
                   );
                   if (exposurePercent == null) {
                     return (
@@ -519,7 +479,7 @@ export function Portfolio() {
                             {item.assetType}
                           </div>
                           <div className="mt-0.5 text-xs text-slate-500">
-                            Exposure
+                            Share of account including cash
                           </div>
                         </div>
                         <div className="text-right font-mono text-sm text-slate-200">
@@ -557,19 +517,15 @@ export function Portfolio() {
               </div>
             ) : allocationQuery.data == null ? (
               <p className="text-sm text-slate-300">Sector allocation unavailable</p>
-            ) : allocationQuery.data.status === "incomplete" ? (
+            ) : valuationIncomplete || allocationQuery.data.status === "incomplete" ? (
               <EmptyState
                 detail="A holding is unpriced, so sector weights cannot be shown."
                 message="Sector allocation unavailable"
               />
             ) : (
               <div className="space-y-4">
-                <AllocationRing
-                  cashBalance={allocationQuery.data.cash_balance}
-                  cashWeightPct={allocationQuery.data.cash_weight_pct}
-                  sectors={allocationQuery.data.sectors ?? []}
-                  totalAccountValue={allocationQuery.data.total_account_value}
-                />
+                <Stat label="Total account value" value={totalValue == null ? null : formatCurrency(totalValue)}/>
+                <ShareInstrument label="Sector allocation including cash" parts={allocationParts(allocationQuery.data)} total={100} format={formatPercent}/>
                 <SectorAllocationTable
                   cashBalance={allocationQuery.data.cash_balance}
                   cashWeightPct={allocationQuery.data.cash_weight_pct}
@@ -592,7 +548,7 @@ export function Portfolio() {
               </div>
             ) : attributionQuery.data == null ? (
               <p className="text-sm text-slate-300">P&L attribution unavailable</p>
-            ) : attributionQuery.data.status === "incomplete" ? (
+            ) : valuationIncomplete || attributionQuery.data.status === "incomplete" ? (
               <EmptyState
                 detail="A holding is unpriced, so P&L attribution cannot be shown."
                 message="P&L attribution unavailable"
@@ -606,6 +562,8 @@ export function Portfolio() {
             )}
           </DashboardCard>
 
+          </div></details>
+          <details className="account-disclosure"><summary>Risk metrics &amp; stress scenarios</summary>
           <DashboardCard
             action={
               <select
@@ -663,9 +621,11 @@ export function Portfolio() {
               </>
             )}
           </DashboardCard>
-          <TradeImpactPreview />
           <CustomRiskScenarios />
-        </div>
+          </details>
+          <details className="account-disclosure"><summary>Paper cash &amp; trade impact</summary>
+            <CashPanel /><TradeImpactPreview />
+          </details>
       </div>
     </div>
   );

@@ -13,7 +13,7 @@ const DAILY_INTERVAL = "1d";
  */
 export async function fetchDailyIndicators(
   symbol: string,
-  provider: string,
+  provider: string | undefined,
   adjustment_type: string,
   range: HistoryRange,
   name: IndicatorName,

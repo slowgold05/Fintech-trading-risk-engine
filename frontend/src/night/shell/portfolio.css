@@ -1,0 +1,39 @@
+.portfolio-overview { display:grid; grid-template-columns:minmax(0,2.6fr) minmax(230px,1fr); grid-template-areas:"values values" "performance allocation"; gap:var(--gap); }
+.portfolio-values { grid-area:values; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--gap); }
+.portfolio-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.portfolio-values .metric-tile { min-width:0; padding:var(--pad); }
+.portfolio-values .metric-tile>div:first-child { color:var(--muted); }
+.portfolio-values .metric-tile>div:nth-child(2) { font:560 clamp(18px,2.1vw,32px)/1.3 var(--font-ui); letter-spacing:-.04em; overflow-wrap:anywhere; }
+.performance-panel { grid-area:performance; }
+.exposure-panel { grid-area:allocation; }
+.performance-panel figcaption,.performance-dates,.exposure-panel li>div:first-child { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.performance-panel figure { margin:0; }
+.performance-panel figure svg { width:100%; height:150px; display:block; margin:14px 0 4px; }
+.performance-panel path { fill:none; vector-effect:non-scaling-stroke; }
+.performance-panel figcaption strong { font:540 24px/1.4 var(--font-ui); }
+.perf-series { stroke:var(--accent); stroke-width:1.7; }
+.perf-rule { stroke:var(--line); stroke-dasharray:2 4; }
+.perf-cursor { stroke:var(--muted); stroke-dasharray:4 4; }
+.performance-panel input { width:100%; height:24px; accent-color:var(--accent); cursor:pointer; }
+.exposure-panel ol { display:grid; gap:8px; }
+.exposure-panel li { min-width:0; font-size:var(--label); }
+.exposure-panel b { font:var(--label)/1.4 var(--font-mono); }
+.exposure-track { height:4px; background:var(--raised); margin-top:4px; }
+.exposure-track i { display:block; height:100%; background:var(--muted); }
+.exposure-panel li:first-child i { background:var(--accent); }
+[data-look=terrain] .portfolio-overview .nk-panel { background-image:linear-gradient(var(--muted),var(--muted)),linear-gradient(var(--muted),var(--muted)); background-size:13px 1px,1px 13px; background-position:left top; background-repeat:no-repeat; }
+[data-look=dial] .portfolio-overview { grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); grid-template-areas:"values allocation" "performance performance"; border-top:1px solid var(--line); padding-top:var(--pad); }
+[data-look=dial] .portfolio-values { grid-template-columns:1fr 1fr; gap:0; }
+[data-look=dial] .portfolio-values .metric-tile { background:transparent; border:0; border-bottom:1px solid var(--line); border-radius:0; }
+[data-look=dial] .portfolio-values .metric-tile>div:nth-child(2) { font-size:clamp(20px,2.6vw,38px); }
+[data-look=dial] .exposure-track { height:6px; }
+[data-look=dial] .exposure-track i { background:repeating-linear-gradient(120deg,var(--muted) 0 1px,transparent 1px 4px); }
+[data-look=dial] .exposure-panel li:first-child i { background:var(--accent); }
+@media(max-width:767px) {
+  .portfolio-overview,[data-look=dial] .portfolio-overview { grid-template-columns:minmax(0,1fr); grid-template-areas:"values" "performance" "allocation"; }
+  [data-look=dial] .portfolio-overview { grid-template-areas:"values" "allocation" "performance"; }
+  .portfolio-values { grid-template-columns:1fr 1fr; gap:6px; }
+  .performance-panel input { height:44px; }
+  .night-portfolio .nk-page-head { gap:10px; }
+  .night-portfolio .portfolio-actions { flex-wrap:wrap; }
+}

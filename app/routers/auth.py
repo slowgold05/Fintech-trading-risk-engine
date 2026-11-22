@@ -22,6 +22,7 @@ from app.models.mfa import LoginChallenge
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.services.ledger_service import ensure_opening
+from app.services.demo_accounts import SEED_MESSAGES, create_demo_account
 from app.services.sanctions import normalize_name, record_screen, screen_name
 from app.schemas.user import UserCreate, UserOut
 from app.services.login_lockout import (
@@ -33,7 +34,6 @@ from app.services.login_risk import assess_login, record_login_event
 from app.services.mfa import begin_enrollment, challenge_expiry, confirm_enrollment, confirmed_factor, consume_login_challenge
 
 router = APIRouter()
-REFRESH_COOKIE_NAME = "refresh_token"
 
 
 class MfaCode(BaseModel):
@@ -59,9 +59,9 @@ class MfaLogin(BaseModel):
 
 
 def _authenticated_user(db: Session, email: str, password: str) -> User:
-    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    user = db.execute(select(User).where(User.email == email, ~User.is_system)).scalar_one_or_none()
     password_ok = verify_password_or_dummy(password, user.password_hash if user is not None else None)
-    if user is None or not password_ok:
+    if user is None or user.is_demo or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
     return user
 
@@ -72,7 +72,7 @@ def _request_ip(request: Request) -> str | None:
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
     response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
+        key=settings.refresh_cookie_name,
         value=token,
         max_age=settings.refresh_token_exp_days * 24 * 60 * 60,
         httponly=True,
@@ -83,7 +83,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/", samesite="lax")
+    response.delete_cookie(key=settings.refresh_cookie_name, path="/", samesite="lax")
 
 
 def _issue_refresh_token(db: Session, user: User, request: Request, response: Response) -> None:
@@ -159,14 +159,14 @@ def login(
 
     # OAuth2PasswordRequestForm uses fields: username, password
     user = db.execute(
-        select(User).where(User.email == form.username)
+        select(User).where(User.email == form.username, ~User.is_system)
     ).scalar_one_or_none()
 
     password_ok = verify_password_or_dummy(
         form.password,
         user.password_hash if user is not None else None,
     )
-    if user is None or not password_ok:
+    if user is None or user.is_demo or not password_ok:
         record_login_failure(form.username, request)
         record_login_event(db, form.username, request, "failure", 0, [], user.id if user else None)
         db.commit()
@@ -208,9 +208,35 @@ def login(
     }
 
 
+@router.post("/demo")
+@limiter.limit("5/minute")
+def demo(request: Request, response: Response, db: Session = Depends(get_db)):
+    # A cross-origin form must not replace a visitor's refresh cookie.
+    origin = request.headers.get("origin")
+    api_origin = f"{request.url.scheme}://{request.url.netloc}"
+    if origin is not None and origin not in (*settings.cors_origins, api_origin):
+        raise HTTPException(status_code=403, detail="Demo signup origin is not allowed")
+    if origin is None and request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(status_code=403, detail="Demo signup origin is not allowed")
+    try:
+        user = create_demo_account(db)
+        _issue_refresh_token(db, user, request, response)
+        record_login_event(db, user.email, request, "success", 0, ["demo_signup"], user.id)
+        result = {
+            "access_token": create_access_token(user_id=user.id), "token_type": "bearer", "is_demo": True,
+            "display_name": user.display_name, "demo_seed_mode": user.demo_seed_mode,
+            "message": SEED_MESSAGES[user.demo_seed_mode],
+        }
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
 @router.post("/refresh")
 def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
-    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    refresh_token = request.cookies.get(settings.refresh_cookie_name)
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
 
@@ -226,12 +252,12 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
-    user = db.execute(select(User).where(User.id == row.user_id)).scalar_one_or_none()
-    if user is None:
+    user = db.execute(select(User).where(User.id == row.user_id, ~User.is_system)).scalar_one_or_none()
+    if user is None or user.demo_archived_at is not None:
         row.revoked_at = datetime.utcnow()
         db.commit()
         _clear_refresh_cookie(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User unavailable")
 
     row.revoked_at = datetime.utcnow()
     _issue_refresh_token(db, user, request, response)
@@ -245,7 +271,7 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
 
 @router.post("/logout")
 def logout(request: Request, response: Response, db: Session = Depends(get_db)):
-    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    refresh_token = request.cookies.get(settings.refresh_cookie_name)
     if refresh_token:
         row = db.execute(
             select(RefreshToken).where(
@@ -303,8 +329,9 @@ def confirm_mfa_enrollment(request: Request, response: Response, payload: MfaEnr
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
+def me(response: Response, current_user: User = Depends(get_current_user)):
     """
     Returns the currently authenticated user.
     """
+    response.headers["Cache-Control"] = "no-store"
     return current_user

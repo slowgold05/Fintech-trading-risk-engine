@@ -1,0 +1,88 @@
+.series-instrument { min-width:0; container-type:inline-size; font-family:var(--font-ui); }
+.ins-plate { position:relative; background:#111315; border-block:1px solid #383b3c; overflow:hidden; }
+.ins-graphic { display:block; width:100%; touch-action:pan-y; cursor:crosshair; }
+.ins-graphic text,.share-graphic text { font:10px var(--font-mono); fill:#b6b9b4; }
+.ins-gridline { fill:none; stroke:#53585a; stroke-width:.75; stroke-dasharray:3 5; }
+.ins-needle { fill:#141413; stroke:var(--accent); stroke-width:1.8; }
+@media(prefers-reduced-motion:no-preference) {
+  html:not([data-motion=reduced]) .series-terrain[data-rest=false] .ins-relief,
+  html[data-look=terrain]:not([data-motion=reduced]) [data-centrepiece=true]>svg {
+    transform-origin:50% 90%; animation:relief-rise 580ms cubic-bezier(.18,.81,.22,1) both;
+  }
+  html:not([data-motion=reduced]) .series-dial[data-rest=false] .ins-graphic,
+  html[data-look=dial]:not([data-motion=reduced]) [data-centrepiece=true]>svg {
+    transform-origin:center; animation:dial-settle 560ms cubic-bezier(.16,.82,.18,1) both;
+  }
+}
+@keyframes relief-rise { from { transform:translateY(10px) scaleY(.75); opacity:.45; } }
+@keyframes dial-settle { from { transform:rotate(-10deg) scale(.94); opacity:.55; } }
+.series-dial .ins-plate { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(165px,1fr); align-items:center; padding:7px clamp(10px,2vw,28px); gap:20px; background:#111310; }
+.series-dial .ins-graphic { max-height:324px; aspect-ratio:1; width:auto; max-width:100%; justify-self:center; }
+.ins-graphic .ins-dial-label { font-size:8px; text-transform:uppercase; fill:#a9aea1; }
+.ins-graphic .ins-dial-value { font:550 22px var(--font-mono); letter-spacing:-1.3px; fill:#f1f1e9; }
+.series-dial[data-wide-labels=true] .ins-dial-value { font-size:17px; }
+.ins-date { font-size:8px!important; }
+.ins-register { border-left:1px solid #43473e; padding:0 14px; color:#c7cbbf; }
+.ins-register-title,.ins-readings small,.ins-register small,.ins-gauge small { font:11px/1.5 var(--font-mono); color:var(--muted); display:block; }
+.ins-register-title { text-transform:uppercase; letter-spacing:.08em; border-bottom:1px solid #43473e; padding:0 0 10px; }
+.ins-extreme { padding:10px 0 6px; }
+.ins-extreme b { font:500 clamp(20px,2vw,29px)/1.3 var(--font-mono); letter-spacing:-.06em; color:var(--ink); }
+.ins-base { display:flex; align-items:baseline; gap:10px; margin-top:8px; }
+.ins-sign { display:flex; align-items:center; gap:5px; font:10px var(--font-mono); margin-top:10px; }
+.ins-sign i,.ins-inline-mark>i { background:#babeb4; }
+.ins-sign i { width:11px; height:7px; }
+.ins-sign i:nth-of-type(2),[data-look=dial] .ins-inline-mark[data-loss=true]>i { background:repeating-linear-gradient(-55deg,#b7baad 0 1px,transparent 1px 3px); }
+.ins-readings { display:flex; flex-wrap:wrap; gap:10px 24px; padding:10px 0 6px; }
+.ins-readings b { font:550 clamp(14px,1.5vw,21px)/1.4 var(--font-mono); letter-spacing:-.05em; }
+.ins-readings i { display:inline-block; margin-right:6px; width:13px; border-top:2px solid var(--accent); vertical-align:middle; }
+.ins-readings i[data-series="1"] { border-top:2px dashed #bdc0b8; }
+.ins-readings i[data-series="2"] { border-top:2px dotted #969c96; }
+.ins-scrub { display:flex; align-items:center; gap:10px; font:10px var(--font-mono); color:var(--muted); }
+.ins-scrub input[type=range] { appearance:none; background:none; cursor:ew-resize; height:32px; width:auto; min-width:0; flex:1; }
+.ins-scrub input::-webkit-slider-runnable-track { background:#494d47; height:2px; }
+.ins-scrub input::-webkit-slider-thumb { appearance:none; width:8px; height:14px; margin-top:-6px; border-radius:1px; background:var(--accent); }
+.ins-scrub input::-moz-range-track { background:#494d47; height:2px; }
+.ins-scrub input::-moz-range-thumb { width:8px; height:14px; border:0; background:var(--accent); }
+.share-instrument ol { list-style:none; margin:0; padding:0; }
+.share-graphic { width:100%; height:112px; display:block; }
+[data-look=dial] .share-graphic { height:140px; }
+.share-graphic g { cursor:pointer; }
+.share-graphic text { font-size:13px; }
+.share-graphic .share-value { font-size:32px; fill:var(--ink); }
+.ins-rank { width:100%; display:grid; grid-template-columns:minmax(0,1fr) 20% minmax(55px,auto); align-items:center; gap:8px; min-height:32px; border-top:1px solid var(--inner-rule,var(--line)); color:var(--ink); text-align:left; font:13px var(--font-ui); }
+.ins-rank b { text-align:right; font:12px var(--font-mono); }
+.ins-inline-mark { display:block; background:var(--raised); height:7px; }
+.ins-inline-mark>i { display:block; height:100%; }
+[data-look=terrain] .ins-inline-mark>i { clip-path:polygon(0 100%,12% 50%,90% 0,100% 100%); }
+.ins-rank:is(:hover,:focus-visible,[aria-pressed=true]) .ins-inline-mark>i { background:var(--accent); }
+.ins-rank:is(:hover,:focus-visible) { color:var(--accent); }
+.ins-gauge>div { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.ins-gauge strong { font:550 22px var(--font-mono); }
+.ins-gauge svg { width:100%; height:34px; }
+[data-look=dial] .ins-gauge svg { height:78px; }
+.series-instrument[data-rest=true] .ins-graphic { opacity:.55; max-height:172px; }
+.series-instrument[data-rest=true] .ins-plate { display:grid; grid-template-columns:1fr; }
+.series-instrument[data-rest=true] .nk-state { min-height:52px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+@container (max-width:520px) {
+  .series-dial .ins-plate { display:flex; justify-content:center; padding:0; }
+  .series-dial .ins-graphic { max-height:270px; }
+  .ins-register { display:none; }
+  .ins-readings { gap:6px 14px; }
+  .ins-readings small { font-size:10px; }
+}
+@media(max-width:767px) { .ins-scrub input[type=range],.ins-rank { min-height:44px; } }
+.ins-graphic .ins-rim { font:8px var(--font-mono); fill:#d7d9d0; letter-spacing:.25px; }
+.ins-mobile-key { display:none; }
+.series-dial .ins-readings i[data-series="0"] { border-color:#c2c3b6; }
+@container(max-width:520px) {
+  .ins-mobile-key { display:flex; justify-content:space-between; gap:8px; font:10px var(--font-mono); color:var(--muted); padding-top:4px; }
+}
+@media(max-width:767px) {
+  .series-dial .ins-graphic { width:min(100%,304px); height:auto; max-height:none; }
+}
+.series-instrument[data-state] .nk-state strong::before { content:""; display:inline-block; width:8px; height:8px; margin-right:8px; border:1px solid var(--muted); vertical-align:1px; }
+.series-instrument[data-state=loading] .nk-state strong::before { border-style:dotted; border-radius:50%; }
+.series-instrument[data-state=error] .nk-state strong::before { border-color:var(--accent); background:repeating-linear-gradient(-45deg,var(--accent) 0 1px,transparent 1px 3px); }
+.ins-gauge { position:relative; }
+.ins-gauge-position { position:absolute; inset-inline-start:50%; bottom:0; transform:translateX(-50%); color:var(--accent); background:var(--surface); white-space:nowrap; font:10px var(--font-mono); opacity:0; }
+.ins-gauge:is(:hover,:focus-visible) .ins-gauge-position { opacity:1; }

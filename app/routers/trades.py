@@ -16,7 +16,10 @@ from app.services.trade_execution import CENT, SIX_PLACES, execute_fill, notiona
 from app.models.holding import Holding
 from app.services.pretrade_controls import require_stock_concentration, require_trading_open
 from app.services.idempotency import execute_once
+from app.services.demo_accounts import demo_trade_price_basis
+from app.services.ledger_service import trade_in_current_book
 from app.services.order_step_up import require_notional_step_up
+from app.services.simulated_liquidity import simulated_provenance
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -27,13 +30,17 @@ def list_trades(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    rows = db.execute(
+    query = (
         select(Trade, Asset)
         .join(Asset, Trade.asset_id == Asset.id)
         .where(Trade.user_id == current_user.id)
         .order_by(Trade.executed_at.desc(), Trade.id.desc())
         .limit(limit)
-    ).all()
+    )
+    if current_user.is_demo:
+        query = query.where(trade_in_current_book(current_user.id, Trade.id))
+    rows = db.execute(query).all()
+    provenance = demo_trade_price_basis(current_user)
 
     return {
         "trades": [
@@ -48,6 +55,10 @@ def list_trades(
                 "realized_pnl": round(float(trade.realized_pnl or 0.0), 2),
                 "realized_pnl_pct": round(float(trade.realized_pnl_pct or 0.0), 2),
                 "executed_at": trade.executed_at,
+                "demo_seed": trade.demo_seed,
+                **({"seed_price": provenance[(asset.symbol, trade.side, trade.executed_at.date().isoformat())]}
+                   if trade.demo_seed else {}),
+                **simulated_provenance(trade.simulated_quote_date, trade.simulated_quote_source),
             }
             for trade, asset in rows
         ]

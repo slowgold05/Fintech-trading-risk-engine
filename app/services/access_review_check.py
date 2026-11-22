@@ -15,7 +15,7 @@ def current_review_period(now: datetime | None = None) -> str:
 
 def check_access_reviews(db: Session, now: datetime | None = None) -> dict:
     period = current_review_period(now)
-    users = db.execute(select(User).order_by(User.id)).scalars().all()
+    users = db.execute(select(User).where(~User.is_system).order_by(User.id)).scalars().all()
     role_versions = dict(db.execute(select(RoleChange.user_id, func.max(RoleChange.id)).group_by(RoleChange.user_id)).all())
     reviews = db.execute(select(AccessReview).where(AccessReview.period == period).order_by(AccessReview.id.desc())).scalars().all()
     latest = {review.user_id: review for review in reversed(reviews)}

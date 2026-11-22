@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.services.history_series import AUTO
 from app.services.market_history import read_data_status, read_symbol_history
 from app.services.market_indicators import read_symbol_indicators
 from app.services.symbol_quote import read_symbol_quote
@@ -27,7 +28,7 @@ def symbol_history(
     symbol: str,
     interval: str = Query(...),
     range_token: str = Query(..., alias="range"),
-    provider: str = Query(...),
+    provider: str = Query(AUTO),
     adjustment_type: str = Query(...),
     db: Session = Depends(get_db),
 ):
@@ -46,7 +47,7 @@ def symbol_indicators(
     symbol: str,
     interval: str = Query(...),
     range_token: str = Query(..., alias="range"),
-    provider: str = Query(...),
+    provider: str = Query(AUTO),
     adjustment_type: str = Query(...),
     name: str = Query(...),
     period: str = Query(...),

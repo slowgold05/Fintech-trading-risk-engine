@@ -15,6 +15,7 @@ pytest.importorskip("selenium")
 
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ from app.services.trade_execution import execute_fill
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = h.disposable_api
+customer_order_book_api = h.customer_order_book_api
 ARTIFACTS = h.REPO_ROOT / ".local-tools" / "p3b-lifecycle"
 _CASH = Decimal("94800.00")
 _OPEN_BP = "$94,700"
@@ -129,7 +131,7 @@ def _region_state(driver, order_id: int) -> dict | None:
           if (!name || !dd || dd.tagName !== "DD") { continue; }
           fields[name] = (dd.textContent || "").replace(/\\s+/g, " ").trim();
         }
-        const ids = Array.from(region.querySelectorAll("table tbody tr")).map((row) => (row.cells[0] ? row.cells[0].textContent.trim() : ""));
+        const ids = Array.from(region.querySelectorAll("[data-testid='fill-trade-id']"), cell => cell.textContent.trim());
         const button = (name) => {
           const node = Array.from(region.querySelectorAll("button")).find((item) => item.textContent.trim() === name);
           return node ? {disabled: Boolean(node.disabled)} : null;
@@ -137,6 +139,8 @@ def _region_state(driver, order_id: int) -> dict | None:
         const text = region.innerText || "";
         return {
           fields: fields,
+          status: text.includes("Open and partially executed.") ? "open"
+            : text.includes("Canceled with executed quantity.") ? "canceled" : null,
           ids: ids,
           whole: text,
           error: text.includes("Order details could not be loaded."),
@@ -239,11 +243,10 @@ def _expect_fields(state: dict, status: str) -> None:
         "Original": "53.000000",
         "Filled": "52.000000",
         "Remaining": "1.000000",
-        "Status": status,
         "Limit": "100.000000 USD",
     }
-    if any(fields.get(key) != value for key, value in expected.items()):
-        pytest.fail("order detail fields mismatched: " + json.dumps({"status": fields.get("Status"), "keys": sorted(fields)}))
+    if any(fields.get(key) != value for key, value in expected.items()) or state["status"] != status:
+        pytest.fail("order detail fields mismatched: " + json.dumps({"status": state["status"], "keys": sorted(fields)}))
     if "UTC" not in fields.get("Created", "") or "UTC" not in fields.get("Read", ""):
         pytest.fail("order detail timestamps were not visible UTC")
 
@@ -310,7 +313,8 @@ def _persisted(engine, order_id: int, owner_id: int) -> dict:
         return {"status": order.status, "remaining": order.remaining_quantity, "trades": int(trades or 0)}
 
 
-def test_partial_fill_lifecycle(disposable_api) -> None:
+def test_partial_fill_lifecycle(customer_order_book_api) -> None:
+    disposable_api = customer_order_book_api
     password = os.environ.get("P0B_TRADER_PASSWORD", "")
     if not password:
         pytest.fail("P0B_TRADER_PASSWORD is required")
@@ -333,48 +337,44 @@ def test_partial_fill_lifecycle(disposable_api) -> None:
         h._wait(driver).until(lambda current: (state := _region_state(current, order_id)) and state["fields"].get("Original") == "53.000000")
         state = _region_state(driver, order_id)
         _expect_fields(state, "open")
-        if "Whole order: 52 recorded fills." not in state["whole"] or _trade_ids(state) != own[:50]:
+        if "52 recorded fills on this order." not in state["whole"] or _trade_ids(state) != own[:50]:
             pytest.fail("first fill page was not the first fifty owned trades: " + json.dumps({"shown": len(_trade_ids(state))}))
         if any(item not in own for item in _trade_ids(state)):
             pytest.fail("trade column included an id outside the owner fills")
         if h._owner_activity_counts(engine, email) != before:
             pytest.fail("reading details changed owner activity")
         h._wait(driver).until(_page_fits)
-        _shot_heading(driver, order_id, "h3", f"Order {order_id}", ARTIFACTS / "details-desktop.png")
-        _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "fills-desktop.png")
+        _shot_heading(driver, order_id, "h2", f"Order {order_id}", ARTIFACTS / "details-desktop.png")
+        _shot_heading(driver, order_id, "h3", "Recorded fills", ARTIFACTS / "fills-desktop.png")
         mobile = t._css_viewport(driver, 390, 844, True)
         try:
             h._wait(driver).until(lambda current: _page_fits(current) and (_region_state(current, order_id) or {}).get("fields", {}).get("Filled") == "52.000000")
         except TimeoutException:
             _fail_mobile(driver, order_id)
-        _shot_heading(driver, order_id, "h3", f"Order {order_id}", ARTIFACTS / "details-mobile.png")
-        _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "fills-mobile.png")
+        _shot_heading(driver, order_id, "h2", f"Order {order_id}", ARTIFACTS / "details-mobile.png")
+        _shot_heading(driver, order_id, "h3", "Recorded fills", ARTIFACTS / "fills-mobile.png")
         t._css_viewport(driver, 1280, 800, False)
         _click_named(driver, order_id, "Next")
         h._wait(driver).until(lambda current: _trade_ids(_region_state(current, order_id) or {}) == own[50:])
         page_two = _region_state(driver, order_id)
         _expect_fields(page_two, "open")
-        if len(_trade_ids(page_two)) != 2 or "Whole order: 52 recorded fills." not in page_two["whole"]:
+        if len(_trade_ids(page_two)) != 2 or "52 recorded fills on this order." not in page_two["whole"]:
             pytest.fail("second page did not keep the fifty-two fill count")
         if not page_two["next"]["disabled"] or page_two["first"]["disabled"]:
             pytest.fail("second page controls were not next-disabled and first-available")
         if h._owner_activity_counts(engine, email) != before:
             pytest.fail("paging changed owner activity")
         h._wait(driver).until(_page_fits)
-        _shot_heading(driver, order_id, "h4", "Recorded fills", ARTIFACTS / "page-two.png")
+        _shot_heading(driver, order_id, "h3", "Recorded fills", ARTIFACTS / "page-two.png")
         driver.execute_cdp_cmd("Network.enable", {})
         driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": [f"*orders/{order_id}*"]})
         try:
             _click_named(driver, order_id, "First page")
             h._wait(driver).until(lambda current: (state := _region_state(current, order_id)) and state["error"] and not state["financial"])
-            error = h._wait(driver).until(lambda current: current.execute_script(
-                """
-                const region = document.querySelector(arguments[0]);
-                if (!region) { return null; }
-                return Array.from(region.querySelectorAll("p")).find((node) => node.textContent.trim() === "Order details could not be loaded.") || null;
-                """,
-                f'[aria-label="Order {order_id} details"]',
-            ))
+            error = h._wait(driver).until(EC.visibility_of_element_located((
+                By.CSS_SELECTOR, f"[aria-label='Order {order_id} details'] [data-testid='night-state-error']",
+            )))
+            assert "Order details could not be loaded." in error.text
             t._shot(driver, error, ARTIFACTS / "detail-error.png")
         finally:
             driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": []})
@@ -390,10 +390,10 @@ def test_partial_fill_lifecycle(disposable_api) -> None:
         h._click(driver, cancel)
         h._wait(driver).until(lambda current: (
             (state := _region_state(current, order_id))
-            and state["fields"].get("Status") == "canceled"
+            and state["status"] == "canceled"
             and state["fields"].get("Filled") == "52.000000"
             and state["fields"].get("Remaining") == "1.000000"
-            and "Whole order: 52 recorded fills." in state["whole"]
+            and "52 recorded fills on this order." in state["whole"]
         ))
         h._wait(driver).until(lambda current: current.execute_script(
             """
@@ -404,7 +404,8 @@ def test_partial_fill_lifecycle(disposable_api) -> None:
             if (!section) { return false; }
             return Array.from(section.querySelectorAll("tbody tr")).some((row) => {
               const cells = Array.from(row.cells).map((cell) => cell.textContent.trim().toLowerCase());
-              return cells.includes(symbol.toLowerCase()) && cells.includes("canceled");
+              return row.querySelector("td strong")?.textContent.toLowerCase() === symbol.toLowerCase()
+                && cells.includes("canceled");
             });
             """,
             symbol,
@@ -422,7 +423,7 @@ def test_partial_fill_lifecycle(disposable_api) -> None:
             pytest.fail("persisted order did not keep the partial fill: " + json.dumps({"status": row["status"], "trades": row["trades"]}))
         _reconcile(engine, seeded["owner_id"], seeded["maker_id"])
         h._wait(driver).until(_page_fits)
-        _shot_heading(driver, order_id, "h3", f"Order {order_id}", ARTIFACTS / "canceled.png")
+        _shot_heading(driver, order_id, "h2", f"Order {order_id}", ARTIFACTS / "canceled.png")
         _nav(driver, "/dashboard")
         h._wait(driver).until(lambda current: h._money_after(current, "Cash") == _CASH_LABEL and h._money_after(current, "Buying power") == _FLAT_BP)
         print(json.dumps({

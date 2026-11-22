@@ -224,9 +224,12 @@ def request_role_change(payload: RoleRequestCreate, db: Session = Depends(get_db
     from app.models.user import ROLES
     if payload.role not in ROLES or not payload.reason.strip():
         raise HTTPException(status_code=422, detail="Valid role and reason are required")
-    target = db.execute(select(User).where(User.email == payload.email.strip().lower()).with_for_update()).scalar_one_or_none()
+    target = db.execute(select(User).where(User.email == payload.email.strip().lower(), ~User.is_system)
+                        .with_for_update()).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if target.is_demo:
+        raise HTTPException(status_code=409, detail="Demo accounts are trader-only")
     if target.role == payload.role:
         raise HTTPException(status_code=409, detail="User already has that role")
     item = RoleChangeRequest(target_user_id=target.id, old_role=target.role, new_role=payload.role,
@@ -266,7 +269,7 @@ def list_access_review(period: str | None = Query(default=None, pattern=r"^\d{4}
     latest = {review.user_id: review for review in reversed(reviews)}
     role_versions = dict(db.execute(select(RoleChange.user_id, func.max(RoleChange.id))
                                     .group_by(RoleChange.user_id)).all())
-    users = db.execute(select(User).order_by(User.id)).scalars().all()
+    users = db.execute(select(User).where(~User.is_system).order_by(User.id)).scalars().all()
     return {"period": period, "accounts": [
         {"user_id": user.id, "email": user.email, "role": user.role,
          "status": "unreviewed" if user.id not in latest or latest[user.id].observed_role != user.role
@@ -287,7 +290,8 @@ def submit_access_review(payload: AccessReviewCreate, db: Session = Depends(get_
         raise HTTPException(status_code=403, detail="Users cannot review their own access")
     if not payload.reason.strip():
         raise HTTPException(status_code=422, detail="Review reason is required")
-    user = db.execute(select(User).where(User.id == payload.user_id).with_for_update()).scalar_one_or_none()
+    user = db.execute(select(User).where(User.id == payload.user_id, ~User.is_system)
+                      .with_for_update()).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     period = current_review_period()

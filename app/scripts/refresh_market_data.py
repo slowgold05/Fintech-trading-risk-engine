@@ -18,6 +18,7 @@ def main() -> None:
         help="Quote provider. Omit to use MARKET_QUOTE_SOURCE (default massive).",
     )
     parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument("--symbol", action="append", help="Refresh a specific symbol. May be repeated.")
     args = parser.parse_args()
 
     if args.limit < 1 or args.limit > 1000:
@@ -29,7 +30,7 @@ def main() -> None:
         if args.sync_universe:
             result["universe"] = sync_nasdaq_universe(db)
         source = args.source or settings.market_quote_source
-        result["quotes"] = refresh_quote_cache(db, args.tier, args.limit, source=source)
+        result["quotes"] = refresh_quote_cache(db, args.tier, args.limit, source=source, symbols=args.symbol)
         print(json.dumps(result, indent=2))
         if result["quotes"]["errors"]:
             raise SystemExit(1)

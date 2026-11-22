@@ -2,11 +2,14 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { fetchMe } from "./api/auth";
 import { AuthContext } from "./context/authState";
 import App from "./App";
 
 const accountDashboard = vi.hoisted(() => vi.fn(() => <h1>Account dashboard</h1>));
+const complianceDesk = vi.hoisted(() => vi.fn(() => <h1>Control Status</h1>));
 vi.mock("./pages/Dashboard", () => ({ Dashboard: accountDashboard }));
+vi.mock("./pages/Compliance", () => ({ Compliance: complianceDesk }));
 vi.mock("./pages/Login", () => ({ Login: () => <h1>Sign-in form</h1> }));
 vi.mock("./api/market", () => ({
   fetchMarketOverview: vi.fn().mockRejectedValue(new Error("Unavailable")),
@@ -26,7 +29,10 @@ vi.mock("./api/history", () => ({
   }),
   fetchDailyHistory: vi.fn().mockRejectedValue(new Error("No series selected")),
 }));
-vi.mock("./api/auth", () => ({ fetchMe: vi.fn().mockResolvedValue({ role: "trader" }) }));
+vi.mock("./api/auth", () => ({
+  fetchMe: vi.fn().mockResolvedValue({ role: "trader", is_demo: true }),
+  startDemo: vi.fn(),
+}));
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -45,35 +51,50 @@ function open(path: string, authenticated = false, initializing = false) {
   );
 }
 
-it.each(["/", "/dashboard"])("opens %s for visitors without mounting the private account dashboard", (path) => {
-  open(path);
-  expect(screen.getByRole("heading", { name: "Market dashboard" })).toBeInTheDocument();
+it("opens the public market at root for visitors", async () => {
+  open("/");
+  expect(await screen.findByRole("heading", { name: "Market overview" }, { timeout: 7_000 })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
   expect(accountDashboard).not.toHaveBeenCalled();
   expect(screen.queryByRole("heading", { name: "Sign-in form" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("link", { name: "Log in" }));
-  expect(screen.getByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
-});
+  expect(await screen.findByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
+}, 10_000);
 
-it("shows the public dashboard while session restoration is pending", () => {
+it("waits for session restoration before routing the root", () => {
   open("/", false, true);
-  expect(screen.getByRole("heading", { name: "Market dashboard" })).toBeInTheDocument();
+  expect(screen.getByText("Restoring session…")).toBeInTheDocument();
   expect(accountDashboard).not.toHaveBeenCalled();
 });
 
-it.each(["/", "/dashboard"])("opens the private dashboard at %s after sign-in", (path) => {
+it.each(["/", "/dashboard"])("opens the private dashboard at %s after sign-in", async (path) => {
   open(path, true);
-  expect(screen.getByRole("heading", { name: "Account dashboard" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Account dashboard" })).toBeInTheDocument();
 });
 
-it.each(["/portfolio", "/trades", "/risk", "/compliance"])("keeps %s behind sign-in", (path) => {
+it.each(["/dashboard", "/portfolio", "/trades", "/risk", "/compliance"])("keeps %s behind sign-in", async (path) => {
   open(path);
-  expect(screen.getByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
 });
 
-it("keeps an anonymous /trades?symbol=AAPL handoff on the sign-in form", () => {
+it("shows the demo trader the compliance role policy without mounting the evidence desk", async () => {
+  open("/compliance", true);
+  expect(await screen.findByRole("heading", { name: "Access restricted" })).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Role policy for the compliance desk" })).toBeInTheDocument();
+  expect(screen.getByTestId("night-state-unavailable")).toHaveTextContent("trader");
+  expect(complianceDesk).not.toHaveBeenCalled();
+});
+
+it("opens the compliance evidence desk for an auditor", async () => {
+  vi.mocked(fetchMe).mockResolvedValueOnce({ id: 1, email: "auditor@example.com", role: "auditor" });
+  open("/compliance", true);
+  expect(await screen.findByRole("heading", { name: "Control Status" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Access restricted" })).not.toBeInTheDocument();
+});
+
+it("keeps an anonymous /trades?symbol=AAPL handoff on the sign-in form", async () => {
   open("/trades?symbol=AAPL");
-  expect(screen.getByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Sign-in form" })).toBeInTheDocument();
   expect(screen.queryByLabelText("Trade symbol")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Preview order" })).not.toBeInTheDocument();
 });

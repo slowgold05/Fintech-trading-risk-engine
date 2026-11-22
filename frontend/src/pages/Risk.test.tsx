@@ -7,13 +7,18 @@ import { Risk } from "./Risk";
 const fetchRisk = vi.hoisted(() => vi.fn());
 vi.mock("../api/risk", () => ({ fetchRisk }));
 
+vi.mock("../api/auth", () => ({ fetchMe: vi.fn() }));
+vi.mock("../api/portfolio", () => ({ fetchPortfolio: vi.fn().mockResolvedValue({ positions: [], summary: { total_account_value: 100 } }) }));
+vi.mock("../api/history", () => ({ fetchDailyHistory: vi.fn().mockResolvedValue({ bars: [] }) }));
+
 const clients: QueryClient[] = [];
 function open(seed?: RiskResponse) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: 0 } },
   });
   clients.push(client);
-  if (seed) client.setQueryData(["risk"], seed);
+  client.setQueryData(["me"], { id: 1 });
+  if (seed) client.setQueryData(["acct", 1, "risk"], seed);
   render(<QueryClientProvider client={client}><Risk /></QueryClientProvider>);
   return client;
 }
@@ -51,7 +56,7 @@ describe("historical trade risk", () => {
     expect(screen.queryByText("Low")).not.toBeInTheDocument();
     fireEvent.click(retry);
     expect(await screen.findByText("No trade assessments yet.")).toBeInTheDocument();
-    expect(screen.getByText("No assessment alerts.")).toBeInTheDocument();
+    expect(screen.getByText(/No assessment alerts\./)).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /Risk score/ })).not.toBeInTheDocument();
   });
 
@@ -68,7 +73,7 @@ describe("historical trade risk", () => {
     fetchRisk.mockResolvedValue({ assessments: [missingTrade, assessment(70, 2)] });
     open();
     expect(await screen.findByText("Latest trade score unavailable.")).toBeInTheDocument();
-    expect(screen.getByText("TRADE2")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("TRADE2")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /Risk score/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Low")).not.toBeInTheDocument();
     const feed = screen.getByRole("heading", { name: "Assessment Feed" }).closest("section")!;
@@ -83,7 +88,7 @@ describe("historical trade risk", () => {
     fetchRisk.mockResolvedValue({ assessments: [assessment(0), sale] });
     open();
     const section = (await screen.findByRole("heading", { name: "Assessed Trade Notional" })).closest("section")!;
-    expect(await within(section).findByText("$35")).toBeInTheDocument();
+    expect(await within(section).findByText("$35.00")).toBeInTheDocument();
     expect(within(section).getByText(/Includes buys and sells/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Exposure Breakdown" })).not.toBeInTheDocument();
   });
@@ -95,12 +100,23 @@ describe("historical trade risk", () => {
     expect(screen.getByRole("img", { name: "Risk score 90 of 100, High" })).toBeInTheDocument();
     expect(screen.getByText("HISTORICAL_RULE")).toBeInTheDocument();
     fetchRisk.mockRejectedValue(new Error("offline"));
-    await act(async () => { await client.refetchQueries({ queryKey: ["risk"] }, { throwOnError: false }); });
+    await act(async () => { await client.refetchQueries({ queryKey: ["acct", 1, "risk"] }, { throwOnError: false }); });
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument());
     expect(screen.queryByRole("img", { name: /Risk score/ })).not.toBeInTheDocument();
     expect(screen.queryByText("HISTORICAL_RULE")).not.toBeInTheDocument();
     expect(screen.queryByText("TRADE1")).not.toBeInTheDocument();
     expect(screen.queryByText("$20.00")).not.toBeInTheDocument();
     expect(screen.queryByText("No trade assessments yet.")).not.toBeInTheDocument();
+  });
+
+  it("shows the recorded score and rule reason for the selected assessment", async () => {
+    const older = assessment(50,2);
+    older.alerts = [{rule_code:"RECORDED",severity:"medium",reason:"Historical assessment reason.",created_at:older.created_at}];
+    vi.mocked(fetchRisk).mockResolvedValue({assessments:[assessment(0),older]});
+    open();
+    fireEvent.change(await screen.findByRole("combobox",{name:"Inspect trade assessment"}),{target:{value:"2"}});
+    const panel = screen.getByRole("heading",{name:"Historical Trade Risk Score"}).closest("section")!;
+    expect(within(panel).getByRole("img",{name:"Risk score 50 of 100, Medium"})).toBeVisible();
+    expect(within(panel).getByText("Historical assessment reason.")).toBeVisible();
   });
 });

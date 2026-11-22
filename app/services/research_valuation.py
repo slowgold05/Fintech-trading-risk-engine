@@ -5,7 +5,7 @@ price times shares outstanding. Share counts are read from the reference cache.
 The scheduled refresh fills that cache. A miss keeps the SEC dei cover count
 and does not call Massive. P/E is the price divided by trailing diluted EPS,
 rounded to two decimals. A missing trailing window uses the overview P/E.
-Alpha Vantage supplies the quote only when the Massive close is absent.
+Alpha Vantage or canonical daily history can supply a missing close.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.models.market_quote_cache import MarketQuoteCache
 from app.models.market_reference_cache import MarketReferenceCache
 from app.models.market_symbol import MarketSymbol
+from app.services.history_series import read_history_quotes
 from app.services.market_providers import ProviderUnavailable
 from app.services.massive_client import http_get_massive_ticker
 from app.services.price_service import get_stock_quote
@@ -297,6 +298,18 @@ def build_research_valuation(
             "price_as_of": None,
         }
 
+    if quote["price"] is None:
+        history = read_history_quotes(db, [symbol]).get(symbol)
+        if history is not None:
+            quote = {
+                "price": float(history.price),
+                "change_percent": float(history.change_percent),
+                "price_basis": _EOD_BASIS,
+                "price_as_of": history.quote_at.date().isoformat(),
+                "price_source": history.source,
+                "adjustment_type": history.adjustment_type,
+            }
+
     shares = _positive(sec_fundamentals.get("shares_outstanding")) if isinstance(sec_fundamentals, dict) else None
     shares_source = "sec_dei" if shares is not None else None
     massive_shares, massive_source, massive_error = massive_shares_outstanding(db, symbol)
@@ -338,6 +351,9 @@ def build_research_valuation(
     notice = None
     if quote.get("price_basis") == _EOD_BASIS and as_of:
         notice = f"End-of-day previous close as of {as_of}."
+        if "price_source" in quote:
+            adjustment = quote["adjustment_type"].replace("_", "-")
+            notice = f"Stored {quote['price_source']} {adjustment} close as of {as_of}. Change is open to close."
 
     scoring_quote = None
     if price is not None:
@@ -348,6 +364,7 @@ def build_research_valuation(
         "change_percent": quote.get("change_percent"),
         "price_basis": quote.get("price_basis"),
         "price_as_of": as_of,
+        **({key: quote[key] for key in ("price_source", "adjustment_type")} if "price_source" in quote else {}),
         "market_cap": market_cap,
         "market_cap_basis": market_cap_basis,
         "shares_outstanding": shares,

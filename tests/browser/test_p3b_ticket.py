@@ -22,6 +22,7 @@ from app.models.market_symbol import MarketSymbol
 
 pytestmark = pytest.mark.skipif(os.environ.get("P0B_BROWSER") != "1", reason="Set P0B_BROWSER=1")
 disposable_api = h.disposable_api
+customer_order_book_api = h.customer_order_book_api
 SYMBOL, ARTIFACTS = "P3BTICKET", h.REPO_ROOT / ".local-tools" / "p3b-ticket"
 _HEADER_OFFSET = """
 const offset = Array.from(document.querySelectorAll('header')).reduce((max, bar) => {
@@ -227,10 +228,10 @@ def _canceled_surface(driver):
         );
         if (row) { surfaces.push(row); }
         const textOf = (node) => (node.innerText || "").replace(/\\s+/g, " ").trim();
-        const canceled = surfaces.some((node) => textOf(node).includes("Order canceled"));
+        const canceled = surfaces.some((node) => textOf(node).includes("Canceled with no quantity executed."));
         const filled = surfaces.some((node) => /(?:^|[^A-Za-z])Filled(?:[^A-Za-z]|$)/i.test(textOf(node)));
         if (!canceled || filled) { return null; }
-        return surfaces.find((node) => textOf(node).includes("Order canceled")) || null;
+        return surfaces.find((node) => textOf(node).includes("Canceled with no quantity executed.")) || null;
         """,
         SYMBOL,
     ) or False
@@ -252,7 +253,8 @@ def _cash(engine, email: str) -> Decimal:
     return Decimal(value)
 
 
-def test_empty_market_ticket(disposable_api) -> None:
+def test_empty_market_ticket(customer_order_book_api) -> None:
+    disposable_api = customer_order_book_api
     password = os.environ.get("P0B_TRADER_PASSWORD", "")
     if not password:
         pytest.fail("P0B_TRADER_PASSWORD is required")
@@ -264,9 +266,9 @@ def test_empty_market_ticket(disposable_api) -> None:
         desktop = _css_viewport(driver, 1280, 800, False)
         h._sign_in(driver, disposable_api.web_url, disposable_api.email, password)
         driver.get(disposable_api.web_url + "/trades")
-        h._wait(driver).until(lambda current: current.find_elements(By.CSS_SELECTOR, "select[aria-label='Order type']"))
+        h._open_ticket(driver)
         driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade symbol']").send_keys(SYMBOL)
-        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").send_keys("1")
+        assert driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").get_attribute("value") == "1"
         Select(driver.find_element(By.CSS_SELECTOR, "select[aria-label='Order type']")).select_by_value("market")
         h._wait(driver).until(lambda current: not current.find_elements(By.CSS_SELECTOR, "input[aria-label='Limit price']"))
         h._install_order_hook(driver, disposable_api.api_url)
@@ -327,16 +329,21 @@ def test_empty_market_ticket(disposable_api) -> None:
             node.is_displayed() for node in current.find_elements(By.CSS_SELECTOR, "div[aria-label='Notifications'] .toast-item")
         ))
         mobile = _css_viewport(driver, 390, 844, True)
-        if driver.find_element(By.CSS_SELECTOR, "input[aria-label='Trade quantity']").get_attribute("value") != "2":
-            pytest.fail("sell preview quantity was not the blocked market quantity")
+        h._open_ticket(driver)
+        quantity = driver.find_element(By.CSS_SELECTOR, "[data-testid='order-quantity']")
+        assert quantity.get_attribute("value") == "1"
+        quantity.clear()
+        quantity.send_keys("2")
+        driver.find_element(By.CSS_SELECTOR, "[data-testid='order-symbol']").send_keys(SYMBOL)
         sell = h._wait(driver).until(lambda current: next((
-            node for node in current.find_elements(By.CSS_SELECTOR, "button[aria-label='Sell']") if node.is_displayed()
+            node for node in current.find_elements(By.XPATH, "//button[normalize-space()='Sell']") if node.is_displayed()
         ), False))
         h._click(driver, sell)
         driver.execute_script("window.scrollTo(0, 0); const main = document.querySelector('main'); if (main) { main.scrollTo(0, 0); }")
         h._wait(driver).until(lambda current: current.execute_script(
             _HEADER_OFFSET + """
-            const sell = document.querySelector("button[aria-label='Sell']");
+            const sell = Array.from(document.querySelectorAll(".execution-side button"))
+              .find(button => button.textContent.trim() === "Sell");
             if (!sell) { return false; }
             const box = sell.getBoundingClientRect();
             if (box.top < offset || box.bottom > innerHeight) {

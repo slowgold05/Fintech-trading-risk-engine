@@ -10,6 +10,7 @@ from app.models.asset import Asset
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.risk_scenarios import RiskScenariosRequest
+from app.services.ledger_service import trade_in_current_book
 from app.services.risk_scenarios import build_risk_scenarios_response
 
 
@@ -26,12 +27,15 @@ def list_risk(
     user_id = current_user.id
 
     # Get assessments (newest first)
-    assessments = db.execute(
+    query = (
         select(RiskAssessment)
         .where(RiskAssessment.user_id == user_id)
-        .order_by(RiskAssessment.created_at.desc())
+        .order_by(RiskAssessment.created_at.desc(), RiskAssessment.id.desc())
         .limit(50)
-    ).scalars().all()
+    )
+    if current_user.is_demo:
+        query = query.where(trade_in_current_book(user_id, RiskAssessment.trade_id))
+    assessments = db.scalars(query).all()
 
     if not assessments:
         return {"assessments": []}
@@ -71,6 +75,7 @@ def list_risk(
             "quantity": float(t.quantity),
             "price_at_execution": float(t.price_at_execution),
             "executed_at": t.executed_at,
+            "demo_seed": t.demo_seed,
         }
 
     # Build response

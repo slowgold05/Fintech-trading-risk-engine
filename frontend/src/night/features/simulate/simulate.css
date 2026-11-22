@@ -1,0 +1,51 @@
+.sim-page .nk-page-head p,.sim-limits,.sim-definition,.sim-method p,.sim-method li,.sim-source {color:var(--muted)}
+.sim-modes {display:flex;flex-wrap:wrap;gap:0 16px;border-bottom:1px solid var(--line)}
+.sim-modes a {display:inline-flex;align-items:center;min-height:44px;color:var(--muted)}
+.sim-modes [aria-current] {color:var(--ink);box-shadow:inset 0 -2px var(--accent)}
+.sim-workspace {display:grid;grid-template-columns:minmax(0,2.25fr) minmax(280px,1fr);align-items:start;gap:var(--gap)}
+.sim-parameters form,.sim-parameters fieldset,.sim-result {display:grid;gap:var(--gap)}
+.sim-parameters fieldset,.sim-output {min-width:0}
+.sim-parameters fieldset {grid-template-columns:repeat(2,minmax(0,1fr))}
+.sim-parameters .nk-field:first-child,.sim-parameters .nk-field:nth-child(n+4) {grid-column:1/-1}
+.sim-parameters input {width:100%;min-width:0;font-size:16px}
+.sim-source,.sim-price-reading,.sim-window {display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font:11px/1.5 var(--font-mono)}
+.sim-window,.sim-price-reading {border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+.sim-window {justify-content:space-between}
+.sim-window span,.sim-totals dt {color:var(--muted)}
+.sim-draft-readings,.sim-totals {display:flex;align-items:stretch;flex-wrap:wrap;margin-block:10px 14px;border-block:1px solid var(--line)}
+.sim-draft-readings>div,.sim-totals>div {flex:1;padding:8px 12px;border-left:1px solid var(--line)}
+.sim-totals dt,.sim-limits {font:12px/1.5 var(--font-mono)}
+.sim-totals dd {font-size:clamp(22px,2.5vw,36px);letter-spacing:-.045em}
+[data-look=dial] .sim-totals dd {font-family:var(--font-mono)}
+.sim-chart-head {display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.sim-chart h3 {font-size:19px;font-weight:600}
+.sim-definition {font-size:13px;margin-top:12px}
+.sim-method ul {list-style:disc;padding-left:18px;margin-top:var(--gap)}
+.sim-skipped,.sim-method p {margin-top:4px}
+@media(max-width:767px){
+ .sim-workspace {grid-template-columns:minmax(0,1fr)}
+ .sim-page .nk-page-head {display:block}
+ .sim-page .nk-panel {padding:10px}
+ .sim-page .nk-panel header {align-items:center}
+ .sim-page .sim-outcome header h2,.sim-page .sim-awaiting header h2 {font-size:18px}
+ .sim-totals>div {padding:6px}
+}
+.sim-chart-head select {flex:none;width:auto;max-width:55%;min-height:44px;padding:6px 12px;font:13px var(--font-mono)}
+.sim-page .nk-button[data-variant=primary] {white-space:nowrap;background:var(--ink);color:var(--bg);border-color:var(--ink)}
+@media(max-width:767px){
+ .sim-draft-readings,.sim-totals {margin-block:6px}
+ .sim-source {font-size:10px}
+ .sim-chart-head {margin-bottom:5px}
+}
+.sim-chart-head select {appearance:none;border:1px solid var(--line);border-radius:var(--radius);background-color:var(--raised);padding-right:30px;
+ background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+ background-size:5px 5px;background-position:calc(100% - 16px) center,calc(100% - 11px) center;background-repeat:no-repeat}
+@media(max-width:767px){
+ .sim-draft-readings {display:grid;grid-template-columns:minmax(64px,.7fr) minmax(0,1.3fr)}
+ .sim-draft-readings .nk-stat {padding:7px 9px}
+ .sim-draft-readings .nk-stat strong {font-size:clamp(18px,5.3vw,23px)}
+ .sim-draft-readings:has(>:nth-child(3)) {grid-template-columns:repeat(2,minmax(0,1fr))}
+ .sim-draft-readings:has(>:nth-child(3)) .nk-stat:first-child {grid-column:1/-1}
+ .sim-draft-readings:has(>:nth-child(3)) .nk-stat strong {font-size:17px}
+}
+.sim-chart-head select {width:min(55%,176px)}

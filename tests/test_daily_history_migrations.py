@@ -17,9 +17,8 @@ from sqlalchemy.orm import Session
 
 from app.models.market_symbol import MarketSymbol
 from app.models.price_history_daily import PriceHistoryDaily
-from app.models.user import User
 from app.scripts.configure_postgres_role import configure
-from app.services.ledger_service import ensure_opening
+from tests.legacy_book import seed_legacy_book
 
 pytestmark = pytest.mark.skipif(not os.environ.get("AUDIT_DATABASE_URL"), reason="AUDIT_DATABASE_URL is not set")
 
@@ -73,10 +72,9 @@ def test_history_schema_preserves_legacy_data_and_scoped_grants(isolated_history
     if from_previous:
         command.upgrade(config, PREVIOUS)
         with Session(engine) as db:
-            user = User(email="history-migration@example.com", password_hash="fixture", cash_balance=Decimal("100000"))
-            db.add_all([user, MarketSymbol(symbol="P1B", company_name="Fixture", exchange="NASDAQ")])
+            seed_legacy_book(db, "history-migration@example.com")
+            db.add(MarketSymbol(symbol="P1B", company_name="Fixture", exchange="NASDAQ"))
             db.flush()
-            ensure_opening(db, user)
             db.add(PriceHistoryDaily(symbol="P1B", date=date(2026, 11, 4), open=10, high=12, low=9, close=11, volume=100, source="legacy-fixture"))
             db.commit()
         before = _digests(engine)

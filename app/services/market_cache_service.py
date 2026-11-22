@@ -3,7 +3,7 @@ from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -13,6 +13,7 @@ from app.models.market_symbol import MarketSymbol
 from app.models.price_history_daily import PriceHistoryDaily
 from app.services.eod_service import EodQuote, fetch_eod_batch
 from app.services.exchange_calendar import is_nyse_trading_day
+from app.services.history_series import read_history_quotes
 from app.services.market_providers import ProviderUnavailable, fetch_massive_grouped
 from app.services.market_quality import Bar, fails_price_checks
 from app.services.massive_client import http_get_massive
@@ -70,7 +71,35 @@ def _write_quote_cache(
     quote: dict,
     source: str,
     cache_row: MarketQuoteCache | None,
+    *,
+    only_advance_source: bool = False,
+    fetched_at: datetime | None = None,
 ) -> MarketQuoteCache:
+    quote_date = quote.get("quote_date")
+    observed_at = datetime.combine(date.fromisoformat(quote_date), datetime_time.min) if quote_date else None
+    sweep = False
+    if settings.simulated_liquidity_enabled or only_advance_source:
+        # Order submission takes these locks in the same order. Reload after
+        # the provider call so concurrent refreshes compare committed dates.
+        from app.services.order_book import sweep_resting_orders
+        from app.services.pretrade_controls import lock_trading_halt_state, trading_halt_reason
+        from app.services.simulated_liquidity import is_confirmed_close
+
+        halt_reason = trading_halt_reason(lock_trading_halt_state(db))
+        symbol_row = db.execute(select(MarketSymbol).where(MarketSymbol.symbol == symbol)
+                                .with_for_update().execution_options(populate_existing=True)).scalar_one()
+        cache_row = db.get(MarketQuoteCache, symbol, populate_existing=True)
+        if only_advance_source and cache_row is not None:
+            if cache_row.source != source or observed_at is None or (
+                cache_row.quote_at is not None and observed_at <= cache_row.quote_at
+            ):
+                return cache_row
+        if settings.simulated_liquidity_enabled:
+            previous = cache_row.quote_at if cache_row is not None and is_confirmed_close(cache_row) else None
+            if previous is not None and (observed_at is None or observed_at < previous):
+                return cache_row
+            sweep = symbol_row.is_active and observed_at is not None and (previous is None or observed_at > previous)
+
     if cache_row is None:
         cache_row = MarketQuoteCache(symbol=symbol)
         db.add(cache_row)
@@ -79,9 +108,12 @@ def _write_quote_cache(
     cache_row.change_percent = quote.get("change_percent", 0)
     cache_row.volume = quote.get("volume", 0)
     cache_row.source = source
-    quote_date = quote.get("quote_date")
-    cache_row.quote_at = datetime.combine(date.fromisoformat(quote_date), datetime_time.min) if quote_date else None
-    cache_row.fetched_at = _utcnow()
+    cache_row.quote_at = observed_at
+    cache_row.fetched_at = _utcnow() if fetched_at is None else _as_naive_utc(fetched_at)
+    if sweep:
+        db.flush()
+        db.refresh(cache_row)
+        sweep_resting_orders(db, cache_row, halt_reason)
     return cache_row
 
 
@@ -496,6 +528,24 @@ def get_cached_heatmap(db: Session, limit: int = 1000) -> dict:
         .all()
     )
 
+    if len(rows) < limit:
+        uncached = (
+            db.query(MarketSymbol)
+            .outerjoin(MarketQuoteCache, MarketQuoteCache.symbol == MarketSymbol.symbol)
+            .filter(
+                MarketSymbol.symbol.in_(SUPPORTED_DETAIL_SYMBOLS),
+                MarketSymbol.is_active.is_(True),
+                MarketSymbol.is_test.is_(False),
+                MarketSymbol.is_etf.is_(False),
+                MarketQuoteCache.symbol.is_(None),
+            )
+            .all()
+        )
+        history = read_history_quotes(db, [symbol.symbol for symbol in uncached])
+        additional = [(symbol, history[symbol.symbol]) for symbol in uncached if symbol.symbol in history]
+        additional.sort(key=lambda row: (row[0].refresh_tier, -row[1].volume, row[0].symbol))
+        rows.extend(additional[:limit - len(rows)])
+
     items = []
     status_counts = {"live-ish": 0, "delayed": 0, "cached": 0, "stale": 0}
     latest = None
@@ -508,7 +558,8 @@ def get_cached_heatmap(db: Session, limit: int = 1000) -> dict:
         sector = infer_sector(symbol.symbol, symbol.company_name, symbol.sector)
         if sector is None or sector == "Other":
             continue
-        if quote.source == "massive":
+        adjustment = getattr(quote, "adjustment_type", None)
+        if adjustment is None and quote.source == "massive":
             any_massive = True
 
         items.append({
@@ -520,14 +571,17 @@ def get_cached_heatmap(db: Session, limit: int = 1000) -> dict:
             "sector": sector,
             "price": float(quote.price),
             "change_percent": float(quote.change_percent),
-            "volume": quote.volume,
+            "volume": float(quote.volume) if adjustment else quote.volume,
             "size": symbol.heatmap_size,
             "refresh_tier": symbol.refresh_tier,
             "data_status": status,
             "age_seconds": age_seconds,
             "source": quote.source,
             "as_of": quote.quote_at.replace(tzinfo=timezone.utc).isoformat() if quote.quote_at else None,
-            "price_basis": "end_of_day_previous_close" if quote.source == "massive" else None,
+            "price_basis": "end_of_day_open_to_close" if adjustment else (
+                "end_of_day_previous_close" if quote.source == "massive" else None
+            ),
+            **({"adjustment_type": adjustment} if adjustment else {}),
         })
 
     sector_rank = {sector: index for index, sector in enumerate(SECTOR_ORDER)}

@@ -21,6 +21,7 @@ def test_register_login_and_me(client):
 
     me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
+    assert me.headers["Cache-Control"] == "no-store"
     assert me.json()["email"] == "alice@example.com"
 
 
@@ -36,13 +37,13 @@ def test_refresh_rotates_cookie_and_issues_new_access_token(client):
         data={"username": "refresh@example.com", "password": "password123"},
     )
     assert login.status_code == 200
-    first_cookie = client.cookies.get("refresh_token")
+    first_cookie = client.cookies.get(settings.refresh_cookie_name)
     assert first_cookie
 
     refresh = client.post("/auth/refresh")
     assert refresh.status_code == 200
     assert refresh.json()["access_token"]
-    assert client.cookies.get("refresh_token") != first_cookie
+    assert client.cookies.get(settings.refresh_cookie_name) != first_cookie
 
 
 def test_logout_revokes_refresh_cookie(client):
